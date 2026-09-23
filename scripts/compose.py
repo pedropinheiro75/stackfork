@@ -46,7 +46,8 @@ def render(root, files, env_file, hostname=None):
         cmd += ['-f', str(path)]
     env = docker_env()
     if hostname:
-        env['RR_DEV_HOSTNAME'] = hostname
+        env['DEV_HOSTNAME'] = hostname
+        env['RR_DEV_HOSTNAME'] = hostname  # Existing adapters still use this name.
     result = subprocess.run(cmd + ['config', '--no-env-resolution', '--format', 'json'],
                             env=env, capture_output=True, text=True)
     if result.returncode:

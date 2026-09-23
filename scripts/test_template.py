@@ -31,16 +31,16 @@ createServer((req, res) => {
   }
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify({marker: process.env.RR_MARKER, db: process.env.DATABASE_URL,
-    host: req.headers.host, hostname: process.env.RR_DEV_HOSTNAME, port: process.env.NUXT_PORT, node: process.versions.node, bun: !!process.versions.bun}));
+    host: req.headers.host, hostname: process.env.DEV_HOSTNAME, port: process.env.NUXT_PORT, node: process.versions.node, bun: !!process.versions.bun}));
 }).listen(3000, '0.0.0.0');
 """)
    (root/'.env').write_text('DATABASE_URL=do-not-load-original-env\n')
    (root/'.npmrc').write_text('# original checkout registry file must remain untouched\n')
    run(['docker','run','--rm','--network','none','-v',str(root)+':/app','-w','/app','oven/bun:1.3.9','bun','install','--lockfile-only','--ignore-scripts'])
    runtime=dest/'runtime.env'
-   runtime.write_text(f'RR_CHECKOUT={root}\nRR_RUNTIME_ENV={runtime}\nRR_DB_NAME=fixture\nRR_DB_IMAGE=postgres:17\nRR_APP_REPLICAS=2\nNUXT_SESSION_PASSWORD=local-test-session-password-at-least-32-characters\nRR_MARKER={slot}\nDATABASE_URL=postgres://postgres:example@db:5432/fixture\n')
+   runtime.write_text(f'DEV_CHECKOUT={root}\nDEV_RUNTIME_ENV={runtime}\nDEV_DB_NAME=fixture\nDEV_DB_IMAGE=postgres:17\nDEV_APP_REPLICAS=2\nNUXT_SESSION_PASSWORD=local-test-session-password-at-least-32-characters\nRR_MARKER={slot}\nDATABASE_URL=postgres://postgres:example@db:5432/fixture\n')
    cli=['python3',str(skill/'scripts/compose.py'),'--root',str(root),'--state-dir',str(base/'state')]
-   run(cli+['--npmrc',str(registry),'prepare'])
+   run(cli+(['--npmrc',str(registry)] if slot == 'a' else [])+['prepare'])
    where=json.loads(run(cli+['where'])); images.append(where['project']+'-app:dev')
    for name in ['compose.json','manifest.json']:
     assert 'synthetic-template-check-only' not in (Path(where['state'])/name).read_text()
@@ -67,7 +67,7 @@ createServer((req, res) => {
   assert len(set(ports))==2
   run(stacks[0][0]+['down','--volumes'])
   assert json.load(urllib.request.urlopen(f'http://127.0.0.1:{ports[1]}',timeout=5))['marker']=='b'
-  print('PASS: real Node 22, streamed downloads through nginx, remembered registry source without persisted tokens, default prepare, named URLs and proxy Host preservation, two stacks/four replicas, independent teardown')
+  print('PASS: real Node 22, streamed downloads through nginx, remembered registry source without persisted tokens, credential-free generic startup, default prepare, named URLs and proxy Host preservation, two stacks/four replicas, independent teardown')
  finally:
   for cli,_,_ in stacks:
    run(cli+['down','--volumes'])

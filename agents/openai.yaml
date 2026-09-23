@@ -1,6 +1,6 @@
 interface:
-  display_name: "ClientCo Isolated Dev"
-  short_description: "Isolate ClientCo worktrees and Docker development"
-  default_prompt: "Use $isolated-dev to prepare this ClientCo checkout with an isolated development environment."
+  display_name: "Isolated Dev"
+  short_description: "Isolate worktrees and Docker development across projects"
+  default_prompt: "Use $isolated-dev to prepare this checkout with an isolated development environment."
 policy:
   allow_implicit_invocation: true
