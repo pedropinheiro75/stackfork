@@ -30,7 +30,15 @@ Before starting, inspect the source adapter and executable startup code for:
 - Database/Redis/mail/PDF/storage endpoints belonging to this instance. Containers use service DNS and internal ports; host processes/browser URLs use the actual published ports. Mask a source-mounted `.env` with the generated runtime file so Bun/Nuxt/Drizzle cannot silently load the developer's DB URL. Handle `.env.local`, `.env.development`, `.env.test` and package/playground env files too if those are loaded by this app.
 - Hardcoded container-name references, external networks, absolute/shared writable directories, custom storage drivers, build tags and mounted Docker sockets. Replace shared persistence with fresh project-scoped named volumes; do not mount/copy existing database files into a fresh server.
 - Destructive seeds/resets and scripts that invoke their own `docker compose` or `docker exec` with hardcoded names. Route these through the helper or adapt the launcher. Do not use APP-A `make reset`, global prune, or scripts targeting the main checkout's shared DB.
-- Dev/test server ports, browser base URLs, HMR, PDF callbacks, CORS, cookies and auth. Ports do not isolate cookies; use a distinct browser context per instance, or configured per-instance hostnames/cookie names. Clear inherited real SMTP/cloud endpoints; send test email to the local catcher.
+- Dev/test server ports, browser base URLs, HMR, PDF callbacks, CORS, cookies and auth. Ports do not isolate cookies; use the helper's per-instance hostname and host-only cookies, plus a distinct browser context when needed. Clear inherited real SMTP/cloud endpoints; send test email to the local catcher.
+
+## Browser hostname convention
+
+Every browser-facing app must use `<instance>.localhost:<published-port>`, including host-run/non-Nuxt apps. Do not report bare `localhost` or `127.0.0.1` as the app URL. Run `where` before adapting the app to obtain the deterministic `hostname`: the checkout name plus its path/branch hash. For a shorter project/issue name, select `prepare --hostname eup-274.localhost` (or `app-b-571.localhost`) once; it is remembered. Explicit names must be unique across concurrent instances; default names already incorporate checkout/branch identity.
+
+`prepare` supplies `RR_DEV_HOSTNAME` for Compose interpolation; the Nuxt template also exposes it in the app environment. This variable is a hostname, not a URL or server bind address. Keep servers bound to `0.0.0.0` and container-to-container URLs on service DNS. Adapt the project's actual browser API origin, CORS/allowed hosts, auth callbacks and HMR settings to this hostname and the published ports. For host-run apps use the same hostname returned by `where` and their actual listening ports. Do not assume setting `RR_DEV_HOSTNAME` automatically configures a framework. Keep cookies host-only, never scoped to `.localhost`.
+
+After startup, obtain Docker endpoints from `urls` and verify login/HMR using the named URL in a browser. Do not silently fall back to a bare loopback URL if DNS, host validation or callbacks fail; fix the adapter or report the blocker. Existing adapters need these settings checked before adopting the named URL; changing helper output alone does not migrate application configuration. Do not restart another agent's active stack just to adopt this convention.
 
 ## Helper
 

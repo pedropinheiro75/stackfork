@@ -20,6 +20,8 @@ python3 scripts/compose.py --root "$CHECKOUT" urls
 
 `prepare` reuses the last source-file selection, or the standard `.agent-dev/` template paths on first use. Select a project's authorized registry config once with `--npmrc "$PROJECT_NPMRC"` before `prepare`; subsequent starts reuse its path. Normal startup does not reset or seed the database.
 
+`where` returns the instance hostname before startup; `urls` uses it for HTTP endpoints, for example `app-b-worktree-<hash>.localhost:<port>`. Select a shorter unique name with `prepare --hostname app-b-571.localhost`. Agents must use that same hostname in browser-facing app configuration; DB endpoints remain on `127.0.0.1`. Existing app adapters need their callback/CORS/HMR settings checked when adopting it.
+
 The Nuxt template includes real Node 22 and Bun, defaults to one app replica, and supports `RR_APP_REPLICAS=2` for multi-replica testing.
 
 ## Checks

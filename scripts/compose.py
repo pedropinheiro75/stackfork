@@ -39,13 +39,16 @@ def registry_token(path):
     return value
 
 
-def render(root, files, env_file):
+def render(root, files, env_file, hostname=None):
     cmd = ['docker', 'compose', '-p', 'idv-render', '--project-directory', str(root),
            '--env-file', str(env_file or os.devnull), '--profile', '*']
     for path in files:
         cmd += ['-f', str(path)]
+    env = docker_env()
+    if hostname:
+        env['RR_DEV_HOSTNAME'] = hostname
     result = subprocess.run(cmd + ['config', '--no-env-resolution', '--format', 'json'],
-                            env=docker_env(), capture_output=True, text=True)
+                            env=env, capture_output=True, text=True)
     if result.returncode:
         # Compose errors can include interpolated secret values.
         raise ValueError('Compose config failed; check file syntax, required variables and paths locally. Output suppressed to avoid exposing secrets.')
@@ -134,7 +137,14 @@ def public_status(output):
     return result
 
 
-def endpoint_lines(rows):
+def browser_hostname(project, selected=None):
+    hostname = selected or project.removeprefix("idv-") + ".localhost"
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.localhost", hostname):
+        raise ValueError("Hostname must be one DNS label followed by .localhost (for example eup-274.localhost)")
+    return hostname
+
+
+def endpoint_lines(rows, hostname):
     lines = []
     for row in rows:
         for port in row['Publishers']:
@@ -142,7 +152,8 @@ def endpoint_lines(rows):
             scheme = 'https' if target == 443 else 'http' if target in (80, 3000, 8080, 5050) else protocol
             if protocol != 'tcp':
                 scheme = protocol
-            lines.append(f"{row['Service']}: {scheme}://127.0.0.1:{port['PublishedPort']} ({target}/{protocol})")
+            host = hostname if scheme in ('http', 'https') else '127.0.0.1'
+            lines.append(f"{row['Service']}: {scheme}://{host}:{port['PublishedPort']} ({target}/{protocol})")
     return lines
 
 
@@ -155,6 +166,7 @@ def main():
     prepare = subs.add_parser('prepare', help='Render an explicitly selected Compose stack into an isolated snapshot')
     prepare.add_argument('-f', '--file', type=Path, action='append')
     prepare.add_argument('--env-file', type=Path)
+    prepare.add_argument('--hostname', help='Remember a unique browser hostname such as eup-274.localhost')
     subs.add_parser('where', help='Print identity and state location without reading configuration')
     up = subs.add_parser('up')
     up.add_argument('--build', action='store_true')
@@ -188,12 +200,14 @@ def main():
         project = args.instance
     state = state_base / project
     if args.action == 'where':
+        saved = json.loads((state / 'manifest.json').read_text()) if (state / 'manifest.json').is_file() else {}
         instances = []
         for path in state_base.glob('idv-*/manifest.json'):
             info = json.loads(path.read_text())
             if info.get('root') == str(root):
                 instances.append({'project': info['project'], 'branch': info['branch']})
         print(json.dumps({'project': project, 'root': str(root), 'branch': branch,
+                          'hostname': browser_hostname(project, saved.get('hostname')),
                           'state': str(state), 'prepared_instances': instances}, indent=2))
         return
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -218,10 +232,11 @@ def main():
                 env_file = default_env if default_env.is_file() else None
             if any(not p.is_file() for p in files):
                 raise ValueError('No source configuration found. Create .agent-dev/nuxt.compose.yaml or select source files with -f.')
-            model = isolate(render(root, files, env_file), root, project, env_file)
+            hostname = browser_hostname(project, args.hostname or (previous or {}).get('hostname'))
+            model = isolate(render(root, files, env_file, hostname), root, project, env_file)
             # Compose's canonical output already escapes dollars for round-tripping.
             inputs = files + ([env_file] if env_file else [])
-            info = {'project': project, 'root': str(root), 'branch': branch,
+            info = {'project': project, 'root': str(root), 'branch': branch, 'hostname': hostname,
                     'npmrc': str(args.npmrc.resolve()) if args.npmrc else (previous or {}).get('npmrc'),
                     'files': [str(p) for p in files],
                     'env_file': str(env_file) if env_file else None,
@@ -229,7 +244,7 @@ def main():
             write_private(config, model)
             info['config_sha256'] = hashlib.sha256(config.read_bytes()).hexdigest()
             write_private(manifest, info)
-            print(json.dumps({'project': project, 'state': str(state),
+            print(json.dumps({'project': project, 'state': str(state), 'hostname': hostname,
                               'services': list(model['services']), 'result': 'prepared; not started'}, indent=2))
             return
         if not config.is_file() or not manifest.is_file():
@@ -275,7 +290,7 @@ def main():
             result = subprocess.run(command, env=docker_env(), capture_output=True, text=True, check=True)
             rows = public_status(result.stdout)
             if args.action == 'urls':
-                print('\n'.join(endpoint_lines(rows)) or 'No published endpoints; check status or start the stack.')
+                print('\n'.join(endpoint_lines(rows, browser_hostname(project, info.get('hostname')))) or 'No published endpoints; check status or start the stack.')
             else:
                 for row in rows:
                     print(json.dumps(row))

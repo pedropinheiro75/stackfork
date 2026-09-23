@@ -31,7 +31,7 @@ createServer((req, res) => {
   }
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify({marker: process.env.RR_MARKER, db: process.env.DATABASE_URL,
-    port: process.env.NUXT_PORT, node: process.versions.node, bun: !!process.versions.bun}));
+    host: req.headers.host, hostname: process.env.RR_DEV_HOSTNAME, port: process.env.NUXT_PORT, node: process.versions.node, bun: !!process.versions.bun}));
 }).listen(3000, '0.0.0.0');
 """)
    (root/'.env').write_text('DATABASE_URL=do-not-load-original-env\n')
@@ -52,8 +52,10 @@ createServer((req, res) => {
    rows=[json.loads(x) for x in run(cli+['status']).splitlines() if x]
    apps=[r for r in rows if r['Service']=='app']; assert len(apps)==2 and all(r['Health']=='healthy' for r in apps)
    proxy=next(r for r in rows if r['Service']=='nginx'); port=proxy['Publishers'][0]['PublishedPort']; ports.append(port)
-   assert f'http://127.0.0.1:{port}' in run(cli+['urls'])
-   data=json.load(urllib.request.urlopen(f'http://127.0.0.1:{port}',timeout=5))
+   hostname=json.loads(run(cli+['where']))['hostname']
+   assert f'http://{hostname}:{port}' in run(cli+['urls'])
+   data=json.loads(run(['curl','--noproxy','*','--fail','--silent','--resolve',f'{hostname}:{port}:127.0.0.1',f'http://{hostname}:{port}']))
+   assert data['host']==f'{hostname}:{port}' and data['hostname']==hostname, data
    assert data['marker']==slot and data['db']=='postgres://postgres:example@db:5432/fixture' and data['port']=='3000',data
    assert data['node'].startswith('22.') and not data['bun'], 'The node command must execute real Node 22, not Bun compatibility mode'
    with urllib.request.urlopen(f'http://127.0.0.1:{port}/download',timeout=5) as response:
@@ -65,7 +67,7 @@ createServer((req, res) => {
   assert len(set(ports))==2
   run(stacks[0][0]+['down','--volumes'])
   assert json.load(urllib.request.urlopen(f'http://127.0.0.1:{ports[1]}',timeout=5))['marker']=='b'
-  print('PASS: real Node 22, streamed downloads through nginx, remembered registry source without persisted tokens, default prepare, published URLs, two stacks/four replicas, independent teardown')
+  print('PASS: real Node 22, streamed downloads through nginx, remembered registry source without persisted tokens, default prepare, named URLs and proxy Host preservation, two stacks/four replicas, independent teardown')
  finally:
   for cli,_,_ in stacks:
    run(cli+['down','--volumes'])
