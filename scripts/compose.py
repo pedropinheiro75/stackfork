@@ -25,6 +25,20 @@ def docker_env():
     return env
 
 
+def registry_token(path):
+    value = ''
+    for line in path.read_text().splitlines():
+        key, separator, candidate = line.partition('=')
+        if separator and key.strip() == '//npm.pkg.github.com/:_authToken':
+            value = candidate.strip().strip('\"\'')
+    variable = re.fullmatch(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}', value)
+    if variable:
+        value = os.environ.get(variable[1], '')
+    if not value or not re.fullmatch(r'[A-Za-z0-9_=-]+', value):
+        raise ValueError('Selected npmrc has no usable GitHub registry token; supply NPM_TOKEN or a literal/environment-reference token entry')
+    return value
+
+
 def render(root, files, env_file):
     cmd = ['docker', 'compose', '-p', 'idv-render', '--project-directory', str(root),
            '--env-file', str(env_file or os.devnull), '--profile', '*']
@@ -120,13 +134,26 @@ def public_status(output):
     return result
 
 
+def endpoint_lines(rows):
+    lines = []
+    for row in rows:
+        for port in row['Publishers']:
+            target, protocol = port['TargetPort'], port.get('Protocol', 'tcp')
+            scheme = 'https' if target == 443 else 'http' if target in (80, 3000, 8080, 5050) else protocol
+            if protocol != 'tcp':
+                scheme = protocol
+            lines.append(f"{row['Service']}: {scheme}://127.0.0.1:{port['PublishedPort']} ({target}/{protocol})")
+    return lines
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=Path.cwd())
+    parser.add_argument('--npmrc', type=Path, help='Explicitly authorized registry config for this project; remember its path on prepare')
     parser.add_argument('--state-dir', type=Path, default=Path.home() / '.local/state/isolated-dev')
     subs = parser.add_subparsers(dest='action', required=True)
     prepare = subs.add_parser('prepare', help='Render an explicitly selected Compose stack into an isolated snapshot')
-    prepare.add_argument('-f', '--file', type=Path, action='append', required=True)
+    prepare.add_argument('-f', '--file', type=Path, action='append')
     prepare.add_argument('--env-file', type=Path)
     subs.add_parser('where', help='Print identity and state location without reading configuration')
     up = subs.add_parser('up')
@@ -135,6 +162,7 @@ def main():
     up.add_argument('--service', action='append', default=[])
     up.add_argument('--wait-timeout', type=int, default=180)
     subs.add_parser('status')
+    subs.add_parser('urls', help='Print published endpoints without configuration values or credentials')
     down = subs.add_parser('down')
     down.add_argument('--volumes', action='store_true', help='Delete ONLY this instance\'s volumes; destructive')
     down.add_argument('--instance', help='Stop a prepared instance from another branch of this same checkout')
@@ -174,12 +202,28 @@ def main():
         config = state / 'compose.json'
         manifest = state / 'manifest.json'
         if args.action == 'prepare':
-            files = [p.resolve() for p in args.file]
-            env_file = args.env_file.resolve() if args.env_file else None
+            previous = json.loads(manifest.read_text()) if manifest.is_file() else None
+            if args.file:
+                files = [p.resolve() for p in args.file]
+            elif previous:
+                files = [Path(p) for p in previous.get('files', [p for p in previous['inputs'] if p != previous['env_file']])]
+            else:
+                files = [root / '.agent-dev/nuxt.compose.yaml']
+            if args.env_file:
+                env_file = args.env_file.resolve()
+            elif previous and not args.file:
+                env_file = Path(previous['env_file']) if previous['env_file'] else None
+            else:
+                default_env = root / '.agent-dev/runtime.env'
+                env_file = default_env if default_env.is_file() else None
+            if any(not p.is_file() for p in files):
+                raise ValueError('No source configuration found. Create .agent-dev/nuxt.compose.yaml or select source files with -f.')
             model = isolate(render(root, files, env_file), root, project, env_file)
             # Compose's canonical output already escapes dollars for round-tripping.
             inputs = files + ([env_file] if env_file else [])
             info = {'project': project, 'root': str(root), 'branch': branch,
+                    'npmrc': str(args.npmrc.resolve()) if args.npmrc else (previous or {}).get('npmrc'),
+                    'files': [str(p) for p in files],
                     'env_file': str(env_file) if env_file else None,
                     'inputs': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}}
             write_private(config, model)
@@ -205,6 +249,9 @@ def main():
                     raise ValueError(f'Input changed: {path}; run prepare again')
         local_docker()
         if args.action in ('up', 'run'):
+            npmrc = args.npmrc or info.get('npmrc')
+            if npmrc and not os.environ.get('NPM_TOKEN'):
+                os.environ['NPM_TOKEN'] = registry_token(Path(npmrc))
             active = subprocess.check_output([
                 'docker', 'ps', '--filter', f'label=io.isolated-dev.root={root}',
                 '--format', '{{.Label "com.docker.compose.project"}}'], text=True).split()
@@ -223,11 +270,15 @@ def main():
             command += ['--profile', '*', 'down', '--remove-orphans']
             if args.volumes:
                 command.append('--volumes')
-        elif args.action == 'status':
+        elif args.action in ('status', 'urls'):
             command += ['--profile', '*', 'ps', '--all', '--format', 'json']
             result = subprocess.run(command, env=docker_env(), capture_output=True, text=True, check=True)
-            for row in public_status(result.stdout):
-                print(json.dumps(row))
+            rows = public_status(result.stdout)
+            if args.action == 'urls':
+                print('\n'.join(endpoint_lines(rows)) or 'No published endpoints; check status or start the stack.')
+            else:
+                for row in rows:
+                    print(json.dumps(row))
             return
         else:
             model = json.loads(config.read_text())

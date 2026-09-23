@@ -10,6 +10,18 @@ The maintained source lives in this repository. Local Codex and Claude Code skil
 
 Ask an agent: `Use $isolated-dev to prepare APP-A in a new worktree.`
 
+## Reusing a prepared checkout
+
+```sh
+python3 scripts/compose.py --root "$CHECKOUT" prepare
+python3 scripts/compose.py --root "$CHECKOUT" up
+python3 scripts/compose.py --root "$CHECKOUT" urls
+```
+
+`prepare` reuses the last source-file selection, or the standard `.agent-dev/` template paths on first use. Select a project's authorized registry config once with `--npmrc "$PROJECT_NPMRC"` before `prepare`; subsequent starts reuse its path. Normal startup does not reset or seed the database.
+
+The Nuxt template includes real Node 22 and Bun, defaults to one app replica, and supports `RR_APP_REPLICAS=2` for multi-replica testing.
+
 ## Checks
 
 ```sh
@@ -23,4 +35,4 @@ python3 scripts/test_compose.py --live
 python3 scripts/test_template.py
 ```
 
-The first live check reads the local APP-A/APP-C/APP-B Compose definitions under `~/code/Agency/ClientCo`. The template check uses a synthetic app and may download public images/packages. Neither establishes full private ClientCo application compatibility.
+The first live check reads the local APP-A/APP-C/APP-B Compose definitions under `~/code/Agency/ClientCo`. The template check uses a synthetic Node streaming app and may download public images/packages. Neither establishes full private ClientCo application compatibility.
