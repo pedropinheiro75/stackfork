@@ -42,24 +42,33 @@ After startup, obtain Docker endpoints from `urls` and verify login/HMR using th
 
 ## Helper
 
-Requires macOS/Linux, Python 3.9+ and Docker Compose with `config --no-env-resolution` (tested on v5.1.2). Use the installed skill directory for `SKILL`:
+Requires macOS/Linux, Go's build cache is not needed at runtime — `stackfork` is a single static binary — and Docker Compose with `config --no-env-resolution` (tested on v5.1.2). Install once:
 
 ```sh
-SKILL="$HOME/.codex/skills/isolated-dev"
-python3 "$SKILL/scripts/compose.py" --root "$CHECKOUT" prepare \
+go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest
+# for now, from a local checkout:
+go install ./cmd/stackfork
+```
+
+`stackfork` must resolve on `PATH` (typically `$(go env GOPATH)/bin`, often `~/go/bin`):
+
+```sh
+stackfork --root "$CHECKOUT" prepare \
   -f "$CHECKOUT/docker-compose.yml" \
   -f "$CHECKOUT/.agent-dev/adapter.yaml" \
   --env-file "$CHECKOUT/.agent-dev/runtime.env"
-python3 "$SKILL/scripts/compose.py" --root "$CHECKOUT" up --service db
-python3 "$SKILL/scripts/compose.py" --root "$CHECKOUT" status
+stackfork --root "$CHECKOUT" up --service db
+stackfork --root "$CHECKOUT" status
 ```
 
 After the first explicit selection, `prepare` remembers the ordered source files and env path. For a new standard template setup it defaults to `.agent-dev/nuxt.compose.yaml` and `.agent-dev/runtime.env`; it never defaults to the developer's `.env`.
 
+State (manifests, snapshots, locks) lives under `~/.local/state/stackfork`; legacy `idv-` instances created before the Go rewrite are still read from `~/.local/state/isolated-dev` and stay fully manageable (`where`, `status`, `urls`, `down`, `up`).
+
 For registry access, an existing `NPM_TOKEN` takes precedence. Otherwise explicitly select the authorized registry configuration for this same project once:
 
 ```sh
-python3 "$SKILL/scripts/compose.py" --root "$CHECKOUT" --npmrc "$PROJECT_NPMRC" prepare
+stackfork --root "$CHECKOUT" --npmrc "$PROJECT_NPMRC" prepare
 ```
 
 The helper remembers the file path and reads the GitHub token for `up`/`run`, supplying it to the Compose secret through the process environment. It supports a literal token or a single `${VARIABLE}` reference. It does not print or store that token in the manifest. Never select another project's credentials. No checkout-specific `manage.py` is needed. For private packages, use an explicit Compose secret rather than token build arguments.
@@ -76,7 +85,7 @@ Legacy compatibility: existing `idv-` prefixed paths, state directory, resource 
 
 ## Verify and report
 
-Run `python3 "$SKILL/scripts/test_compose.py"` after changing the helper. `--live` additionally tests six disposable Postgres instances from the synthetic fixtures in `testdata/` and removes only its scratch resources. `python3 "$SKILL/scripts/test_template.py"` builds and runs two template stacks with a real-Node streamed-download fixture, checks proxy routing/env isolation/teardown, and cleans its containers, volumes and image tags; it requires public image/package downloads. It does not test any real application.
+Run `go test ./...` after changing the helper. `STACKFORK_LIVE=1 go test ./...` additionally tests disposable Postgres instances from the synthetic fixtures in `testdata/`, the template stacks (proxy routing/env isolation/teardown), and removes only its scratch resources; it requires public image/package downloads. It does not test any real application.
 
 For first adoption or changes to isolation wiring, verify DB identity, migrations, login, HMR and a representative app-specific flow (for example, a file download through the proxy with its response validated). Also verify two independent instances and scoped teardown. For routine restarts of an unchanged adapter, check its expected DB identity and app readiness; reuse the recorded isolation checks. Do not repeat scratch-stack tests for every application task. Check helper snapshots/source files for accidental secrets before sharing them; report endpoint addresses without credentials.
 
