@@ -200,11 +200,10 @@ func gatherRoutes(newStateBase, legacyStateBase string) ([]proxy.Route, error) {
 		{newStateBase, identity.Prefix},
 		{legacyStateBase, identity.LegacyPrefix},
 	} {
-		matches, err := filepath.Glob(filepath.Join(dirPrefix.base, dirPrefix.prefix+"-*", "manifest.json"))
+		matches, err := state.Manifests(dirPrefix.base, dirPrefix.prefix)
 		if err != nil {
 			return nil, err
 		}
-		sort.Strings(matches)
 		for _, m := range matches {
 			info, err := state.ReadManifest(m)
 			if err != nil || info == nil {

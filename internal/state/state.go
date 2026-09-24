@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"syscall"
 )
 
@@ -143,6 +144,21 @@ func ReadManifestRaw(path string) (map[string]interface{}, error) {
 		return nil, err
 	}
 	return m, nil
+}
+
+// Manifests returns every manifest.json path under base whose instance
+// directory starts with prefix+"-", sorted. It is the one shared
+// implementation of the glob every caller that walks a whole state
+// directory needs (where's prepared-instance list, the stable-port
+// allocator's recorded-port scan, the proxy's route table, the inventory),
+// instead of each repeating the same filepath.Glob call.
+func Manifests(base, prefix string) ([]string, error) {
+	matches, err := filepath.Glob(filepath.Join(base, prefix+"-*", "manifest.json"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(matches)
+	return matches, nil
 }
 
 // SHA256File hashes a file's contents, mirroring Python's

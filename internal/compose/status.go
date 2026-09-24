@@ -89,12 +89,36 @@ func stringField(m map[string]interface{}, key string) string {
 	return string(b)
 }
 
-// EndpointLines mirrors Python's endpoint_lines(rows, hostname), extended by
-// task 7.2 with the HTTP/HTTPS target ports a service declared at prepare
+// Endpoint is one published port's resolved address: the same computation
+// `urls` has always used, factored out (task 1.2, design.md D1) so the
+// inventory can build structured per-service endpoints from it instead of
+// re-deriving the scheme/host rules on its own.
+type Endpoint struct {
+	Service  string
+	Scheme   string // http, https, tcp, udp, ...
+	Host     string
+	Port     string // PublishedPort, formatted
+	Target   interface{}
+	Protocol string
+}
+
+// URL renders the endpoint the way a client would use it: a clickable
+// scheme://host:port for http/https, a copyable host:port otherwise.
+func (e Endpoint) URL() string {
+	if e.Scheme == "http" || e.Scheme == "https" {
+		return fmt.Sprintf("%s://%s:%s", e.Scheme, e.Host, e.Port)
+	}
+	return fmt.Sprintf("%s:%s", e.Host, e.Port)
+}
+
+// ComputeEndpoints mirrors Python's endpoint_lines(rows, hostname), extended
+// by task 7.2 with the HTTP/HTTPS target ports a service declared at prepare
 // (design.md D7): a declared port wins over the fixed-port guess below,
-// which stays as the fallback for services that declare nothing.
-func EndpointLines(rows []StatusRow, hostname string, httpPorts, httpsPorts []int) []string {
-	var lines []string
+// which stays as the fallback for services that declare nothing. This is the
+// single implementation EndpointLines (urls) and internal/inventory both
+// build on (task 1.2).
+func ComputeEndpoints(rows []StatusRow, hostname string, httpPorts, httpsPorts []int) []Endpoint {
+	var out []Endpoint
 	for _, row := range rows {
 		for _, port := range row.Publishers {
 			target := port["TargetPort"]
@@ -122,9 +146,21 @@ func EndpointLines(rows []StatusRow, hostname string, httpPorts, httpsPorts []in
 			if scheme == "http" || scheme == "https" {
 				host = hostname
 			}
-			lines = append(lines, fmt.Sprintf("%s: %s://%s:%v (%v/%s)",
-				row.Service, scheme, host, port["PublishedPort"], target, protocol))
+			out = append(out, Endpoint{
+				Service: row.Service, Scheme: scheme, Host: host,
+				Port: fmt.Sprintf("%v", port["PublishedPort"]), Target: target, Protocol: protocol,
+			})
 		}
+	}
+	return out
+}
+
+// EndpointLines formats ComputeEndpoints' result the way `urls` has always
+// printed it.
+func EndpointLines(rows []StatusRow, hostname string, httpPorts, httpsPorts []int) []string {
+	var lines []string
+	for _, e := range ComputeEndpoints(rows, hostname, httpPorts, httpsPorts) {
+		lines = append(lines, fmt.Sprintf("%s: %s://%s:%s (%v/%s)", e.Service, e.Scheme, e.Host, e.Port, e.Target, e.Protocol))
 	}
 	return lines
 }
