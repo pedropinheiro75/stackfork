@@ -19,6 +19,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -157,7 +158,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		}
 		return 0, cmdWhere(stdout, root, branch, project, instanceDir, newStateBase, legacyStateBase, profileDirs)
 	case "prepare":
-		return 0, cmdPrepare(stdout, subArgs, root, branch, project, instanceDir, *npmrcFlag, secretFlag)
+		return 0, cmdPrepare(stdout, subArgs, root, branch, project, instanceDir, *npmrcFlag, secretFlag, newStateBase, legacyStateBase)
 	case "up":
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir)
 	case "down":
@@ -283,6 +284,36 @@ func cmdWhere(stdout io.Writer, root, branch, project, instanceDir, newStateBase
 	return printJSON(stdout, out)
 }
 
+// recordedPorts scans every manifest.json under both state directories
+// (task 8.1: "recorded in any manifest in BOTH state dirs") and returns the
+// host ports already allocated to some other instance's Ports. skipProject
+// is this instance's own project name, whose prior allocations are reused
+// via `existing`, not treated as a collision here. Read-only: it only opens
+// and decodes manifest.json files, exactly like `where`'s existing instance
+// listing (cmdWhere) does for the same two directories.
+func recordedPorts(newStateBase, legacyStateBase, skipProject string) (map[int]bool, error) {
+	taken := map[int]bool{}
+	for _, dirPrefix := range []struct{ base, prefix string }{
+		{newStateBase, identity.Prefix},
+		{legacyStateBase, identity.LegacyPrefix},
+	} {
+		matches, err := filepath.Glob(filepath.Join(dirPrefix.base, dirPrefix.prefix+"-*", "manifest.json"))
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range matches {
+			info, err := state.ReadManifest(m)
+			if err != nil || info == nil || info.Project == skipProject {
+				continue
+			}
+			for _, p := range info.Ports {
+				taken[p.Host] = true
+			}
+		}
+	}
+	return taken, nil
+}
+
 // --- prepare -----------------------------------------------------------
 
 type prepareOutput struct {
@@ -293,7 +324,7 @@ type prepareOutput struct {
 	Result   string   `json:"result"`
 }
 
-func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, instanceDir, npmrcTop string, secretFlags []string) error {
+func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, instanceDir, npmrcTop string, secretFlags []string, newStateBase, legacyStateBase string) error {
 	fs := flag.NewFlagSet("prepare", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var files stringList
@@ -301,6 +332,8 @@ func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, insta
 	fs.Var(&files, "file", "")
 	envFileFlag := fs.String("env-file", "", "")
 	hostnameFlag := fs.String("hostname", "", "")
+	reassignPortsFlag := fs.Bool("reassign-ports", false, "")
+	randomPortsFlag := fs.Bool("random-ports", false, "")
 	if err := fs.Parse(subArgs); err != nil {
 		return fmt.Errorf("%s", err.Error())
 	}
@@ -430,6 +463,56 @@ func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, insta
 	// remember them so urls doesn't have to re-parse the snapshot.
 	httpPorts, httpsPorts := compose.DeclaredHTTPPorts(model)
 
+	// Stable host ports (task 8.2, design.md D7 layer 2). refs is every
+	// published (service, target port); refusing a scaled service that
+	// publishes one is unconditional (task 8.4), whether or not stable
+	// allocation itself is in play.
+	refs := compose.PublishedPorts(model)
+	if err := compose.RefusePublishedReplicas(model, refs); err != nil {
+		return err
+	}
+
+	// D2: a legacy (idv-) instance's manifest never had allocations, and
+	// re-preparing it must not start silently pinning stable ports under a
+	// running stack's bookmarks/redirect URIs - only an explicit
+	// --reassign-ports opts a legacy instance in. A current-prefix instance
+	// gets stable ports by default; --random-ports opts back out to the
+	// pre-D7 behaviour (Docker assigns a random host port every time).
+	assignStable := len(refs) > 0 && !*randomPortsFlag && (!identity.IsLegacyInstance(project) || *reassignPortsFlag)
+
+	var portAllocs []state.PortAlloc
+	if assignStable {
+		existing := map[compose.PortRef]int{}
+		if previous != nil && !*reassignPortsFlag {
+			for _, a := range previous.Ports {
+				existing[compose.PortRef{Service: a.Service, Target: a.Target}] = a.Host
+			}
+		}
+		takenRecorded, err := recordedPorts(newStateBase, legacyStateBase, project)
+		if err != nil {
+			return err
+		}
+		rng := ports.RangeFromEnv()
+		hostPorts := make(map[compose.PortRef]int, len(refs))
+		for _, ref := range refs {
+			if host, ok := existing[ref]; ok {
+				hostPorts[ref] = host
+				portAllocs = append(portAllocs, state.PortAlloc{Service: ref.Service, Target: ref.Target, Host: host})
+				continue
+			}
+			host, err := ports.Allocate(project, ref.Service, ref.Target, rng, func(p int) bool {
+				return takenRecorded[p] || ports.Bound(p)
+			})
+			if err != nil {
+				return err
+			}
+			takenRecorded[host] = true // don't hand this same port to a second service in this prepare
+			hostPorts[ref] = host
+			portAllocs = append(portAllocs, state.PortAlloc{Service: ref.Service, Target: ref.Target, Host: host})
+		}
+		compose.ApplyPortAllocations(model, hostPorts)
+	}
+
 	var envFileOut *string
 	if envFile != "" {
 		envFileOut = &envFile
@@ -438,7 +521,7 @@ func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, insta
 	info := &state.Manifest{
 		Project: project, Root: root, Branch: branch, Hostname: hostname,
 		Secrets: secretRefs, HTTPPorts: httpPorts, HTTPSPorts: httpsPorts,
-		Files: resolvedFiles, EnvFile: envFileOut, Inputs: inputHashes,
+		Ports: portAllocs, Files: resolvedFiles, EnvFile: envFileOut, Inputs: inputHashes,
 	}
 
 	if err := state.WritePrivate(configPath, model); err != nil {

@@ -114,15 +114,25 @@ func tryRun(name string, args ...string) (string, error) {
 }
 
 type liveInstance struct {
-	binary  string
-	root    string
-	state   string
-	service string
-	marker  string
+	binary      string
+	root        string
+	state       string
+	legacyState string
+	service     string
+	marker      string
 }
 
+// cli builds the argument list every live-test invocation shares. Both
+// state dirs are always pointed at test-scratch paths (never the real
+// ~/.local/state/{stackfork,isolated-dev}): the port allocator added in
+// task 8.1 reads every manifest under both dirs, and a live test must never
+// touch the author's real, running instances even read-only.
 func (li liveInstance) cli(args ...string) []string {
-	return append([]string{"--root", li.root, "--state-dir", li.state}, args...)
+	base := []string{"--root", li.root, "--state-dir", li.state}
+	if li.legacyState != "" {
+		base = append(base, "--legacy-state-dir", li.legacyState)
+	}
+	return append(base, args...)
 }
 
 func (li liveInstance) run(t *testing.T, args ...string) string {
@@ -167,6 +177,7 @@ func TestLiveSixInstances(t *testing.T) {
 	scratch := t.TempDir()
 	var instances []liveInstance
 	stateDir := filepath.Join(scratch, "state")
+	legacyStateDir := filepath.Join(scratch, "legacy-state")
 
 	for _, f := range fixtures {
 		for _, slot := range []string{"a", "b"} {
@@ -191,7 +202,7 @@ func TestLiveSixInstances(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "adapter.yaml"), []byte(adapter), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			li := liveInstance{binary: bin, root: root, state: stateDir, service: f.service, marker: f.name + "-" + slot}
+			li := liveInstance{binary: bin, root: root, state: stateDir, legacyState: legacyStateDir, service: f.service, marker: f.name + "-" + slot}
 			li.run(t, "prepare", "-f", filepath.Join(root, "compose.yaml"), "-f", filepath.Join(root, "adapter.yaml"))
 			instances = append(instances, li)
 		}

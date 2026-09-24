@@ -59,6 +59,7 @@ func TestLiveTemplate(t *testing.T) {
 
 	base := t.TempDir()
 	stateDir := filepath.Join(base, "state")
+	legacyStateDir := filepath.Join(base, "legacy-state")
 	registry := filepath.Join(base, "fixture.npmrc")
 	if err := os.WriteFile(registry, []byte("//npm.pkg.github.com/:_authToken=synthetic-template-check-only\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -110,7 +111,7 @@ func TestLiveTemplate(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		li := liveInstance{binary: bin, root: root, state: stateDir}
+		li := liveInstance{binary: bin, root: root, state: stateDir, legacyState: legacyStateDir}
 		var prepareArgs []string
 		if slot == "a" {
 			prepareArgs = append(prepareArgs, "--npmrc", registry)

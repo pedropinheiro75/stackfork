@@ -26,12 +26,27 @@ type Manifest struct {
 	// HTTPPorts and HTTPSPorts are the target ports declared via the
 	// io.stackfork.http/.https labels at prepare (task 7.2, design.md D7).
 	// urls uses them ahead of its fixed-port guess.
-	HTTPPorts    []int             `json:"http_ports,omitempty"`
-	HTTPSPorts   []int             `json:"https_ports,omitempty"`
+	HTTPPorts  []int `json:"http_ports,omitempty"`
+	HTTPSPorts []int `json:"https_ports,omitempty"`
+	// Ports records the stable host port allocated to each published
+	// (service, target port) at prepare (task 8.2, design.md D7 layer 2).
+	// Empty when the instance was prepared with --random-ports, or is a
+	// legacy (idv-) instance never re-prepared with --reassign-ports.
+	Ports        []PortAlloc       `json:"ports,omitempty"`
 	Files        []string          `json:"files"`
 	EnvFile      *string           `json:"env_file"`
 	Inputs       map[string]string `json:"inputs"`
 	ConfigSHA256 string            `json:"config_sha256"`
+}
+
+// PortAlloc is one (service, target port) -> stable host port allocation
+// made at prepare, stored so it survives down/up, container recreation and
+// re-prepare (task 8.2, design.md D7 layer 2). Host is always bound to
+// 127.0.0.1 (loopback only).
+type PortAlloc struct {
+	Service string `json:"service"`
+	Target  int    `json:"target"`
+	Host    int    `json:"host"`
 }
 
 // ResolvedSecrets returns the manifest's named secret references (never
