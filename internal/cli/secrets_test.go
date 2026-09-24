@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 // Task 6.1: --secret NAME=env:VAR is stored by reference, resolved at up,
@@ -107,5 +110,67 @@ func TestSecretMalformedFlagRefusedAtPrepare(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "not-a-valid-flag") {
 		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
+// Task 6.2: --npmrc PATH is an alias for --secret npm_token=npmrc:PATH#npm.pkg.github.com.
+func TestNpmrcFlagAliasesSecret(t *testing.T) {
+	installFakeDocker(t)
+	root := initRepo(t)
+	composePath := filepath.Join(root, "compose.yaml")
+	os.WriteFile(composePath, []byte(fixtureCompose), 0o600)
+	stateDir := filepath.Join(t.TempDir(), "state")
+	registry := filepath.Join(t.TempDir(), "fixture.npmrc")
+	if err := os.WriteFile(registry, []byte("//npm.pkg.github.com/:_authToken=synthetic-alias-check\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "--npmrc", registry, "prepare", "-f", composePath)
+	if code != 0 {
+		t.Fatalf("prepare failed: %s", stderr)
+	}
+	var prepared map[string]interface{}
+	json.Unmarshal([]byte(out), &prepared)
+	manifestData, err := os.ReadFile(filepath.Join(prepared["state"].(string), "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m state.Manifest
+	if err := json.Unmarshal(manifestData, &m); err != nil {
+		t.Fatal(err)
+	}
+	resolvedRegistry, err := identity.ResolvePath(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "npmrc:" + resolvedRegistry + "#npm.pkg.github.com"
+	if m.Secrets["npm_token"] != want {
+		t.Fatalf("expected --npmrc to record %q, got %q", want, m.Secrets["npm_token"])
+	}
+	if strings.Contains(string(manifestData), "synthetic-alias-check") {
+		t.Fatal("manifest leaked the npmrc token value")
+	}
+}
+
+// Task 6.2: a manifest written before named secrets existed (only the
+// legacy npmrc key) is read the same way as --secret npm_token=npmrc:PATH#npm.pkg.github.com.
+func TestLegacyManifestNpmrcKeyReadAsNamedSecret(t *testing.T) {
+	registry := filepath.Join(t.TempDir(), "legacy.npmrc")
+	npmrcPath := registry
+	m := &state.Manifest{
+		Project: "sf-x-000", Root: "/tmp/x", Branch: "main",
+		Npmrc: &npmrcPath, Files: []string{"compose.yaml"}, Inputs: map[string]string{},
+	}
+	resolved := m.ResolvedSecrets()
+	want := "npmrc:" + npmrcPath + "#npm.pkg.github.com"
+	if resolved["npm_token"] != want {
+		t.Fatalf("expected legacy npmrc key folded into npm_token, got %q", resolved["npm_token"])
+	}
+
+	// An explicit Secrets["npm_token"] wins over the legacy key.
+	m.Secrets = map[string]string{"npm_token": "env:OTHER_VAR"}
+	resolved = m.ResolvedSecrets()
+	if resolved["npm_token"] != "env:OTHER_VAR" {
+		t.Fatalf("expected the explicit secret to win, got %q", resolved["npm_token"])
 	}
 }
