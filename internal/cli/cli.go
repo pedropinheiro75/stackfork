@@ -727,6 +727,12 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 	}
 
+	if action == "up" {
+		if err := refuseBusyRecordedPorts(info.Ports, project); err != nil {
+			return 0, err
+		}
+	}
+
 	dockerCommand := []string{"compose", "-p", project, "--project-directory", root,
 		"--env-file", os.DevNull, "-f", configPath}
 
@@ -818,6 +824,48 @@ func loadAndValidateManifest(instanceDir, root, branch, project, action string) 
 		return nil, errors.New("Snapshot changed; edit the source Compose files and run prepare again")
 	}
 	return info, nil
+}
+
+// refuseBusyRecordedPorts checks each stable port recorded in the manifest
+// (task 8.3, design.md D7 layer 2): free is fine, and a port already bound
+// by this same project's own containers (e.g. left running from a previous
+// `up`) is fine too, but anything else fails naming the service and port
+// and suggesting `prepare --reassign-ports` - `up` never picks a different
+// port silently, since redirect URIs depend on it.
+func refuseBusyRecordedPorts(allocs []state.PortAlloc, project string) error {
+	for _, alloc := range allocs {
+		if !ports.Bound(alloc.Host) {
+			continue
+		}
+		owned, err := portOwnedByProject(alloc.Host, project)
+		if err != nil {
+			return err
+		}
+		if !owned {
+			return fmt.Errorf("Port %d for service %s is already in use by something else; run `prepare --reassign-ports`", alloc.Host, alloc.Service)
+		}
+	}
+	return nil
+}
+
+// portOwnedByProject reports whether every container currently bound to
+// host port `port`, if any, belongs to `project`.
+func portOwnedByProject(port int, project string) (bool, error) {
+	out, err := exec.Command("docker", "ps", "--filter", fmt.Sprintf("publish=%d", port),
+		"--format", `{{.Label "com.docker.compose.project"}}`).Output()
+	if err != nil {
+		return false, fmt.Errorf("Command '[docker ps --filter publish=%d ...]' returned non-zero exit status", port)
+	}
+	names := strings.Fields(string(out))
+	if len(names) == 0 {
+		return false, nil
+	}
+	for _, name := range names {
+		if name != project {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func localDocker() error {

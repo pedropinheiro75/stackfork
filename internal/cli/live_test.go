@@ -124,9 +124,9 @@ type liveInstance struct {
 
 // cli builds the argument list every live-test invocation shares. Both
 // state dirs are always pointed at test-scratch paths (never the real
-// ~/.local/state/{stackfork,isolated-dev}): the port allocator added in
-// task 8.1 reads every manifest under both dirs, and a live test must never
-// touch the author's real, running instances even read-only.
+// default state directories, current or legacy): the port allocator added
+// in task 8.1 reads every manifest under both dirs, and a live test must
+// never touch the author's real, running instances even read-only.
 func (li liveInstance) cli(args ...string) []string {
 	base := []string{"--root", li.root, "--state-dir", li.state}
 	if li.legacyState != "" {
