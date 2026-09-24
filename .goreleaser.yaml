@@ -1,0 +1,75 @@
+version: 2
+
+# Declared explicitly (rather than inferred from `git remote`) because this
+# repo has no remote configured yet: nothing is pushed until the maintainer
+# creates github.com/pedropinheiro75/stackfork (task 12.4).
+release:
+  github:
+    owner: pedropinheiro75
+    name: stackfork
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: stackfork
+    main: ./cmd/stackfork
+    binary: stackfork
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/pedropinheiro75/stackfork/internal/cli.Version={{ .Version }}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+# The human-maintained history lives in CHANGELOG.md; the release notes
+# GoReleaser generates fall back to the git log between tags when there is
+# no CHANGELOG.md section to lift (GoReleaser has no built-in "extract this
+# section of a Markdown file" pipe), grouped and filtered below.
+changelog:
+  use: git
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+
+# `brews` (Homebrew Formulas) is deprecated as of GoReleaser v2.10 in favor
+# of `homebrew_casks`; `goreleaser check` warns on `brews`, so this uses the
+# non-deprecated section (see https://goreleaser.com/deprecations/#brews).
+homebrew_casks:
+  - name: stackfork
+    binaries:
+      - stackfork
+    repository:
+      owner: pedropinheiro75
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: "https://github.com/pedropinheiro75/stackfork"
+    description: "Run N isolated copies of a project's Docker Compose stack, one per Git worktree/branch"

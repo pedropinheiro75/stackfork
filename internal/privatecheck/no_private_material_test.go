@@ -36,10 +36,14 @@ var denylist = []string{
 //   - CHANGELOG.md: history necessarily names what changed.
 //   - LICENSE: the copyright holder's name (design.md D4).
 //   - openspec/changes/: internal planning docs, scrubbed in task 12.3.
+//   - .goreleaser.yaml: like go.mod's module path, GoReleaser needs the
+//     real GitHub owner login (task 4.2's release.github/homebrew_casks
+//     repository owner), which is the "pedropinheiro" account name.
 var allowedFiles = map[string]bool{
 	"internal/identity/identity.go": true,
 	"CHANGELOG.md":                  true,
 	"LICENSE":                       true,
+	".goreleaser.yaml":              true,
 	"internal/privatecheck/no_private_material_test.go": true, // holds the denylist itself
 }
 
@@ -101,7 +105,10 @@ func TestNoPrivateMaterial(t *testing.T) {
 			return nil
 		}
 		if d.IsDir() {
-			if d.Name() == ".git" {
+			// .git is VCS internals; dist/ is GoReleaser's gitignored build
+			// output (task 4.2), never committed, so neither belongs to
+			// "the repo" this test scrubs.
+			if d.Name() == ".git" || rel == "dist" {
 				return filepath.SkipDir
 			}
 			return nil
