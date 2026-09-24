@@ -60,6 +60,28 @@ func TestVersion(t *testing.T) {
 	}
 }
 
+// TestLearn checks `stackfork --root DIR learn` writes .stackfork/ for a
+// plain directory with no Git checkout (task 13.2): learn must not require
+// one, unlike every other action.
+func TestLearn(t *testing.T) {
+	root := filepath.Join(moduleRoot(t), "testdata", "learn", "no-compose")
+	defer os.RemoveAll(filepath.Join(root, ".stackfork"))
+
+	out, stderr, code := runCLI(t, "--root", root, "learn")
+	if code != 0 {
+		t.Fatalf("learn failed: code=%d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(out, `"status": "draft"`) {
+		t.Fatalf("expected draft status in output, got %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatalf("expected knowledge.json to be written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".stackfork", "knowledge.md")); err != nil {
+		t.Fatalf("expected knowledge.md to be written: %v", err)
+	}
+}
+
 const fixtureCompose = `services:
   db:
     image: postgres:17

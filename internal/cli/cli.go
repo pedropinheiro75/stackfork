@@ -51,7 +51,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 	rest := top.Args()
 	if len(rest) == 0 {
-		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, version)")
+		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, learn, version)")
 	}
 	action := rest[0]
 	subArgs := rest[1:]
@@ -65,6 +65,18 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if rootArg == "" {
 		rootArg = "."
 	}
+
+	// learn is a deterministic, offline scan (task 13.2, design.md D10): it
+	// works on a plain directory, Compose or not, so unlike every other
+	// action it does not require a Git checkout or branch.
+	if action == "learn" {
+		root, err := identity.ResolvePath(rootArg)
+		if err != nil {
+			return 0, err
+		}
+		return 0, cmdLearn(stdout, root)
+	}
+
 	toplevel, err := gitToplevel(rootArg)
 	if err != nil {
 		return 0, err

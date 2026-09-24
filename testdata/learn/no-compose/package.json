@@ -1,0 +1,8 @@
+{
+  "name": "fixture-no-compose-app",
+  "private": true,
+  "scripts": {
+    "dev": "node server.js",
+    "test": "node --test"
+  }
+}

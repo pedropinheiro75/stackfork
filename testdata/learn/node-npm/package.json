@@ -1,0 +1,8 @@
+{
+  "name": "fixture-node-npm-app",
+  "private": true,
+  "scripts": {
+    "dev": "node server.js",
+    "test": "node --test"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "fixture-nuxt-bun-app",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch server/index.ts",
+    "build": "nuxt build",
+    "db:migrate": "bun run drizzle-kit migrate",
+    "db:seed": "bun run scripts/seed.ts",
+    "test": "bun test"
+  }
+}
