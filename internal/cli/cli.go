@@ -20,6 +20,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
+	"github.com/pedropinheiro75/stackfork/internal/proxy"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -56,7 +57,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 	rest := top.Args()
 	if len(rest) == 0 {
-		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, learn, version)")
+		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, route, proxy, doctor, learn, version)")
 	}
 	action := rest[0]
 	subArgs := rest[1:]
@@ -71,6 +72,18 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		rootArg = "."
 	}
 
+	// State dir resolution needs only flags, not a Git checkout, so proxy and
+	// doctor (neither of which is scoped to one checkout+branch) can use it
+	// before the git.toplevel below, same as learn.
+	newStateBase, err := resolveStateDir(*stateDirFlag, identity.StateDir)
+	if err != nil {
+		return 0, err
+	}
+	legacyStateBase, err := resolveStateDir(*legacyStateDirFlag, identity.LegacyStateDir)
+	if err != nil {
+		return 0, err
+	}
+
 	// learn is a deterministic, offline scan (task 13.2, design.md D10): it
 	// works on a plain directory, Compose or not, so unlike every other
 	// action it does not require a Git checkout or branch.
@@ -80,6 +93,15 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 			return 0, err
 		}
 		return 0, cmdLearn(stdout, root)
+	}
+	// proxy and doctor operate on the tool's shared state, not one instance,
+	// so they too skip the Git checkout/branch resolution below (task
+	// 9.1/9.6).
+	if action == "proxy" {
+		return cmdProxy(stdout, stderr, subArgs, newStateBase, legacyStateBase)
+	}
+	if action == "doctor" {
+		return cmdDoctor(stdout, subArgs, newStateBase)
 	}
 
 	toplevel, err := gitToplevel(rootArg)
@@ -91,15 +113,6 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		return 0, err
 	}
 	branch, err := currentBranch(root)
-	if err != nil {
-		return 0, err
-	}
-
-	newStateBase, err := resolveStateDir(*stateDirFlag, identity.StateDir)
-	if err != nil {
-		return 0, err
-	}
-	legacyStateBase, err := resolveStateDir(*legacyStateDirFlag, identity.LegacyStateDir)
 	if err != nil {
 		return 0, err
 	}
@@ -160,13 +173,15 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	case "prepare":
 		return 0, cmdPrepare(stdout, subArgs, root, branch, project, instanceDir, *npmrcFlag, secretFlag, newStateBase, legacyStateBase)
 	case "up":
-		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir)
+		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "down":
-		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir)
+		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "status", "urls":
-		return 0, cmdStatusURLs(stdout, action, subArgs, root, branch, project, instanceDir)
+		return 0, cmdStatusURLs(stdout, action, subArgs, root, branch, project, instanceDir, newStateBase)
 	case "run", "exec":
-		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir)
+		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
+	case "route":
+		return 0, cmdRoute(stdout, stderr, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	default:
 		return 2, fmt.Errorf("unknown action %q", action)
 	}
@@ -554,7 +569,7 @@ func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, insta
 
 // --- status/urls ---------------------------------------------------------
 
-func cmdStatusURLs(stdout io.Writer, action string, subArgs []string, root, branch, project, instanceDir string) error {
+func cmdStatusURLs(stdout io.Writer, action string, subArgs []string, root, branch, project, instanceDir, newStateBase string) error {
 	info, err := loadAndValidateManifest(instanceDir, root, branch, project, action)
 	if err != nil {
 		return err
@@ -583,6 +598,26 @@ func cmdStatusURLs(stdout io.Writer, action string, subArgs []string, root, bran
 			return err
 		}
 		lines := compose.EndpointLines(rows, hostname, info.HTTPPorts, info.HTTPSPorts)
+		// Task 9.4, design.md D7 layer 3: once the shared proxy is running
+		// and actually publishing this instance's primary HTTP service, that
+		// service's line switches to the portless (or proxy-port) URL, since
+		// that's the URL that actually works. Every other published line
+		// (a database port, a secondary service, ...) is unaffected.
+		if running, _ := proxy.IsRunning(proxy.ContainerName()); running {
+			if configData, err := os.ReadFile(configPath); err == nil {
+				if model, err := compose.DecodeJSON(configData); err == nil {
+					if service, target, https, ok := compose.PrimaryHTTPService(model); ok {
+						if _, found := compose.PublishedHostPort(rows, service, target); found {
+							proxyPort, err := proxy.ReadPort(newStateBase)
+							if err == nil {
+								lines = replacePrimaryLine(lines, service, https,
+									compose.PrimaryLine(service, hostname, https, proxyPort))
+							}
+						}
+					}
+				}
+			}
+		}
 		if len(lines) == 0 {
 			fmt.Fprintln(stdout, "No published endpoints; check status or start the stack.")
 		} else {
@@ -603,6 +638,23 @@ func cmdStatusURLs(stdout io.Writer, action string, subArgs []string, root, bran
 	return nil
 }
 
+// replacePrimaryLine swaps the EndpointLines entry for (service, scheme)
+// with newLine (the proxied form); appends it if no matching line exists
+// (a host-run primary, task 9.3, has none to replace).
+func replacePrimaryLine(lines []string, service string, https bool, newLine string) []string {
+	prefix := service + ": http"
+	if https {
+		prefix = service + ": https"
+	}
+	for i, l := range lines {
+		if strings.HasPrefix(l, prefix) {
+			lines[i] = newLine
+			return lines
+		}
+	}
+	return append(lines, newLine)
+}
+
 // --- up/down/run/exec ------------------------------------------------------
 
 func parseDownFlags(subArgs []string) (instance string, volumes bool, err error) {
@@ -616,7 +668,7 @@ func parseDownFlags(subArgs []string) (instance string, volumes bool, err error)
 	return instance, volumes, nil
 }
 
-func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string, root, branch, project, instanceDir string) (int, error) {
+func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string) (int, error) {
 	var build bool
 	var profiles, services stringList
 	waitTimeout := 180
@@ -781,6 +833,16 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 	cmd.Stderr = stderr
 	cmd.Stdin = os.Stdin
 	runErr := cmd.Run()
+
+	// Task 9.2, design.md D7 layer 3: `up` and `down` are exactly the two
+	// points where which instances are running (and their currently
+	// published ports) can have changed, so the proxy's Caddyfile is stale
+	// until reloaded from every manifest. Best effort: a reload problem
+	// (or the proxy simply not running) never fails up/down itself.
+	if runErr == nil && (action == "up" || action == "down") {
+		reloadProxyIfRunning(stderr, newStateBase, legacyStateBase)
+	}
+
 	if runErr == nil {
 		return 0, nil
 	}

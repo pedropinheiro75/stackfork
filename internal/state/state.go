@@ -33,6 +33,12 @@ type Manifest struct {
 	// Empty when the instance was prepared with --random-ports, or is a
 	// legacy (idv-) instance never re-prepared with --reassign-ports.
 	Ports        []PortAlloc       `json:"ports,omitempty"`
+	// Routes are host-run app registrations added via `route add <name>
+	// <port>` (task 9.3, design.md D7 layer 3): name -> the port the app
+	// listens on, on this instance's own hostname, routed by the shared proxy
+	// to host.docker.internal:<port>. Stored per-instance since the CLI
+	// already resolves one instance per checkout+branch.
+	Routes       map[string]int    `json:"routes,omitempty"`
 	Files        []string          `json:"files"`
 	EnvFile      *string           `json:"env_file"`
 	Inputs       map[string]string `json:"inputs"`

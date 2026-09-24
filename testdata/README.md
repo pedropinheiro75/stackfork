@@ -16,3 +16,6 @@ directory with one `compose.yaml`; nothing here names a real project.
 - `pg14-missing-initdb/`: a `postgres` service on `postgres:14` with a bind mount of a `db.sql`
   init file that does not exist in a scratch checkout. Exercises adapting/removing a broken
   bind mount via a volume override, alongside a healthcheck.
+- `http-echo/`: a `web` service on `hashicorp/http-echo`, publishing 5678 and declaring it via
+  `io.stackfork.http` (task 7.2). Used by the hostname proxy's live tests (task 9.2) to prove
+  two instances each reach their own app through the shared Caddy proxy.

@@ -426,3 +426,95 @@ func TestDeclaredHTTPSPortWinsOverFixedList(t *testing.T) {
 		t.Fatalf("got %v want [%s]", lines, want)
 	}
 }
+
+// Task 9.2: io.stackfork.primary=true wins even when a lower-sorted service
+// also declares an HTTP port.
+func TestPrimaryHTTPServiceExplicitLabelWins(t *testing.T) {
+	model, err := DecodeJSON([]byte(`{
+		"services": {
+			"admin": {"labels": {"` + identity.LabelHTTP + `": "9000"}},
+			"web": {"labels": {"` + identity.LabelHTTP + `": "3000", "` + identity.LabelPrimary + `": "true"}}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, target, https, ok := PrimaryHTTPService(model)
+	if !ok || service != "web" || target != 3000 || https {
+		t.Fatalf("got service=%s target=%d https=%v ok=%v", service, target, https, ok)
+	}
+}
+
+// Task 9.2: with no io.stackfork.primary label, the first declared HTTP
+// service by name wins.
+func TestPrimaryHTTPServiceFirstDeclared(t *testing.T) {
+	model, err := DecodeJSON([]byte(`{
+		"services": {
+			"web": {"labels": {"` + identity.LabelHTTPS + `": "8443"}},
+			"admin": {"labels": {"` + identity.LabelHTTP + `": "9000"}}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, target, https, ok := PrimaryHTTPService(model)
+	if !ok || service != "admin" || target != 9000 || https {
+		t.Fatalf("got service=%s target=%d https=%v ok=%v", service, target, https, ok)
+	}
+}
+
+// Task 9.2: with no declared label at all, fall back to the same
+// fixed-port guess EndpointLines uses.
+func TestPrimaryHTTPServiceInferredFallback(t *testing.T) {
+	model, err := DecodeJSON([]byte(`{
+		"services": {
+			"db": {"ports": [{"target": 5432}]},
+			"web": {"ports": [{"target": 3000}]}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, target, https, ok := PrimaryHTTPService(model)
+	if !ok || service != "web" || target != 3000 || https {
+		t.Fatalf("got service=%s target=%d https=%v ok=%v", service, target, https, ok)
+	}
+}
+
+func TestPrimaryHTTPServiceNoneQualifies(t *testing.T) {
+	model, err := DecodeJSON([]byte(`{"services": {"db": {"ports": [{"target": 5432}]}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, ok := PrimaryHTTPService(model); ok {
+		t.Fatal("expected no primary HTTP service for a bare database port")
+	}
+}
+
+// Task 9.2: PublishedHostPort re-resolves a service's currently published
+// host port from `docker compose ps` rows, the way a random-port/legacy
+// instance's route is re-resolved on every proxy reload.
+func TestPublishedHostPort(t *testing.T) {
+	rows, err := PublicStatus(`{"Service": "web", "Publishers": [{"TargetPort": 3000, "PublishedPort": 51234, "Protocol": "tcp"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, ok := PublishedHostPort(rows, "web", 3000)
+	if !ok || port != 51234 {
+		t.Fatalf("got port=%d ok=%v", port, ok)
+	}
+	if _, ok := PublishedHostPort(rows, "web", 9999); ok {
+		t.Fatal("expected no match for an unpublished target port")
+	}
+}
+
+// Task 9.4: PrimaryLine is portless on the default proxy port, and appends
+// :port for a non-default one.
+func TestPrimaryLine(t *testing.T) {
+	if got := PrimaryLine("web", "eup-274.localhost", false, 80); got != "web: http://eup-274.localhost" {
+		t.Fatalf("got %q", got)
+	}
+	if got := PrimaryLine("web", "eup-274.localhost", true, 8443); got != "web: https://eup-274.localhost:8443" {
+		t.Fatalf("got %q", got)
+	}
+}

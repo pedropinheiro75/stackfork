@@ -157,6 +157,137 @@ func DeclaredHTTPPorts(model interface{}) (httpPorts, httpsPorts []int) {
 	return sortedPortSet(httpSet), sortedPortSet(httpsSet)
 }
 
+// PrimaryHTTPService picks the one service the hostname proxy routes an
+// instance's hostname to (task 9.2, design.md D7 layer 3): the service
+// labelled io.stackfork.primary=true, else the first service (by name) that
+// declares an HTTP/HTTPS port via label, else the first service whose
+// published ports list contains one of the fixed-list guesses EndpointLines
+// already uses (80/443/3000/8080/5050). Returns ok=false when nothing
+// qualifies.
+func PrimaryHTTPService(model interface{}) (service string, target int, https bool, ok bool) {
+	m, mapOk := asMap(model)
+	if !mapOk {
+		return "", 0, false, false
+	}
+	services, _ := asMap(m["services"])
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	labelled := func(name string) (int, bool, bool) {
+		svc, svcOk := asMap(services[name])
+		if !svcOk {
+			return 0, false, false
+		}
+		labels, _ := asMap(svc["labels"])
+		if labels == nil {
+			return 0, false, false
+		}
+		httpSet, httpsSet := map[int]bool{}, map[int]bool{}
+		collectPorts(labels[identity.LabelHTTP], httpSet)
+		collectPorts(labels[identity.LabelHTTPS], httpsSet)
+		if ports := sortedPortSet(httpSet); len(ports) > 0 {
+			return ports[0], false, true
+		}
+		if ports := sortedPortSet(httpsSet); len(ports) > 0 {
+			return ports[0], true, true
+		}
+		return 0, false, false
+	}
+	isPrimary := func(name string) bool {
+		svc, svcOk := asMap(services[name])
+		if !svcOk {
+			return false
+		}
+		labels, _ := asMap(svc["labels"])
+		return labels != nil && truthy(labels[identity.LabelPrimary])
+	}
+
+	for _, name := range names {
+		if !isPrimary(name) {
+			continue
+		}
+		if t, isHTTPS, found := labelled(name); found {
+			return name, t, isHTTPS, true
+		}
+	}
+	for _, name := range names {
+		if t, isHTTPS, found := labelled(name); found {
+			return name, t, isHTTPS, true
+		}
+	}
+	// Inferred fallback: the same fixed-port guess EndpointLines uses, in
+	// declaration order (80/443 first, since those are unambiguous).
+	guesses := []struct {
+		port  int
+		https bool
+	}{{80, false}, {443, true}, {3000, false}, {8080, false}, {5050, false}}
+	for _, name := range names {
+		svc, svcOk := asMap(services[name])
+		if !svcOk {
+			continue
+		}
+		portsList, _ := asList(svc["ports"])
+		for _, guess := range guesses {
+			for _, raw := range portsList {
+				port, portOk := asMap(raw)
+				if !portOk {
+					continue
+				}
+				if isTarget(port["target"], int64(guess.port)) {
+					return name, guess.port, guess.https, true
+				}
+			}
+		}
+	}
+	return "", 0, false, false
+}
+
+// PublishedHostPort returns the currently published host port for a
+// service's target port, read from `docker compose ps` rows (task 9.2: a
+// random-port/legacy instance has no stable allocation, so the proxy
+// re-resolves this on every reload instead of trusting the manifest).
+func PublishedHostPort(rows []StatusRow, service string, target int) (int, bool) {
+	for _, row := range rows {
+		if row.Service != service {
+			continue
+		}
+		for _, pub := range row.Publishers {
+			if !isTarget(pub["TargetPort"], int64(target)) {
+				continue
+			}
+			n, ok := pub["PublishedPort"].(json.Number)
+			if !ok {
+				continue
+			}
+			i, err := n.Int64()
+			if err != nil {
+				continue
+			}
+			return int(i), true
+		}
+	}
+	return 0, false
+}
+
+// PrimaryLine formats the URL line `urls` prints for an instance's primary
+// HTTP service once the shared proxy is actually routing it (task 9.4,
+// design.md D7 layer 3): portless, or with the proxy's own port appended
+// when that isn't 80.
+func PrimaryLine(service, hostname string, https bool, proxyPort int) string {
+	scheme := "http"
+	if https {
+		scheme = "https"
+	}
+	url := fmt.Sprintf("%s://%s", scheme, hostname)
+	if proxyPort != 80 {
+		url = fmt.Sprintf("%s:%d", url, proxyPort)
+	}
+	return fmt.Sprintf("%s: %s", service, url)
+}
+
 func collectPorts(v interface{}, into map[int]bool) {
 	s, ok := v.(string)
 	if !ok || s == "" {

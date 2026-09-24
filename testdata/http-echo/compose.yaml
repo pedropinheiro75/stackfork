@@ -1,0 +1,8 @@
+services:
+  web:
+    image: hashicorp/http-echo:latest
+    command: ["-text=stackfork-http-echo-fixture", "-listen=:5678"]
+    ports:
+      - "5678:5678"
+    labels:
+      io.stackfork.http: "5678"
