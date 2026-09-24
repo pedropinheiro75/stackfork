@@ -33,6 +33,15 @@ const (
 	// Value is a comma-separated list of target ports, e.g. "5173,3000".
 	LabelHTTP  = LabelNS + ".http"
 	LabelHTTPS = LabelNS + ".https"
+	// LabelPrimary marks the one service the hostname proxy routes an
+	// instance's hostname to, when a service declares more than one HTTP/HTTPS
+	// port (task 9.2, design.md D7 layer 3): "io.stackfork.primary=true".
+	// Without it, the proxy falls back to the first declared/inferred HTTP
+	// service (compose.PrimaryHTTPService).
+	LabelPrimary = LabelNS + ".primary"
+	// LabelProxy marks the tool-owned Caddy container itself (task 9.1),
+	// never a user service, so `gc` and other instance scans can skip it.
+	LabelProxy = LabelNS + ".proxy"
 	// StateDirName is the directory under ~/.local/state holding instance state.
 	StateDirName = "stackfork"
 	// RenderProject is the throwaway Compose project name used only to render

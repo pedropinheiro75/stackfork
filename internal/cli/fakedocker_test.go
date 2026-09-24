@@ -18,6 +18,8 @@ import (
 //   - `docker ps --filter label=<legacy root label>=...` -> $DOCKER_FAKE_PS_LEGACY (empty by default)
 //   - `docker ps ...`          -> $DOCKER_FAKE_PS (empty by default)
 //   - `docker compose ... ps --format json` -> $DOCKER_FAKE_STATUS (empty by default)
+//   - `docker inspect -f {{.State.Running}} ...` -> $DOCKER_FAKE_PROXY_RUNNING (false by default)
+//   - `docker inspect -f {{(index ...HostPort}} ...` -> $DOCKER_FAKE_PROXY_PORT (empty by default)
 //   - anything else -> succeeds silently
 func installFakeDocker(t *testing.T) (logPath string) {
 	t.Helper()
@@ -48,6 +50,13 @@ if [ "$1" = "ps" ]; then
   case " $* " in
     *"` + identity.LegacyLabelRoot + `"*) printf '%s' "$DOCKER_FAKE_PS_LEGACY" ;;
     *) printf '%s' "$DOCKER_FAKE_PS" ;;
+  esac
+  exit 0
+fi
+if [ "$1" = "inspect" ]; then
+  case " $* " in
+    *".State.Running"*) printf '%s' "${DOCKER_FAKE_PROXY_RUNNING:-false}" ;;
+    *) printf '%s' "$DOCKER_FAKE_PROXY_PORT" ;;
   esac
   exit 0
 fi
