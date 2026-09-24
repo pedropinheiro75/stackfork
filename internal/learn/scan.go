@@ -57,9 +57,14 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 			return nil, err
 		}
 		k.Facts.Services = servicesFromRendered(rendered)
-		envFilePaths = envFilesUnderRoot(rendered, root)
-		for _, f := range envFilePaths {
-			inputs[f] = true
+		// A project's real env_file (e.g. .env) is typically gitignored, so
+		// a fresh checkout commonly declares one that doesn't exist yet;
+		// that's a fact for the recipe/gotchas step, not a scan failure.
+		for _, f := range envFilesUnderRoot(rendered, root) {
+			if fileExists(f) {
+				envFilePaths = append(envFilePaths, f)
+				inputs[f] = true
+			}
 		}
 
 		findings, err := compose.IsolateDryRun(rendered, root, renderProject, "")

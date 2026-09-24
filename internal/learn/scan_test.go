@@ -166,6 +166,22 @@ func TestScanRecordsIsolationFindings(t *testing.T) {
 	}
 }
 
+// A compose file's env_file target commonly doesn't exist in a fresh
+// checkout (it's typically gitignored, e.g. `.env`): Scan must record that
+// rather than fail (found scanning a real project's fresh clone).
+func TestScanToleratesMissingEnvFile(t *testing.T) {
+	if !hasDocker(t) {
+		t.Skip("docker compose not available")
+	}
+	k, err := Scan(fixture("missing-env-file"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(k.Facts.Services) != 1 {
+		t.Fatalf("expected the scan to still record services, got %+v", k.Facts.Services)
+	}
+}
+
 // Task 13.2: WriteKnowledge writes knowledge.json/knowledge.md/.gitignore
 // under .stackfork/.
 func TestWriteKnowledge(t *testing.T) {
