@@ -46,6 +46,8 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	npmrcFlag := top.String("npmrc", "", "")
 	stateDirFlag := top.String("state-dir", "", "")
 	legacyStateDirFlag := top.String("legacy-state-dir", "", "")
+	var profileDirFlag stringList
+	top.Var(&profileDirFlag, "profile-dir", "")
 	if err := top.Parse(args); err != nil {
 		return 2, fmt.Errorf("%s", err.Error())
 	}
@@ -147,7 +149,11 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 
 	switch action {
 	case "where":
-		return 0, cmdWhere(stdout, root, branch, project, instanceDir, newStateBase, legacyStateBase)
+		profileDirs, err := resolveProfileDirs(profileDirFlag)
+		if err != nil {
+			return 0, err
+		}
+		return 0, cmdWhere(stdout, root, branch, project, instanceDir, newStateBase, legacyStateBase, profileDirs)
 	case "prepare":
 		return 0, cmdPrepare(stdout, subArgs, root, branch, project, instanceDir, *npmrcFlag)
 	case "up":
@@ -226,9 +232,10 @@ type whereOutput struct {
 	Hostname          string        `json:"hostname"`
 	State             string        `json:"state"`
 	PreparedInstances []preparedRef `json:"prepared_instances"`
+	Profiles          []ProfileInfo `json:"profiles"`
 }
 
-func cmdWhere(stdout io.Writer, root, branch, project, instanceDir, newStateBase, legacyStateBase string) error {
+func cmdWhere(stdout io.Writer, root, branch, project, instanceDir, newStateBase, legacyStateBase string, profileDirs []string) error {
 	manifestPath := filepath.Join(instanceDir, "manifest.json")
 	saved, err := state.ReadManifest(manifestPath)
 	if err != nil {
@@ -269,6 +276,7 @@ func cmdWhere(stdout io.Writer, root, branch, project, instanceDir, newStateBase
 	out := whereOutput{
 		Project: project, Root: root, Branch: branch, Hostname: hostname,
 		State: instanceDir, PreparedInstances: instances,
+		Profiles: profileInfos(profileDirs),
 	}
 	return printJSON(stdout, out)
 }

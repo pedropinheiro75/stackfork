@@ -130,6 +130,20 @@ func StateDir() (string, error) {
 	return stateDir(StateDirName)
 }
 
+// ConfigDir returns the config directory (~/.config/stackfork), or
+// $STACKFORK_CONFIG_DIR when set. The override exists so tests don't touch
+// the real ~/.config/stackfork/profiles/ (task 5.2).
+func ConfigDir() (string, error) {
+	if dir := os.Getenv("STACKFORK_CONFIG_DIR"); dir != "" {
+		return dir, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "stackfork"), nil
+}
+
 // LegacyStateDir returns the previous version's default state directory
 // (~/.local/state/isolated-dev), read-only.
 func LegacyStateDir() (string, error) {
