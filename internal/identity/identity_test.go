@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Ported from scripts/test_compose.py's check(): checkout+branch identity
+// Ported from the original Python CLI's check(): checkout+branch identity
 // and hostname validation.
 func TestProjectNameIdentity(t *testing.T) {
 	root := t.TempDir()

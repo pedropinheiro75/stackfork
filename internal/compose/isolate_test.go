@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Ported from scripts/test_compose.py's check(): isolate() safety and refusals.
+// Ported from the original Python CLI's check(): isolate() safety and refusals.
 func TestIsolateRewritesAndScopesNames(t *testing.T) {
 	a := t.TempDir()
 	b := t.TempDir()
@@ -149,7 +149,7 @@ func hasDocker(t *testing.T) bool {
 	return exec.Command("docker", "compose", "version").Run() == nil
 }
 
-// Ported from scripts/test_compose.py's check(): a real `docker compose
+// Ported from the original Python CLI's check(): a real `docker compose
 // config` round trip, including literal $ handling.
 func TestRenderIsolateRoundTrip(t *testing.T) {
 	if !hasDocker(t) {

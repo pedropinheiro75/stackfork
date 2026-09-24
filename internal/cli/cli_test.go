@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -22,6 +23,19 @@ func initRepo(t *testing.T) string {
 	return dir
 }
 
+// moduleRoot finds the repo root from this test file's own path, so live
+// tests can locate testdata/ regardless of the working directory `go test`
+// is invoked from.
+func moduleRoot(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not determine test file path")
+	}
+	// internal/cli/cli_test.go -> repo root
+	return filepath.Join(filepath.Dir(file), "..", "..")
+}
+
 func runCLI(t *testing.T, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	var out, errBuf bytes.Buffer
@@ -36,7 +50,7 @@ const fixtureCompose = `services:
       - "5432:5432"
 `
 
-// Ported behaviour from scripts/test_compose.py: prepare/up/status/urls/down
+// Ported behaviour from the original Python CLI's test suite: prepare/up/status/urls/down
 // build the expected docker/compose invocations, using a fake docker on
 // PATH so no daemon is needed (config still renders for real).
 func TestLifecycleBuildsExpectedDockerInvocations(t *testing.T) {

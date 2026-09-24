@@ -140,7 +140,7 @@ func (li liveInstance) where(t *testing.T) map[string]interface{} {
 	return m
 }
 
-// TestLiveSixInstances ports scripts/test_compose.py's live(): six real
+// TestLiveSixInstances ports the original Python CLI's live(): six real
 // Postgres instances from the testdata/ fixtures (two checkouts per
 // fixture), run concurrently, exercising unique ports/volumes, separate
 // data, restart persistence, orphan removal on re-prepare, the
