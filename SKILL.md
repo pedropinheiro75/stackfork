@@ -1,5 +1,5 @@
 ---
-name: isolated-dev
+name: stackfork
 description: Use when preparing, starting, testing, or cleaning up a local development environment in a Git worktree or branch with the stackfork CLI, especially when Docker Compose ports, databases, volumes, or app configuration could collide with another checkout.
 ---
 
