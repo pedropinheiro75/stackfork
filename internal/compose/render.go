@@ -45,6 +45,8 @@ func Render(root string, files []string, envFile string, hostname string) (inter
 
 	env := DockerEnv()
 	if hostname != "" {
+		// RR_DEV_HOSTNAME is deprecated: kept only so adapters written
+		// before the sf rename keep working (design.md D1/D2).
 		env = append(env, "DEV_HOSTNAME="+hostname, "RR_DEV_HOSTNAME="+hostname)
 	}
 

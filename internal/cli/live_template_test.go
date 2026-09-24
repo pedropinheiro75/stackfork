@@ -84,7 +84,7 @@ func TestLiveTemplate(t *testing.T) {
 			}
 		}
 		pkgJSON, _ := json.Marshal(map[string]interface{}{
-			"name":    "idv-template-fixture",
+			"name":    "sf-template-fixture",
 			"scripts": map[string]string{"dev": "node server.mjs"},
 		})
 		if err := os.WriteFile(filepath.Join(root, "package.json"), pkgJSON, 0o644); err != nil {

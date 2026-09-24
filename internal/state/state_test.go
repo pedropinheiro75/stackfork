@@ -8,7 +8,7 @@ import (
 
 func TestDirPermissions(t *testing.T) {
 	base := t.TempDir()
-	dir, err := Dir(base, "idv-app-abc")
+	dir, err := Dir(base, "sf-app-abc")
 	if err != nil {
 		t.Fatal(err)
 	}

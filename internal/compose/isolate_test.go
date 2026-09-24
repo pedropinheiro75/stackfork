@@ -27,11 +27,11 @@ func TestIsolateRewritesAndScopesNames(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ma, err := Isolate(source, a, "idv-a-000", "")
+	ma, err := Isolate(source, a, "sf-a-000", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	mb, err := Isolate(source, b, "idv-b-000", "")
+	mb, err := Isolate(source, b, "sf-b-000", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestIsolateRefusals(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Isolate(model, a, "idv-a-000", ""); err == nil {
+		if _, err := Isolate(model, a, "sf-a-000", ""); err == nil {
 			t.Fatalf("accepted unsafe config: %s", raw)
 		}
 	}
@@ -177,7 +177,7 @@ func TestRenderIsolateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	model, err := Isolate(rendered, dir, "idv-a-000", env)
+	model, err := Isolate(rendered, dir, "sf-a-000", env)
 	if err != nil {
 		t.Fatal(err)
 	}

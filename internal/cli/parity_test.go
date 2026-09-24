@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 )
 
 // moduleRoot finds the repo root from this test file's own path, so the
@@ -85,6 +87,52 @@ func stripKeys(v interface{}, keys ...string) interface{} {
 	return out
 }
 
+// normalizeIdentity strips the D1 prefix rename (task 3.7 switched the Go
+// CLI to sf- while scripts/compose.py stays idv- until it is deleted in
+// 3.11) from a decoded prepare output / manifest / compose.json snapshot,
+// so the golden comparison still proves everything else byte-for-byte
+// identical (design.md D4: "ignoring only the prefix fields"). Three kinds
+// of value carry the prefix: the project name itself (and anything derived
+// from it - volume/network names, build image tags), and the
+// io.<ns>.root service label key.
+func normalizeIdentity(v interface{}, project string) interface{} {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(val))
+		for k, sub := range val {
+			key := k
+			if key == identity.LegacyLabelRoot || key == identity.LabelRoot {
+				key = "LABEL_ROOT"
+			}
+			out[key] = normalizeIdentity(sub, project)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(val))
+		for i, sub := range val {
+			out[i] = normalizeIdentity(sub, project)
+		}
+		return out
+	case string:
+		return strings.ReplaceAll(val, project, "PROJECT")
+	default:
+		return val
+	}
+}
+
+// stripInstancePrefix removes whichever instance prefix (current or
+// legacy) a project name carries, leaving the slug+hash identity that must
+// be identical between the two tools for the same checkout+branch.
+func stripInstancePrefix(name string) string {
+	if s, ok := strings.CutPrefix(name, identity.Prefix+"-"); ok {
+		return s
+	}
+	if s, ok := strings.CutPrefix(name, identity.LegacyPrefix+"-"); ok {
+		return s
+	}
+	return name
+}
+
 func assertStructurallyEqual(t *testing.T, label string, a, b interface{}) {
 	t.Helper()
 	if !reflect.DeepEqual(a, b) {
@@ -150,23 +198,26 @@ func TestGoldenParitySuccess(t *testing.T) {
 			if err := json.Unmarshal([]byte(goOut), &goPrepared); err != nil {
 				t.Fatal(err)
 			}
-			assertStructurallyEqual(t, "prepare output",
-				stripKeys(pyPrepared, "state"), stripKeys(goPrepared, "state"))
-
 			pyProject := pyPrepared.(map[string]interface{})["project"].(string)
 			goProject := goPrepared.(map[string]interface{})["project"].(string)
-			if pyProject != goProject {
-				t.Fatalf("expected identical project names for the same checkout+branch, got %q vs %q", pyProject, goProject)
+			if stripInstancePrefix(pyProject) != stripInstancePrefix(goProject) {
+				t.Fatalf("expected identical slug+hash identity for the same checkout+branch, got %q vs %q", pyProject, goProject)
 			}
+
+			assertStructurallyEqual(t, "prepare output",
+				normalizeIdentity(stripKeys(pyPrepared, "state"), pyProject),
+				normalizeIdentity(stripKeys(goPrepared, "state"), goProject))
 
 			pyManifest := readJSONFile(t, filepath.Join(pyState, pyProject, "manifest.json"))
 			goManifest := readJSONFile(t, filepath.Join(goState, goProject, "manifest.json"))
 			assertStructurallyEqual(t, "manifest",
-				stripKeys(pyManifest, "config_sha256"), stripKeys(goManifest, "config_sha256"))
+				normalizeIdentity(stripKeys(pyManifest, "config_sha256"), pyProject),
+				normalizeIdentity(stripKeys(goManifest, "config_sha256"), goProject))
 
 			pySnapshot := readJSONFile(t, filepath.Join(pyState, pyProject, "compose.json"))
 			goSnapshot := readJSONFile(t, filepath.Join(goState, goProject, "compose.json"))
-			assertStructurallyEqual(t, "compose.json snapshot", pySnapshot, goSnapshot)
+			assertStructurallyEqual(t, "compose.json snapshot",
+				normalizeIdentity(pySnapshot, pyProject), normalizeIdentity(goSnapshot, goProject))
 		})
 	}
 }

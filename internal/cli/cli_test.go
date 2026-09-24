@@ -54,8 +54,8 @@ func TestLifecycleBuildsExpectedDockerInvocations(t *testing.T) {
 		t.Fatalf("prepare output not JSON: %v\n%s", err, out)
 	}
 	project, _ := prepared["project"].(string)
-	if !strings.HasPrefix(project, "idv-") {
-		t.Fatalf("expected idv- prefixed project, got %q", project)
+	if !strings.HasPrefix(project, "sf-") {
+		t.Fatalf("expected sf- prefixed project, got %q", project)
 	}
 	if prepared["result"] != "prepared; not started" {
 		t.Fatalf("unexpected result: %v", prepared["result"])

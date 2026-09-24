@@ -64,7 +64,7 @@ python3 "$SKILL/scripts/compose.py" --root "$CHECKOUT" --npmrc "$PROJECT_NPMRC" 
 
 The helper remembers the file path and reads the GitHub token for `up`/`run`, supplying it to the Compose secret through the process environment. It supports a literal token or a single `${VARIABLE}` reference. It does not print or store that token in the manifest. Never select another project's credentials. No checkout-specific `manage.py` is needed. For private packages, use an explicit Compose secret rather than token build arguments.
 
-Select actual source filenames/services; do not assume the database service is called `db`. A standalone generated Nuxt stack needs only its one `-f` file. `prepare` creates a private canonical snapshot under `~/.local/state/isolated-dev/`; it does not start Docker. It replaces host bindings with Docker-allocated loopback ports, namespaces volumes/networks/build images, removes fixed container names, and rejects unsafe shared resource configurations. This is an isolation check, not a sandbox for arbitrary application code or external service URLs.
+Select actual source filenames/services; do not assume the database service is called `db`. A standalone generated Nuxt stack needs only its one `-f` file. `prepare` creates a private canonical snapshot under `~/.local/state/stackfork/`; it does not start Docker. It replaces host bindings with Docker-allocated loopback ports, namespaces volumes/networks/build images, removes fixed container names, and rejects unsafe shared resource configurations. This is an isolation check, not a sandbox for arbitrary application code or external service URLs.
 
 Use `where` to get the identity/state path and other prepared branch instances for this checkout. `status` returns machine-readable state/ports; `urls` prints browser and dependency endpoints without credentials. HTTP schemes are inferred from common target ports; custom ports/protocols still need project-specific interpretation. `up --build` starts all non-profile services; use `--profile NAME` explicitly when needed. `run SERVICE COMMAND...` runs a one-off container with no dependencies; start required dependencies first. `exec SERVICE COMMAND...` executes in an existing container. These commands always target the snapshot. Re-run `prepare` after changing source Compose or the selected env file; never edit the generated snapshot directly.
 
@@ -72,7 +72,7 @@ Run migrations explicitly after database readiness, using this project's real sc
 
 For cleanup, use `down` (retains data). If someone already switched branches, `where` lists the old identity and `down --instance NAME` can stop that old stack from the same checkout. `up`/`run` refuse while another managed branch stack is running from that folder; this cannot undo source changes an already-running bind mount has seen. `down --volumes` deletes this instance's data and needs the user's existing authorization for that deletion. Never infer deletion authorization from a request to restart. Stop before removing its worktree.
 
-Legacy compatibility: existing `isolated-dev` paths, state directory, resource identities and ownership labels are retained so running stacks remain manageable. `RR_DEV_HOSTNAME` is still supplied for existing adapters; new adapters use `DEV_HOSTNAME`.
+Legacy compatibility: existing `idv-` prefixed paths, state directory, resource identities and ownership labels are retained so running stacks remain manageable. `RR_DEV_HOSTNAME` is still supplied for existing adapters; new adapters use `DEV_HOSTNAME`.
 
 ## Verify and report
 
