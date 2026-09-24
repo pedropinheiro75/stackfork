@@ -16,9 +16,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -57,7 +59,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 	rest := top.Args()
 	if len(rest) == 0 {
-		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, route, proxy, doctor, learn, version)")
+		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, route, proxy, list, doctor, learn, version)")
 	}
 	action := rest[0]
 	subArgs := rest[1:]
@@ -102,6 +104,11 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 	if action == "doctor" {
 		return cmdDoctor(stdout, subArgs, newStateBase)
+	}
+	// list, like proxy and doctor, reports on the whole machine's state, not
+	// one checkout+branch (design.md D1/task 1.4).
+	if action == "list" {
+		return cmdList(stdout, subArgs, newStateBase, legacyStateBase)
 	}
 
 	toplevel, err := gitToplevel(rootArg)
@@ -296,6 +303,45 @@ func cmdWhere(stdout io.Writer, root, branch, project, instanceDir, newStateBase
 		Profiles: profileInfos(profileDirs),
 	}
 	return printJSON(stdout, out)
+}
+
+// --- list ----------------------------------------------------------------
+
+// cmdList prints the shared inventory (task 1.4, design.md D1): a table by
+// default, the same Inventory struct as JSON with --json. The dashboard's
+// GET /api/instances renders the identical struct, so the two can never
+// disagree (task 2.1's golden test).
+func cmdList(stdout io.Writer, subArgs []string, newStateBase, legacyStateBase string) (int, error) {
+	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonFlag := fs.Bool("json", false, "")
+	if err := fs.Parse(subArgs); err != nil {
+		return 2, fmt.Errorf("%s", err.Error())
+	}
+
+	inv, err := inventory.Collect(inventory.Options{
+		NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, Version: Version,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if *jsonFlag {
+		return 0, printJSON(stdout, inv)
+	}
+
+	w := tabwriter.NewWriter(stdout, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(w, "PROJECT\tSTATE\tBRANCH\tLEGACY\tROOT")
+	for _, i := range inv.Instances {
+		legacy := "-"
+		if i.Legacy {
+			legacy = "legacy"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", i.Project, i.State, i.Branch, legacy, i.Root)
+	}
+	if len(inv.Instances) == 0 {
+		fmt.Fprintln(w, "(no instances)")
+	}
+	return 0, w.Flush()
 }
 
 // recordedPorts scans every manifest.json under both state directories

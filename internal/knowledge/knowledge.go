@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 // CurrentSchema is the only schema version this build understands. Load
@@ -352,6 +353,23 @@ func (k *Knowledge) Markdown() string {
 	}
 
 	return b.String()
+}
+
+// StaleInputs returns the recorded input paths whose content no longer
+// matches the hash captured at scan time (design.md D10: "verified ->
+// stale when any recorded input hash changes"), or nil if every input is
+// unchanged (or unreadable, which also counts as changed - a missing input
+// is itself a reason to re-run learn). Callers only need this when Status is
+// verified; a draft doesn't track staleness.
+func (k *Knowledge) StaleInputs() []string {
+	var changed []string
+	for _, in := range k.Inputs {
+		h, err := state.SHA256File(in.Path)
+		if err != nil || h != in.SHA256 {
+			changed = append(changed, in.Path)
+		}
+	}
+	return changed
 }
 
 func orDefault(s, def string) string {
