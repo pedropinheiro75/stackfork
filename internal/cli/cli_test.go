@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 func initRepo(t *testing.T) string {
@@ -122,8 +125,33 @@ func TestUpRefusesWhenAnotherBranchStackRuns(t *testing.T) {
 	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "prepare", "-f", composePath); code != 0 {
 		t.Fatalf("prepare failed: %s", stderr)
 	}
-	t.Setenv("DOCKER_FAKE_PS", "idv-some-other-project\n")
+	t.Setenv("DOCKER_FAKE_PS", "sf-some-other-project\n")
 	_, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "up")
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "Another branch stack still runs from this checkout") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
+// TestUpRefusesWhenLegacyBranchStackRuns ports design.md D2's "branch-switch
+// guard sees both namespaces" scenario: a container labelled under the
+// legacy root label namespace (identity.LegacyLabelRoot) must refuse `up`
+// exactly like one labelled under the current namespace.
+func TestUpRefusesWhenLegacyBranchStackRuns(t *testing.T) {
+	installFakeDocker(t)
+	root := initRepo(t)
+	composePath := filepath.Join(root, "compose.yaml")
+	os.WriteFile(composePath, []byte(fixtureCompose), 0o600)
+	stateDir := filepath.Join(t.TempDir(), "state")
+	legacyStateDir := filepath.Join(t.TempDir(), "legacy-state")
+
+	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "--legacy-state-dir", legacyStateDir, "prepare", "-f", composePath); code != 0 {
+		t.Fatalf("prepare failed: %s", stderr)
+	}
+	t.Setenv("DOCKER_FAKE_PS_LEGACY", "idv-some-legacy-project\n")
+	_, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "--legacy-state-dir", legacyStateDir, "up")
 	if code != 1 {
 		t.Fatalf("expected exit 1, got %d", code)
 	}
@@ -229,5 +257,153 @@ func TestWhere(t *testing.T) {
 	instances, _ := w["prepared_instances"].([]interface{})
 	if len(instances) != 1 {
 		t.Fatalf("expected one prepared instance, got %v", instances)
+	}
+}
+
+// writeSyntheticLegacyInstance writes a manifest.json + compose.json under
+// legacyStateDir as if the previous (idv-) version of the tool had prepared
+// this checkout+branch, without running any real prepare. Used by task
+// 3.8's legacy-compatibility tests, which must not touch the real legacy
+// state directory (identity.LegacyStateDir).
+func writeSyntheticLegacyInstance(t *testing.T, legacyStateDir, root, branch string) (project string) {
+	t.Helper()
+	// A real prepare always stores the resolved checkout path (Path.resolve()
+	// in Python, identity.ResolvePath in Go); match that here so the
+	// root-ownership checks in `where`/`status`/`urls`/`down` see the same
+	// value the CLI itself computes.
+	root, err := identity.ResolvePath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err = identity.LegacyProjectName(root, branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(legacyStateDir, project)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "compose.json")
+	snapshot := `{"name":"` + project + `","services":{"db":{"image":"postgres:17","ports":[{"target":5432,"host_ip":"127.0.0.1","mode":"ingress"}]}}}`
+	if err := os.WriteFile(configPath, []byte(snapshot), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := state.SHA256File(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostname, err := identity.BrowserHostname(project, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := &state.Manifest{
+		Project: project, Root: root, Branch: branch, Hostname: hostname,
+		Files: []string{configPath}, Inputs: map[string]string{}, ConfigSHA256: hash,
+	}
+	if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), manifest); err != nil {
+		t.Fatal(err)
+	}
+	return project
+}
+
+// TestLegacyInstanceKeepsOperatingOnLegacyState ports design.md D2/task
+// 3.8: a checkout+branch that already has a legacy manifest must keep
+// resolving `where`, `status`, `urls`, `down` (and would keep `prepare`
+// writing) to the legacy state dir and project name, never a new sf-
+// instance, and never touching the real legacy state dir.
+func TestLegacyInstanceKeepsOperatingOnLegacyState(t *testing.T) {
+	log := installFakeDocker(t)
+	root := initRepo(t)
+	stateDir := filepath.Join(t.TempDir(), "state")
+	legacyStateDir := filepath.Join(t.TempDir(), "legacy-state")
+
+	branch, err := currentBranch(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyProject := writeSyntheticLegacyInstance(t, legacyStateDir, root, branch)
+
+	out, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "--legacy-state-dir", legacyStateDir, "where")
+	if code != 0 {
+		t.Fatalf("where failed: %s", stderr)
+	}
+	var w map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &w); err != nil {
+		t.Fatal(err)
+	}
+	if w["project"] != legacyProject {
+		t.Fatalf("expected where to resolve the legacy instance %q, got %v", legacyProject, w["project"])
+	}
+	resolvedLegacyStateDir, err := identity.ResolvePath(legacyStateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(w["state"].(string), resolvedLegacyStateDir) {
+		t.Fatalf("expected state under the legacy state dir %q, got %v", resolvedLegacyStateDir, w["state"])
+	}
+	instances, _ := w["prepared_instances"].([]interface{})
+	if len(instances) != 1 {
+		t.Fatalf("expected the legacy instance listed in prepared_instances, got %v", instances)
+	}
+
+	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "--legacy-state-dir", legacyStateDir, "status"); code != 0 {
+		t.Fatalf("status failed: %s", stderr)
+	}
+	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "--legacy-state-dir", legacyStateDir, "urls"); code != 0 {
+		t.Fatalf("urls failed: %s", stderr)
+	}
+
+	os.Truncate(log, 0)
+	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "--legacy-state-dir", legacyStateDir, "down"); code != 0 {
+		t.Fatalf("down failed: %s", stderr)
+	}
+	data, _ := os.ReadFile(log)
+	if !strings.Contains(string(data), "-p "+legacyProject) {
+		t.Fatalf("expected down to target the legacy project %q, log:\n%s", legacyProject, data)
+	}
+
+	// New state dir must stay untouched: no instance was ever created there.
+	if entries, err := os.ReadDir(stateDir); err == nil && len(entries) != 0 {
+		t.Fatalf("expected no new-namespace instance to be created, found %v", entries)
+	}
+}
+
+// TestDownInstanceAcceptsLegacyAndNewNames ports design.md D2's "legacy
+// instance name accepted" scenario: `down --instance` must accept both
+// sf- and idv- names and resolve each from its own state dir.
+func TestDownInstanceAcceptsLegacyAndNewNames(t *testing.T) {
+	log := installFakeDocker(t)
+	root := initRepo(t)
+	composePath := filepath.Join(root, "compose.yaml")
+	os.WriteFile(composePath, []byte(fixtureCompose), 0o600)
+	stateDir := filepath.Join(t.TempDir(), "state")
+	legacyStateDir := filepath.Join(t.TempDir(), "legacy-state")
+
+	branch, err := currentBranch(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyProject := writeSyntheticLegacyInstance(t, legacyStateDir, root, branch)
+
+	out, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "--legacy-state-dir", legacyStateDir, "prepare", "-f", composePath)
+	if code != 0 {
+		t.Fatalf("prepare failed: %s", stderr)
+	}
+	// A fresh checkout+branch with a legacy instance already present must
+	// still be the one prepare operates on (it must not create a second,
+	// sf- prefixed copy).
+	var prepared map[string]interface{}
+	json.Unmarshal([]byte(out), &prepared)
+	if prepared["project"] != legacyProject {
+		t.Fatalf("expected prepare to target the legacy project %q, got %v", legacyProject, prepared["project"])
+	}
+
+	os.Truncate(log, 0)
+	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "--legacy-state-dir", legacyStateDir, "down", "--instance", legacyProject); code != 0 {
+		t.Fatalf("down --instance (legacy) failed: %s", stderr)
+	}
+	data, _ := os.ReadFile(log)
+	if !strings.Contains(string(data), "-p "+legacyProject) {
+		t.Fatalf("expected down --instance to target %q, log:\n%s", legacyProject, data)
 	}
 }

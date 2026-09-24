@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 )
 
 // installFakeDocker puts a fake `docker` first on PATH for the duration of
@@ -13,6 +15,7 @@ import (
 // docker (so `prepare` still produces a genuine snapshot), and otherwise
 // returns canned output without touching a real daemon:
 //   - `docker context inspect` -> a local unix-socket context
+//   - `docker ps --filter label=<legacy root label>=...` -> $DOCKER_FAKE_PS_LEGACY (empty by default)
 //   - `docker ps ...`          -> $DOCKER_FAKE_PS (empty by default)
 //   - `docker compose ... ps --format json` -> $DOCKER_FAKE_STATUS (empty by default)
 //   - anything else -> succeeds silently
@@ -42,7 +45,10 @@ if [ "$1" = "context" ] && [ "$2" = "inspect" ]; then
   exit 0
 fi
 if [ "$1" = "ps" ]; then
-  printf '%s' "$DOCKER_FAKE_PS"
+  case " $* " in
+    *"` + identity.LegacyLabelRoot + `"*) printf '%s' "$DOCKER_FAKE_PS_LEGACY" ;;
+    *) printf '%s' "$DOCKER_FAKE_PS" ;;
+  esac
   exit 0
 fi
 exit 0

@@ -39,6 +39,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	rootFlag := top.String("root", "", "")
 	npmrcFlag := top.String("npmrc", "", "")
 	stateDirFlag := top.String("state-dir", "", "")
+	legacyStateDirFlag := top.String("legacy-state-dir", "", "")
 	if err := top.Parse(args); err != nil {
 		return 2, fmt.Errorf("%s", err.Error())
 	}
@@ -65,21 +66,37 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	project, err := identity.ProjectName(root, branch)
+
+	newStateBase, err := resolveStateDir(*stateDirFlag, identity.StateDir)
+	if err != nil {
+		return 0, err
+	}
+	legacyStateBase, err := resolveStateDir(*legacyStateDirFlag, identity.LegacyStateDir)
 	if err != nil {
 		return 0, err
 	}
 
-	stateDirArg := *stateDirFlag
-	if stateDirArg == "" {
-		stateDirArg, err = identity.StateDir()
-		if err != nil {
-			return 0, err
-		}
-	}
-	stateBase, err := identity.ResolvePath(stateDirArg)
+	// D2: a checkout+branch that already has a legacy (idv-) instance keeps
+	// operating on it - prepare, up, down, status and urls all target the
+	// legacy state dir and project name, so a running stack is never
+	// orphaned and a second copy is never created. A checkout+branch with
+	// no legacy state gets the current (sf-) identity.
+	project, err := identity.ProjectName(root, branch)
 	if err != nil {
 		return 0, err
+	}
+	stateBase := newStateBase
+	legacyProject, err := identity.LegacyProjectName(root, branch)
+	if err != nil {
+		return 0, err
+	}
+	legacyManifest, err := state.ReadManifest(filepath.Join(legacyStateBase, legacyProject, "manifest.json"))
+	if err != nil {
+		return 0, err
+	}
+	if legacyManifest != nil {
+		project = legacyProject
+		stateBase = legacyStateBase
 	}
 
 	if action == "down" {
@@ -92,6 +109,14 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 				return 0, errors.New("Invalid instance name")
 			}
 			project = instance
+			// The manifest's stored project is authoritative for which
+			// Compose project an instance belongs to; the prefix only
+			// decides which state directory to look it up in.
+			if identity.IsLegacyInstance(instance) {
+				stateBase = legacyStateBase
+			} else {
+				stateBase = newStateBase
+			}
 		}
 	}
 
@@ -99,7 +124,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 
 	switch action {
 	case "where":
-		return 0, cmdWhere(stdout, root, branch, project, stateBase, instanceDir)
+		return 0, cmdWhere(stdout, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "prepare":
 		return 0, cmdPrepare(stdout, subArgs, root, branch, project, instanceDir, *npmrcFlag)
 	case "up":
@@ -113,6 +138,32 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	default:
 		return 2, fmt.Errorf("unknown action %q", action)
 	}
+}
+
+// resolveStateDir resolves a --state-dir/--legacy-state-dir flag value,
+// falling back to defaultFn (identity.StateDir or identity.LegacyStateDir)
+// when the flag is empty.
+func resolveStateDir(flagValue string, defaultFn func() (string, error)) (string, error) {
+	dir := flagValue
+	if dir == "" {
+		d, err := defaultFn()
+		if err != nil {
+			return "", err
+		}
+		dir = d
+	}
+	return identity.ResolvePath(dir)
+}
+
+// projectNameForInstance recomputes the expected project name for root and
+// branch using whichever prefix (current or legacy) the instance already
+// carries, so the branch-ownership check in loadAndValidateManifest works
+// for instances resolved from either state directory (task 3.8).
+func projectNameForInstance(root, branch, instanceProject string) (string, error) {
+	if identity.IsLegacyInstance(instanceProject) {
+		return identity.LegacyProjectName(root, branch)
+	}
+	return identity.ProjectName(root, branch)
 }
 
 // --- git helpers -----------------------------------------------------------
@@ -154,7 +205,7 @@ type whereOutput struct {
 	PreparedInstances []preparedRef `json:"prepared_instances"`
 }
 
-func cmdWhere(stdout io.Writer, root, branch, project, stateBase, instanceDir string) error {
+func cmdWhere(stdout io.Writer, root, branch, project, instanceDir, newStateBase, legacyStateBase string) error {
 	manifestPath := filepath.Join(instanceDir, "manifest.json")
 	saved, err := state.ReadManifest(manifestPath)
 	if err != nil {
@@ -169,19 +220,26 @@ func cmdWhere(stdout io.Writer, root, branch, project, stateBase, instanceDir st
 		return err
 	}
 
-	matches, err := filepath.Glob(filepath.Join(stateBase, identity.Prefix+"-*", "manifest.json"))
-	if err != nil {
-		return err
-	}
-	sort.Strings(matches)
 	instances := []preparedRef{}
-	for _, m := range matches {
-		info, err := state.ReadManifest(m)
-		if err != nil || info == nil {
-			continue
+	for _, dirPrefix := range []struct {
+		base, prefix string
+	}{
+		{newStateBase, identity.Prefix},
+		{legacyStateBase, identity.LegacyPrefix},
+	} {
+		matches, err := filepath.Glob(filepath.Join(dirPrefix.base, dirPrefix.prefix+"-*", "manifest.json"))
+		if err != nil {
+			return err
 		}
-		if info.Root == root {
-			instances = append(instances, preparedRef{Project: info.Project, Branch: info.Branch})
+		sort.Strings(matches)
+		for _, m := range matches {
+			info, err := state.ReadManifest(m)
+			if err != nil || info == nil {
+				continue
+			}
+			if info.Root == root {
+				instances = append(instances, preparedRef{Project: info.Project, Branch: info.Branch})
+			}
 		}
 	}
 
@@ -510,14 +568,20 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 			}
 			os.Setenv("NPM_TOKEN", token)
 		}
-		active, err := exec.Command("docker", "ps", "--filter", "label="+identity.LabelRoot+"="+root,
-			"--format", `{{.Label "com.docker.compose.project"}}`).Output()
-		if err != nil {
-			return 0, fmt.Errorf("Command '[docker ps ...]' returned non-zero exit status")
-		}
-		for _, name := range strings.Fields(string(active)) {
-			if name != project {
-				return 0, errors.New("Another branch stack still runs from this checkout. Use where, then down --instance NAME before starting this branch.")
+		// D2: another branch stack from this checkout must be refused
+		// whether it was labelled under the current namespace or the
+		// legacy one, so an existing idv- stack is never orphaned and a
+		// second copy of it is never started alongside it.
+		for _, label := range []string{identity.LabelRoot, identity.LegacyLabelRoot} {
+			active, err := exec.Command("docker", "ps", "--filter", "label="+label+"="+root,
+				"--format", `{{.Label "com.docker.compose.project"}}`).Output()
+			if err != nil {
+				return 0, fmt.Errorf("Command '[docker ps ...]' returned non-zero exit status")
+			}
+			for _, name := range strings.Fields(string(active)) {
+				if name != project {
+					return 0, errors.New("Another branch stack still runs from this checkout. Use where, then down --instance NAME before starting this branch.")
+				}
 			}
 		}
 	}
@@ -595,7 +659,7 @@ func loadAndValidateManifest(instanceDir, root, branch, project, action string) 
 	if err != nil {
 		return nil, err
 	}
-	branchProject, err := identity.ProjectName(root, info.Branch)
+	branchProject, err := projectNameForInstance(root, info.Branch, info.Project)
 	if err != nil {
 		return nil, err
 	}
