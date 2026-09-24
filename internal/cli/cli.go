@@ -1,4 +1,4 @@
-// Package cli ports scripts/compose.py's main(): argument parsing and the
+// Package cli ports the original Python CLI's main(): argument parsing and the
 // prepare/where/up/status/urls/down/run/exec dispatch, with exact parity
 // (same identity, same refusals, same error text, same exit codes).
 package cli

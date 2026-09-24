@@ -47,4 +47,4 @@ STACKFORK_LIVE=1 go test ./...
 
 Live tests use synthetic Compose fixtures in `testdata/`, including a synthetic Node streaming app for the template/proxy checks, and may download public images/packages. Neither establishes compatibility with any real application.
 
-State lives under `~/.local/state/stackfork`. Legacy `idv-` Docker identities and the `~/.local/state/isolated-dev` state path are retained to avoid orphaning existing stacks.
+State lives under `~/.local/state/stackfork`. Legacy `idv-` Docker identities and their previous state path are still read, so existing stacks are never orphaned.

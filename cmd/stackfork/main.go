@@ -1,4 +1,4 @@
-// Command stackfork is the Go port of scripts/compose.py.
+// Command stackfork is the Docker Compose isolation CLI.
 package main
 
 import (

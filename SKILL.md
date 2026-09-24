@@ -63,7 +63,7 @@ stackfork --root "$CHECKOUT" status
 
 After the first explicit selection, `prepare` remembers the ordered source files and env path. For a new standard template setup it defaults to `.agent-dev/nuxt.compose.yaml` and `.agent-dev/runtime.env`; it never defaults to the developer's `.env`.
 
-State (manifests, snapshots, locks) lives under `~/.local/state/stackfork`; legacy `idv-` instances created before the Go rewrite are still read from `~/.local/state/isolated-dev` and stay fully manageable (`where`, `status`, `urls`, `down`, `up`).
+State (manifests, snapshots, locks) lives under `~/.local/state/stackfork`; legacy `idv-` instances created before the Go rewrite are still read from their previous state directory and stay fully manageable (`where`, `status`, `urls`, `down`, `up`).
 
 For registry access, an existing `NPM_TOKEN` takes precedence. Otherwise explicitly select the authorized registry configuration for this same project once:
 

@@ -35,15 +35,11 @@ var denylist = []string{
 //   - internal/identity/identity.go: the legacy-compat constants themselves.
 //   - CHANGELOG.md: history necessarily names what changed.
 //   - LICENSE: the copyright holder's name (design.md D4).
-//   - scripts/compose.py: the Python CLI stays byte-for-byte as the
-//     previous idv- tool until task 3.11 deletes it (its own manifest lists
-//     this exception, so it does not have to be added by hand).
 //   - openspec/changes/: internal planning docs, scrubbed in task 12.3.
 var allowedFiles = map[string]bool{
 	"internal/identity/identity.go": true,
 	"CHANGELOG.md":                  true,
 	"LICENSE":                       true,
-	"scripts/compose.py":            true,
 	"internal/privatecheck/no_private_material_test.go": true, // holds the denylist itself
 }
 

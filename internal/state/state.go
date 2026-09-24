@@ -1,4 +1,4 @@
-// Package state ports scripts/compose.py's manifest read/write, private
+// Package state ports the original Python CLI's manifest read/write, private
 // atomic writes (0600/0700) and the per-instance flock.
 package state
 

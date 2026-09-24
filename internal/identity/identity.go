@@ -1,5 +1,5 @@
-// Package identity ports the naming, hashing and hostname rules from
-// scripts/compose.py's project_name/browser_hostname, then (task 3.7)
+// Package identity ports the naming, hashing and hostname rules from the
+// original Python CLI's project_name/browser_hostname, then (task 3.7)
 // switches the public identity to the "stackfork"/"sf" constants from
 // design.md D1. The legacy "idv" constants are kept so task 3.8 can still
 // read state and containers created by the previous identity; nothing new

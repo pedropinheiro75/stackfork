@@ -1,7 +1,7 @@
 # testdata
 
-Synthetic Docker Compose fixtures used by the isolation tests (`scripts/test_compose.py --live`
-today; reused by the Go tests once the CLI is ported). Each fixture is a self-contained
+Synthetic Docker Compose fixtures used by the isolation tests (`STACKFORK_LIVE=1 go test ./...`).
+Each fixture is a self-contained
 directory with one `compose.yaml`; nothing here names a real project.
 
 - `pg17-fixed-name/`: a `db` service on `postgres:17` with a fixed `container_name`, a fixed
