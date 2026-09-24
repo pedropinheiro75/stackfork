@@ -13,15 +13,36 @@ import (
 
 // Manifest mirrors the Python `info` dict written to manifest.json.
 type Manifest struct {
-	Project      string            `json:"project"`
-	Root         string            `json:"root"`
-	Branch       string            `json:"branch"`
-	Hostname     string            `json:"hostname"`
-	Npmrc        *string           `json:"npmrc"`
+	Project  string `json:"project"`
+	Root     string `json:"root"`
+	Branch   string `json:"branch"`
+	Hostname string `json:"hostname"`
+	// Npmrc is read-only compatibility for a manifest written before named
+	// secrets existed (task 6.2); new manifests leave it nil and store the
+	// same information as Secrets["npm_token"] instead. Use ResolvedSecrets,
+	// not this field directly.
+	Npmrc        *string           `json:"npmrc,omitempty"`
+	Secrets      map[string]string `json:"secrets,omitempty"`
 	Files        []string          `json:"files"`
 	EnvFile      *string           `json:"env_file"`
 	Inputs       map[string]string `json:"inputs"`
 	ConfigSHA256 string            `json:"config_sha256"`
+}
+
+// ResolvedSecrets returns the manifest's named secret references (never
+// values, design.md D6), folding in the legacy Npmrc key as the npm_token
+// secret (task 6.2) unless Secrets already names one explicitly.
+func (m *Manifest) ResolvedSecrets() map[string]string {
+	out := make(map[string]string, len(m.Secrets)+1)
+	for name, ref := range m.Secrets {
+		out[name] = ref
+	}
+	if m.Npmrc != nil {
+		if _, ok := out["npm_token"]; !ok {
+			out["npm_token"] = "npmrc:" + *m.Npmrc + "#npm.pkg.github.com"
+		}
+	}
+	return out
 }
 
 // Dir returns the per-instance state directory and ensures it exists with

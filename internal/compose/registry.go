@@ -1,33 +1,33 @@
 package compose
 
 import (
-	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
 )
-
-const registryTokenKey = "//npm.pkg.github.com/:_authToken"
 
 var (
 	variableRef  = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$`)
 	tokenCharset = regexp.MustCompile(`^[A-Za-z0-9_=-]+$`)
 )
 
-// RegistryToken mirrors Python's registry_token(path): reads only the
-// //npm.pkg.github.com/:_authToken entry from an npmrc-style file.
-func RegistryToken(path string) (string, error) {
+// RegistryTokenForHost reads the //<host>/:_authToken entry from an
+// npmrc-style file (task 6.1: any registry host, not just GitHub's), with an
+// optional ${VAR} indirection resolved from the process environment.
+func RegistryTokenForHost(path, host string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
+	key := fmt.Sprintf("//%s/:_authToken", host)
 	value := ""
 	for _, line := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
-		key, candidate, found := strings.Cut(line, "=")
+		k, candidate, found := strings.Cut(line, "=")
 		if !found {
 			continue
 		}
-		if strings.TrimSpace(key) == registryTokenKey {
+		if strings.TrimSpace(k) == key {
 			value = strings.Trim(strings.TrimSpace(candidate), "\"'")
 		}
 	}
@@ -35,7 +35,14 @@ func RegistryToken(path string) (string, error) {
 		value = os.Getenv(m[1])
 	}
 	if value == "" || !tokenCharset.MatchString(value) {
-		return "", errors.New("Selected npmrc has no usable GitHub registry token; supply NPM_TOKEN or a literal/environment-reference token entry")
+		return "", fmt.Errorf("npmrc has no usable token for %s; supply a literal or environment-reference token entry", host)
 	}
 	return value, nil
+}
+
+// RegistryToken mirrors Python's registry_token(path): reads only the
+// //npm.pkg.github.com/:_authToken entry from an npmrc-style file. Kept for
+// compatibility; new code resolves through ResolveSecret.
+func RegistryToken(path string) (string, error) {
+	return RegistryTokenForHost(path, "npm.pkg.github.com")
 }

@@ -48,6 +48,8 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	legacyStateDirFlag := top.String("legacy-state-dir", "", "")
 	var profileDirFlag stringList
 	top.Var(&profileDirFlag, "profile-dir", "")
+	var secretFlag stringList
+	top.Var(&secretFlag, "secret", "")
 	if err := top.Parse(args); err != nil {
 		return 2, fmt.Errorf("%s", err.Error())
 	}
@@ -155,15 +157,15 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		}
 		return 0, cmdWhere(stdout, root, branch, project, instanceDir, newStateBase, legacyStateBase, profileDirs)
 	case "prepare":
-		return 0, cmdPrepare(stdout, subArgs, root, branch, project, instanceDir, *npmrcFlag)
+		return 0, cmdPrepare(stdout, subArgs, root, branch, project, instanceDir, *npmrcFlag, secretFlag)
 	case "up":
-		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, *npmrcFlag)
+		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir)
 	case "down":
-		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, *npmrcFlag)
+		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir)
 	case "status", "urls":
 		return 0, cmdStatusURLs(stdout, action, subArgs, root, branch, project, instanceDir)
 	case "run", "exec":
-		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, *npmrcFlag)
+		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir)
 	default:
 		return 2, fmt.Errorf("unknown action %q", action)
 	}
@@ -291,7 +293,7 @@ type prepareOutput struct {
 	Result   string   `json:"result"`
 }
 
-func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, instanceDir, npmrcTop string) error {
+func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, instanceDir, npmrcTop string, secretFlags []string) error {
 	fs := flag.NewFlagSet("prepare", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var files stringList
@@ -394,16 +396,34 @@ func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, insta
 		inputHashes[p] = h
 	}
 
-	var npmrcOut *string
+	// Named secrets (task 6.1, design.md D6): start from whatever this
+	// instance already had (so a re-prepare without --secret keeps them,
+	// including one folded from a legacy manifest's npmrc key, task 6.2),
+	// then let --npmrc and --secret overlay by name. Only references are
+	// ever computed here - never a value.
+	secretRefs := map[string]string{}
+	if previous != nil {
+		secretRefs = previous.ResolvedSecrets()
+	}
 	if npmrcTop != "" {
-		resolved, err := identity.ResolvePath(npmrcTop)
+		resolvedNpmrc, err := identity.ResolvePath(npmrcTop)
 		if err != nil {
 			return err
 		}
-		npmrcOut = &resolved
-	} else if previous != nil {
-		npmrcOut = previous.Npmrc
+		secretRefs["npm_token"] = "npmrc:" + resolvedNpmrc + "#npm.pkg.github.com"
 	}
+	for _, raw := range secretFlags {
+		name, ref, err := compose.ParseSecretFlag(raw)
+		if err != nil {
+			return err
+		}
+		secretRefs[name] = ref
+	}
+	secretNames := make([]string, 0, len(secretRefs))
+	for name := range secretRefs {
+		secretNames = append(secretNames, name)
+	}
+	compose.WireSecrets(model, secretNames)
 
 	var envFileOut *string
 	if envFile != "" {
@@ -412,7 +432,7 @@ func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, insta
 
 	info := &state.Manifest{
 		Project: project, Root: root, Branch: branch, Hostname: hostname,
-		Npmrc: npmrcOut, Files: resolvedFiles, EnvFile: envFileOut, Inputs: inputHashes,
+		Secrets: secretRefs, Files: resolvedFiles, EnvFile: envFileOut, Inputs: inputHashes,
 	}
 
 	if err := state.WritePrivate(configPath, model); err != nil {
@@ -507,7 +527,7 @@ func parseDownFlags(subArgs []string) (instance string, volumes bool, err error)
 	return instance, volumes, nil
 }
 
-func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string, root, branch, project, instanceDir, npmrcTop string) (int, error) {
+func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string, root, branch, project, instanceDir string) (int, error) {
 	var build bool
 	var profiles, services stringList
 	waitTimeout := 180
@@ -588,16 +608,17 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 	}
 
 	if action == "up" || action == "run" {
-		npmrc := npmrcTop
-		if npmrc == "" && info.Npmrc != nil {
-			npmrc = *info.Npmrc
-		}
-		if npmrc != "" && os.Getenv("NPM_TOKEN") == "" {
-			token, err := compose.RegistryToken(npmrc)
+		// Named secrets (task 6.1, design.md D6): resolve each reference
+		// into its value now, not at prepare, so a rotated env var or
+		// npmrc token is picked up without re-preparing. Only the value
+		// goes into the process env passed to `docker compose`; it is
+		// never written to the manifest or the snapshot.
+		for name, ref := range info.ResolvedSecrets() {
+			value, err := compose.ResolveSecret(name, ref)
 			if err != nil {
 				return 0, err
 			}
-			os.Setenv("NPM_TOKEN", token)
+			os.Setenv(name, value)
 		}
 		// D2: another branch stack from this checkout must be refused
 		// whether it was labelled under the current namespace or the
