@@ -174,3 +174,63 @@ func TestLegacyManifestNpmrcKeyReadAsNamedSecret(t *testing.T) {
 		t.Fatalf("expected the explicit secret to win, got %q", resolved["npm_token"])
 	}
 }
+
+// Task 6.4 (canary): status, urls, where, the manifest and the snapshot
+// never contain a secret value.
+func TestSecretValueNeverLeaksIntoOutputsOrFiles(t *testing.T) {
+	log := installFakeDocker(t)
+	root := initRepo(t)
+	composePath := filepath.Join(root, "compose.yaml")
+	os.WriteFile(composePath, []byte(fixtureCompose), 0o600)
+	stateDir := filepath.Join(t.TempDir(), "state")
+
+	const canary = "canary-leak-check-6-4"
+	t.Setenv("SF_TEST_CANARY_VAR", canary)
+
+	out, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir,
+		"--secret", "npm_token=env:SF_TEST_CANARY_VAR", "prepare", "-f", composePath)
+	if code != 0 {
+		t.Fatalf("prepare failed: %s", stderr)
+	}
+	if strings.Contains(out, canary) {
+		t.Fatal("prepare output leaked the secret value")
+	}
+	var prepared map[string]interface{}
+	json.Unmarshal([]byte(out), &prepared)
+	stateDirOut := prepared["state"].(string)
+
+	os.Truncate(log, 0)
+	out, stderr, code = runCLI(t, "--root", root, "--state-dir", stateDir, "up", "--wait-timeout", "10")
+	if code != 0 {
+		t.Fatalf("up failed: %s", stderr)
+	}
+	if strings.Contains(out, canary) || strings.Contains(stderr, canary) {
+		t.Fatal("up output leaked the secret value")
+	}
+
+	t.Setenv("DOCKER_FAKE_STATUS", `{"ID":"c1","Name":"x-db-1","Service":"db","State":"running","Health":"","Publishers":[{"Protocol":"tcp","PublishedPort":54321,"TargetPort":5432,"URL":"127.0.0.1"}]}`+"\n")
+	for _, action := range []string{"status", "urls", "where"} {
+		out, stderr, code = runCLI(t, "--root", root, "--state-dir", stateDir, action)
+		if code != 0 {
+			t.Fatalf("%s failed: %s", action, stderr)
+		}
+		if strings.Contains(out, canary) {
+			t.Fatalf("%s output leaked the secret value: %s", action, out)
+		}
+	}
+
+	for _, name := range []string{"manifest.json", "compose.json"} {
+		data, err := os.ReadFile(filepath.Join(stateDirOut, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), canary) {
+			t.Fatalf("%s leaked the secret value", name)
+		}
+	}
+
+	logData, _ := os.ReadFile(log)
+	if strings.Contains(string(logData), canary) {
+		t.Fatal("docker invocation log leaked the secret value")
+	}
+}

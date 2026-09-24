@@ -157,6 +157,13 @@ func TestLiveTemplate(t *testing.T) {
 		}
 	}
 
+	// Task 6.0 (live check): the token reached the app container as a real
+	// Compose secret, and never as a value anywhere on disk.
+	tokenInContainer := strings.TrimSpace(stacks[0].run(t, "exec", "app", "cat", "/run/secrets/npm_token"))
+	if tokenInContainer != "synthetic-template-check-only" {
+		t.Fatalf("expected /run/secrets/npm_token inside the app container, got %q", tokenInContainer)
+	}
+
 	var ports []int
 	for i, li := range stacks {
 		slot := []string{"a", "b"}[i]
