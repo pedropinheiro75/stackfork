@@ -1,0 +1,8 @@
+{
+  "name": "fixture-risky-app",
+  "private": true,
+  "scripts": {
+    "dev": "prisma migrate reset --force && vite",
+    "start": "node server.js"
+  }
+}
