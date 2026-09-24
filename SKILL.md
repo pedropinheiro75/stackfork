@@ -11,6 +11,10 @@ Use the project's actual runtime, package manager and startup flow through `stac
 
 Run `stackfork where` (lists prepared instances and configured profiles) and `stackfork status` first. If `.stackfork/knowledge.md` is `verified`, apply its recorded adapter and recipe directly — no scan, no questions (`references/learning.md`). Otherwise run `stackfork learn`, read `.stackfork/knowledge.md`, and run the learn session in `references/learning.md`. Do not repeat a full discovery, or rewrite a launcher, for a routine restart of an unchanged adapter.
 
+## Follow profile context
+
+For each profile `stackfork where` lists with `"context": true`, follow that profile's `context.md` first, before anything below — it may point at a private reference and template for this project instead of the generic one. Profiles are private and never part of this repository.
+
 ## Prepare, start, verify, stop
 
 1. **Discover:** resolve the checkout with Git, read AGENTS.md/README, and adapt the project's real Compose stack (`references/adapting-compose.md`, or `references/nuxt-template.md` for a bare Nuxt app). Use a separate worktree per concurrent agent (`references/worktrees.md`).
