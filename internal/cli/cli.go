@@ -5,6 +5,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -59,7 +60,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 	rest := top.Args()
 	if len(rest) == 0 {
-		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, route, proxy, list, doctor, learn, version)")
+		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, route, proxy, list, dashboard, doctor, learn, version)")
 	}
 	action := rest[0]
 	subArgs := rest[1:]
@@ -109,6 +110,9 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	// one checkout+branch (design.md D1/task 1.4).
 	if action == "list" {
 		return cmdList(stdout, subArgs, newStateBase, legacyStateBase)
+	}
+	if action == "dashboard" {
+		return cmdDashboard(context.Background(), stdout, stderr, subArgs, newStateBase, legacyStateBase)
 	}
 
 	toplevel, err := gitToplevel(rootArg)

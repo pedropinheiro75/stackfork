@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stackfork dashboard</title>
+<link rel="stylesheet" href="/static/app.css">
+<meta name="stackfork-token" content="{{.Token}}">
+</head>
+<body>
+<header id="header">
+  <h1>stackfork <span id="version">{{.Version}}</span></h1>
+  <div id="status-bar">
+    <span id="docker-status" class="{{if .Docker.Reachable}}ok{{else}}down{{end}}">
+      Docker: {{if .Docker.Reachable}}ok{{else}}unreachable{{end}}
+    </span>
+    <span id="proxy-status" class="{{if .Proxy.Running}}ok{{else}}down{{end}}">
+      Proxy: {{if .Proxy.Running}}running on {{.Proxy.Port}}{{else}}stopped{{end}}
+    </span>
+    <span id="counts">{{.RunningCount}} / {{.Total}} running</span>
+  </div>
+  <div id="controls">
+    <input id="filter" type="text" placeholder="filter by project, branch or checkout">
+    <label><input id="running-only" type="checkbox"> running only</label>
+  </div>
+</header>
+
+<div id="docker-banner" class="banner" hidden>Docker is unreachable; showing the last known data.</div>
+
+<main id="instances">
+{{range .Groups}}
+  <section class="checkout" data-root="{{.Root}}">
+    <h2 class="checkout-root">{{.Root}}</h2>
+    <div class="checkout-cards">
+    {{range .Instances}}
+    <article class="card" data-project="{{.Project}}" data-state="{{.State}}">
+      <header class="card-header">
+        <span class="hostname">{{.Hostname}}</span>
+        <span class="branch">{{.Branch}}</span>
+        <span class="state state-{{.State}}">{{.State}}</span>
+        {{if .Legacy}}<span class="legacy-tag">legacy</span>{{end}}
+      </header>
+      {{if .Services}}
+      <ul class="services">
+        {{range .Services}}
+        <li class="service service-{{.State}}">
+          <span class="service-name">{{.Name}}</span>
+          <span class="service-state">{{.State}}{{if .Health}} ({{.Health}}){{end}}</span>
+          {{range .Endpoints}}
+          {{if or (eq .Scheme "http") (eq .Scheme "https")}}
+          <a class="endpoint" href="{{.URL}}" target="_blank" rel="noopener">{{.URL}}</a>
+          {{else}}
+          <span class="endpoint copyable">{{.URL}}</span>
+          {{end}}
+          {{end}}
+        </li>
+        {{end}}
+      </ul>
+      {{end}}
+      {{if .Knowledge}}
+      <span class="knowledge knowledge-{{.Knowledge.Status}}">knowledge: {{.Knowledge.Status}}</span>
+      {{end}}
+      {{if .Warnings}}
+      <ul class="warnings">
+        {{range .Warnings}}<li class="warning">{{.}}</li>{{end}}
+      </ul>
+      {{end}}
+      <div class="actions">
+        <button class="action" data-action="up" data-project="{{.Project}}">Up</button>
+        <button class="action" data-action="down" data-project="{{.Project}}">Down</button>
+      </div>
+    </article>
+    {{end}}
+    </div>
+  </section>
+{{end}}
+</main>
+
+<div id="activity-log"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
