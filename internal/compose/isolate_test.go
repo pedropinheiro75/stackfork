@@ -90,6 +90,51 @@ func TestIsolateRefusals(t *testing.T) {
 	}
 }
 
+// Task 13.3: collect-all mode reports every refusal and rewrite instead of
+// stopping at the first, each with a reason.
+func TestIsolateDryRunCollectsAllFindings(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir() // a writable bind outside the checkout, e.g. /local_db
+	source, err := DecodeJSON([]byte(`{
+		"services": {"db": {
+			"image": "postgres:17",
+			"container_name": "fixed-db",
+			"volumes": [
+				{"type": "bind", "source": "/var/run/docker.sock", "target": "/var/run/docker.sock"},
+				{"type": "bind", "source": "` + outside + `", "target": "/data"}
+			]
+		}},
+		"networks": {"default": {"external": true}}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	findings, err := IsolateDryRun(source, root, "sf-a-000", "")
+	if err != nil {
+		t.Fatalf("unexpected structural error: %v", err)
+	}
+
+	want := map[string]string{
+		"container_name":                 actionRewrite,
+		"external_resource":              actionRefuse,
+		"socket_mount":                   actionRefuse,
+		"writable_bind_outside_checkout": actionRefuse,
+	}
+	got := map[string]string{}
+	for _, f := range findings {
+		if f.Reason == "" {
+			t.Fatalf("finding %+v has no reason", f)
+		}
+		got[f.Kind] = f.Action
+	}
+	for kind, action := range want {
+		if got[kind] != action {
+			t.Fatalf("expected a %q finding with action %q, got findings: %+v", kind, action, findings)
+		}
+	}
+}
+
 func TestRegistryToken(t *testing.T) {
 	dir := t.TempDir()
 	registry := filepath.Join(dir, ".npmrc")
