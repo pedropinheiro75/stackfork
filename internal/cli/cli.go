@@ -22,6 +22,12 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
+// Version is the CLI version. It is stamped at build time via
+// `-ldflags "-X github.com/pedropinheiro75/stackfork/internal/cli.Version=..."`
+// (see .goreleaser.yaml); a build without that flag, such as `go build` or
+// `go install` from source, reports "dev".
+var Version = "dev"
+
 // Run mirrors Python's `if __name__ == '__main__': main()` wrapper,
 // including the "isolated-dev: <error>" / exit 1 formatting.
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -45,10 +51,15 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 	rest := top.Args()
 	if len(rest) == 0 {
-		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec)")
+		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, version)")
 	}
 	action := rest[0]
 	subArgs := rest[1:]
+
+	if action == "version" {
+		fmt.Fprintf(stdout, "stackfork version %s\n", Version)
+		return 0, nil
+	}
 
 	rootArg := *rootFlag
 	if rootArg == "" {

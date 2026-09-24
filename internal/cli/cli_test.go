@@ -43,6 +43,23 @@ func runCLI(t *testing.T, args ...string) (stdout, stderr string, code int) {
 	return out.String(), errBuf.String(), code
 }
 
+// TestVersion checks `stackfork version` prints the stamped Version (task
+// 4.2), and needs no Git checkout: it must work even run from outside any
+// repository, since it's the first thing an installer runs.
+func TestVersion(t *testing.T) {
+	old := Version
+	Version = "v1.2.3-test"
+	defer func() { Version = old }()
+
+	out, stderr, code := runCLI(t, "version")
+	if code != 0 {
+		t.Fatalf("version failed: code=%d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(out, "v1.2.3-test") {
+		t.Fatalf("expected output to contain version, got %q", out)
+	}
+}
+
 const fixtureCompose = `services:
   db:
     image: postgres:17
