@@ -267,3 +267,86 @@ func equalJSON(a, b interface{}) bool {
 	bb, _ := json.Marshal(b)
 	return strings.TrimSpace(string(ba)) == strings.TrimSpace(string(bb))
 }
+
+// Task 6.0: WireSecrets must declare the secret at the top level and grant
+// it only to a service that already references it by name, when one does.
+func TestWireSecretsGrantsExplicitConsumerOnly(t *testing.T) {
+	source, err := DecodeJSON([]byte(`{
+		"services": {
+			"app": {"build": {"context": "."}},
+			"worker": {"image": "x", "secrets": ["npm_token"]}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := Isolate(source, t.TempDir(), "sf-a-000", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	WireSecrets(model, []string{"npm_token"})
+
+	m := model.(map[string]interface{})
+	secrets, ok := m["secrets"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected a top-level secrets section, got %v", m["secrets"])
+	}
+	entry, ok := secrets["npm_token"].(map[string]interface{})
+	if !ok || entry["environment"] != "npm_token" {
+		t.Fatalf("expected npm_token: {environment: npm_token}, got %v", secrets["npm_token"])
+	}
+
+	services := m["services"].(map[string]interface{})
+	if _, has := services["app"].(map[string]interface{})["secrets"]; has {
+		t.Fatalf("app has no explicit reference and worker does; app must not be granted: %v", services["app"])
+	}
+	workerSecrets, _ := services["worker"].(map[string]interface{})["secrets"].([]interface{})
+	if len(workerSecrets) != 1 || workerSecrets[0] != "npm_token" {
+		t.Fatalf("expected worker to keep its own npm_token reference, got %v", workerSecrets)
+	}
+}
+
+// Task 6.0: with no explicit consumer, every service with a `build` is
+// granted the secret - this is how the template's `app` service (whose
+// nuxt.compose.yaml declares no `secrets:` of its own) gets npm_token.
+func TestWireSecretsFallsBackToBuildServices(t *testing.T) {
+	source, err := DecodeJSON([]byte(`{
+		"services": {
+			"app": {"build": {"context": "."}},
+			"db": {"image": "postgres:17"}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := Isolate(source, t.TempDir(), "sf-a-000", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	WireSecrets(model, []string{"npm_token"})
+
+	services := model.(map[string]interface{})["services"].(map[string]interface{})
+	appSecrets, _ := services["app"].(map[string]interface{})["secrets"].([]interface{})
+	if len(appSecrets) != 1 || appSecrets[0] != "npm_token" {
+		t.Fatalf("expected the build service granted npm_token, got %v", appSecrets)
+	}
+	if _, has := services["db"].(map[string]interface{})["secrets"]; has {
+		t.Fatalf("db has no build and is not an explicit consumer; must not be granted: %v", services["db"])
+	}
+}
+
+func TestWireSecretsNoNamesIsNoop(t *testing.T) {
+	source, err := DecodeJSON([]byte(`{"services": {"app": {"build": {"context": "."}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := Isolate(source, t.TempDir(), "sf-a-000", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	WireSecrets(model, nil)
+	m := model.(map[string]interface{})
+	if _, has := m["secrets"]; has {
+		t.Fatalf("expected no secrets section with no names, got %v", m["secrets"])
+	}
+}

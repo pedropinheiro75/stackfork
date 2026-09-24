@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/identity"
@@ -267,6 +268,110 @@ func isolate(source interface{}, root, project, envFile string, findings *[]Find
 	}
 
 	return model, nil
+}
+
+// WireSecrets adds a top-level `secrets: { NAME: { environment: NAME } }`
+// entry for each name (task 6.0/6.1, design.md D6) to an already-isolated
+// model, and grants each one to the services that need it: a service that
+// already references the secret name (short or long `secrets:` syntax)
+// keeps that reference; otherwise every service with a `build` is granted
+// it (this is how the template's `app` service, whose nuxt.compose.yaml
+// declares no `secrets:` of its own, gets npm_token). Only the name is
+// ever written here - the value lives solely in the process env passed to
+// `docker compose` at up/run. Call it after Isolate, before the model is
+// written to the snapshot.
+func WireSecrets(model interface{}, names []string) {
+	if len(names) == 0 {
+		return
+	}
+	m, ok := asMap(model)
+	if !ok {
+		return
+	}
+	services, _ := asMap(m["services"])
+	secretsSection, ok := asMap(m["secrets"])
+	if !ok {
+		secretsSection = map[string]interface{}{}
+		m["secrets"] = secretsSection
+	}
+	sorted := append([]string(nil), names...)
+	sort.Strings(sorted)
+	for _, name := range sorted {
+		secretsSection[name] = map[string]interface{}{"environment": name}
+		targets := explicitSecretConsumers(services, name)
+		if len(targets) == 0 {
+			targets = servicesWithBuild(services)
+		}
+		for _, svcName := range targets {
+			grantSecret(services, svcName, name)
+		}
+	}
+}
+
+// secretEntryName returns the secret name a service's `secrets:` list entry
+// refers to, in either short syntax (a plain string) or long syntax (an
+// object with a `source` field).
+func secretEntryName(entry interface{}) string {
+	if s, ok := entry.(string); ok {
+		return s
+	}
+	if m, ok := asMap(entry); ok {
+		if s, ok := m["source"].(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func explicitSecretConsumers(services map[string]interface{}, name string) []string {
+	var names []string
+	for svcName, raw := range services {
+		svc, ok := asMap(raw)
+		if !ok {
+			continue
+		}
+		list, ok := asList(svc["secrets"])
+		if !ok {
+			continue
+		}
+		for _, entry := range list {
+			if secretEntryName(entry) == name {
+				names = append(names, svcName)
+				break
+			}
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func servicesWithBuild(services map[string]interface{}) []string {
+	var names []string
+	for svcName, raw := range services {
+		svc, ok := asMap(raw)
+		if !ok {
+			continue
+		}
+		if truthy(svc["build"]) {
+			names = append(names, svcName)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func grantSecret(services map[string]interface{}, svcName, name string) {
+	svc, ok := asMap(services[svcName])
+	if !ok {
+		return
+	}
+	list, _ := asList(svc["secrets"])
+	for _, entry := range list {
+		if secretEntryName(entry) == name {
+			return
+		}
+	}
+	svc["secrets"] = append(list, name)
 }
 
 // isRelativeTo mirrors Python's Path.is_relative_to: path == base or under it.
