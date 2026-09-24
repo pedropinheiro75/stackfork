@@ -3,8 +3,8 @@ set -euo pipefail
 
 if [ -s /run/secrets/npm_token ]; then
   umask 077
-  printf '//npm.pkg.github.com/:_authToken=%s\n' \
-    "$(cat /run/secrets/npm_token)" > "$HOME/.npmrc"
+  printf '//%s/:_authToken=%s\n' \
+    "${NPM_REGISTRY_HOST:-npm.pkg.github.com}" "$(cat /run/secrets/npm_token)" > "$HOME/.npmrc"
 fi
 bun install --frozen-lockfile
 exec "$@"
