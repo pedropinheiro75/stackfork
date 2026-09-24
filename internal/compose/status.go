@@ -3,7 +3,11 @@ package compose
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 )
 
 // StatusRow mirrors the public subset of a `docker compose ps` row that
@@ -85,8 +89,11 @@ func stringField(m map[string]interface{}, key string) string {
 	return string(b)
 }
 
-// EndpointLines mirrors Python's endpoint_lines(rows, hostname).
-func EndpointLines(rows []StatusRow, hostname string) []string {
+// EndpointLines mirrors Python's endpoint_lines(rows, hostname), extended by
+// task 7.2 with the HTTP/HTTPS target ports a service declared at prepare
+// (design.md D7): a declared port wins over the fixed-port guess below,
+// which stays as the fallback for services that declare nothing.
+func EndpointLines(rows []StatusRow, hostname string, httpPorts, httpsPorts []int) []string {
 	var lines []string
 	for _, row := range rows {
 		for _, port := range row.Publishers {
@@ -97,6 +104,10 @@ func EndpointLines(rows []StatusRow, hostname string) []string {
 			}
 			var scheme string
 			switch {
+			case isTargetIn(target, httpsPorts):
+				scheme = "https"
+			case isTargetIn(target, httpPorts):
+				scheme = "http"
 			case isTarget(target, 443):
 				scheme = "https"
 			case isTarget(target, 80), isTarget(target, 3000), isTarget(target, 8080), isTarget(target, 5050):
@@ -118,6 +129,64 @@ func EndpointLines(rows []StatusRow, hostname string) []string {
 	return lines
 }
 
+// DeclaredHTTPPorts scans an isolated model's services for the
+// io.stackfork.http / io.stackfork.https labels (task 7.2, design.md D7)
+// and returns the union of declared target ports, sorted. Call it at
+// prepare, on the model Isolate returned, and store the result in the
+// manifest - urls reads it back rather than re-parsing the snapshot.
+func DeclaredHTTPPorts(model interface{}) (httpPorts, httpsPorts []int) {
+	m, ok := asMap(model)
+	if !ok {
+		return nil, nil
+	}
+	services, _ := asMap(m["services"])
+	httpSet := map[int]bool{}
+	httpsSet := map[int]bool{}
+	for _, raw := range services {
+		svc, ok := asMap(raw)
+		if !ok {
+			continue
+		}
+		labels, ok := asMap(svc["labels"])
+		if !ok {
+			continue
+		}
+		collectPorts(labels[identity.LabelHTTP], httpSet)
+		collectPorts(labels[identity.LabelHTTPS], httpsSet)
+	}
+	return sortedPortSet(httpSet), sortedPortSet(httpsSet)
+}
+
+func collectPorts(v interface{}, into map[int]bool) {
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return
+	}
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		n, err := strconv.Atoi(part)
+		if err != nil {
+			continue
+		}
+		into[n] = true
+	}
+}
+
+func sortedPortSet(set map[int]bool) []int {
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(set))
+	for p := range set {
+		out = append(out, p)
+	}
+	sort.Ints(out)
+	return out
+}
+
 func isTarget(v interface{}, n int64) bool {
 	num, ok := v.(json.Number)
 	if !ok {
@@ -125,4 +194,22 @@ func isTarget(v interface{}, n int64) bool {
 	}
 	i, err := num.Int64()
 	return err == nil && i == n
+}
+
+// isTargetIn reports whether v (a TargetPort) is one of ports.
+func isTargetIn(v interface{}, ports []int) bool {
+	num, ok := v.(json.Number)
+	if !ok {
+		return false
+	}
+	i, err := num.Int64()
+	if err != nil {
+		return false
+	}
+	for _, p := range ports {
+		if int64(p) == i {
+			return true
+		}
+	}
+	return false
 }

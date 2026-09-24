@@ -425,6 +425,11 @@ func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, insta
 	}
 	compose.WireSecrets(model, secretNames)
 
+	// HTTP marking (task 7.2, design.md D7): read the io.stackfork.http/
+	// .https labels a service declares, off the already-isolated model, and
+	// remember them so urls doesn't have to re-parse the snapshot.
+	httpPorts, httpsPorts := compose.DeclaredHTTPPorts(model)
+
 	var envFileOut *string
 	if envFile != "" {
 		envFileOut = &envFile
@@ -432,7 +437,8 @@ func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, insta
 
 	info := &state.Manifest{
 		Project: project, Root: root, Branch: branch, Hostname: hostname,
-		Secrets: secretRefs, Files: resolvedFiles, EnvFile: envFileOut, Inputs: inputHashes,
+		Secrets: secretRefs, HTTPPorts: httpPorts, HTTPSPorts: httpsPorts,
+		Files: resolvedFiles, EnvFile: envFileOut, Inputs: inputHashes,
 	}
 
 	if err := state.WritePrivate(configPath, model); err != nil {
@@ -493,7 +499,7 @@ func cmdStatusURLs(stdout io.Writer, action string, subArgs []string, root, bran
 		if err != nil {
 			return err
 		}
-		lines := compose.EndpointLines(rows, hostname)
+		lines := compose.EndpointLines(rows, hostname, info.HTTPPorts, info.HTTPSPorts)
 		if len(lines) == 0 {
 			fmt.Fprintln(stdout, "No published endpoints; check status or start the stack.")
 		} else {

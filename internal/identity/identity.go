@@ -25,6 +25,14 @@ const (
 	// LabelRoot marks a service with its checkout root, so a second branch
 	// stack from the same folder can be detected and refused.
 	LabelRoot = LabelNS + ".root"
+	// LabelHTTP and LabelHTTPS mark a service's target ports as serving
+	// HTTP/HTTPS (task 7.1, design.md D7): a plain Docker label, not the
+	// x-stackfork Compose extension the design first proposed, because
+	// `docker compose config --format json` drops service-level x-* keys
+	// on the Compose version this was verified against (a label survives).
+	// Value is a comma-separated list of target ports, e.g. "5173,3000".
+	LabelHTTP  = LabelNS + ".http"
+	LabelHTTPS = LabelNS + ".https"
 	// StateDirName is the directory under ~/.local/state holding instance state.
 	StateDirName = "stackfork"
 	// RenderProject is the throwaway Compose project name used only to render

@@ -21,8 +21,13 @@ type Manifest struct {
 	// secrets existed (task 6.2); new manifests leave it nil and store the
 	// same information as Secrets["npm_token"] instead. Use ResolvedSecrets,
 	// not this field directly.
-	Npmrc        *string           `json:"npmrc,omitempty"`
-	Secrets      map[string]string `json:"secrets,omitempty"`
+	Npmrc   *string           `json:"npmrc,omitempty"`
+	Secrets map[string]string `json:"secrets,omitempty"`
+	// HTTPPorts and HTTPSPorts are the target ports declared via the
+	// io.stackfork.http/.https labels at prepare (task 7.2, design.md D7).
+	// urls uses them ahead of its fixed-port guess.
+	HTTPPorts    []int             `json:"http_ports,omitempty"`
+	HTTPSPorts   []int             `json:"https_ports,omitempty"`
 	Files        []string          `json:"files"`
 	EnvFile      *string           `json:"env_file"`
 	Inputs       map[string]string `json:"inputs"`

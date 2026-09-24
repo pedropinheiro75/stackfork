@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 )
 
 // Ported from the original Python CLI's check(): isolate() safety and refusals.
@@ -169,7 +171,7 @@ func TestPublicStatusAndEndpointLines(t *testing.T) {
 	if len(rows[0].Publishers) != 1 {
 		t.Fatalf("expected the unpublished port dropped, got %v", rows[0].Publishers)
 	}
-	lines := EndpointLines(rows, "eup-274.localhost")
+	lines := EndpointLines(rows, "eup-274.localhost", nil, nil)
 	want := "nginx: http://eup-274.localhost:49152 (3000/tcp)"
 	if len(lines) != 1 || lines[0] != want {
 		t.Fatalf("got %v want [%s]", lines, want)
@@ -179,7 +181,7 @@ func TestPublicStatusAndEndpointLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lines = EndpointLines(dbRow, "eup-274.localhost")
+	lines = EndpointLines(dbRow, "eup-274.localhost", nil, nil)
 	want = "db: tcp://127.0.0.1:49153 (5432/tcp)"
 	if len(lines) != 1 || lines[0] != want {
 		t.Fatalf("got %v want [%s]", lines, want)
@@ -348,5 +350,79 @@ func TestWireSecretsNoNamesIsNoop(t *testing.T) {
 	m := model.(map[string]interface{})
 	if _, has := m["secrets"]; has {
 		t.Fatalf("expected no secrets section with no names, got %v", m["secrets"])
+	}
+}
+
+// Task 7.1: pins docker compose config --format json's behaviour with a
+// service-level x-* extension key, on the installed Compose version.
+// design.md D7 records the result: it is dropped, so HTTP marking goes
+// through the io.stackfork.http/.https labels instead (identity.LabelHTTP),
+// which DeclaredHTTPPorts reads back.
+func TestComposeConfigDropsServiceLevelExtensionKeys(t *testing.T) {
+	if !hasDocker(t) {
+		t.Skip("docker compose not available")
+	}
+	dir := t.TempDir()
+	config := filepath.Join(dir, "source.json")
+	source := `{
+		"services": {"app": {
+			"image": "nginx:alpine",
+			"x-stackfork": {"http": [5173]}
+		}}
+	}`
+	if err := os.WriteFile(config, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := Render(dir, []string{config}, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := rendered.(map[string]interface{})
+	services, _ := m["services"].(map[string]interface{})
+	app, _ := services["app"].(map[string]interface{})
+	if _, has := app["x-stackfork"]; has {
+		t.Fatal("docker compose config now keeps service-level x-* keys; if this fails, D7's label fallback can be retired in favour of x-stackfork")
+	}
+}
+
+// Task 7.2: a service that declares target port 5173 as HTTP (via
+// io.stackfork.http, since x-stackfork doesn't survive compose config per
+// task 7.1) gets an http:// URL instead of falling through to tcp://.
+func TestDeclaredHTTPPortUsesHTTPScheme(t *testing.T) {
+	model, err := DecodeJSON([]byte(`{
+		"services": {
+			"web": {"labels": {"` + identity.LabelHTTP + `": "5173"}}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpPorts, httpsPorts := DeclaredHTTPPorts(model)
+	if len(httpPorts) != 1 || httpPorts[0] != 5173 || len(httpsPorts) != 0 {
+		t.Fatalf("got http=%v https=%v", httpPorts, httpsPorts)
+	}
+
+	rows, err := PublicStatus(`{"Service": "web", "Publishers": [{"TargetPort": 5173, "PublishedPort": 49200, "Protocol": "tcp"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := EndpointLines(rows, "eup-274.localhost", httpPorts, httpsPorts)
+	want := "web: http://eup-274.localhost:49200 (5173/tcp)"
+	if len(lines) != 1 || lines[0] != want {
+		t.Fatalf("got %v want [%s]", lines, want)
+	}
+}
+
+// A declared HTTPS port wins over the fixed-port fallback guess.
+func TestDeclaredHTTPSPortWinsOverFixedList(t *testing.T) {
+	// 3000 is in the fixed http list; declaring it https must override that.
+	rows, err := PublicStatus(`{"Service": "app", "Publishers": [{"TargetPort": 3000, "PublishedPort": 49201, "Protocol": "tcp"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := EndpointLines(rows, "eup-274.localhost", nil, []int{3000})
+	want := "app: https://eup-274.localhost:49201 (3000/tcp)"
+	if len(lines) != 1 || lines[0] != want {
+		t.Fatalf("got %v want [%s]", lines, want)
 	}
 }
