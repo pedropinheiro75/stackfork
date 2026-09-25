@@ -54,12 +54,39 @@ type Endpoint struct {
 	URL    string `json:"url"`
 }
 
+// PortMapping is one container->host port mapping declared in the
+// snapshot, for a service's expandable settings (design.md D3a).
+type PortMapping struct {
+	Container int    `json:"container"`
+	Host      int    `json:"host,omitempty"`
+	Protocol  string `json:"protocol,omitempty"`
+}
+
+// VolumeMount is one volume or bind mount declared in the snapshot.
+type VolumeMount struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	ReadOnly bool   `json:"read_only,omitempty"`
+}
+
 // Service is one Compose service's current row within an instance.
 type Service struct {
 	Name      string     `json:"name"`
 	State     string     `json:"state"`
 	Health    string     `json:"health,omitempty"`
 	Endpoints []Endpoint `json:"endpoints,omitempty"`
+
+	// The rest are read from the snapshot already on disk (design.md D3a):
+	// no extra docker call. Image and Kind pick the dashboard's logo;
+	// EnvKeys is names only, never a value.
+	Image       string        `json:"image,omitempty"`
+	Kind        string        `json:"kind,omitempty"`
+	Ports       []PortMapping `json:"ports,omitempty"`
+	Volumes     []VolumeMount `json:"volumes,omitempty"`
+	Healthcheck string        `json:"healthcheck,omitempty"`
+	DependsOn   []string      `json:"depends_on,omitempty"`
+	Replicas    int           `json:"replicas,omitempty"`
+	EnvKeys     []string      `json:"env_keys,omitempty"`
 }
 
 // KnowledgeStatus is an instance's learned-knowledge summary (design.md
@@ -282,6 +309,9 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 		}
 		for _, e := range endpointsByService[name] {
 			svc.Endpoints = append(svc.Endpoints, Endpoint{Scheme: e.Scheme, URL: e.URL()})
+		}
+		if raw, ok := svcMap[name].(map[string]interface{}); ok {
+			fillServiceDetails(&svc, raw)
 		}
 		services = append(services, svc)
 	}
