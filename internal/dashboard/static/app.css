@@ -80,7 +80,7 @@ header h1 span { color: var(--muted); font-weight: 400; }
 .banner[hidden] { display: none; }
 
 main#instances {
-  max-width: 1100px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 20px;
   display: flex;
@@ -411,7 +411,7 @@ code.setting-value { display: inline-block; }
 }
 
 #activity-log {
-  max-width: 1100px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 8px 20px 20px;
   font-size: 12px;
