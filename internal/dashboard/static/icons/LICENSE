@@ -1,0 +1,33 @@
+Service logos in this directory (task 3.5, design.md D3a)
+============================================================
+
+postgres.svg, mysql.svg, mariadb.svg, redis.svg, mongo.svg, neo4j.svg,
+nginx.svg, caddy.svg, node.svg, bun.svg, python.svg, go.svg, rabbitmq.svg
+and minio.svg are from the Simple Icons project:
+
+    https://simpleicons.org/
+    https://github.com/simple-icons/simple-icons
+
+Simple Icons version 16.32.0. Released into the public domain under the
+CC0 1.0 Universal license:
+
+    https://creativecommons.org/publicdomain/zero/1.0/
+
+Each file is the upstream SVG unmodified, renamed to the service kind key
+stackfork's dashboard uses internally (see internal/inventory's imageKind):
+
+    postgres.svg  <- icons/postgresql.svg
+    mongo.svg     <- icons/mongodb.svg
+    node.svg      <- icons/nodedotjs.svg
+    (every other file keeps its upstream slug as the name)
+
+fallback.svg is original artwork made for this project (a plain stacked-
+layers glyph, no brand affiliation), used for any service whose image
+isn't one of the above and, for a built image, whose Dockerfile's FROM
+line names an unrecognized base. No third-party license applies to it.
+
+These files are fetched once at development time from the simple-icons
+npm package's published release (https://unpkg.com/simple-icons@16.32.0/)
+and committed here; the dashboard embeds them into the binary
+(`//go:embed static`, internal/dashboard/dashboard.go) and never fetches
+an icon, or anything else, over the network at runtime.

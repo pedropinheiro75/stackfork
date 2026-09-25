@@ -156,6 +156,48 @@ main.stale { opacity: 0.6; }
 }
 .actions button:hover { border-color: var(--accent); }
 
+.service-logo {
+  display: inline-block;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  background-color: var(--muted);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-image: url(/static/icons/fallback.svg);
+  mask-image: url(/static/icons/fallback.svg);
+}
+.service-logo[data-kind="postgres"] { -webkit-mask-image: url(/static/icons/postgres.svg); mask-image: url(/static/icons/postgres.svg); }
+.service-logo[data-kind="mysql"] { -webkit-mask-image: url(/static/icons/mysql.svg); mask-image: url(/static/icons/mysql.svg); }
+.service-logo[data-kind="mariadb"] { -webkit-mask-image: url(/static/icons/mariadb.svg); mask-image: url(/static/icons/mariadb.svg); }
+.service-logo[data-kind="redis"] { -webkit-mask-image: url(/static/icons/redis.svg); mask-image: url(/static/icons/redis.svg); }
+.service-logo[data-kind="mongo"] { -webkit-mask-image: url(/static/icons/mongo.svg); mask-image: url(/static/icons/mongo.svg); }
+.service-logo[data-kind="neo4j"] { -webkit-mask-image: url(/static/icons/neo4j.svg); mask-image: url(/static/icons/neo4j.svg); }
+.service-logo[data-kind="nginx"] { -webkit-mask-image: url(/static/icons/nginx.svg); mask-image: url(/static/icons/nginx.svg); }
+.service-logo[data-kind="caddy"] { -webkit-mask-image: url(/static/icons/caddy.svg); mask-image: url(/static/icons/caddy.svg); }
+.service-logo[data-kind="node"] { -webkit-mask-image: url(/static/icons/node.svg); mask-image: url(/static/icons/node.svg); }
+.service-logo[data-kind="bun"] { -webkit-mask-image: url(/static/icons/bun.svg); mask-image: url(/static/icons/bun.svg); }
+.service-logo[data-kind="python"] { -webkit-mask-image: url(/static/icons/python.svg); mask-image: url(/static/icons/python.svg); }
+.service-logo[data-kind="go"] { -webkit-mask-image: url(/static/icons/go.svg); mask-image: url(/static/icons/go.svg); }
+.service-logo[data-kind="rabbitmq"] { -webkit-mask-image: url(/static/icons/rabbitmq.svg); mask-image: url(/static/icons/rabbitmq.svg); }
+.service-logo[data-kind="minio"] { -webkit-mask-image: url(/static/icons/minio.svg); mask-image: url(/static/icons/minio.svg); }
+
+.status-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.status-dot.running { background: var(--ok); }
+.status-dot.exited, .status-dot.stopped { background: var(--bad); }
+.status-dot.unhealthy, .status-dot.starting { background: var(--warn); }
+
 .logs-button {
   font: inherit;
   font-size: 11px;
