@@ -110,7 +110,8 @@ func LocalDocker() error {
 	return nil
 }
 
-// Execute runs one lifecycle action (up, down, restart, run or exec) on an
+// Execute runs one lifecycle action (up, down, restart, start, stop, run or
+// exec) on an
 // instance: the same guards, the same docker compose invocation shape, the
 // same proxy reload afterward, whoever calls it (the CLI subcommand or a
 // dashboard action, design.md D4). down never receives --volumes from the
@@ -124,7 +125,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 	}
 
 	configPath := filepath.Join(instanceDir, "compose.json")
-	if action == "up" || action == "run" || action == "exec" || action == "restart" {
+	if action == "up" || action == "run" || action == "exec" || action == "restart" || action == "start" || action == "stop" {
 		configData, err := os.ReadFile(configPath)
 		if err != nil {
 			return 0, err
@@ -218,7 +219,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		if opts.Volumes {
 			dockerCommand = append(dockerCommand, "--volumes")
 		}
-	case "restart":
+	case "restart", "start", "stop":
 		hasService, err := serviceInSnapshot(configPath, opts.Service)
 		if err != nil {
 			return 0, err
@@ -226,7 +227,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		if opts.Service == "" || !hasService {
 			return 0, errors.New("Specify a service in this snapshot")
 		}
-		dockerCommand = append(dockerCommand, "restart", opts.Service)
+		dockerCommand = append(dockerCommand, action, opts.Service)
 	case "run", "exec":
 		hasService, err := serviceInSnapshot(configPath, opts.Service)
 		if err != nil {
@@ -253,12 +254,13 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 	}
 	runErr := cmd.Run()
 
-	// Task 9.2, design.md D7 layer 3: `up` and `down` are exactly the two
-	// points where which instances are running (and their currently
-	// published ports) can have changed, so the proxy's Caddyfile is stale
-	// until reloaded from every manifest. Best effort: a reload problem
-	// (or the proxy simply not running) never fails the action itself.
-	if runErr == nil && (action == "up" || action == "down") {
+	// Task 9.2, design.md D7 layer 3: `up`, `down`, and now a per-service
+	// `start`/`stop` (fix 5) are exactly the points where which containers
+	// are running (and their currently published ports) can have changed,
+	// so the proxy's Caddyfile is stale until reloaded from every
+	// manifest. Best effort: a reload problem (or the proxy simply not
+	// running) never fails the action itself.
+	if runErr == nil && (action == "up" || action == "down" || action == "start" || action == "stop") {
 		ReloadProxyIfRunning(stderr, newStateBase, legacyStateBase)
 	}
 

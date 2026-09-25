@@ -35,6 +35,7 @@ type actionResponse struct {
 // --volumes - lifecycle.Options{} always leaves Volumes false.
 var validActions = map[string]bool{
 	"up": true, "down": true, "restart": true,
+	"service-start": true, "service-stop": true,
 	"proxy-up": true, "proxy-down": true, "proxy-reload": true,
 }
 
@@ -43,9 +44,10 @@ var validActions = map[string]bool{
 const proxyLockKey = "\x00proxy"
 
 // handleActions is the D5 security boundary (token, then Origin) plus the
-// D4 action dispatch: up, down (no volumes), restart, proxy-up/down/reload,
-// each running through the exact function the matching CLI subcommand
-// calls (internal/lifecycle), one at a time per project (task 4.2).
+// D4 action dispatch: up, down (no volumes), restart, service-start/
+// service-stop, proxy-up/down/reload, each running through the exact
+// function the matching CLI subcommand calls (internal/lifecycle), one at
+// a time per project (task 4.2).
 func (s *Server) handleActions(w http.ResponseWriter, r *http.Request) {
 	if !s.tokenValid(r) {
 		http.Error(w, "missing or invalid token", http.StatusForbidden)
@@ -87,19 +89,30 @@ func (s *Server) handleActions(w http.ResponseWriter, r *http.Request) {
 // runAction dispatches one already-locked, already-validated action.
 func (s *Server) runAction(req actionRequest) actionResponse {
 	switch req.Action {
-	case "up", "down", "restart":
+	case "up", "down", "restart", "service-start", "service-stop":
 		instanceDir, root, branch, _, err := s.resolveInstance(req.Project)
 		if err != nil {
 			return actionResponse{Message: err.Error()}
 		}
 		var out bytes.Buffer
 		opts := lifecycle.Options{}
-		if req.Action == "restart" {
+		// service-start/service-stop (fix 5) are distinct action names
+		// from the stack-level up/down since they act on one container,
+		// not the whole instance; they run through lifecycle.Execute's
+		// "start"/"stop" actions, the same ones `stackfork start SERVICE`/
+		// `stackfork stop SERVICE` use.
+		lifecycleAction := req.Action
+		switch req.Action {
+		case "restart":
 			opts.Service = req.Service
+		case "service-start":
+			lifecycleAction, opts.Service = "start", req.Service
+		case "service-stop":
+			lifecycleAction, opts.Service = "stop", req.Service
 		}
-		code, err := lifecycle.Execute(&out, &out, req.Action, root, branch, req.Project, instanceDir,
+		code, err := lifecycle.Execute(&out, &out, lifecycleAction, root, branch, req.Project, instanceDir,
 			s.NewStateBase, s.LegacyStateBase, opts)
-		return execResult(req.Action, code, err, out.String())
+		return execResult(lifecycleAction, code, err, out.String())
 	case "proxy-up":
 		port, err := proxy.ReadPort(s.NewStateBase)
 		if err != nil {

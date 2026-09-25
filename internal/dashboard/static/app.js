@@ -130,6 +130,9 @@
       '<div class="service-text"><span class="service-name">' + escapeHtml(svc.name) + "</span>" + image + "</div>" +
       '<div class="service-endpoints">' + endpoints + "</div>" +
       '<div class="service-icons">' +
+      (svc.state === "running"
+        ? '<button class="icon-btn" data-action="service-stop" data-project="' + escapeHtml(inst.project) + '" data-service="' + escapeHtml(svc.name) + '" title="Stop">&#9632;</button>'
+        : '<button class="icon-btn" data-action="service-start" data-project="' + escapeHtml(inst.project) + '" data-service="' + escapeHtml(svc.name) + '" title="Start">&#9654;</button>') +
       '<button class="icon-btn" data-action="restart" data-project="' + escapeHtml(inst.project) + '" data-service="' + escapeHtml(svc.name) + '" title="Restart">&#8635;</button>' +
       '<button class="icon-btn logs-button" data-project="' + escapeHtml(inst.project) + '" data-service="' + escapeHtml(svc.name) + '" title="Logs">&#9776;</button>' +
       "</div></div>" +

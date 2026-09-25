@@ -61,7 +61,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 	rest := top.Args()
 	if len(rest) == 0 {
-		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, restart, logs, route, proxy, list, dashboard, doctor, learn, version)")
+		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, restart, start, stop, logs, route, proxy, list, dashboard, doctor, learn, version)")
 	}
 	action := rest[0]
 	subArgs := rest[1:]
@@ -192,7 +192,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		return 0, cmdStatusURLs(stdout, action, subArgs, root, branch, project, instanceDir, newStateBase)
 	case "run", "exec":
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
-	case "restart":
+	case "restart", "start", "stop":
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "logs":
 		return cmdLogs(stdout, stderr, subArgs, root, branch, project, instanceDir)
@@ -743,7 +743,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		if err != nil {
 			return 2, err
 		}
-	case "restart":
+	case "restart", "start", "stop":
 		if len(subArgs) < 1 {
 			return 2, errors.New("service is required")
 		}

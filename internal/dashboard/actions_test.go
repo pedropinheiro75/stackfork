@@ -99,8 +99,28 @@ func TestActionUpAndDown(t *testing.T) {
 	}
 }
 
+// TestActionServiceStartStop covers fix 5: service-start/service-stop run
+// through lifecycle.Execute's "start"/"stop" actions, the same path
+// `stackfork start SERVICE`/`stackfork stop SERVICE` use.
+func TestActionServiceStartStop(t *testing.T) {
+	newBase, legacyBase, project := preparedFixture(t)
+	srv, err := dashboard.New(newBase, legacyBase, "test", 55307)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := "127.0.0.1:55307"
+
+	for _, action := range []string{"service-start", "service-stop"} {
+		code, resp := postAction(t, srv, host, actionRequestFixture{Action: action, Project: project, Service: "db"})
+		if code != 200 || !resp.OK {
+			t.Fatalf("%s: code=%d resp=%+v", action, code, resp)
+		}
+	}
+}
+
 // TestActionUnknownIsRejected covers the D4 action set boundary: nothing
-// outside up/down/restart/proxy-up/down/reload is dispatched.
+// outside up/down/restart/service-start/service-stop/proxy-up/down/reload
+// is dispatched.
 func TestActionUnknownIsRejected(t *testing.T) {
 	newBase, legacyBase, project := preparedFixture(t)
 	srv, err := dashboard.New(newBase, legacyBase, "test", 55302)

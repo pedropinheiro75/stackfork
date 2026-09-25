@@ -111,6 +111,11 @@
           {{end}}
         </div>
         <div class="service-icons">
+          {{if eq .State "running"}}
+          <button class="icon-btn" data-action="service-stop" data-project="{{$inst.Project}}" data-service="{{.Name}}" title="Stop">&#9632;</button>
+          {{else}}
+          <button class="icon-btn" data-action="service-start" data-project="{{$inst.Project}}" data-service="{{.Name}}" title="Start">&#9654;</button>
+          {{end}}
           <button class="icon-btn" data-action="restart" data-project="{{$inst.Project}}" data-service="{{.Name}}" title="Restart">&#8635;</button>
           <button class="icon-btn logs-button" data-project="{{$inst.Project}}" data-service="{{.Name}}" title="Logs">&#9776;</button>
         </div>
