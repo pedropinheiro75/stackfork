@@ -45,7 +45,15 @@ type Server struct {
 	// time per instance"); a project already running an action gets 409.
 	actionMu   sync.Mutex
 	actionsRun map[string]bool
+
+	// logSlots caps concurrent log streams at 10 (task 4.3, design.md
+	// Risks: "max 10 concurrent log streams"); a buffered channel used as
+	// a counting semaphore.
+	logSlots chan struct{}
 }
+
+// maxLogStreams is design.md's documented cap.
+const maxLogStreams = 10
 
 // New builds a Server with a fresh per-process token (design.md D5).
 func New(newStateBase, legacyStateBase, version string, port int) (*Server, error) {
@@ -57,6 +65,7 @@ func New(newStateBase, legacyStateBase, version string, port int) (*Server, erro
 		NewStateBase: newStateBase, LegacyStateBase: legacyStateBase,
 		Version: version, Port: port, Token: token,
 		cache: &inventoryCache{}, actionsRun: map[string]bool{},
+		logSlots: make(chan struct{}, maxLogStreams),
 	}
 	s.mux = s.routes()
 	return s, nil

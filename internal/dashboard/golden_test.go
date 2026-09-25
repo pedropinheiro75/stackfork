@@ -38,6 +38,9 @@ if [ "$1" = "compose" ]; then
   if [ -n "$DOCKER_FAKE_SLEEP" ]; then
     sleep "$DOCKER_FAKE_SLEEP"
   fi
+  case " $* " in
+    *" logs "*) printf '%s' "$DOCKER_FAKE_LOGS" ;;
+  esac
   exit "${DOCKER_FAKE_EXIT:-0}"
 fi
 if [ "$1" = "context" ] && [ "$2" = "inspect" ]; then

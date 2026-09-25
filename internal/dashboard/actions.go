@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
@@ -196,7 +200,74 @@ func (s *Server) resolveInstance(project string) (instanceDir, root, branch stri
 	return instanceDir, info.Root, info.Branch, info, nil
 }
 
-// handleLogs streams a service's logs (task 4.3).
+// handleLogs streams a service's logs (task 4.3): `?project=&service=&
+// tail=200&follow=1`, redacted the same way `stackfork logs` is. Follow
+// mode ends when the client disconnects (the request's own context, which
+// exec.CommandContext ties the docker process to), and at most
+// maxLogStreams run at once - past that, 429.
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	project := r.URL.Query().Get("project")
+	if project == "" {
+		http.Error(w, "project is required", http.StatusBadRequest)
+		return
+	}
+	service := r.URL.Query().Get("service")
+	tail := r.URL.Query().Get("tail")
+	if tail == "" {
+		tail = "200"
+	}
+	if n, err := strconv.Atoi(tail); err != nil || n < 0 {
+		http.Error(w, "invalid tail", http.StatusBadRequest)
+		return
+	}
+	follow := r.URL.Query().Get("follow") == "1"
+
+	instanceDir, root, _, info, err := s.resolveInstance(project)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	select {
+	case s.logSlots <- struct{}{}:
+		defer func() { <-s.logSlots }()
+	default:
+		http.Error(w, "too many concurrent log streams", http.StatusTooManyRequests)
+		return
+	}
+
+	configPath := filepath.Join(instanceDir, "compose.json")
+	args := []string{"compose", "-p", project, "--project-directory", root,
+		"--env-file", os.DevNull, "-f", configPath, "--profile", "*",
+		"logs", "--tail", tail}
+	if follow {
+		args = append(args, "--follow")
+	}
+	if service != "" {
+		args = append(args, service)
+	}
+
+	cmd := exec.CommandContext(r.Context(), "docker", args...)
+	cmd.Env = compose.DockerEnv()
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	redacted := lifecycle.NewRedactedWriter(flushWriter{w}, info)
+	cmd.Stdout = redacted
+	cmd.Stderr = redacted
+	cmd.Run() //nolint:errcheck // the client sees whatever reached the stream; a nonzero exit isn't reported separately
+	redacted.Close()
+}
+
+// flushWriter flushes the underlying ResponseWriter after every write, so
+// a follow-mode log stream reaches the browser as it happens rather than
+// buffering until the response ends.
+type flushWriter struct{ w http.ResponseWriter }
+
+func (f flushWriter) Write(p []byte) (int, error) {
+	n, err := f.w.Write(p)
+	if flusher, ok := f.w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return n, err
 }
