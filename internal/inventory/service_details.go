@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -122,6 +123,93 @@ func kindFromBuild(raw map[string]interface{}) string {
 		return ""
 	}
 	return imageKind(lastFrom)
+}
+
+// defaultDBPort is the well-known container port each connection-string
+// kind listens on, used to pick which of a service's (possibly several)
+// endpoints is the one to build a connection string for.
+var defaultDBPort = map[string]int{
+	"postgres": 5432, "mysql": 3306, "mariadb": 3306, "redis": 6379, "mongo": 27017,
+}
+
+// connectionURL builds a copy-paste connection string for a known database
+// kind (task 3.7, design.md D3a): the user and database name come from an
+// explicit allowlist of non-secret identifier env keys read directly off
+// the snapshot's environment map (never a password-shaped key, and never
+// its value even to check it's set) - the password position is always the
+// literal "<password>" placeholder. Empty when svc.Kind isn't one of the
+// known kinds, or its default port's host address isn't known yet (svc.
+// Endpoints not yet resolved, or the port genuinely unknown - a stopped
+// legacy/--random-ports service, task 3.6).
+func connectionURL(svc Service, raw map[string]interface{}) string {
+	defaultPort, ok := defaultDBPort[svc.Kind]
+	if !ok {
+		return ""
+	}
+	var addr string
+	for _, ep := range svc.Endpoints {
+		if ep.Container == defaultPort && ep.Known {
+			addr = ep.URL // tcp endpoints render as "host:port"
+			break
+		}
+	}
+	if addr == "" {
+		return ""
+	}
+
+	env, _ := raw["environment"].(map[string]interface{})
+	str := func(keys ...string) string {
+		for _, k := range keys {
+			if v, ok := env[k]; ok {
+				if s, ok := v.(string); ok && s != "" {
+					return s
+				}
+			}
+		}
+		return ""
+	}
+
+	switch svc.Kind {
+	case "postgres":
+		user := str("POSTGRES_USER")
+		if user == "" {
+			user = "postgres"
+		}
+		db := str("POSTGRES_DB")
+		if db == "" {
+			db = user
+		}
+		return fmt.Sprintf("postgres://%s:<password>@%s/%s", user, addr, db)
+	case "mysql", "mariadb":
+		user := str("MYSQL_USER", "MARIADB_USER")
+		if user == "" {
+			user = "root"
+		}
+		uri := fmt.Sprintf("mysql://%s:<password>@%s", user, addr)
+		if db := str("MYSQL_DATABASE", "MARIADB_DATABASE"); db != "" {
+			uri += "/" + db
+		}
+		return uri
+	case "mongo":
+		user := str("MONGO_INITDB_ROOT_USERNAME")
+		db := str("MONGO_INITDB_DATABASE")
+		if user == "" {
+			uri := "mongodb://" + addr
+			if db != "" {
+				uri += "/" + db
+			}
+			return uri
+		}
+		uri := fmt.Sprintf("mongodb://%s:<password>@%s", user, addr)
+		if db != "" {
+			uri += "/" + db
+		}
+		return uri
+	case "redis":
+		return fmt.Sprintf("redis://:<password>@%s", addr)
+	default:
+		return ""
+	}
 }
 
 // servicePorts reads the snapshot's ports list. "published" is a string

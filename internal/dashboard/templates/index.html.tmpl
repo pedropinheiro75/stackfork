@@ -106,6 +106,9 @@
             <span class="endpoint-pending">container {{.Container}} &mdash; assigned on start</span>
           {{end}}
           {{end}}
+          {{if .ConnectionURL}}
+          <span class="endpoint-copy copyable connection-url" data-copy="{{.ConnectionURL}}" title="click to copy the connection URL ({{.ConnectionURL}})">connection URL</span>
+          {{end}}
         </div>
         <div class="service-icons">
           <button class="icon-btn" data-action="restart" data-project="{{$inst.Project}}" data-service="{{.Name}}" title="Restart">&#8635;</button>

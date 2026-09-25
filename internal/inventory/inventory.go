@@ -98,6 +98,14 @@ type Service struct {
 	DependsOn   []string      `json:"depends_on,omitempty"`
 	Replicas    int           `json:"replicas,omitempty"`
 	EnvKeys     []string      `json:"env_keys,omitempty"`
+	// ConnectionURL is a copy-paste connection string for a known database
+	// kind (task 3.7, design.md D3a): built from non-secret identifiers
+	// (user, database name) read off an explicit allowlist of env key
+	// names, with a literal "<password>" placeholder standing in for
+	// whatever secret actually guards it - never a real value, and never
+	// even reads a password-shaped key. Empty when the kind isn't a known
+	// database or its host port isn't known yet.
+	ConnectionURL string `json:"connection_url,omitempty"`
 }
 
 // KnowledgeStatus is an instance's learned-knowledge summary (design.md
@@ -327,7 +335,8 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 				running++
 			}
 		}
-		if raw, ok := svcMap[name].(map[string]interface{}); ok {
+		raw, hasRaw := svcMap[name].(map[string]interface{})
+		if hasRaw {
 			fillServiceDetails(&svc, raw)
 		}
 		// Every declared port gets an endpoint, running or not (maintainer
@@ -339,6 +348,9 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 		svc.Endpoints = buildServiceEndpoints(svc, liveByService[name], hostname, info)
 		if proxyStatus.Running && hasPrimary && name == primaryService && svc.State == "running" {
 			svc.Endpoints = append(svc.Endpoints, proxyEndpoint(hostname, primaryHTTPS, proxyStatus.Port, primaryTarget))
+		}
+		if hasRaw {
+			svc.ConnectionURL = connectionURL(svc, raw)
 		}
 		services = append(services, svc)
 	}

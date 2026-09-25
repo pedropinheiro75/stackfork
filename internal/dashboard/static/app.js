@@ -116,6 +116,10 @@
     var key = inst.project + "/" + svc.name;
     var running = svc.state === "running";
     var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, running); }).join("");
+    if (svc.connection_url) {
+      endpoints += '<span class="endpoint-copy copyable connection-url" data-copy="' + escapeHtml(svc.connection_url) +
+        '" title="click to copy the connection URL (' + escapeHtml(svc.connection_url) + ')">connection URL</span>';
+    }
     var image = svc.image ? '<span class="service-image">' + escapeHtml(svc.image) + "</span>" : "";
     var settingsOpen = !!openSettings[key];
     return (
