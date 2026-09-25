@@ -119,7 +119,7 @@ func TestLiveProxyRoutesInstancesAndHostRoute(t *testing.T) {
 	}
 
 	get := func(hostname string) (int, string, error) {
-		resp, err := http.Get(fmt.Sprintf("http://%s:%d/", hostname, proxyPort))
+		resp, err := localhostClient.Get(fmt.Sprintf("http://%s:%d/", hostname, proxyPort))
 		if err != nil {
 			return 0, "", err
 		}

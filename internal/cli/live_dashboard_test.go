@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,7 +70,7 @@ func TestLiveDashboardProxyIntegration(t *testing.T) {
 	var reached bool
 	var lastErr error
 	for i := 0; i < 20; i++ {
-		resp, err := http.Get(fmt.Sprintf("http://stackfork.localhost:%d/", proxyPort))
+		resp, err := localhostClient.Get(fmt.Sprintf("http://stackfork.localhost:%d/", proxyPort))
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == 200 {

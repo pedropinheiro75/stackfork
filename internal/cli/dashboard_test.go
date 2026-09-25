@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"net"
 	"net/http"
@@ -78,7 +77,7 @@ func TestDashboardStartStop(t *testing.T) {
 	legacyStateDir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr syncBuffer
 	done := make(chan int, 1)
 	go func() {
 		code, _ := cmdDashboard(ctx, &stdout, &stderr, nil, stateDir, legacyStateDir)
