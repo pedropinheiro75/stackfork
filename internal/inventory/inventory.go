@@ -138,6 +138,12 @@ type Instance struct {
 	// Files is the instance's source Compose files, part of each service's
 	// expandable settings (design.md D3a/task 3.4).
 	Files []string `json:"files,omitempty"`
+	// Apps is every way to open or reach this stack's app(s) (design.md
+	// D3b, task 3.8): from a service's own HTTP endpoint, a host-run
+	// `route add` registration, or - only when nothing else qualifies - a
+	// learned dev script's name as a hint. The goal of the page is to open
+	// and use the app, not inspect containers.
+	Apps []AppLink `json:"apps,omitempty"`
 }
 
 // Inventory is the whole machine's state, task 1.1's D1 type.
@@ -250,9 +256,10 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		inst.State = StateMissingBranch
 		inst.Warnings = append(inst.Warnings, fmt.Sprintf("branch %s no longer exists in %s; run `stackfork gc`", info.Branch, info.Root))
 	default:
-		services, serviceState := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
+		services, serviceState, apps := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
 		inst.Services = services
 		inst.State = serviceState
+		inst.Apps = appendRouteAndKnowledgeApps(apps, info)
 	}
 
 	inst.Warnings = append(inst.Warnings, busyPortWarnings(info, statusRows)...)
@@ -297,15 +304,15 @@ func branchExists(root, branch string) bool {
 // servicesForInstance reads the instance's snapshot for its declared
 // service list (so a never-started service still gets a row) and matches
 // each one against its container, if any.
-func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname string, info *state.Manifest, proxyStatus ProxyStatus) ([]Service, string) {
+func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname string, info *state.Manifest, proxyStatus ProxyStatus) ([]Service, string, []AppLink) {
 	instanceDir := filepath.Dir(manifestPath)
 	configData, err := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
 	if err != nil {
-		return nil, StateStopped
+		return nil, StateStopped, nil
 	}
 	model, err := compose.DecodeJSON(configData)
 	if err != nil {
-		return nil, StateStopped
+		return nil, StateStopped, nil
 	}
 	m, _ := model.(map[string]interface{})
 	svcMap, _ := m["services"].(map[string]interface{})
@@ -361,13 +368,15 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 		services = append(services, svc)
 	}
 
+	apps := buildApps(services, info, primaryService, hasPrimary)
+
 	switch {
 	case total == 0 || running == 0:
-		return services, StateStopped
+		return services, StateStopped, apps
 	case running == total:
-		return services, StateRunning
+		return services, StateRunning, apps
 	default:
-		return services, StatePartial
+		return services, StatePartial, apps
 	}
 }
 
@@ -480,8 +489,7 @@ func busyPortWarnings(info *state.Manifest, rows []compose.StatusRow) []string {
 // resolves its effective status (verified knowledge goes stale here, at
 // read time, rather than being rewritten on disk).
 func knowledgeStatus(root string) (*KnowledgeStatus, bool) {
-	path := filepath.Join(root, ".stackfork", "knowledge.json")
-	k, err := knowledge.Load(path)
+	k, err := knowledge.Load(knowledgeJSONPath(root))
 	if err != nil {
 		return nil, false
 	}
