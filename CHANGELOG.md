@@ -5,6 +5,24 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `stackfork list` / `list --json`: every instance across every checkout,
+  from a new `internal/inventory` package shared with the dashboard, so the
+  two can never disagree.
+- `stackfork dashboard [--port N] [--open]`: a local, read-mostly web page
+  (embedded assets, no Node toolchain) showing the same inventory, grouped
+  by checkout, with clickable HTTP endpoints, learned-knowledge status and
+  warnings. Safe actions only (`up`, `down` with volumes always kept,
+  `restart SERVICE`, log viewing, proxy up/down/reload), behind a
+  127.0.0.1-only bind, a `Host` allowlist, and a per-process action token.
+  Destructive or input-heavy commands (`down --volumes`, `gc --apply`,
+  `prepare --reassign-ports`, `clone-db`, `learn`) show up as a command to
+  copy, never a button.
+- `stackfork restart SERVICE` and `stackfork logs [SERVICE] [--tail N]
+  [--follow]`, and a new `internal/redact` package that replaces resolved
+  secret values in log output with `[redacted:<name>]`.
+
 ### Rewritten in Go
 
 The CLI (`scripts/compose.py`, Python standard library) has been ported to
