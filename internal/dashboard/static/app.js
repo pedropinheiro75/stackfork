@@ -71,6 +71,16 @@
     }).join("");
   }
 
+  function appChipHtml(app) {
+    if (app.url) {
+      var stoppedClass = app.running ? "" : " stopped";
+      return '<a class="app-chip' + stoppedClass + '" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(app.url) + '">' +
+        escapeHtml(app.label) + ": " + escapeHtml(app.url) + "</a>";
+    }
+    var hint = app.hint ? ": " + escapeHtml(app.hint) : "";
+    return '<span class="app-chip stopped">' + escapeHtml(app.label) + hint + "</span>";
+  }
+
   function endpointHtml(ep, running) {
     if (!ep.known) {
       return '<span class="endpoint-pending">container ' + ep.container + ' &mdash; assigned on start</span>';
@@ -151,6 +161,7 @@
     var warnings = (inst.warnings || []).map(function (w) { return '<li class="warning">' + escapeHtml(w) + "</li>"; }).join("");
     var menuOpen = !!openMenus[inst.project];
     var colorIndex = stackColorIndex(inst.project);
+    var appStrip = (inst.apps || []).map(appChipHtml).join("");
     return (
       '<article class="stack" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '" data-collapsed="' + (collapsed ? "1" : "0") + '">' +
       '<header class="stack-header" data-toggle-stack data-project="' + p + '">' +
@@ -165,6 +176,7 @@
       (inst.state === "running" || inst.state === "partial" ? '<button class="icon-btn" data-action="down" data-project="' + p + '" title="Down (keeps volumes)">&#9632;</button>' : "") +
       '<button class="icon-btn stack-menu-toggle" data-project="' + p + '" title="More">&#8942;</button>' +
       "</div></header>" +
+      (appStrip ? '<div class="app-strip">' + appStrip + "</div>" : "") +
       '<div class="stack-menu"' + (menuOpen ? "" : " hidden") + ">" + commandsHtml(inst) + "</div>" +
       (warnings ? '<ul class="warnings">' + warnings + "</ul>" : "") +
       '<div class="stack-body">' + services + "</div></article>"
@@ -226,6 +238,7 @@
     var proxyStatus = document.getElementById("proxy-status");
     proxyStatus.textContent = "Proxy: " + (inv.proxy.running ? "running on " + inv.proxy.port : "stopped");
     proxyStatus.className = inv.proxy.running ? "ok" : "down";
+    document.getElementById("proxy-start").hidden = inv.proxy.running;
 
     document.getElementById("docker-banner").hidden = inv.docker.reachable;
   }
@@ -285,6 +298,11 @@
     document.getElementById("running-only").addEventListener("change", function (e) {
       state.runningOnly = e.target.checked;
       render();
+    });
+    // Outside #instances (header-level, design.md D3b §5), so it needs its
+    // own listener rather than the delegated one in wireActions.
+    document.getElementById("proxy-start").addEventListener("click", function () {
+      runAction("proxy-up", "");
     });
   }
 

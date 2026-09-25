@@ -200,6 +200,38 @@ main.stale { opacity: 0.6; }
 }
 .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+#proxy-start {
+  width: auto;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.app-strip {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.app-chip {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+.app-chip.stopped {
+  border-color: var(--border);
+  color: var(--muted);
+  font-weight: 400;
+  font-style: italic;
+}
+
 .stack-menu {
   margin-top: 10px;
   padding-top: 10px;

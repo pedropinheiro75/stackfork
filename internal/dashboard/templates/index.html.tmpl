@@ -18,6 +18,7 @@
       Proxy: {{if .Proxy.Running}}running on {{.Proxy.Port}}{{else}}stopped{{end}}
     </span>
     <span id="counts">{{.RunningCount}} / {{.Total}} running</span>
+    <button id="proxy-start" class="icon-btn" data-action="proxy-up" title="Start the proxy for portless URLs"{{if .Proxy.Running}} hidden{{end}}>Start proxy for portless URLs</button>
   </div>
   <div id="controls">
     <input id="filter" type="text" placeholder="filter by project, branch or checkout">
@@ -75,6 +76,17 @@
       <button class="icon-btn stack-menu-toggle" data-project="{{.Project}}" title="More">&#8942;</button>
     </div>
   </header>
+  {{if .Apps}}
+  <div class="app-strip">
+    {{range .Apps}}
+    {{if .URL}}
+    <a class="app-chip{{if not .Running}} stopped{{end}}" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}">{{.Label}}: {{.URL}}</a>
+    {{else}}
+    <span class="app-chip stopped">{{.Label}}{{if .Hint}}: {{.Hint}}{{end}}</span>
+    {{end}}
+    {{end}}
+  </div>
+  {{end}}
   <div class="stack-menu" hidden>
     {{range .Commands}}<code class="copyable cli-command" data-copy="{{.}}" title="click to copy">{{.}}</code>{{end}}
   </div>
