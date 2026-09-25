@@ -26,6 +26,7 @@ func fixtureGitRepo(t *testing.T, branch string) string {
 	run("init", "-q", "-b", branch)
 	run("config", "user.email", "test@example.com")
 	run("config", "user.name", "test")
+	run("config", "commit.gpgsign", "false") // never wait on this machine's commit-signing agent for a throwaway fixture repo
 	if err := os.WriteFile(filepath.Join(dir, "f"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}

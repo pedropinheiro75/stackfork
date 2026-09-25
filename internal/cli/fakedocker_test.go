@@ -18,6 +18,7 @@ import (
 //   - `docker ps --filter label=<legacy root label>=...` -> $DOCKER_FAKE_PS_LEGACY (empty by default)
 //   - `docker ps ...`          -> $DOCKER_FAKE_PS (empty by default)
 //   - `docker compose ... ps --format json` -> $DOCKER_FAKE_STATUS (empty by default)
+//   - `docker compose ... logs ...`         -> $DOCKER_FAKE_LOGS (empty by default)
 //   - `docker inspect -f {{.State.Running}} ...` -> $DOCKER_FAKE_PROXY_RUNNING (false by default)
 //   - `docker inspect -f {{(index ...HostPort}} ...` -> $DOCKER_FAKE_PROXY_PORT (empty by default)
 //   - anything else -> succeeds silently
@@ -39,6 +40,7 @@ if [ "$1" = "compose" ]; then
   done
   case " $* " in
     *" ps "*) printf '%s' "$DOCKER_FAKE_STATUS" ;;
+    *" logs "*) printf '%s' "$DOCKER_FAKE_LOGS" ;;
   esac
   exit "${DOCKER_FAKE_EXIT:-0}"
 fi

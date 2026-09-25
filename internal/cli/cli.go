@@ -22,6 +22,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -60,7 +61,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 	rest := top.Args()
 	if len(rest) == 0 {
-		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, route, proxy, list, dashboard, doctor, learn, version)")
+		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, restart, logs, route, proxy, list, dashboard, doctor, learn, version)")
 	}
 	action := rest[0]
 	subArgs := rest[1:]
@@ -191,6 +192,10 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		return 0, cmdStatusURLs(stdout, action, subArgs, root, branch, project, instanceDir, newStateBase)
 	case "run", "exec":
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
+	case "restart":
+		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
+	case "logs":
+		return cmdLogs(stdout, stderr, subArgs, root, branch, project, instanceDir)
 	case "route":
 		return 0, cmdRoute(stdout, stderr, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	default:
@@ -211,17 +216,6 @@ func resolveStateDir(flagValue string, defaultFn func() (string, error)) (string
 		dir = d
 	}
 	return identity.ResolvePath(dir)
-}
-
-// projectNameForInstance recomputes the expected project name for root and
-// branch using whichever prefix (current or legacy) the instance already
-// carries, so the branch-ownership check in loadAndValidateManifest works
-// for instances resolved from either state directory (task 3.8).
-func projectNameForInstance(root, branch, instanceProject string) (string, error) {
-	if identity.IsLegacyInstance(instanceProject) {
-		return identity.LegacyProjectName(root, branch)
-	}
-	return identity.ProjectName(root, branch)
 }
 
 // --- git helpers -----------------------------------------------------------
@@ -619,11 +613,11 @@ func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, insta
 // --- status/urls ---------------------------------------------------------
 
 func cmdStatusURLs(stdout io.Writer, action string, subArgs []string, root, branch, project, instanceDir, newStateBase string) error {
-	info, err := loadAndValidateManifest(instanceDir, root, branch, project, action)
+	info, err := lifecycle.LoadAndValidateManifest(instanceDir, root, branch, project, action)
 	if err != nil {
 		return err
 	}
-	if err := localDocker(); err != nil {
+	if err := lifecycle.LocalDocker(); err != nil {
 		return err
 	}
 	configPath := filepath.Join(instanceDir, "compose.json")
@@ -717,19 +711,18 @@ func parseDownFlags(subArgs []string) (instance string, volumes bool, err error)
 	return instance, volumes, nil
 }
 
+// cmdUpDownRunExec parses each action's flags and delegates the actual
+// guards and docker compose invocation to lifecycle.Execute (task 4.1), the
+// same function the dashboard's up/down/restart actions call.
 func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string) (int, error) {
-	var build bool
-	var profiles, services stringList
-	waitTimeout := 180
-	var volumes bool
-	var service string
-	var command []string
+	var opts lifecycle.Options
 
 	switch action {
 	case "up":
 		fs := flag.NewFlagSet("up", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
-		fs.BoolVar(&build, "build", false, "")
+		fs.BoolVar(&opts.Build, "build", false, "")
+		var profiles, services stringList
 		fs.Var(&profiles, "profile", "")
 		fs.Var(&services, "service", "")
 		var wt string
@@ -741,267 +734,29 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		if err != nil {
 			return 2, fmt.Errorf("invalid --wait-timeout: %s", wt)
 		}
-		waitTimeout = n
+		opts.WaitTimeout = n
+		opts.Profiles = profiles
+		opts.Services = services
 	case "down":
 		var err error
-		_, volumes, err = parseDownFlags(subArgs)
+		_, opts.Volumes, err = parseDownFlags(subArgs)
 		if err != nil {
 			return 2, err
 		}
+	case "restart":
+		if len(subArgs) < 1 {
+			return 2, errors.New("service is required")
+		}
+		opts.Service = subArgs[0]
 	case "run", "exec":
 		if len(subArgs) < 1 {
 			return 2, errors.New("service is required")
 		}
-		service = subArgs[0]
-		command = subArgs[1:]
+		opts.Service = subArgs[0]
+		opts.Command = subArgs[1:]
 	}
 
-	info, err := loadAndValidateManifest(instanceDir, root, branch, project, action)
-	if err != nil {
-		return 0, err
-	}
-
-	configPath := filepath.Join(instanceDir, "compose.json")
-	if action == "up" || action == "run" || action == "exec" {
-		configData, err := os.ReadFile(configPath)
-		if err != nil {
-			return 0, err
-		}
-		parsed, err := compose.DecodeJSON(configData)
-		if err != nil {
-			return 0, err
-		}
-		envFile := ""
-		if info.EnvFile != nil {
-			envFile = *info.EnvFile
-		}
-		if _, err := compose.Isolate(parsed, root, project, envFile); err != nil {
-			return 0, err
-		}
-		for path, digest := range info.Inputs {
-			fi, statErr := os.Stat(path)
-			if statErr != nil || fi.IsDir() {
-				return 0, fmt.Errorf("Input changed: %s; run prepare again", path)
-			}
-			h, err := state.SHA256File(path)
-			if err != nil {
-				return 0, err
-			}
-			if h != digest {
-				return 0, fmt.Errorf("Input changed: %s; run prepare again", path)
-			}
-		}
-	}
-
-	if err := localDocker(); err != nil {
-		return 0, err
-	}
-
-	if action == "up" || action == "run" {
-		// Named secrets (task 6.1, design.md D6): resolve each reference
-		// into its value now, not at prepare, so a rotated env var or
-		// npmrc token is picked up without re-preparing. Only the value
-		// goes into the process env passed to `docker compose`; it is
-		// never written to the manifest or the snapshot.
-		for name, ref := range info.ResolvedSecrets() {
-			value, err := compose.ResolveSecret(name, ref)
-			if err != nil {
-				return 0, err
-			}
-			os.Setenv(name, value)
-		}
-		// D2: another branch stack from this checkout must be refused
-		// whether it was labelled under the current namespace or the
-		// legacy one, so an existing idv- stack is never orphaned and a
-		// second copy of it is never started alongside it.
-		for _, label := range []string{identity.LabelRoot, identity.LegacyLabelRoot} {
-			active, err := exec.Command("docker", "ps", "--filter", "label="+label+"="+root,
-				"--format", `{{.Label "com.docker.compose.project"}}`).Output()
-			if err != nil {
-				return 0, fmt.Errorf("Command '[docker ps ...]' returned non-zero exit status")
-			}
-			for _, name := range strings.Fields(string(active)) {
-				if name != project {
-					return 0, errors.New("Another branch stack still runs from this checkout. Use where, then down --instance NAME before starting this branch.")
-				}
-			}
-		}
-	}
-
-	if action == "up" {
-		if err := refuseBusyRecordedPorts(info.Ports, project); err != nil {
-			return 0, err
-		}
-	}
-
-	dockerCommand := []string{"compose", "-p", project, "--project-directory", root,
-		"--env-file", os.DevNull, "-f", configPath}
-
-	switch action {
-	case "up":
-		for _, p := range profiles {
-			dockerCommand = append(dockerCommand, "--profile", p)
-		}
-		dockerCommand = append(dockerCommand, "up", "-d", "--wait", "--wait-timeout", strconv.Itoa(waitTimeout))
-		if build {
-			dockerCommand = append(dockerCommand, "--build")
-		}
-		dockerCommand = append(dockerCommand, services...)
-	case "down":
-		dockerCommand = append(dockerCommand, "--profile", "*", "down", "--remove-orphans")
-		if volumes {
-			dockerCommand = append(dockerCommand, "--volumes")
-		}
-	case "run", "exec":
-		configData, err := os.ReadFile(configPath)
-		if err != nil {
-			return 0, err
-		}
-		parsed, err := compose.DecodeJSON(configData)
-		if err != nil {
-			return 0, err
-		}
-		m, _ := parsed.(map[string]interface{})
-		svc, _ := m["services"].(map[string]interface{})
-		_, hasService := svc[service]
-		if !hasService || len(command) == 0 {
-			return 0, errors.New("Specify a service in this snapshot and a command")
-		}
-		if action == "exec" {
-			dockerCommand = append(dockerCommand, "exec", "-T")
-		} else {
-			dockerCommand = append(dockerCommand, "run", "--rm", "--no-deps", "-T")
-		}
-		dockerCommand = append(dockerCommand, service)
-		dockerCommand = append(dockerCommand, command...)
-	}
-
-	cmd := exec.Command("docker", dockerCommand...)
-	cmd.Env = compose.DockerEnv()
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	cmd.Stdin = os.Stdin
-	runErr := cmd.Run()
-
-	// Task 9.2, design.md D7 layer 3: `up` and `down` are exactly the two
-	// points where which instances are running (and their currently
-	// published ports) can have changed, so the proxy's Caddyfile is stale
-	// until reloaded from every manifest. Best effort: a reload problem
-	// (or the proxy simply not running) never fails up/down itself.
-	if runErr == nil && (action == "up" || action == "down") {
-		reloadProxyIfRunning(stderr, newStateBase, legacyStateBase)
-	}
-
-	if runErr == nil {
-		return 0, nil
-	}
-	var exitErr *exec.ExitError
-	if errors.As(runErr, &exitErr) {
-		return exitErr.ExitCode(), nil
-	}
-	return 0, runErr
-}
-
-// --- shared validation -----------------------------------------------------
-
-func loadAndValidateManifest(instanceDir, root, branch, project, action string) (*state.Manifest, error) {
-	configPath := filepath.Join(instanceDir, "compose.json")
-	manifestPath := filepath.Join(instanceDir, "manifest.json")
-	if _, err := os.Stat(configPath); err != nil {
-		return nil, errors.New("No prepared stack for this checkout/branch. Run prepare first.")
-	}
-	if _, err := os.Stat(manifestPath); err != nil {
-		return nil, errors.New("No prepared stack for this checkout/branch. Run prepare first.")
-	}
-	info, err := state.ReadManifest(manifestPath)
-	if err != nil {
-		return nil, err
-	}
-	branchProject, err := projectNameForInstance(root, info.Branch, info.Project)
-	if err != nil {
-		return nil, err
-	}
-	if info.Root != root || info.Project != project || branchProject != project {
-		return nil, errors.New("Snapshot belongs to a different checkout or branch")
-	}
-	if action != "down" && info.Branch != branch {
-		return nil, errors.New("Snapshot belongs to a different branch")
-	}
-	configHash, err := state.SHA256File(configPath)
-	if err != nil {
-		return nil, err
-	}
-	if configHash != info.ConfigSHA256 {
-		return nil, errors.New("Snapshot changed; edit the source Compose files and run prepare again")
-	}
-	return info, nil
-}
-
-// refuseBusyRecordedPorts checks each stable port recorded in the manifest
-// (task 8.3, design.md D7 layer 2): free is fine, and a port already bound
-// by this same project's own containers (e.g. left running from a previous
-// `up`) is fine too, but anything else fails naming the service and port
-// and suggesting `prepare --reassign-ports` - `up` never picks a different
-// port silently, since redirect URIs depend on it.
-func refuseBusyRecordedPorts(allocs []state.PortAlloc, project string) error {
-	for _, alloc := range allocs {
-		if !ports.Bound(alloc.Host) {
-			continue
-		}
-		owned, err := portOwnedByProject(alloc.Host, project)
-		if err != nil {
-			return err
-		}
-		if !owned {
-			return fmt.Errorf("Port %d for service %s is already in use by something else; run `prepare --reassign-ports`", alloc.Host, alloc.Service)
-		}
-	}
-	return nil
-}
-
-// portOwnedByProject reports whether every container currently bound to
-// host port `port`, if any, belongs to `project`.
-func portOwnedByProject(port int, project string) (bool, error) {
-	out, err := exec.Command("docker", "ps", "--filter", fmt.Sprintf("publish=%d", port),
-		"--format", `{{.Label "com.docker.compose.project"}}`).Output()
-	if err != nil {
-		return false, fmt.Errorf("Command '[docker ps --filter publish=%d ...]' returned non-zero exit status", port)
-	}
-	names := strings.Fields(string(out))
-	if len(names) == 0 {
-		return false, nil
-	}
-	for _, name := range names {
-		if name != project {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
-func localDocker() error {
-	host := os.Getenv("DOCKER_HOST")
-	if host == "" || os.Getenv("DOCKER_CONTEXT") != "" {
-		out, err := exec.Command("docker", "context", "inspect").Output()
-		if err != nil {
-			return fmt.Errorf("Command '[docker, context, inspect]' returned non-zero exit status")
-		}
-		var contexts []map[string]interface{}
-		if err := json.Unmarshal(out, &contexts); err != nil {
-			return err
-		}
-		if len(contexts) == 0 {
-			return errors.New("This skill operates on a local Docker daemon; select a local context first")
-		}
-		endpoints, _ := contexts[0]["Endpoints"].(map[string]interface{})
-		docker, _ := endpoints["docker"].(map[string]interface{})
-		h, _ := docker["Host"].(string)
-		host = h
-	}
-	if !strings.HasPrefix(host, "unix://") && !strings.HasPrefix(host, "npipe://") {
-		return errors.New("This skill operates on a local Docker daemon; select a local context first")
-	}
-	return nil
+	return lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
 }
 
 // --- output ------------------------------------------------------------

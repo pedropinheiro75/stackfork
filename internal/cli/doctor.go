@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 )
 
@@ -77,7 +78,7 @@ func dockerAvailable() bool {
 }
 
 func checkDockerContext() (status, message, hint string) {
-	if err := localDocker(); err != nil {
+	if err := lifecycle.LocalDocker(); err != nil {
 		return "fail", err.Error(), "select a local Docker context, e.g. `docker context use default`"
 	}
 	return "ok", "a local Docker context is selected", ""

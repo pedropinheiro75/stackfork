@@ -236,7 +236,15 @@ func RegisterWithProxy(newStateBase string, routes []proxy.Route, port int) erro
 	if err := proxy.WriteCaddyfile(newStateBase, all); err != nil {
 		return err
 	}
-	return proxy.Reload(newStateBase)
+	if err := proxy.Reload(newStateBase); err != nil {
+		// The file was already written with the dashboard's route; a
+		// failed reload must not leave it there for the next caller to
+		// find (and never clean up, since cmdDashboard only unregisters
+		// when this call reported success).
+		proxy.WriteCaddyfile(newStateBase, routes) //nolint:errcheck // best-effort rollback; the reload error is what's reported
+		return err
+	}
+	return nil
 }
 
 // UnregisterFromProxy removes the dashboard's route on shutdown, keeping

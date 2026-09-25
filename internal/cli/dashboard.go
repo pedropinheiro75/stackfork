@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 )
@@ -88,7 +89,7 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	// itself from serving on its own port.
 	registeredWithProxy := false
 	if running, _ := proxy.IsRunning(proxy.ContainerName()); running {
-		if routes, err := gatherRoutes(newStateBase, legacyStateBase); err == nil {
+		if routes, err := lifecycle.GatherRoutes(newStateBase, legacyStateBase); err == nil {
 			if err := dashboard.RegisterWithProxy(newStateBase, routes, port); err == nil {
 				registeredWithProxy = true
 			} else {
@@ -100,7 +101,7 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 		if !registeredWithProxy {
 			return
 		}
-		routes, err := gatherRoutes(newStateBase, legacyStateBase)
+		routes, err := lifecycle.GatherRoutes(newStateBase, legacyStateBase)
 		if err != nil {
 			return
 		}

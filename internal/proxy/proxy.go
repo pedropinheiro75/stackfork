@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
@@ -194,6 +195,14 @@ func Down() error {
 // Reload regenerates nothing itself (the caller must WriteCaddyfile first);
 // it only asks the running Caddy process to pick up the file it already has
 // mounted (task 9.2). Skips silently if the proxy isn't running.
+//
+// A reload requested right after the container starts (a caller registering
+// a route in the same breath as `proxy up`, e.g. the dashboard) can race
+// Caddy's own admin API startup inside the container - `docker exec` runs
+// fine, but `caddy reload` gets "connection refused" for a few hundred
+// milliseconds. Retried briefly rather than surfaced as a failure, since
+// the container is confirmed running and the file is already in place; a
+// reload that still fails after that really is one.
 func Reload(stateBase string) error {
 	name := ContainerName()
 	running, err := IsRunning(name)
@@ -203,11 +212,18 @@ func Reload(stateBase string) error {
 	if !running {
 		return nil
 	}
-	out, err := exec.Command("docker", "exec", name, "caddy", "reload", "--config", "/etc/caddy/Caddyfile").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("caddy reload: %s", strings.TrimSpace(string(out)))
+	var out []byte
+	for attempt := 0; attempt < 10; attempt++ {
+		out, err = exec.Command("docker", "exec", name, "caddy", "reload", "--config", "/etc/caddy/Caddyfile").CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		if !strings.Contains(string(out), "connection refused") {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
-	return nil
+	return fmt.Errorf("caddy reload: %s", strings.TrimSpace(string(out)))
 }
 
 // Info is `proxy status`'s output.
