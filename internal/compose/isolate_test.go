@@ -481,6 +481,27 @@ func TestPrimaryHTTPServiceInferredFallback(t *testing.T) {
 	}
 }
 
+// TestPrimaryHTTPServiceGuessPriorityBeatsAlphabeticalOrder is the real
+// bug behind app-d's dashboard "App" chip opening Adminer instead of the
+// app: "adminer" (port 8080) sorts before "app" (port 3000) alphabetically,
+// but 3000 ranks earlier in the fixed-port guess list (80/443/3000/8080/
+// 5050) - guess priority must win over which service name comes first.
+func TestPrimaryHTTPServiceGuessPriorityBeatsAlphabeticalOrder(t *testing.T) {
+	model, err := DecodeJSON([]byte(`{
+		"services": {
+			"adminer": {"ports": [{"target": 8080}]},
+			"app": {"ports": [{"target": 3000}]}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, target, https, ok := PrimaryHTTPService(model)
+	if !ok || service != "app" || target != 3000 || https {
+		t.Fatalf("got service=%s target=%d https=%v ok=%v, want app/3000", service, target, https, ok)
+	}
+}
+
 func TestPrimaryHTTPServiceNoneQualifies(t *testing.T) {
 	model, err := DecodeJSON([]byte(`{"services": {"db": {"ports": [{"target": 5432}]}}}`))
 	if err != nil {

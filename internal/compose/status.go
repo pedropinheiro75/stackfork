@@ -289,18 +289,22 @@ func PrimaryHTTPService(model interface{}) (service string, target int, https bo
 		}
 	}
 	// Inferred fallback: the same fixed-port guess EndpointLines uses, in
-	// declaration order (80/443 first, since those are unambiguous).
+	// declaration order (80/443 first, since those are unambiguous). Guess
+	// priority must be the outer loop: an alphabetically-earlier service
+	// name (e.g. "adminer") must never steal primary from a later one
+	// (e.g. "app") just because its own port happens to appear earlier in
+	// service iteration order - only port priority decides that.
 	guesses := []struct {
 		port  int
 		https bool
 	}{{80, false}, {443, true}, {3000, false}, {8080, false}, {5050, false}}
-	for _, name := range names {
-		svc, svcOk := asMap(services[name])
-		if !svcOk {
-			continue
-		}
-		portsList, _ := asList(svc["ports"])
-		for _, guess := range guesses {
+	for _, guess := range guesses {
+		for _, name := range names {
+			svc, svcOk := asMap(services[name])
+			if !svcOk {
+				continue
+			}
+			portsList, _ := asList(svc["ports"])
 			for _, raw := range portsList {
 				port, portOk := asMap(raw)
 				if !portOk {
