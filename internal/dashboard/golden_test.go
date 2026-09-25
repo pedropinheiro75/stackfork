@@ -12,12 +12,15 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/cli"
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 )
 
 // installFakeDocker mirrors the one every other package's tests use: a
 // `docker` first on PATH that delegates `compose ... config` to the real
 // docker (so prepare renders a genuine snapshot) and returns canned/empty
 // output for everything else, so this test needs no daemon.
+//   - `docker ps --filter label=<legacy root label>=...` -> $DOCKER_FAKE_PS_LEGACY (empty by default)
+//   - `docker ps ...`                                    -> $DOCKER_FAKE_PS (empty by default)
 func installFakeDocker(t *testing.T) {
 	t.Helper()
 	real, err := exec.LookPath("docker")
@@ -32,13 +35,20 @@ if [ "$1" = "compose" ]; then
       exec "` + real + `" "$@"
     fi
   done
-  exit 0
+  if [ -n "$DOCKER_FAKE_SLEEP" ]; then
+    sleep "$DOCKER_FAKE_SLEEP"
+  fi
+  exit "${DOCKER_FAKE_EXIT:-0}"
 fi
 if [ "$1" = "context" ] && [ "$2" = "inspect" ]; then
   printf '%s' '[{"Endpoints":{"docker":{"Host":"unix:///var/run/docker.sock"}}}]'
   exit 0
 fi
 if [ "$1" = "ps" ]; then
+  case " $* " in
+    *"` + identity.LegacyLabelRoot + `"*) printf '%s' "$DOCKER_FAKE_PS_LEGACY" ;;
+    *) printf '%s' "$DOCKER_FAKE_PS" ;;
+  esac
   exit 0
 fi
 if [ "$1" = "inspect" ]; then
