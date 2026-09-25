@@ -28,7 +28,21 @@ var staticFS embed.FS
 //go:embed templates/index.html.tmpl
 var indexTemplateSrc embed.FS
 
-var indexTemplate = template.Must(template.ParseFS(indexTemplateSrc, "templates/index.html.tmpl"))
+// indexFuncs is the small set of view helpers the template needs beyond
+// plain field access - just enough for the stack icon's initial letter
+// (design.md D3a); everything else (escaping, formatting) is either
+// html/template's own job or already done in Go before Execute.
+var indexFuncs = template.FuncMap{
+	"initial": func(s string) string {
+		for _, r := range s {
+			return strings.ToUpper(string(r))
+		}
+		return "?"
+	},
+}
+
+var indexTemplate = template.Must(
+	template.New("index.html.tmpl").Funcs(indexFuncs).ParseFS(indexTemplateSrc, "templates/index.html.tmpl"))
 
 // Server holds everything a request handler needs; every field is set once
 // at construction and read-only afterward except the inventory cache.
@@ -133,7 +147,8 @@ func (s *Server) handleInstances(w http.ResponseWriter, r *http.Request) {
 // stay in the CLI; the page shows the exact command to copy").
 type cardData struct {
 	inventory.Instance
-	Commands []string
+	Commands   []string
+	ColorIndex int
 }
 
 // cliCommands lists the copyable commands for one card: `down --volumes`
@@ -163,27 +178,51 @@ func cliCommands(inst inventory.Instance) []string {
 	return cmds
 }
 
-// checkoutGroup is one checkout's instances, for the page's "grouped by
-// checkout" layout (design.md D3).
-type checkoutGroup struct {
-	Root      string
-	Instances []cardData
+// stackPalette is the fixed set of stack-icon colors (design.md D3a: "a
+// stack icon colored from a hash of the project name"), applied as a CSS
+// class (app.css's .stack-color-0..7) rather than an inline color, so the
+// same small integer hash - computed identically in Go and in app.js's
+// re-render - is the only thing that has to match between them.
+const stackPaletteSize = 8
+
+// stackColorIndex hashes project (a simple byte sum, deliberately not a
+// real hash function: it only needs to be cheap and identical on both
+// sides, not collision-resistant) into 0..stackPaletteSize-1.
+func stackColorIndex(project string) int {
+	sum := 0
+	for i := 0; i < len(project); i++ {
+		sum += int(project[i])
+	}
+	return sum % stackPaletteSize
 }
 
-func groupByCheckout(instances []inventory.Instance) []checkoutGroup {
-	var groups []checkoutGroup
-	byRoot := map[string]int{}
+// isRunningState reports whether an instance counts as "running" for the
+// D3a Running/Stopped split: any service running counts, same as the
+// header's own running count.
+func isRunningState(state string) bool {
+	return state == inventory.StateRunning || state == inventory.StatePartial
+}
+
+func buildCards(instances []inventory.Instance) (running, stopped []cardData) {
 	for _, inst := range instances {
-		card := cardData{Instance: inst, Commands: cliCommands(inst)}
-		if idx, ok := byRoot[inst.Root]; ok {
-			groups[idx].Instances = append(groups[idx].Instances, card)
-			continue
+		card := cardData{Instance: inst, Commands: cliCommands(inst), ColorIndex: stackColorIndex(inst.Project)}
+		if isRunningState(inst.State) {
+			running = append(running, card)
+		} else {
+			stopped = append(stopped, card)
 		}
-		byRoot[inst.Root] = len(groups)
-		groups = append(groups, checkoutGroup{Root: inst.Root, Instances: []cardData{card}})
 	}
-	sort.Slice(groups, func(i, j int) bool { return groups[i].Root < groups[j].Root })
-	return groups
+	less := func(cards []cardData) func(i, j int) bool {
+		return func(i, j int) bool {
+			if cards[i].Root != cards[j].Root {
+				return cards[i].Root < cards[j].Root
+			}
+			return cards[i].Project < cards[j].Project
+		}
+	}
+	sort.Slice(running, less(running))
+	sort.Slice(stopped, less(stopped))
+	return running, stopped
 }
 
 type pageData struct {
@@ -191,7 +230,8 @@ type pageData struct {
 	Token        string
 	Docker       inventory.DockerStatus
 	Proxy        inventory.ProxyStatus
-	Groups       []checkoutGroup
+	Running      []cardData
+	Stopped      []cardData
 	Total        int
 	RunningCount int
 }
@@ -202,15 +242,10 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	running := 0
-	for _, i := range inv.Instances {
-		if i.State == inventory.StateRunning || i.State == inventory.StatePartial {
-			running++
-		}
-	}
+	running, stopped := buildCards(inv.Instances)
 	data := pageData{
 		Version: s.Version, Token: s.Token, Docker: inv.Docker, Proxy: inv.Proxy,
-		Groups: groupByCheckout(inv.Instances), Total: len(inv.Instances), RunningCount: running,
+		Running: running, Stopped: stopped, Total: len(inv.Instances), RunningCount: len(running),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := indexTemplate.Execute(w, data); err != nil {

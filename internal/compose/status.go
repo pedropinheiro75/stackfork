@@ -126,22 +126,8 @@ func ComputeEndpoints(rows []StatusRow, hostname string, httpPorts, httpsPorts [
 			if protocol == "" {
 				protocol = "tcp"
 			}
-			var scheme string
-			switch {
-			case isTargetIn(target, httpsPorts):
-				scheme = "https"
-			case isTargetIn(target, httpPorts):
-				scheme = "http"
-			case isTarget(target, 443):
-				scheme = "https"
-			case isTarget(target, 80), isTarget(target, 3000), isTarget(target, 8080), isTarget(target, 5050):
-				scheme = "http"
-			default:
-				scheme = protocol
-			}
-			if protocol != "tcp" {
-				scheme = protocol
-			}
+			targetInt, _ := TargetAsInt(target)
+			scheme := SchemeForTarget(targetInt, protocol, httpPorts, httpsPorts)
 			host := "127.0.0.1"
 			if scheme == "http" || scheme == "https" {
 				host = hostname
@@ -153,6 +139,54 @@ func ComputeEndpoints(rows []StatusRow, hostname string, httpPorts, httpsPorts [
 		}
 	}
 	return out
+}
+
+// SchemeForTarget picks the scheme one target port resolves to: a
+// declared HTTP/HTTPS port (design.md D7's io.stackfork.http/.https
+// labels) wins, then a fixed-port guess (443 is HTTPS; 80/3000/8080/5050
+// are HTTP), else the port's own protocol. The one rule ComputeEndpoints
+// (live docker ps data) and internal/inventory's snapshot-based endpoints
+// (task 3.6) both use, so a service shows the same scheme whether or not
+// it's currently running.
+func SchemeForTarget(target int, protocol string, httpPorts, httpsPorts []int) string {
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	if protocol != "tcp" {
+		return protocol
+	}
+	for _, p := range httpsPorts {
+		if p == target {
+			return "https"
+		}
+	}
+	for _, p := range httpPorts {
+		if p == target {
+			return "http"
+		}
+	}
+	switch target {
+	case 443:
+		return "https"
+	case 80, 3000, 8080, 5050:
+		return "http"
+	default:
+		return protocol
+	}
+}
+
+// TargetAsInt reads a Publishers["TargetPort"]-shaped value (a json.Number
+// from StatusRow, decoded with UseNumber) as a plain int.
+func TargetAsInt(v interface{}) (int, bool) {
+	n, ok := v.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	i, err := n.Int64()
+	if err != nil {
+		return 0, false
+	}
+	return int(i), true
 }
 
 // EndpointLines formats ComputeEndpoints' result the way `urls` has always
@@ -361,22 +395,4 @@ func isTarget(v interface{}, n int64) bool {
 	}
 	i, err := num.Int64()
 	return err == nil && i == n
-}
-
-// isTargetIn reports whether v (a TargetPort) is one of ports.
-func isTargetIn(v interface{}, ports []int) bool {
-	num, ok := v.(json.Number)
-	if !ok {
-		return false
-	}
-	i, err := num.Int64()
-	if err != nil {
-		return false
-	}
-	for _, p := range ports {
-		if int64(p) == i {
-			return true
-		}
-	}
-	return false
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -75,7 +76,12 @@ func gitRepo(t *testing.T, branch string) string {
 
 // writeInstance writes manifest.json and compose.json for one instance
 // under base/project.
-func writeInstance(t *testing.T, base, project, root, branch string, services []string, ports []state.PortAlloc) {
+// writeInstance writes a synthetic manifest.json + compose.json.
+// declaredPorts optionally lists each service's declared target ports (the
+// snapshot's own "ports" entries, task 3.6: an endpoint is built from these
+// whether or not the service is currently running), keyed by service name;
+// nil/missing means that service declares no ports.
+func writeInstance(t *testing.T, base, project, root, branch string, services []string, ports []state.PortAlloc, declaredPorts ...map[string][]int) {
 	t.Helper()
 	dir := filepath.Join(base, project)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -88,9 +94,23 @@ func writeInstance(t *testing.T, base, project, root, branch string, services []
 	if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {
 		t.Fatal(err)
 	}
+	var byService map[string][]int
+	if len(declaredPorts) > 0 {
+		byService = declaredPorts[0]
+	}
 	svcMap := map[string]interface{}{}
 	for _, s := range services {
-		svcMap[s] = map[string]interface{}{}
+		svc := map[string]interface{}{}
+		if targets := byService[s]; len(targets) > 0 {
+			var portsList []interface{}
+			for _, target := range targets {
+				portsList = append(portsList, map[string]interface{}{
+					"target": json.Number(strconv.Itoa(target)), "protocol": "tcp",
+				})
+			}
+			svc["ports"] = portsList
+		}
+		svcMap[s] = svc
 	}
 	config := map[string]interface{}{"services": svcMap}
 	if err := state.WritePrivate(filepath.Join(dir, "compose.json"), config); err != nil {
@@ -121,8 +141,9 @@ func TestCollectStates(t *testing.T) {
 	missingBranch := gitRepo(t, "main")
 	missingCheckout := filepath.Join(t.TempDir(), "gone")
 
-	writeInstance(t, newBase, "sf-running-1", running, "main", []string{"web", "db"}, nil)
-	writeInstance(t, newBase, "sf-partial-2", partial, "main", []string{"web", "db"}, nil)
+	webDBPorts := map[string][]int{"web": {3000}, "db": {5432}}
+	writeInstance(t, newBase, "sf-running-1", running, "main", []string{"web", "db"}, nil, webDBPorts)
+	writeInstance(t, newBase, "sf-partial-2", partial, "main", []string{"web", "db"}, nil, webDBPorts)
 	writeInstance(t, newBase, "sf-stopped-3", stopped, "main", []string{"web"}, nil)
 	writeInstance(t, newBase, "sf-missingbranch-4", missingBranch, "gone-branch", []string{"web"}, nil)
 	writeInstance(t, newBase, "sf-missingcheckout-5", missingCheckout, "main", []string{"web"}, nil)

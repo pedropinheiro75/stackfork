@@ -84,16 +84,37 @@ func TestIndexShowsCopyableCommandsAndActionWiring(t *testing.T) {
 	if !strings.Contains(body, "cli-command") {
 		t.Fatalf("expected the commands to be rendered with the copyable cli-command class:\n%s", body)
 	}
-	if !strings.Contains(body, `<button class="action" data-action="down" data-project="`+project+`">Down</button>`) {
-		t.Fatalf("expected a plain Down button with no --volumes anywhere in its own markup:\n%s", body)
+	if !strings.Contains(body, `class="stack-menu"`) {
+		t.Fatalf("expected the destructive commands inside the per-stack \"...\" menu:\n%s", body)
+	}
+	if !strings.Contains(body, `<button class="icon-btn" data-action="down" data-project="`+project+`" title="Down (keeps volumes)">`) {
+		t.Fatalf("expected a plain Down icon button with no --volumes anywhere in its own markup:\n%s", body)
 	}
 	if !strings.Contains(body, `data-action="restart"`) {
 		t.Fatalf("expected a restart button for the web service:\n%s", body)
 	}
-	if !strings.Contains(body, `class="logs-button"`) {
+	if !strings.Contains(body, `class="icon-btn logs-button"`) {
 		t.Fatalf("expected a logs button:\n%s", body)
 	}
 	if !strings.Contains(body, `id="logs-panel"`) {
 		t.Fatalf("expected the logs panel markup:\n%s", body)
+	}
+	if !strings.Contains(body, `class="service-settings" hidden`) {
+		t.Fatalf("expected an expandable settings panel per service:\n%s", body)
+	}
+	if !strings.Contains(body, `data-toggle-stack`) {
+		t.Fatalf("expected the stack header to be collapsible:\n%s", body)
+	}
+
+	// The destructive command must appear once, inside the menu, and
+	// nowhere else on the card body (maintainer feedback: "the destructive
+	// command lives in the '...' menu, not printed on the card").
+	menuStart := strings.Index(body, `class="stack-menu"`)
+	menuEnd := strings.Index(body[menuStart:], "</div>") + menuStart
+	before := body[:menuStart]
+	after := body[menuEnd:]
+	downVolumes := "stackfork down --instance " + project + " --volumes"
+	if strings.Contains(before, downVolumes) || strings.Contains(after, downVolumes) {
+		t.Fatalf("expected the down --volumes command only inside the stack menu, found it elsewhere too")
 	}
 }

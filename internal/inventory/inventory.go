@@ -48,10 +48,21 @@ type ProxyStatus struct {
 }
 
 // Endpoint is one published port, ready to render: a link for http/https, a
-// copyable address otherwise.
+// copyable address otherwise. Every declared port in the snapshot gets one,
+// whether or not the service is currently running (maintainer feedback on
+// task 3.6: a stopped/exited service must not go address-less). Known is
+// false only for a legacy/--random-ports instance's port that isn't
+// currently running - Docker picks that port at container-create time, so
+// there is nothing to show but the container-side port until it starts.
 type Endpoint struct {
-	Scheme string `json:"scheme"`
-	URL    string `json:"url"`
+	Scheme    string `json:"scheme"`
+	URL       string `json:"url"`
+	Container int    `json:"container"`
+	Known     bool   `json:"known"`
+	// Proxied marks the extra, portless URL added when the shared proxy is
+	// actually routing this service (design.md D7 layer 3) - shown
+	// alongside, not instead of, the direct address.
+	Proxied bool `json:"proxied,omitempty"`
 }
 
 // PortMapping is one container->host port mapping declared in the
@@ -110,6 +121,9 @@ type Instance struct {
 	Services  []Service        `json:"services,omitempty"`
 	Knowledge *KnowledgeStatus `json:"knowledge,omitempty"`
 	Warnings  []string         `json:"warnings,omitempty"`
+	// Files is the instance's source Compose files, part of each service's
+	// expandable settings (design.md D3a/task 3.4).
+	Files []string `json:"files,omitempty"`
 }
 
 // Inventory is the whole machine's state, task 1.1's D1 type.
@@ -176,7 +190,7 @@ func Collect(opts Options) (Inventory, error) {
 	}
 
 	for _, e := range entries {
-		inst := buildInstance(e.path, e.legacy, byProject[filepath.Base(filepath.Dir(e.path))])
+		inst := buildInstance(e.path, e.legacy, byProject[filepath.Base(filepath.Dir(e.path))], inv.Proxy)
 		inv.Instances = append(inv.Instances, inst)
 	}
 
@@ -196,7 +210,7 @@ func Collect(opts Options) (Inventory, error) {
 
 // buildInstance turns one manifest into an Instance, given the containers
 // (if any) already parsed for its Compose project.
-func buildInstance(manifestPath string, legacy bool, rows []containerRow) Instance {
+func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyStatus ProxyStatus) Instance {
 	project := filepath.Base(filepath.Dir(manifestPath))
 	info, err := state.ReadManifest(manifestPath)
 	if err != nil || info == nil {
@@ -209,7 +223,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow) Instan
 	hostname, _ := identity.BrowserHostname(info.Project, info.Hostname)
 	inst := Instance{
 		Project: info.Project, Root: info.Root, Branch: info.Branch,
-		Hostname: hostname, Legacy: legacy,
+		Hostname: hostname, Legacy: legacy, Files: info.Files,
 	}
 
 	statusRows := toStatusRows(rows)
@@ -222,7 +236,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow) Instan
 		inst.State = StateMissingBranch
 		inst.Warnings = append(inst.Warnings, fmt.Sprintf("branch %s no longer exists in %s; run `stackfork gc`", info.Branch, info.Root))
 	default:
-		services, serviceState := servicesForInstance(manifestPath, statusRows, hostname, info)
+		services, serviceState := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
 		inst.Services = services
 		inst.State = serviceState
 	}
@@ -269,7 +283,7 @@ func branchExists(root, branch string) bool {
 // servicesForInstance reads the instance's snapshot for its declared
 // service list (so a never-started service still gets a row) and matches
 // each one against its container, if any.
-func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname string, info *state.Manifest) ([]Service, string) {
+func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname string, info *state.Manifest, proxyStatus ProxyStatus) ([]Service, string) {
 	instanceDir := filepath.Dir(manifestPath)
 	configData, err := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
 	if err != nil {
@@ -287,14 +301,20 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 	}
 	sort.Strings(names)
 
-	endpointsByService := map[string][]compose.Endpoint{}
+	liveByService := map[string]map[int]compose.Endpoint{}
 	for _, e := range compose.ComputeEndpoints(rows, hostname, info.HTTPPorts, info.HTTPSPorts) {
-		endpointsByService[e.Service] = append(endpointsByService[e.Service], e)
+		if t, ok := compose.TargetAsInt(e.Target); ok {
+			if liveByService[e.Service] == nil {
+				liveByService[e.Service] = map[int]compose.Endpoint{}
+			}
+			liveByService[e.Service][t] = e
+		}
 	}
 	rowByService := map[string]compose.StatusRow{}
 	for _, r := range rows {
 		rowByService[r.Service] = r
 	}
+	primaryService, primaryTarget, primaryHTTPS, hasPrimary := compose.PrimaryHTTPService(model)
 
 	var services []Service
 	running, total := 0, len(names)
@@ -307,11 +327,18 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 				running++
 			}
 		}
-		for _, e := range endpointsByService[name] {
-			svc.Endpoints = append(svc.Endpoints, Endpoint{Scheme: e.Scheme, URL: e.URL()})
-		}
 		if raw, ok := svcMap[name].(map[string]interface{}); ok {
 			fillServiceDetails(&svc, raw)
+		}
+		// Every declared port gets an endpoint, running or not (maintainer
+		// feedback, task 3.6): live docker data wins when there is any (the
+		// only way to know a legacy/--random-ports instance's actual bound
+		// port), the snapshot's own recorded port otherwise, and "not yet
+		// known" only for a random-port service that isn't running to show
+		// it against.
+		svc.Endpoints = buildServiceEndpoints(svc, liveByService[name], hostname, info)
+		if proxyStatus.Running && hasPrimary && name == primaryService && svc.State == "running" {
+			svc.Endpoints = append(svc.Endpoints, proxyEndpoint(hostname, primaryHTTPS, proxyStatus.Port, primaryTarget))
 		}
 		services = append(services, svc)
 	}
@@ -324,6 +351,47 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 	default:
 		return services, StatePartial
 	}
+}
+
+// buildServiceEndpoints resolves one endpoint per declared port (task 3.6).
+func buildServiceEndpoints(svc Service, live map[int]compose.Endpoint, hostname string, info *state.Manifest) []Endpoint {
+	var out []Endpoint
+	for _, p := range svc.Ports {
+		if e, ok := live[p.Container]; ok {
+			out = append(out, Endpoint{Scheme: e.Scheme, URL: e.URL(), Container: p.Container, Known: true})
+			continue
+		}
+		scheme := compose.SchemeForTarget(p.Container, p.Protocol, info.HTTPPorts, info.HTTPSPorts)
+		if p.Host <= 0 {
+			// A legacy/--random-ports service Docker hasn't assigned a
+			// port to yet (it isn't running): nothing to show but which
+			// container port it is.
+			out = append(out, Endpoint{Scheme: scheme, Container: p.Container, Known: false})
+			continue
+		}
+		host := "127.0.0.1"
+		if scheme == "http" || scheme == "https" {
+			host = hostname
+		}
+		ce := compose.Endpoint{Scheme: scheme, Host: host, Port: strconv.Itoa(p.Host)}
+		out = append(out, Endpoint{Scheme: scheme, URL: ce.URL(), Container: p.Container, Known: true})
+	}
+	return out
+}
+
+// proxyEndpoint is the extra, portless address once the shared proxy is
+// actually routing an instance's primary HTTP service (design.md D7 layer
+// 3/task 3.6): shown alongside the direct one, never instead of it.
+func proxyEndpoint(hostname string, https bool, proxyPort, target int) Endpoint {
+	scheme := "http"
+	if https {
+		scheme = "https"
+	}
+	url := fmt.Sprintf("%s://%s", scheme, hostname)
+	if proxyPort != 80 {
+		url = fmt.Sprintf("%s:%d", url, proxyPort)
+	}
+	return Endpoint{Scheme: scheme, URL: url, Container: target, Known: true, Proxied: true}
 }
 
 // busyPortWarnings flags a recorded stable port (design.md D7 layer 2) that

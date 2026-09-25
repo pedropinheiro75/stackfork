@@ -28,61 +28,18 @@
 <div id="docker-banner" class="banner" hidden>Docker is unreachable; showing the last known data.</div>
 
 <main id="instances">
-{{range .Groups}}
-  <section class="checkout" data-root="{{.Root}}">
-    <h2 class="checkout-root">{{.Root}}</h2>
-    <div class="checkout-cards">
-    {{range .Instances}}
-    {{$inst := .}}
-    <article class="card" data-project="{{.Project}}" data-state="{{.State}}">
-      <header class="card-header">
-        <span class="hostname">{{.Hostname}}</span>
-        <span class="branch">{{.Branch}}</span>
-        <span class="state state-{{.State}}">{{.State}}</span>
-        {{if .Legacy}}<span class="legacy-tag">legacy</span>{{end}}
-      </header>
-      {{if .Services}}
-      <ul class="services">
-        {{range .Services}}
-        <li class="service service-{{.State}}">
-          <span class="service-name">{{.Name}}</span>
-          <span class="service-state">{{.State}}{{if .Health}} ({{.Health}}){{end}}</span>
-          {{range .Endpoints}}
-          {{if or (eq .Scheme "http") (eq .Scheme "https")}}
-          <a class="endpoint" href="{{.URL}}" target="_blank" rel="noopener">{{.URL}}</a>
-          {{else}}
-          <span class="endpoint copyable" data-copy="{{.URL}}">{{.URL}}</span>
-          {{end}}
-          {{end}}
-          <button class="action service-action" data-action="restart" data-project="{{$inst.Project}}" data-service="{{.Name}}">Restart</button>
-          <button class="logs-button" data-project="{{$inst.Project}}" data-service="{{.Name}}">Logs</button>
-        </li>
-        {{end}}
-      </ul>
-      {{end}}
-      {{if .Knowledge}}
-      <span class="knowledge knowledge-{{.Knowledge.Status}}">knowledge: {{.Knowledge.Status}}</span>
-      {{end}}
-      {{if .Warnings}}
-      <ul class="warnings">
-        {{range .Warnings}}<li class="warning">{{.}}</li>{{end}}
-      </ul>
-      {{end}}
-      <div class="actions">
-        <button class="action" data-action="up" data-project="{{.Project}}">Up</button>
-        <button class="action" data-action="down" data-project="{{.Project}}">Down</button>
-        <button class="logs-button" data-project="{{.Project}}" data-service="">Logs</button>
-      </div>
-      {{if .Commands}}
-      <div class="commands">
-        {{range .Commands}}<code class="copyable cli-command" data-copy="{{.}}" title="click to copy">{{.}}</code>{{end}}
-      </div>
-      {{end}}
-    </article>
-    {{end}}
+  <section class="section" data-section="running">
+    <h2 class="section-title">Running <span class="section-count">{{len .Running}}</span></h2>
+    <div class="stack-list">
+      {{range .Running}}{{template "stack" .}}{{end}}
     </div>
   </section>
-{{end}}
+  <section class="section" data-section="stopped">
+    <h2 class="section-title">Stopped <span class="section-count">{{len .Stopped}}</span></h2>
+    <div class="stack-list">
+      {{range .Stopped}}{{template "stack" .}}{{end}}
+    </div>
+  </section>
 </main>
 
 <div id="activity-log"></div>
@@ -90,7 +47,7 @@
 <div id="logs-panel" hidden>
   <div id="logs-header">
     <span id="logs-title"></span>
-    <button id="logs-close" type="button">Close</button>
+    <button id="logs-close" type="button" class="icon-btn" title="Close">&#10005;</button>
   </div>
   <pre id="logs-body"></pre>
 </div>
@@ -98,3 +55,74 @@
 <script src="/static/app.js"></script>
 </body>
 </html>
+
+{{define "stack"}}
+{{$inst := .}}
+<article class="stack" data-project="{{.Project}}" data-state="{{.State}}" data-collapsed="{{if or (eq .State "running") (eq .State "partial")}}0{{else}}1{{end}}">
+  <header class="stack-header" data-toggle-stack data-project="{{.Project}}">
+    <span class="stack-icon stack-color-{{.ColorIndex}}">{{initial .Project}}</span>
+    <div class="stack-title">
+      <span class="stack-name" title="{{.Hostname}}">{{.Hostname}}</span>
+      <span class="stack-path" title="{{.Root}}">{{.Root}}</span>
+    </div>
+    <span class="branch-tag" title="{{.Branch}}">{{.Branch}}</span>
+    {{if .Legacy}}<span class="legacy-tag">legacy</span>{{end}}
+    {{if .Knowledge}}<span class="knowledge knowledge-{{.Knowledge.Status}}">{{.Knowledge.Status}}</span>{{end}}
+    <span class="state-badge state-{{.State}}">{{.State}}</span>
+    <div class="stack-actions">
+      <button class="icon-btn" data-action="up" data-project="{{.Project}}" title="Up">&#9654;</button>
+      <button class="icon-btn" data-action="down" data-project="{{.Project}}" title="Down (keeps volumes)">&#9632;</button>
+      <button class="icon-btn stack-menu-toggle" data-project="{{.Project}}" title="More">&#8942;</button>
+    </div>
+  </header>
+  <div class="stack-menu" hidden>
+    {{range .Commands}}<code class="copyable cli-command" data-copy="{{.}}" title="click to copy">{{.}}</code>{{end}}
+  </div>
+  {{if .Warnings}}
+  <ul class="warnings">
+    {{range .Warnings}}<li class="warning">{{.}}</li>{{end}}
+  </ul>
+  {{end}}
+  <div class="stack-body">
+    {{range .Services}}
+    {{$svc := .}}
+    <div class="service-row" data-service="{{.Name}}">
+      <div class="service-summary" data-toggle-settings data-key="{{$inst.Project}}/{{.Name}}">
+        <span class="service-logo" data-kind="{{.Kind}}"></span>
+        <span class="status-dot {{.State}}"></span>
+        <div class="service-text">
+          <span class="service-name">{{.Name}}</span>
+          {{if .Image}}<span class="service-image">{{.Image}}</span>{{end}}
+        </div>
+        <div class="service-endpoints">
+          {{range .Endpoints}}
+          {{if .Known}}
+            {{if or (eq .Scheme "http") (eq .Scheme "https")}}
+            <a class="endpoint-link{{if ne $svc.State "running"}} stopped{{end}}" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}">{{.URL}}{{if ne $svc.State "running"}} (stopped){{end}}{{if .Proxied}} (proxy){{end}}</a>
+            {{else}}
+            <span class="endpoint-copy copyable{{if ne $svc.State "running"}} stopped{{end}}" data-copy="{{.URL}}" title="click to copy">{{.URL}}{{if ne $svc.State "running"}} (stopped){{end}}</span>
+            {{end}}
+          {{else}}
+            <span class="endpoint-pending">container {{.Container}} &mdash; assigned on start</span>
+          {{end}}
+          {{end}}
+        </div>
+        <div class="service-icons">
+          <button class="icon-btn" data-action="restart" data-project="{{$inst.Project}}" data-service="{{.Name}}" title="Restart">&#8635;</button>
+          <button class="icon-btn logs-button" data-project="{{$inst.Project}}" data-service="{{.Name}}" title="Logs">&#9776;</button>
+        </div>
+      </div>
+      <div class="service-settings" hidden>
+        {{if .Ports}}<div class="setting-row"><span class="setting-label">Ports</span><span class="setting-values">{{range .Ports}}<span class="setting-value">{{.Container}}{{if .Host}} &rarr; {{.Host}}{{end}}/{{.Protocol}}</span>{{end}}</span></div>{{end}}
+        {{if .Volumes}}<div class="setting-row"><span class="setting-label">Volumes</span><span class="setting-values">{{range .Volumes}}<span class="setting-value">{{.Name}} &rarr; {{.Path}}{{if .ReadOnly}} (ro){{end}}</span>{{end}}</span></div>{{end}}
+        {{if .Healthcheck}}<div class="setting-row"><span class="setting-label">Healthcheck</span><code class="setting-value">{{.Healthcheck}}</code></div>{{end}}
+        {{if .DependsOn}}<div class="setting-row"><span class="setting-label">Depends on</span><span class="setting-values">{{range .DependsOn}}<span class="setting-value">{{.}}</span>{{end}}</span></div>{{end}}
+        {{if .Replicas}}<div class="setting-row"><span class="setting-label">Replicas</span><span class="setting-value">{{.Replicas}}</span></div>{{end}}
+        {{if .EnvKeys}}<div class="setting-row"><span class="setting-label">Environment</span><span class="setting-values">{{range .EnvKeys}}<span class="setting-value">{{.}}</span>{{end}}</span></div>{{end}}
+        {{if $inst.Files}}<div class="setting-row"><span class="setting-label">Source files</span><span class="setting-values">{{range $inst.Files}}<span class="setting-value">{{.}}</span>{{end}}</span></div>{{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+</article>
+{{end}}

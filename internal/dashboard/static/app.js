@@ -1,14 +1,19 @@
-// stackfork dashboard client (design.md D3). Plain JS, no framework: polls
-// /api/instances every 3s while the tab is visible and re-renders the card
-// list, keeping the filter/running-only state across refreshes. Every POST
-// carries the per-process token from the page's own <meta> tag and runs
-// through /api/actions (design.md D4/D5).
+// stackfork dashboard client (design.md D3/D3a). Plain JS, no framework:
+// polls /api/instances every 3s while the tab is visible and re-renders the
+// stack list, keeping filter/collapse/panel state across refreshes. Every
+// POST carries the per-process token from the page's own <meta> tag and
+// runs through /api/actions (design.md D4/D5).
 
 (function () {
   "use strict";
 
   var token = document.querySelector('meta[name="stackfork-token"]').content;
   var state = { inventory: null, filter: "", runningOnly: false, stale: false };
+  // Ephemeral, session-only UI state that must survive a poll's full
+  // re-render (design.md D3a: collapse state also persists across reloads,
+  // via localStorage; these two don't need to).
+  var openSettings = {};
+  var openMenus = {};
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -22,41 +27,34 @@
     el.textContent = line + "\n" + el.textContent;
   }
 
-  function groupByCheckout(instances) {
-    var byRoot = {};
-    var order = [];
-    instances.forEach(function (inst) {
-      if (!byRoot[inst.root]) {
-        byRoot[inst.root] = [];
-        order.push(inst.root);
-      }
-      byRoot[inst.root].push(inst);
-    });
-    order.sort();
-    return order.map(function (root) { return { root: root, instances: byRoot[root] }; });
+  // --- collapse persistence (design.md D3a: "remembered per stack in
+  // localStorage, wrapped in try/catch") -------------------------------
+
+  function collapsedKey(project) {
+    return "stackfork:collapsed:" + project;
   }
 
-  function matchesFilter(inst) {
-    if (state.runningOnly && inst.state !== "running" && inst.state !== "partial") return false;
-    if (!state.filter) return true;
-    var needle = state.filter.toLowerCase();
-    var haystack = (inst.project + " " + inst.branch + " " + inst.root).toLowerCase();
-    return haystack.indexOf(needle) !== -1;
-  }
-
-  function endpointHtml(ep) {
-    if (ep.scheme === "http" || ep.scheme === "https") {
-      return '<a class="endpoint" href="' + escapeHtml(ep.url) + '" target="_blank" rel="noopener">' +
-        escapeHtml(ep.url) + "</a>";
+  function isCollapsed(project, defaultCollapsed) {
+    try {
+      var v = localStorage.getItem(collapsedKey(project));
+      if (v === "1") return true;
+      if (v === "0") return false;
+    } catch (e) {
+      // ignore: localStorage unavailable (private window, blocked, ...)
     }
-    return '<span class="endpoint copyable" data-copy="' + escapeHtml(ep.url) + '">' + escapeHtml(ep.url) + "</span>";
+    return defaultCollapsed;
   }
 
-  // cliCommand pulls the first backtick-quoted command out of a warning
-  // string (`stackfork gc`, `stackfork prepare --reassign-ports`, ...), the
-  // same convention the server-rendered first paint uses (dashboard.go's
-  // cliCommands), so a re-render after a poll shows the identical copyable
-  // commands.
+  function setCollapsed(project, collapsed) {
+    try {
+      localStorage.setItem(collapsedKey(project), collapsed ? "1" : "0");
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // --- rendering ---------------------------------------------------------
+
   function cliCommand(warning) {
     var m = /`([^`]+)`/.exec(warning);
     return m ? m[1] : null;
@@ -68,74 +66,141 @@
       var cmd = cliCommand(w);
       if (cmd && cmds.indexOf(cmd) === -1) cmds.push(cmd);
     });
-    var items = cmds.map(function (c) {
+    return cmds.map(function (c) {
       return '<code class="copyable cli-command" data-copy="' + escapeHtml(c) + '" title="click to copy">' + escapeHtml(c) + "</code>";
     }).join("");
-    return '<div class="commands">' + items + "</div>";
   }
 
-  function serviceHtml(project, svc) {
-    var endpoints = (svc.endpoints || []).map(endpointHtml).join(" ");
-    var health = svc.health ? " (" + escapeHtml(svc.health) + ")" : "";
-    var p = escapeHtml(project), name = escapeHtml(svc.name);
-    return '<li class="service service-' + escapeHtml(svc.state) + '">' +
-      '<span class="service-name">' + name + "</span> " +
-      '<span class="service-state">' + escapeHtml(svc.state) + health + "</span> " +
-      endpoints +
-      ' <button class="action service-action" data-action="restart" data-project="' + p + '" data-service="' + name + '">Restart</button>' +
-      ' <button class="logs-button" data-project="' + p + '" data-service="' + name + '">Logs</button>' +
-      "</li>";
+  function endpointHtml(ep, running) {
+    if (!ep.known) {
+      return '<span class="endpoint-pending">container ' + ep.container + ' &mdash; assigned on start</span>';
+    }
+    var stoppedClass = running ? "" : " stopped";
+    var stoppedNote = running ? "" : " (stopped)";
+    var proxiedNote = ep.proxied ? " (proxy)" : "";
+    if (ep.scheme === "http" || ep.scheme === "https") {
+      return '<a class="endpoint-link' + stoppedClass + '" href="' + escapeHtml(ep.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(ep.url) + '">' +
+        escapeHtml(ep.url) + stoppedNote + proxiedNote + "</a>";
+    }
+    return '<span class="endpoint-copy copyable' + stoppedClass + '" data-copy="' + escapeHtml(ep.url) + '" title="click to copy">' +
+      escapeHtml(ep.url) + stoppedNote + "</span>";
   }
 
-  function cardHtml(inst) {
-    var services = (inst.services || []).map(function (s) { return serviceHtml(inst.project, s); }).join("");
-    var warnings = (inst.warnings || []).map(function (w) {
-      return '<li class="warning">' + escapeHtml(w) + "</li>";
-    }).join("");
-    var knowledge = inst.knowledge
-      ? '<span class="knowledge knowledge-' + escapeHtml(inst.knowledge.status) + '">knowledge: ' +
-        escapeHtml(inst.knowledge.status) + "</span>"
-      : "";
-    var legacy = inst.legacy ? '<span class="legacy-tag">legacy</span>' : "";
-    var p = escapeHtml(inst.project);
+  function settingRow(label, values) {
+    if (!values || values.length === 0) return "";
+    var html = values.map(function (v) { return '<span class="setting-value">' + v + "</span>"; }).join("");
+    return '<div class="setting-row"><span class="setting-label">' + escapeHtml(label) + '</span><span class="setting-values">' + html + "</span></div>";
+  }
+
+  function settingsHtml(svc, files) {
+    var out = "";
+    out += settingRow("Ports", (svc.ports || []).map(function (p) {
+      return escapeHtml(p.container + (p.host ? " → " + p.host : "") + "/" + p.protocol);
+    }));
+    out += settingRow("Volumes", (svc.volumes || []).map(function (v) {
+      return escapeHtml(v.name + " → " + v.path + (v.read_only ? " (ro)" : ""));
+    }));
+    if (svc.healthcheck) {
+      out += '<div class="setting-row"><span class="setting-label">Healthcheck</span><code class="setting-value">' + escapeHtml(svc.healthcheck) + "</code></div>";
+    }
+    out += settingRow("Depends on", (svc.depends_on || []).map(escapeHtml));
+    if (svc.replicas) {
+      out += '<div class="setting-row"><span class="setting-label">Replicas</span><span class="setting-value">' + svc.replicas + "</span></div>";
+    }
+    out += settingRow("Environment", (svc.env_keys || []).map(escapeHtml));
+    out += settingRow("Source files", (files || []).map(escapeHtml));
+    return out;
+  }
+
+  function serviceHtml(inst, svc) {
+    var key = inst.project + "/" + svc.name;
+    var running = svc.state === "running";
+    var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, running); }).join("");
+    var image = svc.image ? '<span class="service-image">' + escapeHtml(svc.image) + "</span>" : "";
+    var settingsOpen = !!openSettings[key];
     return (
-      '<article class="card" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '">' +
-      '<header class="card-header">' +
-      '<span class="hostname">' + escapeHtml(inst.hostname) + "</span>" +
-      '<span class="branch">' + escapeHtml(inst.branch) + "</span>" +
-      '<span class="state state-' + escapeHtml(inst.state) + '">' + escapeHtml(inst.state) + "</span>" +
-      legacy + "</header>" +
-      (services ? '<ul class="services">' + services + "</ul>" : "") +
-      knowledge +
-      (warnings ? '<ul class="warnings">' + warnings + "</ul>" : "") +
-      '<div class="actions">' +
-      '<button class="action" data-action="up" data-project="' + p + '">Up</button>' +
-      '<button class="action" data-action="down" data-project="' + p + '">Down</button>' +
-      '<button class="logs-button" data-project="' + p + '" data-service="">Logs</button>' +
-      "</div>" + commandsHtml(inst) + "</article>"
+      '<div class="service-row" data-service="' + escapeHtml(svc.name) + '">' +
+      '<div class="service-summary" data-toggle-settings data-key="' + escapeHtml(key) + '">' +
+      '<span class="service-logo" data-kind="' + escapeHtml(svc.kind || "") + '"></span>' +
+      '<span class="status-dot ' + escapeHtml(svc.state) + '"></span>' +
+      '<div class="service-text"><span class="service-name">' + escapeHtml(svc.name) + "</span>" + image + "</div>" +
+      '<div class="service-endpoints">' + endpoints + "</div>" +
+      '<div class="service-icons">' +
+      '<button class="icon-btn" data-action="restart" data-project="' + escapeHtml(inst.project) + '" data-service="' + escapeHtml(svc.name) + '" title="Restart">&#8635;</button>' +
+      '<button class="icon-btn logs-button" data-project="' + escapeHtml(inst.project) + '" data-service="' + escapeHtml(svc.name) + '" title="Logs">&#9776;</button>' +
+      "</div></div>" +
+      '<div class="service-settings"' + (settingsOpen ? "" : " hidden") + ">" + settingsHtml(svc, inst.files) + "</div>" +
+      "</div>"
     );
+  }
+
+  function stackHtml(inst) {
+    var p = escapeHtml(inst.project);
+    var running = inst.state === "running" || inst.state === "partial";
+    var collapsed = isCollapsed(inst.project, !running);
+    var services = (inst.services || []).map(function (s) { return serviceHtml(inst, s); }).join("");
+    var legacy = inst.legacy ? '<span class="legacy-tag">legacy</span>' : "";
+    var knowledge = inst.knowledge ? '<span class="knowledge knowledge-' + escapeHtml(inst.knowledge.status) + '">' + escapeHtml(inst.knowledge.status) + "</span>" : "";
+    var warnings = (inst.warnings || []).map(function (w) { return '<li class="warning">' + escapeHtml(w) + "</li>"; }).join("");
+    var menuOpen = !!openMenus[inst.project];
+    var colorIndex = stackColorIndex(inst.project);
+    return (
+      '<article class="stack" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '" data-collapsed="' + (collapsed ? "1" : "0") + '">' +
+      '<header class="stack-header" data-toggle-stack data-project="' + p + '">' +
+      '<span class="stack-icon stack-color-' + colorIndex + '">' + escapeHtml((inst.project || "?").charAt(0).toUpperCase()) + "</span>" +
+      '<div class="stack-title"><span class="stack-name" title="' + escapeHtml(inst.hostname) + '">' + escapeHtml(inst.hostname) + "</span>" +
+      '<span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.root) + "</span></div>" +
+      '<span class="branch-tag" title="' + escapeHtml(inst.branch) + '">' + escapeHtml(inst.branch) + "</span>" +
+      legacy + knowledge +
+      '<span class="state-badge state-' + escapeHtml(inst.state) + '">' + escapeHtml(inst.state) + "</span>" +
+      '<div class="stack-actions">' +
+      '<button class="icon-btn" data-action="up" data-project="' + p + '" title="Up">&#9654;</button>' +
+      '<button class="icon-btn" data-action="down" data-project="' + p + '" title="Down (keeps volumes)">&#9632;</button>' +
+      '<button class="icon-btn stack-menu-toggle" data-project="' + p + '" title="More">&#8942;</button>' +
+      "</div></header>" +
+      '<div class="stack-menu"' + (menuOpen ? "" : " hidden") + ">" + commandsHtml(inst) + "</div>" +
+      (warnings ? '<ul class="warnings">' + warnings + "</ul>" : "") +
+      '<div class="stack-body">' + services + "</div></article>"
+    );
+  }
+
+  // stackColorIndex must match dashboard.go's stackColorIndex exactly: a
+  // plain byte sum mod the palette size, never a real hash, so the two
+  // sides agree without sharing code.
+  function stackColorIndex(project) {
+    var sum = 0;
+    for (var i = 0; i < project.length; i++) sum += project.charCodeAt(i);
+    return sum % 8;
+  }
+
+  function matchesFilter(inst) {
+    if (!state.filter) return true;
+    var needle = state.filter.toLowerCase();
+    var haystack = (inst.project + " " + inst.branch + " " + inst.root).toLowerCase();
+    return haystack.indexOf(needle) !== -1;
   }
 
   function render() {
     var inv = state.inventory;
-    var main = document.getElementById("instances");
     if (!inv) return;
+    var instances = (inv.instances || []).filter(matchesFilter);
+    var running = instances.filter(function (i) { return i.state === "running" || i.state === "partial"; });
+    var stopped = instances.filter(function (i) { return i.state !== "running" && i.state !== "partial"; });
 
-    var groups = groupByCheckout(inv.instances || []);
-    var html = groups.map(function (g) {
-      var cards = g.instances.filter(matchesFilter).map(cardHtml).join("");
-      if (!cards) return "";
-      return '<section class="checkout" data-root="' + escapeHtml(g.root) + '">' +
-        '<h2 class="checkout-root">' + escapeHtml(g.root) + "</h2>" +
-        '<div class="checkout-cards">' + cards + "</div></section>";
-    }).join("");
-    main.innerHTML = html;
-    main.classList.toggle("stale", state.stale);
+    var runningSection = document.querySelector('[data-section="running"]');
+    var stoppedSection = document.querySelector('[data-section="stopped"]');
+    runningSection.querySelector(".stack-list").innerHTML = running.map(stackHtml).join("");
+    runningSection.querySelector(".section-count").textContent = running.length;
+    stoppedSection.querySelector(".stack-list").innerHTML = stopped.map(stackHtml).join("");
+    stoppedSection.querySelector(".section-count").textContent = stopped.length;
+    stoppedSection.hidden = state.runningOnly;
 
-    var running = (inv.instances || []).filter(function (i) {
+    document.getElementById("instances").classList.toggle("stale", state.stale);
+
+    var runningCount = (inv.instances || []).filter(function (i) {
       return i.state === "running" || i.state === "partial";
     }).length;
-    document.getElementById("counts").textContent = running + " / " + (inv.instances || []).length + " running";
+    document.getElementById("counts").textContent = runningCount + " / " + (inv.instances || []).length + " running";
 
     var dockerStatus = document.getElementById("docker-status");
     dockerStatus.textContent = "Docker: " + (inv.docker.reachable ? "ok" : "unreachable");
@@ -180,6 +245,21 @@
       .catch(function (err) { log(project + " " + action + ": " + err.message); });
   }
 
+  function showLogs(project, service) {
+    var panel = document.getElementById("logs-panel");
+    var title = document.getElementById("logs-title");
+    var body = document.getElementById("logs-body");
+    title.textContent = project + (service ? " / " + service : "") + " (last 200 lines)";
+    body.textContent = "loading...";
+    panel.hidden = false;
+    var url = "/api/logs?project=" + encodeURIComponent(project) + "&tail=200";
+    if (service) url += "&service=" + encodeURIComponent(service);
+    fetch(url, { credentials: "same-origin" })
+      .then(function (r) { return r.text(); })
+      .then(function (text) { body.textContent = text || "(no output)"; })
+      .catch(function (err) { body.textContent = "error: " + err.message; });
+  }
+
   function wireControls() {
     document.getElementById("filter").addEventListener("input", function (e) {
       state.filter = e.target.value;
@@ -193,7 +273,33 @@
 
   function wireActions() {
     document.getElementById("instances").addEventListener("click", function (e) {
-      var btn = e.target.closest(".action");
+      var toggleStack = e.target.closest("[data-toggle-stack]");
+      if (toggleStack && !e.target.closest(".stack-actions")) {
+        var article = toggleStack.closest(".stack");
+        var collapsed = article.dataset.collapsed !== "1";
+        article.dataset.collapsed = collapsed ? "1" : "0";
+        setCollapsed(toggleStack.dataset.project, collapsed);
+        return;
+      }
+      var menuToggle = e.target.closest(".stack-menu-toggle");
+      if (menuToggle) {
+        var menu = menuToggle.closest(".stack").querySelector(".stack-menu");
+        var open = menu.hasAttribute("hidden");
+        if (open) menu.removeAttribute("hidden");
+        else menu.setAttribute("hidden", "");
+        openMenus[menuToggle.dataset.project] = open;
+        return;
+      }
+      var toggleSettings = e.target.closest("[data-toggle-settings]");
+      if (toggleSettings && !e.target.closest(".service-icons") && !e.target.closest(".endpoint-link") && !e.target.closest(".endpoint-copy")) {
+        var settings = toggleSettings.closest(".service-row").querySelector(".service-settings");
+        var openNow = settings.hasAttribute("hidden");
+        if (openNow) settings.removeAttribute("hidden");
+        else settings.setAttribute("hidden", "");
+        openSettings[toggleSettings.dataset.key] = openNow;
+        return;
+      }
+      var btn = e.target.closest(".icon-btn[data-action]");
       if (btn) {
         runAction(btn.dataset.action, btn.dataset.project, btn.dataset.service);
         return;
@@ -209,25 +315,6 @@
         log("copied " + copy.dataset.copy);
       }
     });
-  }
-
-  // showLogs fetches the last 200 lines for one service (or, with no
-  // service, every service) and shows them in the logs panel. Not a live
-  // follow: a plain fetch, refetched only if the user clicks Logs again -
-  // simplest thing that satisfies "view ... logs" (design.md D3/D4).
-  function showLogs(project, service) {
-    var panel = document.getElementById("logs-panel");
-    var title = document.getElementById("logs-title");
-    var body = document.getElementById("logs-body");
-    title.textContent = project + (service ? " / " + service : "") + " (last 200 lines)";
-    body.textContent = "loading...";
-    panel.hidden = false;
-    var url = "/api/logs?project=" + encodeURIComponent(project) + "&tail=200";
-    if (service) url += "&service=" + encodeURIComponent(service);
-    fetch(url, { credentials: "same-origin" })
-      .then(function (r) { return r.text().then(function (text) { return { ok: r.ok, text: text }; }); })
-      .then(function (result) { body.textContent = result.text || "(no output)"; })
-      .catch(function (err) { body.textContent = "error: " + err.message; });
   }
 
   function wireLogsPanel() {
