@@ -271,6 +271,7 @@ main.stale { opacity: 0.6; }
 .service-logo[data-kind="go"] { -webkit-mask-image: url(/static/icons/go.svg); mask-image: url(/static/icons/go.svg); }
 .service-logo[data-kind="rabbitmq"] { -webkit-mask-image: url(/static/icons/rabbitmq.svg); mask-image: url(/static/icons/rabbitmq.svg); }
 .service-logo[data-kind="minio"] { -webkit-mask-image: url(/static/icons/minio.svg); mask-image: url(/static/icons/minio.svg); }
+.service-logo[data-kind="mail"] { -webkit-mask-image: url(/static/icons/mail.svg); mask-image: url(/static/icons/mail.svg); }
 
 .status-dot {
   flex: none;

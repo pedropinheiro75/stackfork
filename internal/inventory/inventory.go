@@ -106,6 +106,12 @@ type Service struct {
 	// even reads a password-shaped key. Empty when the kind isn't a known
 	// database or its host port isn't known yet.
 	ConnectionURL string `json:"connection_url,omitempty"`
+
+	// knownHTTPPorts are well-known web UI ports for specific images (fix
+	// 3: a mail catcher's UI port, e.g. Mailpit's 8025, renders as a link;
+	// its SMTP port stays tcp). Unexported: internal to endpoint scheme
+	// resolution, never serialized, never a guess for an unrecognized image.
+	knownHTTPPorts []int
 }
 
 // KnowledgeStatus is an instance's learned-knowledge summary (design.md
@@ -370,10 +376,24 @@ func buildServiceEndpoints(svc Service, live map[int]compose.Endpoint, hostname 
 	var out []Endpoint
 	for _, p := range svc.Ports {
 		if e, ok := live[p.Container]; ok {
-			out = append(out, Endpoint{Scheme: e.Scheme, URL: e.URL(), Container: p.Container, Known: true})
+			scheme := resolveScheme(svc.knownHTTPPorts, p.Container, e.Protocol, info.HTTPPorts, info.HTTPSPorts)
+			host := e.Host
+			if scheme != e.Scheme {
+				// The kind-specific override (fix 3) changed the scheme
+				// live docker data alone would have given; rebuild the
+				// address for it (http/https resolve via hostname, not
+				// the raw loopback address).
+				if scheme == "http" || scheme == "https" {
+					host = hostname
+				} else {
+					host = "127.0.0.1"
+				}
+			}
+			ce := compose.Endpoint{Scheme: scheme, Host: host, Port: e.Port}
+			out = append(out, Endpoint{Scheme: scheme, URL: ce.URL(), Container: p.Container, Known: true})
 			continue
 		}
-		scheme := compose.SchemeForTarget(p.Container, p.Protocol, info.HTTPPorts, info.HTTPSPorts)
+		scheme := resolveScheme(svc.knownHTTPPorts, p.Container, p.Protocol, info.HTTPPorts, info.HTTPSPorts)
 		if p.Host <= 0 {
 			// A legacy/--random-ports service Docker hasn't assigned a
 			// port to yet (it isn't running): nothing to show but which
@@ -389,6 +409,31 @@ func buildServiceEndpoints(svc Service, live map[int]compose.Endpoint, hostname 
 		out = append(out, Endpoint{Scheme: scheme, URL: ce.URL(), Container: p.Container, Known: true})
 	}
 	return out
+}
+
+// resolveScheme is compose.SchemeForTarget extended with fix 3's
+// image-specific known HTTP ports: an explicit io.stackfork.http/.https
+// label always wins, then a known image's own well-known UI port, then the
+// generic fixed-port guess (80/443/3000/8080/5050) SchemeForTarget already
+// makes. knownHTTPPorts is nil for anything but a handful of recognized
+// images (service_details.go), so an unrecognized image is never guessed at.
+func resolveScheme(knownHTTPPorts []int, target int, protocol string, httpPorts, httpsPorts []int) string {
+	for _, p := range httpsPorts {
+		if p == target {
+			return "https"
+		}
+	}
+	for _, p := range httpPorts {
+		if p == target {
+			return "http"
+		}
+	}
+	for _, p := range knownHTTPPorts {
+		if p == target {
+			return "http"
+		}
+	}
+	return compose.SchemeForTarget(target, protocol, nil, nil)
 }
 
 // proxyEndpoint is the extra, portless address once the shared proxy is

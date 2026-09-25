@@ -16,7 +16,7 @@ func TestIconsEmbeddedAndServedSameOrigin(t *testing.T) {
 
 	kinds := []string{
 		"postgres", "mysql", "mariadb", "redis", "mongo", "neo4j", "nginx",
-		"caddy", "node", "bun", "python", "go", "rabbitmq", "minio", "fallback",
+		"caddy", "node", "bun", "python", "go", "rabbitmq", "minio", "mail", "fallback",
 	}
 	for _, kind := range kinds {
 		rec := doRequest(srv, "GET", "/static/icons/"+kind+".svg", host, nil)

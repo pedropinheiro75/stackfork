@@ -151,15 +151,15 @@
     return (
       '<article class="stack" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '" data-collapsed="' + (collapsed ? "1" : "0") + '">' +
       '<header class="stack-header" data-toggle-stack data-project="' + p + '">' +
-      '<span class="stack-icon stack-color-' + colorIndex + '">' + escapeHtml((inst.project || "?").charAt(0).toUpperCase()) + "</span>" +
+      '<span class="stack-icon stack-color-' + colorIndex + '">' + escapeHtml((projectSlug(inst.project || "?").charAt(0) || "?").toUpperCase()) + "</span>" +
       '<div class="stack-title"><span class="stack-name" title="' + escapeHtml(inst.hostname) + '">' + escapeHtml(inst.hostname) + "</span>" +
       '<span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.root) + "</span></div>" +
       '<span class="branch-tag" title="' + escapeHtml(inst.branch) + '">' + escapeHtml(inst.branch) + "</span>" +
       legacy + knowledge +
       '<span class="state-badge state-' + escapeHtml(inst.state) + '">' + escapeHtml(inst.state) + "</span>" +
       '<div class="stack-actions">' +
-      '<button class="icon-btn" data-action="up" data-project="' + p + '" title="Up">&#9654;</button>' +
-      '<button class="icon-btn" data-action="down" data-project="' + p + '" title="Down (keeps volumes)">&#9632;</button>' +
+      (inst.state !== "running" ? '<button class="icon-btn" data-action="up" data-project="' + p + '" title="Up">&#9654;</button>' : "") +
+      (inst.state === "running" || inst.state === "partial" ? '<button class="icon-btn" data-action="down" data-project="' + p + '" title="Down (keeps volumes)">&#9632;</button>' : "") +
       '<button class="icon-btn stack-menu-toggle" data-project="' + p + '" title="More">&#8942;</button>' +
       "</div></header>" +
       '<div class="stack-menu"' + (menuOpen ? "" : " hidden") + ">" + commandsHtml(inst) + "</div>" +
@@ -168,12 +168,22 @@
     );
   }
 
+  // projectSlug must match dashboard.go's projectSlug exactly: strip the
+  // sf-/idv- instance prefix so every legacy instance doesn't show the same
+  // "R" initial and color.
+  function projectSlug(project) {
+    if (project.indexOf("sf-") === 0) return project.slice(3);
+    if (project.indexOf("idv-") === 0) return project.slice(3);
+    return project;
+  }
+
   // stackColorIndex must match dashboard.go's stackColorIndex exactly: a
   // plain byte sum mod the palette size, never a real hash, so the two
   // sides agree without sharing code.
   function stackColorIndex(project) {
+    var slug = projectSlug(project);
     var sum = 0;
-    for (var i = 0; i < project.length; i++) sum += project.charCodeAt(i);
+    for (var i = 0; i < slug.length; i++) sum += slug.charCodeAt(i);
     return sum % 8;
   }
 

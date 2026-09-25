@@ -18,7 +18,9 @@ import (
 func fillServiceDetails(svc *Service, raw map[string]interface{}) {
 	if image, ok := raw["image"].(string); ok {
 		svc.Image = image
-		svc.Kind = imageKind(image)
+		name := imageName(image)
+		svc.Kind = kindForImageName(name)
+		svc.knownHTTPPorts = mailCatcherHTTPPorts[name]
 	} else {
 		svc.Kind = kindFromBuild(raw)
 	}
@@ -31,13 +33,13 @@ func fillServiceDetails(svc *Service, raw map[string]interface{}) {
 	svc.EnvKeys = serviceEnvKeys(raw)
 }
 
-// imageKind maps an image reference to one of D3a's known logo keys, using
-// only the image name (official image, "library/" prefix, any registry
-// host, a tag or a digest all reduce to the same thing: the last path
-// segment before the tag/digest - the same rule that correctly picks
-// "minio" out of "minio/minio" and "postgres" out of
-// "docker.io/library/postgres:17" or "postgres@sha256:...").
-func imageKind(image string) string {
+// imageName reduces an image reference to the identity imageKind and
+// mailCatcherHTTPPorts both key off: official image, "library/" prefix, any
+// registry host, a tag or a digest all reduce to the same thing - the last
+// path segment before the tag/digest, which correctly picks "minio" out of
+// "minio/minio" and "postgres" out of "docker.io/library/postgres:17" or
+// "postgres@sha256:...".
+func imageName(image string) string {
 	ref := image
 	if idx := strings.IndexByte(ref, '@'); idx >= 0 {
 		ref = ref[:idx]
@@ -49,6 +51,28 @@ func imageKind(image string) string {
 	if idx := strings.IndexByte(name, ':'); idx >= 0 {
 		name = name[:idx]
 	}
+	return name
+}
+
+// imageKind maps an image reference to one of D3a's known logo keys.
+func imageKind(image string) string {
+	return kindForImageName(imageName(image))
+}
+
+// mailCatcherHTTPPorts maps a mail catcher's image name to its known web UI
+// port(s) (fix 3: "Mailpit's web UI port 8025 ... should be treated as HTTP
+// by kind (known image -> known UI port)"). Keyed more specifically than
+// the shared "mail" logo kind, since each mail catcher's UI port differs
+// and its SMTP port must stay tcp; unknown images never match, by
+// construction ("don't guess for unknown images").
+var mailCatcherHTTPPorts = map[string][]int{
+	"mailpit":  {8025},
+	"smtp4dev": {80, 5000},
+	"maildev":  {1080},
+	"mailhog":  {8025},
+}
+
+func kindForImageName(name string) string {
 	switch name {
 	case "postgres", "postgresql":
 		return "postgres"
@@ -80,12 +104,8 @@ func imageKind(image string) string {
 		return "minio"
 	case "gotenberg":
 		return "gotenberg"
-	case "smtp4dev":
-		return "smtp4dev"
-	case "mailpit":
-		return "mailpit"
-	case "maildev":
-		return "maildev"
+	case "smtp4dev", "mailpit", "maildev", "mailhog":
+		return "mail"
 	default:
 		return ""
 	}

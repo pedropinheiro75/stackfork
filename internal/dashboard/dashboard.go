@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 )
@@ -33,8 +34,8 @@ var indexTemplateSrc embed.FS
 // (design.md D3a); everything else (escaping, formatting) is either
 // html/template's own job or already done in Go before Execute.
 var indexFuncs = template.FuncMap{
-	"initial": func(s string) string {
-		for _, r := range s {
+	"initial": func(project string) string {
+		for _, r := range projectSlug(project) {
 			return strings.ToUpper(string(r))
 		}
 		return "?"
@@ -185,13 +186,28 @@ func cliCommands(inst inventory.Instance) []string {
 // re-render - is the only thing that has to match between them.
 const stackPaletteSize = 8
 
-// stackColorIndex hashes project (a simple byte sum, deliberately not a
-// real hash function: it only needs to be cheap and identical on both
+// projectSlug strips the sf-/idv- instance prefix off a project name, so the
+// stack icon's initial letter and color are taken from the meaningful part
+// of the name instead of always reading the same prefix (every legacy
+// instance otherwise shows "R", maintainer feedback: app-b, not the prefix, should
+// give "C").
+func projectSlug(project string) string {
+	for _, p := range []string{identity.Prefix + "-", identity.LegacyPrefix + "-"} {
+		if strings.HasPrefix(project, p) {
+			return project[len(p):]
+		}
+	}
+	return project
+}
+
+// stackColorIndex hashes a project's slug (a simple byte sum, deliberately
+// not a real hash function: it only needs to be cheap and identical on both
 // sides, not collision-resistant) into 0..stackPaletteSize-1.
 func stackColorIndex(project string) int {
+	slug := projectSlug(project)
 	sum := 0
-	for i := 0; i < len(project); i++ {
-		sum += int(project[i])
+	for i := 0; i < len(slug); i++ {
+		sum += int(slug[i])
 	}
 	return sum % stackPaletteSize
 }

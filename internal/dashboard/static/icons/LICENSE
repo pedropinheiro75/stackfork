@@ -26,6 +26,11 @@ layers glyph, no brand affiliation), used for any service whose image
 isn't one of the above and, for a built image, whose Dockerfile's FROM
 line names an unrecognized base. No third-party license applies to it.
 
+mail.svg is also original artwork (a plain envelope glyph, no brand
+affiliation), used for mail-catcher images (smtp4dev, Mailpit, MailDev,
+MailHog) that don't have their own Simple Icons entry. No third-party
+license applies to it either.
+
 These files are fetched once at development time from the simple-icons
 npm package's published release (https://unpkg.com/simple-icons@16.32.0/)
 and committed here; the dashboard embeds them into the binary

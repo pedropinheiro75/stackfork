@@ -87,8 +87,21 @@ func TestIndexShowsCopyableCommandsAndActionWiring(t *testing.T) {
 	if !strings.Contains(body, `class="stack-menu"`) {
 		t.Fatalf("expected the destructive commands inside the per-stack \"...\" menu:\n%s", body)
 	}
-	if !strings.Contains(body, `<button class="icon-btn" data-action="down" data-project="`+project+`" title="Down (keeps volumes)">`) {
-		t.Fatalf("expected a plain Down icon button with no --volumes anywhere in its own markup:\n%s", body)
+	// The orphaned instance has nothing running (state missing-checkout),
+	// so per fix 4 it gets only the Up button, never Down - but wherever a
+	// Down button does appear (running/partial stacks), it must carry no
+	// --volumes anywhere in its own markup.
+	if !strings.Contains(body, `<button class="icon-btn" data-action="up" data-project="`+project+`" title="Up">`) {
+		t.Fatalf("expected a plain Up icon button for the orphaned instance:\n%s", body)
+	}
+	if strings.Contains(body, `data-action="down" data-project="`+project+`"`) {
+		t.Fatalf("did not expect a Down button on an instance with nothing running:\n%s", body)
+	}
+	if idx := strings.Index(body, `data-action="down"`); idx >= 0 {
+		section := body[idx : idx+120]
+		if strings.Contains(section, "--volumes") {
+			t.Fatalf("expected a Down icon button with no --volumes in its own markup, got:\n%s", section)
+		}
 	}
 	if !strings.Contains(body, `data-action="restart"`) {
 		t.Fatalf("expected a restart button for the web service:\n%s", body)

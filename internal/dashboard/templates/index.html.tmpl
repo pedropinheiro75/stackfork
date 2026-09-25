@@ -70,8 +70,8 @@
     {{if .Knowledge}}<span class="knowledge knowledge-{{.Knowledge.Status}}">{{.Knowledge.Status}}</span>{{end}}
     <span class="state-badge state-{{.State}}">{{.State}}</span>
     <div class="stack-actions">
-      <button class="icon-btn" data-action="up" data-project="{{.Project}}" title="Up">&#9654;</button>
-      <button class="icon-btn" data-action="down" data-project="{{.Project}}" title="Down (keeps volumes)">&#9632;</button>
+      {{if ne .State "running"}}<button class="icon-btn" data-action="up" data-project="{{.Project}}" title="Up">&#9654;</button>{{end}}
+      {{if or (eq .State "running") (eq .State "partial")}}<button class="icon-btn" data-action="down" data-project="{{.Project}}" title="Down (keeps volumes)">&#9632;</button>{{end}}
       <button class="icon-btn stack-menu-toggle" data-project="{{.Project}}" title="More">&#8942;</button>
     </div>
   </header>
