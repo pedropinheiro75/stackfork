@@ -33,6 +33,7 @@
     <h2 class="checkout-root">{{.Root}}</h2>
     <div class="checkout-cards">
     {{range .Instances}}
+    {{$inst := .}}
     <article class="card" data-project="{{.Project}}" data-state="{{.State}}">
       <header class="card-header">
         <span class="hostname">{{.Hostname}}</span>
@@ -50,9 +51,11 @@
           {{if or (eq .Scheme "http") (eq .Scheme "https")}}
           <a class="endpoint" href="{{.URL}}" target="_blank" rel="noopener">{{.URL}}</a>
           {{else}}
-          <span class="endpoint copyable">{{.URL}}</span>
+          <span class="endpoint copyable" data-copy="{{.URL}}">{{.URL}}</span>
           {{end}}
           {{end}}
+          <button class="action service-action" data-action="restart" data-project="{{$inst.Project}}" data-service="{{.Name}}">Restart</button>
+          <button class="logs-button" data-project="{{$inst.Project}}" data-service="{{.Name}}">Logs</button>
         </li>
         {{end}}
       </ul>
@@ -68,7 +71,13 @@
       <div class="actions">
         <button class="action" data-action="up" data-project="{{.Project}}">Up</button>
         <button class="action" data-action="down" data-project="{{.Project}}">Down</button>
+        <button class="logs-button" data-project="{{.Project}}" data-service="">Logs</button>
       </div>
+      {{if .Commands}}
+      <div class="commands">
+        {{range .Commands}}<code class="copyable cli-command" data-copy="{{.}}" title="click to copy">{{.}}</code>{{end}}
+      </div>
+      {{end}}
     </article>
     {{end}}
     </div>
@@ -77,6 +86,14 @@
 </main>
 
 <div id="activity-log"></div>
+
+<div id="logs-panel" hidden>
+  <div id="logs-header">
+    <span id="logs-title"></span>
+    <button id="logs-close" type="button">Close</button>
+  </div>
+  <pre id="logs-body"></pre>
+</div>
 
 <script src="/static/app.js"></script>
 </body>

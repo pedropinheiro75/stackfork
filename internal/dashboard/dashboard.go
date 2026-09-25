@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -126,23 +127,60 @@ func (s *Server) handleInstances(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// cardData is one instance plus the render-only extras the template needs
+// (task 4.4): the exact CLI commands for the operations the dashboard never
+// offers a button for (design.md D4's "destructive or input-heavy commands
+// stay in the CLI; the page shows the exact command to copy").
+type cardData struct {
+	inventory.Instance
+	Commands []string
+}
+
+// cliCommands lists the copyable commands for one card: `down --volumes`
+// always (a card never gets a button for it), plus whatever a warning's own
+// text already names (gc for an orphaned/branchless instance,
+// --reassign-ports for a busy port) - read back off the warning strings
+// rather than re-deriving the same conditions inventory.Collect already
+// computed, so the two can't drift apart.
+func cliCommands(inst inventory.Instance) []string {
+	cmds := []string{fmt.Sprintf("stackfork down --instance %s --volumes", inst.Project)}
+	seen := map[string]bool{}
+	for _, w := range inst.Warnings {
+		start := strings.IndexByte(w, '`')
+		if start < 0 {
+			continue
+		}
+		end := strings.IndexByte(w[start+1:], '`')
+		if end < 0 {
+			continue
+		}
+		cmd := w[start+1 : start+1+end]
+		if !seen[cmd] {
+			seen[cmd] = true
+			cmds = append(cmds, cmd)
+		}
+	}
+	return cmds
+}
+
 // checkoutGroup is one checkout's instances, for the page's "grouped by
 // checkout" layout (design.md D3).
 type checkoutGroup struct {
 	Root      string
-	Instances []inventory.Instance
+	Instances []cardData
 }
 
 func groupByCheckout(instances []inventory.Instance) []checkoutGroup {
 	var groups []checkoutGroup
 	byRoot := map[string]int{}
 	for _, inst := range instances {
+		card := cardData{Instance: inst, Commands: cliCommands(inst)}
 		if idx, ok := byRoot[inst.Root]; ok {
-			groups[idx].Instances = append(groups[idx].Instances, inst)
+			groups[idx].Instances = append(groups[idx].Instances, card)
 			continue
 		}
 		byRoot[inst.Root] = len(groups)
-		groups = append(groups, checkoutGroup{Root: inst.Root, Instances: []inventory.Instance{inst}})
+		groups = append(groups, checkoutGroup{Root: inst.Root, Instances: []cardData{card}})
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].Root < groups[j].Root })
 	return groups

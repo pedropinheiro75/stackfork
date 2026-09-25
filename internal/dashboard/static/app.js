@@ -52,17 +52,43 @@
     return '<span class="endpoint copyable" data-copy="' + escapeHtml(ep.url) + '">' + escapeHtml(ep.url) + "</span>";
   }
 
-  function serviceHtml(svc) {
+  // cliCommand pulls the first backtick-quoted command out of a warning
+  // string (`stackfork gc`, `stackfork prepare --reassign-ports`, ...), the
+  // same convention the server-rendered first paint uses (dashboard.go's
+  // cliCommands), so a re-render after a poll shows the identical copyable
+  // commands.
+  function cliCommand(warning) {
+    var m = /`([^`]+)`/.exec(warning);
+    return m ? m[1] : null;
+  }
+
+  function commandsHtml(inst) {
+    var cmds = ["stackfork down --instance " + inst.project + " --volumes"];
+    (inst.warnings || []).forEach(function (w) {
+      var cmd = cliCommand(w);
+      if (cmd && cmds.indexOf(cmd) === -1) cmds.push(cmd);
+    });
+    var items = cmds.map(function (c) {
+      return '<code class="copyable cli-command" data-copy="' + escapeHtml(c) + '" title="click to copy">' + escapeHtml(c) + "</code>";
+    }).join("");
+    return '<div class="commands">' + items + "</div>";
+  }
+
+  function serviceHtml(project, svc) {
     var endpoints = (svc.endpoints || []).map(endpointHtml).join(" ");
     var health = svc.health ? " (" + escapeHtml(svc.health) + ")" : "";
+    var p = escapeHtml(project), name = escapeHtml(svc.name);
     return '<li class="service service-' + escapeHtml(svc.state) + '">' +
-      '<span class="service-name">' + escapeHtml(svc.name) + "</span> " +
+      '<span class="service-name">' + name + "</span> " +
       '<span class="service-state">' + escapeHtml(svc.state) + health + "</span> " +
-      endpoints + "</li>";
+      endpoints +
+      ' <button class="action service-action" data-action="restart" data-project="' + p + '" data-service="' + name + '">Restart</button>' +
+      ' <button class="logs-button" data-project="' + p + '" data-service="' + name + '">Logs</button>' +
+      "</li>";
   }
 
   function cardHtml(inst) {
-    var services = (inst.services || []).map(serviceHtml).join("");
+    var services = (inst.services || []).map(function (s) { return serviceHtml(inst.project, s); }).join("");
     var warnings = (inst.warnings || []).map(function (w) {
       return '<li class="warning">' + escapeHtml(w) + "</li>";
     }).join("");
@@ -71,8 +97,9 @@
         escapeHtml(inst.knowledge.status) + "</span>"
       : "";
     var legacy = inst.legacy ? '<span class="legacy-tag">legacy</span>' : "";
+    var p = escapeHtml(inst.project);
     return (
-      '<article class="card" data-project="' + escapeHtml(inst.project) + '" data-state="' + escapeHtml(inst.state) + '">' +
+      '<article class="card" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '">' +
       '<header class="card-header">' +
       '<span class="hostname">' + escapeHtml(inst.hostname) + "</span>" +
       '<span class="branch">' + escapeHtml(inst.branch) + "</span>" +
@@ -82,9 +109,10 @@
       knowledge +
       (warnings ? '<ul class="warnings">' + warnings + "</ul>" : "") +
       '<div class="actions">' +
-      '<button class="action" data-action="up" data-project="' + escapeHtml(inst.project) + '">Up</button>' +
-      '<button class="action" data-action="down" data-project="' + escapeHtml(inst.project) + '">Down</button>' +
-      "</div></article>"
+      '<button class="action" data-action="up" data-project="' + p + '">Up</button>' +
+      '<button class="action" data-action="down" data-project="' + p + '">Down</button>' +
+      '<button class="logs-button" data-project="' + p + '" data-service="">Logs</button>' +
+      "</div>" + commandsHtml(inst) + "</article>"
     );
   }
 
@@ -170,6 +198,11 @@
         runAction(btn.dataset.action, btn.dataset.project, btn.dataset.service);
         return;
       }
+      var logsBtn = e.target.closest(".logs-button");
+      if (logsBtn) {
+        showLogs(logsBtn.dataset.project, logsBtn.dataset.service);
+        return;
+      }
       var copy = e.target.closest(".copyable");
       if (copy && navigator.clipboard) {
         navigator.clipboard.writeText(copy.dataset.copy);
@@ -178,9 +211,35 @@
     });
   }
 
+  // showLogs fetches the last 200 lines for one service (or, with no
+  // service, every service) and shows them in the logs panel. Not a live
+  // follow: a plain fetch, refetched only if the user clicks Logs again -
+  // simplest thing that satisfies "view ... logs" (design.md D3/D4).
+  function showLogs(project, service) {
+    var panel = document.getElementById("logs-panel");
+    var title = document.getElementById("logs-title");
+    var body = document.getElementById("logs-body");
+    title.textContent = project + (service ? " / " + service : "") + " (last 200 lines)";
+    body.textContent = "loading...";
+    panel.hidden = false;
+    var url = "/api/logs?project=" + encodeURIComponent(project) + "&tail=200";
+    if (service) url += "&service=" + encodeURIComponent(service);
+    fetch(url, { credentials: "same-origin" })
+      .then(function (r) { return r.text().then(function (text) { return { ok: r.ok, text: text }; }); })
+      .then(function (result) { body.textContent = result.text || "(no output)"; })
+      .catch(function (err) { body.textContent = "error: " + err.message; });
+  }
+
+  function wireLogsPanel() {
+    document.getElementById("logs-close").addEventListener("click", function () {
+      document.getElementById("logs-panel").hidden = true;
+    });
+  }
+
   function start() {
     wireControls();
     wireActions();
+    wireLogsPanel();
     poll();
     setInterval(function () {
       if (document.visibilityState === "visible") poll();
