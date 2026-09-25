@@ -9,7 +9,7 @@ Use the project's actual runtime, package manager and startup flow through `stac
 
 ## Reuse before rediscovering
 
-Run `stackfork where` (lists prepared instances and configured profiles) and `stackfork status` first. If `.stackfork/knowledge.md` is `verified`, apply its recorded adapter and recipe directly — no scan, no questions (`references/learning.md`). Otherwise run `stackfork learn`, read `.stackfork/knowledge.md`, and run the learn session in `references/learning.md`. Do not repeat a full discovery, or rewrite a launcher, for a routine restart of an unchanged adapter.
+Run `stackfork where` (lists prepared instances and configured profiles) and `stackfork status` first. If `.stackfork/knowledge.md` is `verified`, apply its recorded adapter and recipe directly — no scan, no questions (`references/learning.md`). Otherwise run `stackfork learn`, read `.stackfork/knowledge.md`, and run the learn session in `references/learning.md`. Do not repeat a full discovery, or rewrite a launcher, for a routine restart of an unchanged adapter. To see every instance across every checkout at once instead of one at a time, run `stackfork list` (or `stackfork dashboard` for the same view in a local, read-mostly web page — never used for the destructive commands below).
 
 ## Follow profile context
 

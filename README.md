@@ -33,6 +33,14 @@ stackfork --root "$CHECKOUT" urls
 
 The Nuxt template includes real Node 22 and Bun, defaults to one app replica, and supports `DEV_APP_REPLICAS=2` for multi-replica testing.
 
+## Dashboard
+
+```sh
+stackfork dashboard --open
+```
+
+A local web page listing every instance across every checkout, grouped by checkout: status, services, health and clickable endpoints, learned-knowledge status and plain-language warnings. It's local-only (binds `127.0.0.1`, checks the `Host` header, and a per-process token guards every action) and read-mostly: the only actions are `up`, `down` (volumes always kept), `restart SERVICE`, viewing logs, and starting/stopping/reloading the shared proxy. Anything destructive or input-heavy (`down --volumes`, `gc --apply`, `prepare --reassign-ports`, `clone-db`, `learn`) shows up as a command to copy, never a button. `stackfork list` / `list --json` show the same data from the terminal.
+
 ## Checks
 
 ```sh
