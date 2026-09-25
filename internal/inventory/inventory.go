@@ -106,6 +106,11 @@ type Service struct {
 	// even reads a password-shaped key. Empty when the kind isn't a known
 	// database or its host port isn't known yet.
 	ConnectionURL string `json:"connection_url,omitempty"`
+	// UseCommands are the extra copy-ready client commands/values D3b §3
+	// wants (a psql/mysql/redis-cli invocation, a stackfork exec form, or a
+	// mail catcher's SMTP_HOST/SMTP_PORT) - same placeholder-safety
+	// guarantee as ConnectionURL.
+	UseCommands []UseCommand `json:"use_commands,omitempty"`
 
 	// knownHTTPPorts are well-known web UI ports for specific images (fix
 	// 3: a mail catcher's UI port, e.g. Mailpit's 8025, renders as a link;
@@ -144,6 +149,12 @@ type Instance struct {
 	// learned dev script's name as a hint. The goal of the page is to open
 	// and use the app, not inspect containers.
 	Apps []AppLink `json:"apps,omitempty"`
+	// EnvBlock is a copy-paste ".env" fragment for a host-run app to talk
+	// to this stack's services (task 3.10, design.md D3b §4): one
+	// DATABASE_URL/REDIS_URL/MONGODB_URL/SMTP_HOST/SMTP_PORT line per
+	// qualifying service, in the same placeholder-safe form as
+	// Service.ConnectionURL. Empty when nothing in the stack qualifies.
+	EnvBlock string `json:"env_block,omitempty"`
 }
 
 // Inventory is the whole machine's state, task 1.1's D1 type.
@@ -260,6 +271,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		inst.Services = services
 		inst.State = serviceState
 		inst.Apps = appendRouteAndKnowledgeApps(apps, info)
+		inst.EnvBlock = buildEnvBlock(services)
 	}
 
 	inst.Warnings = append(inst.Warnings, busyPortWarnings(info, statusRows)...)
@@ -364,6 +376,7 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 		}
 		if hasRaw {
 			svc.ConnectionURL = connectionURL(svc, raw)
+			svc.UseCommands = useCommands(svc, raw)
 		}
 		services = append(services, svc)
 	}

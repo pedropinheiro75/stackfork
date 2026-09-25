@@ -3,6 +3,7 @@ package inventory
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -166,28 +167,11 @@ func connectionURL(svc Service, raw map[string]interface{}) string {
 	if !ok {
 		return ""
 	}
-	var addr string
-	for _, ep := range svc.Endpoints {
-		if ep.Container == defaultPort && ep.Known {
-			addr = ep.URL // tcp endpoints render as "host:port"
-			break
-		}
-	}
-	if addr == "" {
+	addr, ok := endpointAddr(svc, defaultPort)
+	if !ok {
 		return ""
 	}
-
-	env, _ := raw["environment"].(map[string]interface{})
-	str := func(keys ...string) string {
-		for _, k := range keys {
-			if v, ok := env[k]; ok {
-				if s, ok := v.(string); ok && s != "" {
-					return s
-				}
-			}
-		}
-		return ""
-	}
+	str := envLookup(raw)
 
 	switch svc.Kind {
 	case "postgres":
@@ -230,6 +214,128 @@ func connectionURL(svc Service, raw map[string]interface{}) string {
 	default:
 		return ""
 	}
+}
+
+// endpointAddr finds the "host:port" address (as buildServiceEndpoints
+// already rendered it for a tcp endpoint) for one of a service's known
+// endpoints, or ok=false when that port isn't resolved yet (task 3.7's
+// existing "stopped legacy/--random-ports service" case).
+func endpointAddr(svc Service, port int) (string, bool) {
+	for _, ep := range svc.Endpoints {
+		if ep.Container == port && ep.Known {
+			return ep.URL, true
+		}
+	}
+	return "", false
+}
+
+// envLookup returns a closure reading the first set value among a list of
+// env key names off a service's raw environment map - the same allowlist
+// pattern connectionURL and useCommands both need (never a password-shaped
+// key).
+func envLookup(raw map[string]interface{}) func(keys ...string) string {
+	env, _ := raw["environment"].(map[string]interface{})
+	return func(keys ...string) string {
+		for _, k := range keys {
+			if v, ok := env[k]; ok {
+				if s, ok := v.(string); ok && s != "" {
+					return s
+				}
+			}
+		}
+		return ""
+	}
+}
+
+// mailCatcherSMTPPorts maps a mail catcher's image name (imageName's
+// identity, shared with mailCatcherHTTPPorts) to its SMTP port, for the
+// "copy SMTP_HOST/SMTP_PORT" use-command (design.md D3b §3).
+var mailCatcherSMTPPorts = map[string]int{
+	"mailpit": 1025, "smtp4dev": 25, "maildev": 1025, "mailhog": 1025,
+}
+
+// UseCommand is one copy-ready command or value for a known service kind
+// (task 3.10, design.md D3b §3): always placeholder-safe, like
+// Service.ConnectionURL - never a real password.
+type UseCommand struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+// useCommands lists the extra copy actions D3b §3 wants beyond the plain
+// connection URL: a client CLI invocation, an in-container `stackfork exec`
+// form, or (for a mail catcher) the SMTP settings a host-run app would need.
+// Every value is built the same placeholder-safe way ConnectionURL is.
+func useCommands(svc Service, raw map[string]interface{}) []UseCommand {
+	str := envLookup(raw)
+	switch svc.Kind {
+	case "postgres":
+		if svc.ConnectionURL == "" {
+			return nil
+		}
+		user := str("POSTGRES_USER")
+		if user == "" {
+			user = "postgres"
+		}
+		db := str("POSTGRES_DB")
+		if db == "" {
+			db = user
+		}
+		return []UseCommand{
+			{Label: "psql", Value: fmt.Sprintf(`psql "%s"`, svc.ConnectionURL)},
+			{Label: "stackfork exec", Value: fmt.Sprintf("stackfork exec %s psql -U %s %s", svc.Name, user, db)},
+		}
+	case "mysql", "mariadb":
+		addr, ok := endpointAddr(svc, defaultDBPort[svc.Kind])
+		if !ok {
+			return nil
+		}
+		host, port := splitHostPort(addr)
+		user := str("MYSQL_USER", "MARIADB_USER")
+		if user == "" {
+			user = "root"
+		}
+		db := str("MYSQL_DATABASE", "MARIADB_DATABASE")
+		return []UseCommand{
+			{Label: "mysql", Value: fmt.Sprintf("mysql -h %s -P %s -u %s -p<password> %s", host, port, user, db)},
+			{Label: "stackfork exec", Value: fmt.Sprintf("stackfork exec %s mysql -u %s %s", svc.Name, user, db)},
+		}
+	case "redis":
+		addr, ok := endpointAddr(svc, defaultDBPort["redis"])
+		if !ok {
+			return nil
+		}
+		host, port := splitHostPort(addr)
+		return []UseCommand{
+			{Label: "redis-cli", Value: fmt.Sprintf("redis-cli -h %s -p %s", host, port)},
+		}
+	case "mail":
+		containerPort, ok := mailCatcherSMTPPorts[imageName(svc.Image)]
+		if !ok {
+			return nil
+		}
+		addr, ok := endpointAddr(svc, containerPort)
+		if !ok {
+			return nil
+		}
+		host, port := splitHostPort(addr)
+		return []UseCommand{
+			{Label: "SMTP_HOST", Value: host},
+			{Label: "SMTP_PORT", Value: port},
+		}
+	default:
+		return nil
+	}
+}
+
+// splitHostPort splits a "host:port" address; best-effort, since it only
+// ever runs on an address this package already built.
+func splitHostPort(addr string) (host, port string) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr, ""
+	}
+	return host, port
 }
 
 // servicePorts reads the snapshot's ports list. "published" is a string

@@ -89,6 +89,9 @@
   {{end}}
   <div class="stack-menu" hidden>
     {{range .Commands}}<code class="copyable cli-command" data-copy="{{.}}" title="click to copy">{{.}}</code>{{end}}
+    {{if .EnvBlock}}
+    <code class="copyable cli-command env-block" data-copy="{{.EnvBlock}}" title="click to copy">Copy .env for host app</code>
+    {{end}}
   </div>
   {{if .Warnings}}
   <ul class="warnings">
@@ -120,6 +123,9 @@
           {{end}}
           {{if .ConnectionURL}}
           <span class="endpoint-copy copyable connection-url" data-copy="{{.ConnectionURL}}" title="click to copy the connection URL ({{.ConnectionURL}})">connection URL</span>
+          {{end}}
+          {{range .UseCommands}}
+          <span class="endpoint-copy copyable use-command" data-copy="{{.Value}}" title="click to copy: {{.Value}}">{{.Label}}</span>
           {{end}}
         </div>
         <div class="service-icons">

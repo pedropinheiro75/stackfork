@@ -126,3 +126,37 @@ func appendRouteAndKnowledgeApps(apps []AppLink, info *state.Manifest) []AppLink
 func knowledgeJSONPath(root string) string {
 	return filepath.Join(root, ".stackfork", "knowledge.json")
 }
+
+// buildEnvBlock assembles the "Copy .env for host app" block (task 3.10,
+// design.md D3b §4): one line per qualifying kind, first match wins if a
+// stack somehow has more than one of the same kind (ponytail: good enough -
+// a stack with two Postgres services is unusual, and the App strip/per-
+// service copy buttons still cover the second one individually).
+func buildEnvBlock(services []Service) string {
+	var lines []string
+	have := map[string]bool{}
+	add := func(key, value string) {
+		if value == "" || have[key] {
+			return
+		}
+		have[key] = true
+		lines = append(lines, key+"="+value)
+	}
+	for _, svc := range services {
+		switch svc.Kind {
+		case "postgres", "mysql", "mariadb":
+			add("DATABASE_URL", svc.ConnectionURL)
+		case "redis":
+			add("REDIS_URL", svc.ConnectionURL)
+		case "mongo":
+			add("MONGODB_URL", svc.ConnectionURL)
+		case "mail":
+			for _, c := range svc.UseCommands {
+				if c.Label == "SMTP_HOST" || c.Label == "SMTP_PORT" {
+					add(c.Label, c.Value)
+				}
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
+}

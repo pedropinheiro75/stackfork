@@ -66,9 +66,13 @@
       var cmd = cliCommand(w);
       if (cmd && cmds.indexOf(cmd) === -1) cmds.push(cmd);
     });
-    return cmds.map(function (c) {
+    var html = cmds.map(function (c) {
       return '<code class="copyable cli-command" data-copy="' + escapeHtml(c) + '" title="click to copy">' + escapeHtml(c) + "</code>";
     }).join("");
+    if (inst.env_block) {
+      html += '<code class="copyable cli-command env-block" data-copy="' + escapeHtml(inst.env_block) + '" title="click to copy">Copy .env for host app</code>';
+    }
+    return html;
   }
 
   function appChipHtml(app) {
@@ -130,6 +134,10 @@
       endpoints += '<span class="endpoint-copy copyable connection-url" data-copy="' + escapeHtml(svc.connection_url) +
         '" title="click to copy the connection URL (' + escapeHtml(svc.connection_url) + ')">connection URL</span>';
     }
+    (svc.use_commands || []).forEach(function (c) {
+      endpoints += '<span class="endpoint-copy copyable use-command" data-copy="' + escapeHtml(c.value) +
+        '" title="click to copy: ' + escapeHtml(c.value) + '">' + escapeHtml(c.label) + "</span>";
+    });
     var image = svc.image ? '<span class="service-image">' + escapeHtml(svc.image) + "</span>" : "";
     var settingsOpen = !!openSettings[key];
     return (
