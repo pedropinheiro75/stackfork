@@ -1,0 +1,254 @@
+package inventory
+
+import (
+	"os"
+	"regexp"
+	"strings"
+)
+
+// LiteralPassword resolves a password ONLY when it is written literally in
+// one of the instance's source Compose files, under a known local-database
+// key or a Redis --requirepass argument (design.md D3b's passwords rule,
+// task 3.11). This is the one deliberate exception to "the inventory never
+// contains a secret value" - it is NEVER called from Collect or anything
+// Collect calls, only from the dashboard's token-protected POST /api/copy.
+//
+// Values from `--secret`, a Compose `env_file:` entry, or `${VAR}`
+// interpolation are refused (returns ok=false), never guessed at:
+//   - `${VAR}` interpolation survives literally in compose.json because
+//     prepare always renders with `--no-env-resolution` (design.md D7), so
+//     a value containing "${" is never treated as literal.
+//   - A service that declares any `env_file:` at all has this whole
+//     lookup refused for it (ponytail: conservative rather than parsing
+//     which specific keys came from the file - Go stdlib has no YAML
+//     parser to draw that line precisely; the upgrade path, if ever
+//     needed, is a real Compose-aware source parse).
+//   - `--secret`-backed values only ever reach a service's environment
+//     through `${VAR}` interpolation in this tool's own design (D6), which
+//     the interpolation check above already catches.
+func LiteralPassword(files []string, service, kind string, composeServiceRaw map[string]interface{}) (string, bool) {
+	keys, ok := passwordKeysByKind[kind]
+	if !ok {
+		return "", false
+	}
+	usesEnvFile, verified := serviceUsesEnvFile(files, service)
+	if !verified || usesEnvFile {
+		// Fail closed: no source files to check, or one couldn't be read,
+		// is exactly as unverifiable as a real env_file - refuse rather
+		// than assume clean.
+		return "", false
+	}
+
+	env, _ := composeServiceRaw["environment"].(map[string]interface{})
+	for _, key := range keys {
+		if v, ok := env[key]; ok {
+			if s, ok := v.(string); ok && isLiteralValue(s) {
+				return s, true
+			}
+		}
+	}
+	if kind == "redis" {
+		if pw, ok := requirepassFromCommand(composeServiceRaw); ok {
+			return pw, true
+		}
+	}
+	return "", false
+}
+
+// CopyValue resolves one D3b "copy" value for the dashboard's
+// POST /api/copy (task 3.11): the same placeholder-bearing string already
+// shown on the page (a service's ConnectionURL, its primary UseCommand, or
+// the stack's EnvBlock), with the real password substituted wherever
+// LiteralPassword can verify it - the placeholder stays otherwise. This is
+// the only caller of LiteralPassword; svcRaw is an instance's compose.json
+// "services" map (name -> raw entry, e.g. from ReadComposeServices).
+func CopyValue(kind, service string, services []Service, files []string, svcRaw map[string]interface{}) (string, bool) {
+	switch kind {
+	case "database_url":
+		svc := findService(services, service)
+		if svc == nil {
+			return "", false
+		}
+		return withRealPassword(svc.ConnectionURL, svc.Kind, svc.Name, files, svcRaw), true
+	case "cli":
+		svc := findService(services, service)
+		if svc == nil {
+			return "", false
+		}
+		return withRealPassword(primaryUseCommand(svc.UseCommands), svc.Kind, svc.Name, files, svcRaw), true
+	case "env_block":
+		return envBlockWithRealPasswords(services, files, svcRaw), true
+	default:
+		return "", false
+	}
+}
+
+func findService(services []Service, name string) *Service {
+	for i := range services {
+		if services[i].Name == name {
+			return &services[i]
+		}
+	}
+	return nil
+}
+
+// primaryUseCommand picks the one UseCommand a "cli" copy means: the first
+// that carries the password placeholder (psql/mysql/redis-cli), or - for a
+// kind with none, e.g. mail's SMTP_HOST/SMTP_PORT - the first command as-is.
+func primaryUseCommand(cmds []UseCommand) string {
+	for _, c := range cmds {
+		if strings.Contains(c.Value, "<password>") {
+			return c.Value
+		}
+	}
+	if len(cmds) > 0 {
+		return cmds[0].Value
+	}
+	return ""
+}
+
+// withRealPassword substitutes svc's real password into a placeholder
+// string already containing "<password>", only when LiteralPassword can
+// verify one; any other case (no placeholder present, no raw entry, no
+// literal value) returns the placeholder unchanged.
+func withRealPassword(placeholder, kind, service string, files []string, svcRaw map[string]interface{}) string {
+	if placeholder == "" || !strings.Contains(placeholder, "<password>") {
+		return placeholder
+	}
+	raw, ok := svcRaw[service].(map[string]interface{})
+	if !ok {
+		return placeholder
+	}
+	pw, ok := LiteralPassword(files, service, kind, raw)
+	if !ok {
+		return placeholder
+	}
+	return strings.ReplaceAll(placeholder, "<password>", pw)
+}
+
+// envBlockWithRealPasswords rebuilds buildEnvBlock's exact placeholder
+// output (single source of truth for its line order/shape) and substitutes
+// each DATABASE_URL/REDIS_URL/MONGODB_URL line's password with the real
+// value from the specific service that line came from, when resolvable.
+func envBlockWithRealPasswords(services []Service, files []string, svcRaw map[string]interface{}) string {
+	placeholder := buildEnvBlock(services)
+	if placeholder == "" {
+		return ""
+	}
+	firstByKey := map[string]Service{}
+	for _, svc := range services {
+		var key string
+		switch svc.Kind {
+		case "postgres", "mysql", "mariadb":
+			key = "DATABASE_URL"
+		case "redis":
+			key = "REDIS_URL"
+		case "mongo":
+			key = "MONGODB_URL"
+		default:
+			continue
+		}
+		if _, ok := firstByKey[key]; !ok {
+			firstByKey[key] = svc
+		}
+	}
+	lines := strings.Split(placeholder, "\n")
+	for i, line := range lines {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		svc, ok := firstByKey[key]
+		if !ok {
+			continue
+		}
+		lines[i] = key + "=" + withRealPassword(value, svc.Kind, svc.Name, files, svcRaw)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// passwordKeysByKind is D3b's exact list of "known local-dev password
+// keys", one set per database kind.
+var passwordKeysByKind = map[string][]string{
+	"postgres": {"POSTGRES_PASSWORD"},
+	"mysql":    {"MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD"},
+	"mariadb":  {"MARIADB_PASSWORD", "MARIADB_ROOT_PASSWORD"},
+	"mongo":    {"MONGO_INITDB_ROOT_PASSWORD"},
+	"redis":    {"REDIS_PASSWORD"},
+}
+
+// isLiteralValue rejects anything empty or carrying unresolved Compose
+// interpolation syntax.
+func isLiteralValue(s string) bool {
+	return s != "" && !strings.Contains(s, "${")
+}
+
+var requirepassPattern = regexp.MustCompile(`--requirepass[= ]("[^"]*"|'[^']*'|\S+)`)
+
+// requirepassFromCommand reads a Redis service's own `--requirepass`
+// command-line argument, the official redis image's way of setting a
+// password (unlike the env-var pattern bitnami-style images use).
+func requirepassFromCommand(raw map[string]interface{}) (string, bool) {
+	var parts []string
+	switch cmd := raw["command"].(type) {
+	case []interface{}:
+		for _, c := range cmd {
+			if s, ok := c.(string); ok {
+				parts = append(parts, s)
+			}
+		}
+	case string:
+		parts = []string{cmd}
+	default:
+		return "", false
+	}
+	joined := strings.Join(parts, " ")
+	m := requirepassPattern.FindStringSubmatch(joined)
+	if m == nil {
+		return "", false
+	}
+	value := strings.Trim(m[1], `"'`)
+	if !isLiteralValue(value) {
+		return "", false
+	}
+	return value, true
+}
+
+// serviceBlockPattern finds one top-level service's YAML block: from its
+// "  <name>:" line (exactly two spaces of indent, the standard depth for a
+// service under "services:") to the next line at two spaces of indent or
+// less (the next service, or the end of the services: map).
+func serviceBlockPattern(service string) *regexp.Regexp {
+	return regexp.MustCompile(`(?ms)^  ` + regexp.QuoteMeta(service) + `:\s*\n(.*?)(?:\n  \S|\z)`)
+}
+
+// serviceUsesEnvFile is a conservative, line-based scan of the source
+// Compose files for whether the named service declares an `env_file:`
+// directive - stdlib only, not a full YAML parser (see LiteralPassword's
+// doc comment), so it only needs to answer this one yes/no question
+// reliably enough to refuse rather than risk it. verified is false (fail
+// closed, caller must refuse) when there are no files to check or any one
+// of them can't be read - "can't prove it's clean" is treated the same as
+// "it's dirty", never silently skipped.
+func serviceUsesEnvFile(files []string, service string) (usesEnvFile, verified bool) {
+	if len(files) == 0 {
+		return false, false
+	}
+	pattern := serviceBlockPattern(service)
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return false, false
+		}
+		m := pattern.FindSubmatch(data)
+		if m == nil {
+			continue
+		}
+		for _, line := range strings.Split(string(m[1]), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "env_file") {
+				return true, true
+			}
+		}
+	}
+	return false, true
+}

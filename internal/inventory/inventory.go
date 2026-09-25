@@ -313,21 +313,40 @@ func branchExists(root, branch string) bool {
 	return err == nil
 }
 
+// readComposeServices reads an instance's rendered compose.json and
+// returns its "services" map (name -> raw entry), the shape every per-
+// service field-reader in this package (fillServiceDetails, connectionURL,
+// useCommands, LiteralPassword's caller) expects.
+func readComposeServices(instanceDir string) (map[string]interface{}, error) {
+	configData, err := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
+	if err != nil {
+		return nil, err
+	}
+	model, err := compose.DecodeJSON(configData)
+	if err != nil {
+		return nil, err
+	}
+	m, _ := model.(map[string]interface{})
+	svcMap, _ := m["services"].(map[string]interface{})
+	return svcMap, nil
+}
+
+// ReadComposeServices exposes readComposeServices for the dashboard's
+// POST /api/copy (task 3.11): the only other caller of a service's raw
+// compose.json entry outside Collect's own pipeline.
+func ReadComposeServices(instanceDir string) (map[string]interface{}, error) {
+	return readComposeServices(instanceDir)
+}
+
 // servicesForInstance reads the instance's snapshot for its declared
 // service list (so a never-started service still gets a row) and matches
 // each one against its container, if any.
 func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname string, info *state.Manifest, proxyStatus ProxyStatus) ([]Service, string, []AppLink) {
 	instanceDir := filepath.Dir(manifestPath)
-	configData, err := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
+	svcMap, err := readComposeServices(instanceDir)
 	if err != nil {
 		return nil, StateStopped, nil
 	}
-	model, err := compose.DecodeJSON(configData)
-	if err != nil {
-		return nil, StateStopped, nil
-	}
-	m, _ := model.(map[string]interface{})
-	svcMap, _ := m["services"].(map[string]interface{})
 	names := make([]string, 0, len(svcMap))
 	for name := range svcMap {
 		names = append(names, name)
@@ -347,7 +366,7 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 	for _, r := range rows {
 		rowByService[r.Service] = r
 	}
-	primaryService, primaryTarget, primaryHTTPS, hasPrimary := compose.PrimaryHTTPService(model)
+	primaryService, primaryTarget, primaryHTTPS, hasPrimary := compose.PrimaryHTTPService(map[string]interface{}{"services": svcMap})
 
 	var services []Service
 	running, total := 0, len(names)

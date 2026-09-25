@@ -107,6 +107,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/instances", s.handleInstances)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("POST /api/actions", s.handleActions)
+	mux.HandleFunc("POST /api/copy", s.handleCopy)
 	mux.HandleFunc("GET /static/", s.handleStatic)
 	return mux
 }

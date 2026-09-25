@@ -70,7 +70,8 @@
       return '<code class="copyable cli-command" data-copy="' + escapeHtml(c) + '" title="click to copy">' + escapeHtml(c) + "</code>";
     }).join("");
     if (inst.env_block) {
-      html += '<code class="copyable cli-command env-block" data-copy="' + escapeHtml(inst.env_block) + '" title="click to copy">Copy .env for host app</code>';
+      html += '<code class="copyable cli-command env-block" data-copy="' + escapeHtml(inst.env_block) +
+        '" data-copy-kind="env_block" data-copy-project="' + escapeHtml(inst.project) + '" title="click to copy">Copy .env for host app</code>';
     }
     return html;
   }
@@ -132,10 +133,12 @@
     var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, running); }).join("");
     if (svc.connection_url) {
       endpoints += '<span class="endpoint-copy copyable connection-url" data-copy="' + escapeHtml(svc.connection_url) +
+        '" data-copy-kind="database_url" data-copy-project="' + escapeHtml(inst.project) + '" data-copy-service="' + escapeHtml(svc.name) +
         '" title="click to copy the connection URL (' + escapeHtml(svc.connection_url) + ')">connection URL</span>';
     }
     (svc.use_commands || []).forEach(function (c) {
       endpoints += '<span class="endpoint-copy copyable use-command" data-copy="' + escapeHtml(c.value) +
+        '" data-copy-kind="cli" data-copy-project="' + escapeHtml(inst.project) + '" data-copy-service="' + escapeHtml(svc.name) +
         '" title="click to copy: ' + escapeHtml(c.value) + '">' + escapeHtml(c.label) + "</span>";
     });
     var image = svc.image ? '<span class="service-image">' + escapeHtml(svc.image) + "</span>" : "";
@@ -283,6 +286,21 @@
       .catch(function (err) { log(project + " " + action + ": " + err.message); });
   }
 
+  // fetchCopyValue is D3b's one exception: a placeholder-bearing pill's
+  // real value, resolved server-side and never logged or rendered - only
+  // ever handed straight to the clipboard.
+  function fetchCopyValue(kind, project, service) {
+    return fetch("/api/copy", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Stackfork-Token": token },
+      body: JSON.stringify({ project: project, service: service || "", kind: kind }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error("copy failed");
+      return r.json().then(function (body) { return body.value; });
+    });
+  }
+
   function showLogs(project, service) {
     var panel = document.getElementById("logs-panel");
     var title = document.getElementById("logs-title");
@@ -353,9 +371,23 @@
         return;
       }
       var copy = e.target.closest(".copyable");
-      if (copy && navigator.clipboard) {
-        navigator.clipboard.writeText(copy.dataset.copy);
-        log("copied " + copy.dataset.copy);
+      if (copy) {
+        // Anything actually carrying the placeholder routes through
+        // /api/copy for the real value (design.md D3b); the value never
+        // gets logged or rendered, only written to the clipboard.
+        if (copy.dataset.copyKind && copy.dataset.copy.indexOf("<password>") !== -1) {
+          fetchCopyValue(copy.dataset.copyKind, copy.dataset.copyProject, copy.dataset.copyService)
+            .then(function (value) {
+              if (navigator.clipboard) navigator.clipboard.writeText(value);
+              log("copied " + copy.textContent.trim());
+            })
+            .catch(function (err) {
+              log("copy failed: " + err.message);
+            });
+        } else if (navigator.clipboard) {
+          navigator.clipboard.writeText(copy.dataset.copy);
+          log("copied " + copy.textContent.trim());
+        }
       }
     });
   }
