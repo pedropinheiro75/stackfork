@@ -115,6 +115,38 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if action == "dashboard" {
 		return cmdDashboard(context.Background(), stdout, stderr, subArgs, newStateBase, legacyStateBase)
 	}
+	// down --instance NAME names its own instance directly (task 3.8/D2's
+	// orphan-cleanup escape hatch: `stackfork where` points at it, then
+	// `down --instance NAME --volumes` removes it). Unlike every other
+	// action it must never require --root to be inside a Git checkout -
+	// that is exactly the situation a missing-checkout/missing-branch
+	// instance is in, and is the most common reason to reach for this flag
+	// in the first place. root/branch come from the instance's own
+	// manifest instead of the (possibly nonexistent) cwd checkout.
+	if action == "down" {
+		instance, _, err := parseDownFlags(subArgs)
+		if err != nil {
+			return 2, err
+		}
+		if instance != "" {
+			if !identity.InstancePattern.MatchString(instance) {
+				return 0, errors.New("Invalid instance name")
+			}
+			stateBase := newStateBase
+			if identity.IsLegacyInstance(instance) {
+				stateBase = legacyStateBase
+			}
+			instanceDir := filepath.Join(stateBase, instance)
+			info, err := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+			if err != nil {
+				return 0, err
+			}
+			if info == nil {
+				return 0, fmt.Errorf("no such instance %q", instance)
+			}
+			return cmdUpDownRunExec(stdout, stderr, action, subArgs, info.Root, info.Branch, instance, instanceDir, newStateBase, legacyStateBase)
+		}
+	}
 
 	toplevel, err := gitToplevel(rootArg)
 	if err != nil {
@@ -150,27 +182,6 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if legacyManifest != nil {
 		project = legacyProject
 		stateBase = legacyStateBase
-	}
-
-	if action == "down" {
-		instance, _, err := parseDownFlags(subArgs)
-		if err != nil {
-			return 2, err
-		}
-		if instance != "" {
-			if !identity.InstancePattern.MatchString(instance) {
-				return 0, errors.New("Invalid instance name")
-			}
-			project = instance
-			// The manifest's stored project is authoritative for which
-			// Compose project an instance belongs to; the prefix only
-			// decides which state directory to look it up in.
-			if identity.IsLegacyInstance(instance) {
-				stateBase = legacyStateBase
-			} else {
-				stateBase = newStateBase
-			}
-		}
 	}
 
 	instanceDir := filepath.Join(stateBase, project)

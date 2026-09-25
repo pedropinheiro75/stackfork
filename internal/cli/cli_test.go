@@ -421,6 +421,31 @@ func TestLegacyInstanceKeepsOperatingOnLegacyState(t *testing.T) {
 	}
 }
 
+// TestDownInstanceWorksOutsideAnyGitCheckout is the real bug behind a
+// user's report: `down --instance NAME` is the documented escape hatch for
+// an orphaned instance (references/worktrees.md: "stackfork where ... then
+// down --instance NAME to stop it") - exactly the missing-checkout/
+// missing-branch case where there is no longer a valid Git checkout to run
+// the command from. It must never require --root to resolve to one; the
+// instance's own manifest supplies root/branch instead.
+func TestDownInstanceWorksOutsideAnyGitCheckout(t *testing.T) {
+	log := installFakeDocker(t)
+	deletedRoot := filepath.Join(t.TempDir(), "checkout-that-no-longer-exists")
+	legacyStateDir := filepath.Join(t.TempDir(), "legacy-state")
+	legacyProject := writeSyntheticLegacyInstance(t, legacyStateDir, deletedRoot, "main")
+
+	notAGitRepo := t.TempDir()
+	_, stderr, code := runCLI(t, "--root", notAGitRepo, "--legacy-state-dir", legacyStateDir,
+		"down", "--instance", legacyProject, "--volumes")
+	if code != 0 {
+		t.Fatalf("down --instance from outside a Git checkout: code=%d stderr=%s", code, stderr)
+	}
+	data, _ := os.ReadFile(log)
+	if !strings.Contains(string(data), "-p "+legacyProject) || !strings.Contains(string(data), "--volumes") {
+		t.Fatalf("expected down --volumes to target %q, log:\n%s", legacyProject, data)
+	}
+}
+
 // TestDownInstanceAcceptsLegacyAndNewNames ports design.md D2's "legacy
 // instance name accepted" scenario: `down --instance` must accept both
 // sf- and idv- names and resolve each from its own state dir.
