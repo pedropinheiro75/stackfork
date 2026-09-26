@@ -75,7 +75,7 @@ mkdir -p ~/.codex/skills && ln -s "$(pwd)" ~/.codex/skills/isolated-dev
 Then just ask, in your own words, for what you want done — Claude Code matches the skill from `SKILL.md`'s own `description`, e.g. "prepare this project in a new worktree" or "run the app in an isolated dev environment" is enough, no special syntax required (that's how every isolation task in this project's own history got triggered). Codex reads `agents/openai.yaml`'s `default_prompt` instead, so use that exact phrasing there:
 
 ```
-Use $isolated-dev to prepare this checkout with an isolated development environment using stackfork.
+Use $stackfork to prepare this checkout with an isolated development environment using stackfork.
 ```
 
 Project- or company-specific recipes (a client's known gotchas, a shared registry token source, a house Nuxt template) stay out of this repo entirely — they live in your own private profile directory (`~/.config/stackfork/profiles/*`, or `$STACKFORK_PROFILE_DIRS`), which `stackfork where` reports back to the agent when one applies.

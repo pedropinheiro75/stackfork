@@ -1,6 +1,6 @@
 interface:
   display_name: "stackfork (isolated dev)"
   short_description: "Isolate worktrees and Docker development across projects with stackfork"
-  default_prompt: "Use $isolated-dev to prepare this checkout with an isolated development environment using stackfork."
+  default_prompt: "Use $stackfork to prepare this checkout with an isolated development environment using stackfork."
 policy:
   allow_implicit_invocation: true
