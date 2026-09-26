@@ -1,37 +1,48 @@
-# Isolated development
+# stackfork
 
-Shared agent skill and Docker Compose helper for isolated development across projects, branches and Git worktrees. Works with any project’s Compose services, including dependency-only stacks and host-run apps. Includes an optional Node/Bun Nuxt template. Project- or company-specific recipes live in private profiles (`~/.config/stackfork/profiles/`), outside this repository.
+**Run the same project twice — for two AI agents, or an agent and you — without them stepping on each other.**
 
-The maintained source lives in this repository. Local Codex and Claude Code skill directories link to it.
+The moment you (or a coding agent) open a second Git worktree of a project and run `docker compose up`, it collides with the first: same ports, same container names, same volumes, sometimes the same database. Today the fix is manual — hand-edit `.env`, guess free ports, remember which worktree owns which container — and it breaks the moment a teammate's agent does the same thing next to yours. stackfork takes the Compose stack you already have and isolates it per checkout-and-branch: its own ports, volumes, network, container names — so a human and an agent, or five agents, can each have a fully running copy of the same project at the same time, on the same machine, without coordinating.
 
-- [Agent instructions](SKILL.md)
-- [CLI source](cmd/stackfork)
-
-Ask an agent: `Use $isolated-dev to prepare this project in a new worktree.`
+<!-- TODO: 20s demo GIF (openspec/changes/prepare-open-source-release task 12.2) -->
 
 ## Install
 
 ```sh
 go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest
-# for now, from a local checkout:
-go install ./cmd/stackfork
 ```
 
 Make sure `stackfork` resolves on `PATH` (typically `$(go env GOPATH)/bin`, often `~/go/bin`).
 
-## Reusing a prepared checkout
+From a local checkout instead:
 
 ```sh
-stackfork --root "$CHECKOUT" prepare
-stackfork --root "$CHECKOUT" up
-stackfork --root "$CHECKOUT" urls
+go install ./cmd/stackfork
 ```
 
-`prepare` reuses the last source-file selection, or the standard `.agent-dev/` template paths on first use. Select a project's authorized registry config once with `--npmrc "$PROJECT_NPMRC"` before `prepare`; subsequent starts reuse its path. Normal startup does not reset or seed the database.
+## Quick start
 
-`where` returns the instance hostname before startup; `urls` uses it for HTTP endpoints, for example `api-worktree-<hash>.localhost:<port>`. Select a shorter unique name with `prepare --hostname api-571.localhost`. Agents must use that same hostname in browser-facing app configuration; DB endpoints remain on `127.0.0.1`. Existing app adapters need their callback/CORS/HMR settings checked when adopting it.
+Five commands, on a project you already have checked out with a Compose file:
 
-The Nuxt template includes real Node 22 and Bun, defaults to one app replica, and supports `DEV_APP_REPLICAS=2` for multi-replica testing.
+```sh
+git worktree add ../myproject-feature feature-branch   # a second copy of the same repo
+cd ../myproject-feature
+stackfork prepare                                       # isolate this checkout+branch's copy of the stack
+stackfork up                                             # start it
+stackfork urls                                           # e.g. myproject-feature-a1b2c3.localhost:54211
+```
+
+Run `stackfork list` from either checkout to see both instances — and your original checkout's stack, still running untouched on its own ports. No `.env` surgery, no port bookkeeping, no `docker compose down` in the other window first.
+
+`prepare` reuses the same source-file selection on later runs. It renders your project's actual `docker-compose.yml` (or whichever files you pass with `-f`) into an isolated snapshot: fresh container/volume/network names keyed on checkout path + branch, ports reassigned off Docker's collision, secrets never printed or stored. Nothing about your Compose file itself changes.
+
+## How it's different
+
+stackfork isn't a new environment format and it doesn't run your project *for* you — it isolates the Compose stack you already maintain, as-is:
+
+- **vs. devcontainers** — a devcontainer describes a dev environment from scratch, usually duplicating what your Compose file already says. stackfork reads that Compose file directly; there's nothing new to write or keep in sync.
+- **vs. Dagger / container-use** — those are programmable container pipelines, closer to CI/build tooling than "run my existing dev stack a second time safely." stackfork does one narrower thing: collision isolation for a Compose-based dev stack.
+- **vs. Conductor-style agent/worktree managers** — those orchestrate the worktrees and the agents; they generally assume you've already solved (or ignored) the "two Docker stacks colliding" problem. stackfork is the piece that solves that specific problem, and composes fine alongside them.
 
 ## Dashboard
 
@@ -39,7 +50,27 @@ The Nuxt template includes real Node 22 and Bun, defaults to one app replica, an
 stackfork dashboard --open
 ```
 
-A local web page listing every instance across every checkout, grouped by checkout: status, services, health and clickable endpoints, learned-knowledge status and plain-language warnings. It's local-only (binds `127.0.0.1`, checks the `Host` header, and a per-process token guards every action) and read-mostly: the only actions are `up`, `down` (volumes always kept), `restart SERVICE`, viewing logs, and starting/stopping/reloading the shared proxy. Anything destructive or input-heavy (`down --volumes`, `gc --apply`, `prepare --reassign-ports`, `clone-db`, `learn`) shows up as a command to copy, never a button. `stackfork list` / `list --json` show the same data from the terminal.
+A local, read-mostly web page listing every instance across every checkout it knows about: status, services, health, clickable app/DB/mail endpoints (labelled by role, not just raw ports), learned-knowledge status, plain-language warnings. Local-only (binds `127.0.0.1`, checks the `Host` header, a per-process token guards every action) — the only actions it can take are `up`, `down` (volumes always kept), per-service `restart`/`start`/`stop`, viewing logs, and the shared proxy's up/down/reload. Destructive or input-heavy operations (`down --volumes`, `prepare --reassign-ports`, `learn`) show up as an exact command to copy, never a button. `stackfork list` / `list --json` show the same data from a terminal.
+
+## Safety model
+
+stackfork's job is **collision isolation between checkouts** — making sure parallel worktrees/branches of the same project don't collide on ports, volumes, networks, container names, databases or cookies, and refusing what it can't isolate safely (fixed container names, external networks, the Docker socket, writable binds outside the checkout, fixed subnets) rather than working around it silently.
+
+It is **not** a sandbox. It doesn't protect against a malicious or untrusted Compose file, doesn't isolate containers from the host beyond what Docker itself provides, and assumes the project you're isolating is one you already trust enough to run its Compose stack directly. See [SECURITY.md](SECURITY.md) for the full boundary, including the one endpoint (`/api/copy`, dashboard) that ever returns a real credential and exactly when.
+
+## Agent skill install
+
+The skill this repo ships (`SKILL.md` plus `references/`) teaches an agent the same discover → prepare → up → verify → down flow this README uses, plus how to adapt a project's real Compose stack instead of forcing a template on it. Point your agent's skill directory at this checkout:
+
+```sh
+# Claude Code
+mkdir -p ~/.claude/skills && ln -s "$(pwd)" ~/.claude/skills/isolated-dev
+
+# Codex
+mkdir -p ~/.codex/skills && ln -s "$(pwd)" ~/.codex/skills/isolated-dev
+```
+
+Project- or company-specific recipes (a client's known gotchas, a shared registry token source, a house Nuxt template) stay out of this repo entirely — they live in your own private profile directory (`~/.config/stackfork/profiles/*`, or `$STACKFORK_PROFILE_DIRS`), which `stackfork where` reports back to the agent when one applies.
 
 ## Checks
 
