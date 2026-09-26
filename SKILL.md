@@ -3,7 +3,7 @@ name: stackfork
 description: Use when preparing, starting, testing, or cleaning up a local development environment in a Git worktree or branch with the stackfork CLI, especially when Docker Compose ports, databases, volumes, or app configuration could collide with another checkout.
 ---
 
-# Isolated development (stackfork)
+# stackfork
 
 Use the project's actual runtime, package manager and startup flow through `stackfork`, a framework-independent Compose isolation helper (optional Nuxt/Bun template included). Adapt existing stacks first; do not force a non-Nuxt or dependency-only project into the Nuxt template.
 

@@ -66,10 +66,10 @@ The skill this repo ships (`SKILL.md` plus `references/`) teaches an agent the s
 
 ```sh
 # Claude Code
-mkdir -p ~/.claude/skills && ln -s "$(pwd)" ~/.claude/skills/isolated-dev
+mkdir -p ~/.claude/skills && ln -s "$(pwd)" ~/.claude/skills/stackfork
 
 # Codex
-mkdir -p ~/.codex/skills && ln -s "$(pwd)" ~/.codex/skills/isolated-dev
+mkdir -p ~/.codex/skills && ln -s "$(pwd)" ~/.codex/skills/stackfork
 ```
 
 Then just ask, in your own words, for what you want done — Claude Code matches the skill from `SKILL.md`'s own `description`, e.g. "prepare this project in a new worktree" or "run the app in an isolated dev environment" is enough, no special syntax required (that's how every isolation task in this project's own history got triggered). Codex reads `agents/openai.yaml`'s `default_prompt` instead, so use that exact phrasing there:

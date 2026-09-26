@@ -35,11 +35,11 @@ import (
 var Version = "dev"
 
 // Run mirrors Python's `if __name__ == '__main__': main()` wrapper,
-// including the "isolated-dev: <error>" / exit 1 formatting.
+// including the "stackfork: <error>" / exit 1 formatting.
 func Run(args []string, stdout, stderr io.Writer) int {
 	code, err := run(args, stdout, stderr)
 	if err != nil {
-		fmt.Fprintf(stderr, "isolated-dev: %s\n", err.Error())
+		fmt.Fprintf(stderr, "stackfork: %s\n", err.Error())
 		return 1
 	}
 	return code
