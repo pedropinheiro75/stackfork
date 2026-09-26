@@ -17,7 +17,7 @@ For each profile `stackfork where` lists with `"context": true`, follow that pro
 
 ## Prepare, start, verify, stop
 
-1. **Discover:** resolve the checkout with Git, read AGENTS.md/README, and adapt the project's real Compose stack (`references/adapting-compose.md`, or `references/nuxt-template.md` for a bare Nuxt app). Use a separate worktree per concurrent agent (`references/worktrees.md`).
+1. **Discover:** resolve the checkout with Git, read AGENTS.md/README, and adapt the project's real Compose stack (`references/adapting-compose.md`, or a template for a bare app with no app-building Compose at all: `references/nuxt-template.md` for Nuxt, `references/go-template.md` for a Go web app). Use a separate worktree per concurrent agent (`references/worktrees.md`).
 2. **Prepare:** `stackfork --root "$CHECKOUT" prepare -f <compose files> --env-file <runtime env>`
 3. **Start:** `stackfork --root "$CHECKOUT" up`
 4. **URLs:** `stackfork --root "$CHECKOUT" urls` — report the named `<instance>.localhost` URL it prints, never a bare `localhost`/`127.0.0.1` (`references/hostnames.md`).

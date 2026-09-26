@@ -62,7 +62,7 @@ func TestRefusePublishedReplicasRefusesScaledPublishedService(t *testing.T) {
 }
 
 func TestRefusePublishedReplicasAllowsTemplateShape(t *testing.T) {
-	// Mirrors assets/nuxt.compose.yaml: app scales but publishes nothing;
+	// Mirrors assets/nuxt/compose.yaml: app scales but publishes nothing;
 	// nginx publishes but doesn't scale (task 8.4).
 	model, err := DecodeJSON([]byte(`{
 		"services": {

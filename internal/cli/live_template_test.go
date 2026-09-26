@@ -34,7 +34,7 @@ createServer((req, res) => {
 `
 
 // TestLiveTemplate ports scripts/test_template.py: a real Node 22 app built
-// from assets/Dockerfile, fronted by assets/nginx.conf, run through the CLI
+// from assets/nuxt/Dockerfile, fronted by assets/nuxt/nginx.conf, run through the CLI
 // twice (two checkouts = two isolated stacks), checking streamed downloads,
 // remembered-but-never-persisted registry credentials, named URLs, Host
 // preservation and independent teardown.

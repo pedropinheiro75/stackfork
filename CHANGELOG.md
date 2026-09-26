@@ -7,6 +7,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `assets/go/`: an optional Go web app template (mirrors the Nuxt one -
+  app + Postgres, `go mod download` entrypoint, optional private-module
+  netrc via a Compose secret). `assets/nuxt.compose.yaml` and friends moved
+  to `assets/nuxt/` alongside it, so a template's assets live under its own
+  runtime rather than flat at the top level. See `references/go-template.md`.
 - `stackfork list` / `list --json`: every instance across every checkout,
   from a new `internal/inventory` package shared with the dashboard, so the
   two can never disagree.

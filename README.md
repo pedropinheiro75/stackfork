@@ -36,6 +36,8 @@ Run `stackfork list` from either checkout to see both instances — and your ori
 
 `prepare` reuses the same source-file selection on later runs. It renders your project's actual `docker-compose.yml` (or whichever files you pass with `-f`) into an isolated snapshot: fresh container/volume/network names keyed on checkout path + branch, ports reassigned off Docker's collision, secrets never printed or stored. Nothing about your Compose file itself changes.
 
+**No Compose file yet?** `assets/nuxt/` and `assets/go/` are optional starting-point stacks (app + Postgres, no host installs needed) for a Nuxt or a Go web app with nothing to adapt — see `references/nuxt-template.md` / `references/go-template.md`. Everything else (any other language, any existing Compose setup) goes through the isolation flow above directly; the templates are a bootstrap for the one case that has nothing to isolate yet, not a requirement.
+
 ## How it's different
 
 stackfork isn't a new environment format and it doesn't run your project *for* you — it isolates the Compose stack you already maintain, as-is:

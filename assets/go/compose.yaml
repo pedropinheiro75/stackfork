@@ -1,0 +1,58 @@
+# Optional Go starting point. Match the project's actual Go version and
+# dependencies; replace `command` with an air/reflex invocation if the
+# project already uses one for hot reload - `go run .` has none.
+services:
+  app:
+    build:
+      context: ${DEV_CHECKOUT:?}
+      dockerfile: .agent-dev/Dockerfile
+      args:
+        GO_VERSION: ${DEV_GO_VERSION:-1.24}
+    working_dir: /app
+    entrypoint: [bash, /usr/local/bin/stackfork-dev-entrypoint]
+    command: [go, run, .]
+    ports:
+      - target: ${DEV_SERVER_PORT:-8080}
+        host_ip: 127.0.0.1
+    volumes:
+      - ${DEV_CHECKOUT:?}:/app
+      - go-mod-cache:/go/pkg/mod
+      - ${DEV_RUNTIME_ENV:?}:/app/.env:ro
+    env_file:
+      - ${DEV_RUNTIME_ENV:?}
+    environment:
+      DATABASE_URL: postgres://postgres:example@db:5432/${DEV_DB_NAME:?}
+      DEV_HOSTNAME: ${DEV_HOSTNAME:?Use stackfork prepare to supply the instance hostname}
+      PORT: ${DEV_SERVER_PORT:-8080}
+      GOPRIVATE: ${DEV_GOPRIVATE:-}
+      GO_REGISTRY_HOST: ${DEV_GO_REGISTRY_HOST:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, -fsS, "http://localhost:${DEV_SERVER_PORT:-8080}/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  db:
+    image: ${DEV_DB_IMAGE:-postgres:17}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: example
+      POSTGRES_DB: ${DEV_DB_NAME:?}
+    ports:
+      - target: 5432
+        host_ip: 127.0.0.1
+    volumes:
+      - pgdata:${DEV_PGDATA_TARGET:-/var/lib/postgresql/data}
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U postgres -d $$POSTGRES_DB']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
+  go-mod-cache:
