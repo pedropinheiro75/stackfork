@@ -80,7 +80,7 @@
     if (app.url) {
       var stoppedClass = app.running ? "" : " stopped";
       return '<a class="app-chip' + stoppedClass + '" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(app.url) + '">' +
-        escapeHtml(app.label) + ": " + escapeHtml(app.url) + "</a>";
+        escapeHtml(app.label) + "</a>";
     }
     var hint = app.hint ? ": " + escapeHtml(app.hint) : "";
     return '<span class="app-chip stopped">' + escapeHtml(app.label) + hint + "</span>";

@@ -70,8 +70,22 @@ func TestAppStripVisibleWhenCollapsedAndProxyShortcut(t *testing.T) {
 	if stripStart > bodyStart {
 		t.Fatalf("expected the app-strip before .stack-body (so it survives collapse), got strip at %d, body at %d", stripStart, bodyStart)
 	}
-	if !strings.Contains(body[stackStart:bodyStart], "App: http://"+project+".localhost:20060") {
-		t.Fatalf("expected the App chip in the strip:\n%s", body[stackStart:bodyStart])
+	// The chip's label is just "App" (maintainer feedback: the address
+	// already shows in full below, in the expanded service row) - the
+	// full URL still has to reach href/title so the click and hover both
+	// carry it.
+	strip := body[stackStart:bodyStart]
+	if !strings.Contains(strip, `href="http://`+project+`.localhost:20060"`) {
+		t.Fatalf("expected the App chip's href to carry the full URL:\n%s", strip)
+	}
+	if !strings.Contains(strip, `title="http://`+project+`.localhost:20060"`) {
+		t.Fatalf("expected the App chip's title to carry the full URL:\n%s", strip)
+	}
+	if !strings.Contains(strip, `class="app-chip">App</a>`) && !strings.Contains(strip, `>App</a>`) {
+		t.Fatalf("expected the App chip's visible text to be just the label:\n%s", strip)
+	}
+	if strings.Contains(strip, `>App: http://`) {
+		t.Fatalf("expected the App chip to no longer show the URL as visible text:\n%s", strip)
 	}
 
 	if !strings.Contains(body, `id="proxy-start"`) {

@@ -80,7 +80,7 @@
   <div class="app-strip">
     {{range .Apps}}
     {{if .URL}}
-    <a class="app-chip{{if not .Running}} stopped{{end}}" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}">{{.Label}}: {{.URL}}</a>
+    <a class="app-chip{{if not .Running}} stopped{{end}}" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}">{{.Label}}</a>
     {{else}}
     <span class="app-chip stopped">{{.Label}}{{if .Hint}}: {{.Hint}}{{end}}</span>
     {{end}}
