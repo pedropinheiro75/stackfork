@@ -1,0 +1,25 @@
+# Dependencies only - no app service. The Vite dev server runs on the
+# host (references/adapting-compose.md's "host-run app" pattern), routed
+# to the shared proxy with `stackfork route add` instead of being built
+# into a container.
+services:
+  db:
+    image: postgres:17
+    labels:
+      io.stackfork.data: pgdata
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: example
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:

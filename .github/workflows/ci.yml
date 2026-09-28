@@ -29,12 +29,16 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
       - run: docker compose version
       - run: go test ./...
         env:
           STACKFORK_LIVE: "1"
       - run: go install ./cmd/stackfork
       - run: bash examples/node-postgres/ci-check.sh
+      - run: bash examples/vite-api/ci-check.sh
 
   gitleaks:
     runs-on: ubuntu-latest

@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>vite-api example</title>
+  </head>
+  <body>
+    <h1>vite-api example</h1>
+    <p>Host-run Vite dev server, Postgres isolated by stackfork, routed with <code>stackfork route add</code>.</p>
+    <p id="visits">loading…</p>
+    <script type="module">
+      fetch("/api/visits")
+        .then((r) => r.json())
+        .then((data) => {
+          document.getElementById("visits").textContent = `visits: ${data.visits}`;
+        })
+        .catch((err) => {
+          document.getElementById("visits").textContent = `error: ${err}`;
+        });
+    </script>
+  </body>
+</html>
