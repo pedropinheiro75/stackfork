@@ -61,7 +61,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 	rest := top.Args()
 	if len(rest) == 0 {
-		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, restart, start, stop, logs, route, proxy, list, dashboard, gc, doctor, learn, version)")
+		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, restart, start, stop, logs, clone-db, route, proxy, list, dashboard, gc, doctor, learn, version)")
 	}
 	action := rest[0]
 	subArgs := rest[1:]
@@ -212,6 +212,8 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "logs":
 		return cmdLogs(stdout, stderr, subArgs, root, branch, project, instanceDir)
+	case "clone-db":
+		return cmdCloneDB(stdout, subArgs, root, project, instanceDir, newStateBase, legacyStateBase)
 	case "route":
 		return 0, cmdRoute(stdout, stderr, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	default:
