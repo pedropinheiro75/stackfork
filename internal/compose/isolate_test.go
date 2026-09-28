@@ -354,10 +354,11 @@ func TestWireSecretsNoNamesIsNoop(t *testing.T) {
 }
 
 // Task 7.1: pins docker compose config --format json's behaviour with a
-// service-level x-* extension key, on the installed Compose version.
-// design.md D7 records the result: it is dropped, so HTTP marking goes
-// through the io.stackfork.http/.https labels instead (identity.LabelHTTP),
-// which DeclaredHTTPPorts reads back.
+// service-level x-* extension key, on the installed Compose version - it's
+// dropped, which is why HTTP marking uses the io.stackfork.http/.https
+// labels instead (identity.LabelHTTP, read back by DeclaredHTTPPorts). If a
+// future Compose version changes this, this test catches it rather than the
+// label silently going unused.
 func TestComposeConfigDropsServiceLevelExtensionKeys(t *testing.T) {
 	if !hasDocker(t) {
 		t.Skip("docker compose not available")
@@ -381,7 +382,7 @@ func TestComposeConfigDropsServiceLevelExtensionKeys(t *testing.T) {
 	services, _ := m["services"].(map[string]interface{})
 	app, _ := services["app"].(map[string]interface{})
 	if _, has := app["x-stackfork"]; has {
-		t.Fatal("docker compose config now keeps service-level x-* keys; if this fails, D7's label fallback can be retired in favour of x-stackfork")
+		t.Fatal("docker compose config now keeps service-level x-* keys; update this pin and this comment to match")
 	}
 }
 

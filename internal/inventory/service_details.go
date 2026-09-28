@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/pedropinheiro75/stackfork/internal/compose"
 )
 
 // fillServiceDetails reads a service's expandable settings straight off its
@@ -230,17 +232,17 @@ func endpointAddr(svc Service, port int) (string, bool) {
 }
 
 // envLookup returns a closure reading the first set value among a list of
-// env key names off a service's raw environment map - the same allowlist
+// env key names off a service's raw environment - the same allowlist
 // pattern connectionURL and useCommands both need (never a password-shaped
-// key).
+// key). Goes through compose.NormalizeEnvironment, not a direct map
+// assertion: with --no-interpolate a list-declared service's environment
+// isn't normalized to a map by Compose itself (design.md D6).
 func envLookup(raw map[string]interface{}) func(keys ...string) string {
-	env, _ := raw["environment"].(map[string]interface{})
+	env := compose.NormalizeEnvironment(raw["environment"])
 	return func(keys ...string) string {
 		for _, k := range keys {
-			if v, ok := env[k]; ok {
-				if s, ok := v.(string); ok && s != "" {
-					return s
-				}
+			if s, ok := env[k]; ok && s != "" {
+				return s
 			}
 		}
 		return ""
@@ -453,12 +455,11 @@ func serviceReplicas(raw map[string]interface{}) int {
 }
 
 // serviceEnvKeys returns environment variable NAMES only (design.md D3a/D5:
-// never a value); `environment` is a map once Compose has normalized it.
+// never a value). Goes through compose.NormalizeEnvironment, not a direct
+// map assertion (design.md D6: a list-declared service's environment isn't
+// normalized to a map with --no-interpolate).
 func serviceEnvKeys(raw map[string]interface{}) []string {
-	env, ok := raw["environment"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
+	env := compose.NormalizeEnvironment(raw["environment"])
 	names := make([]string, 0, len(env))
 	for name := range env {
 		names = append(names, name)

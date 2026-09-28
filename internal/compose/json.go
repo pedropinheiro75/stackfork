@@ -3,6 +3,7 @@ package compose
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 )
 
 // DecodeJSON parses JSON the way Python's json.loads does: numbers keep
@@ -70,4 +71,42 @@ func isJSONInt(v interface{}) bool {
 	}
 	_, err := n.Int64()
 	return err == nil
+}
+
+// NormalizeEnvironment reads a service's raw "environment" value into a
+// plain map[string]string, regardless of which shape Compose rendered it
+// in. Without --no-interpolate, `docker compose config` always normalizes
+// environment to a map; with it (design.md D6's security fix - required so
+// an unresolved ${VAR} is never silently baked into the snapshot), a
+// service whose *source* Compose file declared environment as a list
+// (`- KEY=VALUE`) comes back as a list too, unnormalized - verified
+// empirically, not assumed. Every reader of a service's environment must
+// go through this rather than a direct map type assertion, or a
+// list-declared service's env silently reads as empty. A bare "KEY" list
+// entry (no "=", meaning "inherit from the shell running docker compose")
+// has no resolvable value here and is skipped, same as it would be absent
+// from a map-shaped environment with an unset value removed.
+func NormalizeEnvironment(raw interface{}) map[string]string {
+	out := map[string]string{}
+	switch v := raw.(type) {
+	case map[string]interface{}:
+		for k, val := range v {
+			if s, ok := val.(string); ok {
+				out[k] = s
+			}
+		}
+	case []interface{}:
+		for _, entry := range v {
+			s, ok := entry.(string)
+			if !ok {
+				continue
+			}
+			k, val, hasEq := strings.Cut(s, "=")
+			if !hasEq {
+				continue
+			}
+			out[k] = val
+		}
+	}
+	return out
 }

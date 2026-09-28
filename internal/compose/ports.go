@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // PortRef names one service's target port in an isolated Compose model.
@@ -136,27 +137,43 @@ func RefusePublishedReplicas(model interface{}, refs []PortRef) error {
 		if !ok {
 			continue
 		}
-		if replicaCount(svc) > 1 {
+		count, resolved := replicaCount(svc)
+		if !resolved {
+			return fmt.Errorf("services.%s: deploy.replicas is not a resolved number (design.md D6: --no-interpolate keeps an unresolved ${VAR} literal) and this service also publishes a host port; cannot confirm it isn't scaled to more than one replica without guessing", name)
+		}
+		if count > 1 {
 			return fmt.Errorf("services.%s: cannot publish a host port with more than one replica; put it behind a proxy service instead", name)
 		}
 	}
 	return nil
 }
 
-// replicaCount reads a service's deploy.replicas, defaulting to 1 when unset
-// or unparsable.
-func replicaCount(svc map[string]interface{}) int {
+// replicaCount reads a service's deploy.replicas, defaulting to (1, true)
+// when unset. resolved is false only when replicas is set but couldn't be
+// parsed as a number *because* it's still literally "${VAR}" (design.md D6:
+// --no-interpolate never resolves that from prepare's own environment) -
+// the caller must refuse rather than guess 1, since the real value could
+// turn out to be > 1 once actually interpolated at up time. Any other
+// unparsable value (a typo, a genuinely empty string) still defaults to 1,
+// unchanged from before this distinction existed.
+func replicaCount(svc map[string]interface{}) (n int, resolved bool) {
 	deploy, ok := asMap(svc["deploy"])
 	if !ok {
-		return 1
+		return 1, true
 	}
-	n, ok := deploy["replicas"].(json.Number)
-	if !ok {
-		return 1
+	raw, present := deploy["replicas"]
+	if !present {
+		return 1, true
 	}
-	v, err := n.Int64()
-	if err != nil || v < 1 {
-		return 1
+	if num, ok := raw.(json.Number); ok {
+		v, err := num.Int64()
+		if err != nil || v < 1 {
+			return 1, true
+		}
+		return int(v), true
 	}
-	return int(v)
+	if s, ok := raw.(string); ok && strings.Contains(s, "${") {
+		return 0, false
+	}
+	return 1, true
 }

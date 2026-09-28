@@ -84,15 +84,16 @@ func checkDockerContext() (status, message, hint string) {
 	return "ok", "a local Docker context is selected", ""
 }
 
-// checkComposeVersion checks the flag exists (task 9.6: "Compose version
-// supports config --no-env-resolution") by asking Compose's own --help
-// rather than parsing a version number against a hand-maintained threshold.
+// checkComposeVersion checks the --no-env-resolution flag Render depends on
+// exists (task 9.6) by asking Compose's own --help rather than parsing a
+// version number against a hand-maintained threshold.
 func checkComposeVersion() (status, message, hint string) {
 	out, err := exec.Command("docker", "compose", "config", "--help").CombinedOutput()
 	if err != nil {
 		return "warn", "could not run `docker compose config --help`", "install Docker Compose v2"
 	}
-	if !strings.Contains(string(out), "no-env-resolution") {
+	text := string(out)
+	if !strings.Contains(text, "no-env-resolution") {
 		return "fail", "installed Compose does not support --no-env-resolution", "upgrade Docker Compose to v2.24 or newer"
 	}
 	return "ok", "docker compose config supports --no-env-resolution", ""

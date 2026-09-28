@@ -4,6 +4,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/pedropinheiro75/stackfork/internal/compose"
 )
 
 // LiteralPassword resolves a password ONLY when it is written literally in
@@ -16,8 +18,12 @@ import (
 // Values from `--secret`, a Compose `env_file:` entry, or `${VAR}`
 // interpolation are refused (returns ok=false), never guessed at:
 //   - `${VAR}` interpolation survives literally in compose.json because
-//     prepare always renders with `--no-env-resolution` (design.md D7), so
-//     a value containing "${" is never treated as literal.
+//     prepare always renders with `--no-interpolate` (design.md D6's
+//     security fix - `--no-env-resolution` alone only skips env_file
+//     merging, it does NOT stop interpolation, which would otherwise
+//     resolve from whatever happens to be set in prepare's own
+//     environment and get baked into the snapshot as a real secret), so a
+//     value containing "${" is never treated as literal.
 //   - A service that declares any `env_file:` at all has this whole
 //     lookup refused for it (ponytail: conservative rather than parsing
 //     which specific keys came from the file - Go stdlib has no YAML
@@ -39,12 +45,15 @@ func LiteralPassword(files []string, service, kind string, composeServiceRaw map
 		return "", false
 	}
 
-	env, _ := composeServiceRaw["environment"].(map[string]interface{})
+	// Goes through compose.NormalizeEnvironment, not a direct map
+	// assertion: with --no-interpolate a list-declared service's
+	// environment isn't normalized to a map by Compose itself. A missing
+	// key here (map or list, either way) correctly falls through to the
+	// requirepass check / refusal below, same as before.
+	env := compose.NormalizeEnvironment(composeServiceRaw["environment"])
 	for _, key := range keys {
-		if v, ok := env[key]; ok {
-			if s, ok := v.(string); ok && isLiteralValue(s) {
-				return s, true
-			}
+		if s, ok := env[key]; ok && isLiteralValue(s) {
+			return s, true
 		}
 	}
 	if kind == "redis" {
