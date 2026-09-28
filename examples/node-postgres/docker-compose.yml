@@ -1,0 +1,39 @@
+services:
+  app:
+    build: .
+    labels:
+      # Marks this service's port 3000 as HTTP (design.md D7): the
+      # dashboard and `urls` render it as a link instead of a bare
+      # tcp://host:port.
+      io.stackfork.http: "3000"
+    environment:
+      DATABASE_URL: postgres://postgres:example@db:5432/app
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17
+    labels:
+      # Names this service's data volume for `stackfork clone-db`'s
+      # default detection (design.md D8), so seeding a new branch's
+      # instance from an existing one's data needs no --volume flag.
+      io.stackfork.data: pgdata
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: example
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
