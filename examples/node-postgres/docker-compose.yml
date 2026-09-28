@@ -1,6 +1,10 @@
 services:
   app:
-    build: .
+    # Relative to the repo root, not this file's own directory: stackfork
+    # always resolves --root to the enclosing Git checkout's toplevel (this
+    # example isn't its own repo), so --project-directory - and therefore
+    # every relative path in this file - resolves from there.
+    build: examples/node-postgres
     labels:
       # Marks this service's port 3000 as HTTP (design.md D7): the
       # dashboard and `urls` render it as a link instead of a bare

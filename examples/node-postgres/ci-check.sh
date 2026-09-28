@@ -1,6 +1,6 @@
 #!/bin/bash
 # Exercises this example's own README quick start for real: two worktrees
-# of the same example running side by side via the stackfork CLI, with
+# of the same checkout running side by side via the stackfork CLI, with
 # independently counting Postgres data (task 11.1's check). Run from
 # anywhere; it builds its own scratch state and cleans up after itself.
 set -euo pipefail
@@ -13,27 +13,26 @@ trap 'rm -rf "$scratch"' EXIT
 
 sf() { stackfork --state-dir "$state" --legacy-state-dir "$legacy_state" "$@"; }
 
-worktree="$scratch/worktree-2"
 cd "$script_dir"
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
   echo "not inside a Git checkout; the example needs one for worktree add" >&2
   exit 1
 }
-repo_root="$(git rev-parse --show-toplevel)"
+repo1="$(git rev-parse --show-toplevel)"
 branch="$(git rev-parse --abbrev-ref HEAD)"
-git -C "$repo_root" worktree add -q --detach "$worktree" "$branch"
+repo2="$scratch/worktree-2"
+git -C "$repo1" worktree add -q --detach "$repo2" "$branch"
 
-app1="$repo_root/examples/node-postgres"
-app2="$worktree/examples/node-postgres"
+composefile="examples/node-postgres/docker-compose.yml"
 
 port_of() { docker port "$1" 3000/tcp | head -1 | sed 's/.*://'; }
 visits() { curl -sf "http://127.0.0.1:$1/"; }
 
-cd "$app1" && sf --root "$app1" prepare -f docker-compose.yml && sf --root "$app1" up --build --wait-timeout 120
-cd "$app2" && sf --root "$app2" prepare -f docker-compose.yml && sf --root "$app2" up --build --wait-timeout 120
+cd "$repo1" && sf --root "$repo1" prepare -f "$composefile" --hostname node-postgres-ci-1.localhost && sf --root "$repo1" up --build --wait-timeout 120
+cd "$repo2" && sf --root "$repo2" prepare -f "$composefile" --hostname node-postgres-ci-2.localhost && sf --root "$repo2" up --build --wait-timeout 120
 
-p1="$(sf --root "$app1" where | python3 -c 'import json,sys;print(json.load(sys.stdin)["project"])')"
-p2="$(sf --root "$app2" where | python3 -c 'import json,sys;print(json.load(sys.stdin)["project"])')"
+p1="$(sf --root "$repo1" where | python3 -c 'import json,sys;print(json.load(sys.stdin)["project"])')"
+p2="$(sf --root "$repo2" where | python3 -c 'import json,sys;print(json.load(sys.stdin)["project"])')"
 
 port1="$(port_of "${p1}-app-1")"
 port2="$(port_of "${p2}-app-1")"
@@ -51,8 +50,8 @@ if [ "$v2a" -gt 1 ]; then
   exit 1
 fi
 
-echo "PASS: two worktrees of examples/node-postgres ran side by side with independent ports and data"
+echo "PASS: two worktrees of node-postgres ran side by side with independent ports and data"
 
-cd "$app1" && sf --root "$app1" down --volumes
-cd "$app2" && sf --root "$app2" down --volumes
-git -C "$repo_root" worktree remove --force "$worktree"
+cd "$repo1" && sf --root "$repo1" down --volumes
+cd "$repo2" && sf --root "$repo2" down --volumes
+git -C "$repo1" worktree remove --force "$repo2"
