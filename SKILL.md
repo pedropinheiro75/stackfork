@@ -24,6 +24,10 @@ For each profile `stackfork where` lists with `"context": true`, follow that pro
 5. **Verify:** database identity and app readiness at minimum; login, HMR and a representative flow on first adoption. Stay inside the checked-out instance for this. If verifying something would need new infrastructure beyond it (a different environment mode, a second stack, anything you'd have to build rather than just check) — ask first; report the gap instead of silently building it.
 6. **Stop:** `stackfork --root "$CHECKOUT" down` (keeps data).
 
+## One-off builds and tests
+
+A one-off build or test that could fight the running dev process (a different install step, a migration, a full test run) uses `stackfork --root "$CHECKOUT" run <service> <cmd>` (a fresh, separate container), never `exec` into the running one. When it's done, `stackfork --root "$CHECKOUT" down` (data kept) unless the user asked to keep the instance running.
+
 ## Refusals and deletion
 
 Trust `stackfork prepare`'s refusals (fixed container names, external networks, Docker sockets, writable binds outside the checkout, fixed subnets) — never work around one. `down --volumes` and `gc --apply --volumes` delete data and need the user's own authorization for that specific deletion; never infer either from a request to restart or clean up in general — `gc` (orphaned instances whose checkout or branch is gone) only runs on explicit user request, never on your own initiative. Never open or copy another project's real env files, registry credentials, certificates or private keys.
