@@ -75,12 +75,22 @@ func TestLiveTemplate(t *testing.T) {
 		if err := os.MkdirAll(dest, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		for _, name := range []string{"Dockerfile", "entrypoint.sh", "nginx.conf", "registry.npmrc", "nuxt.compose.yaml"} {
-			data, err := os.ReadFile(filepath.Join(skillRoot, "assets", name))
+		// destName: sourceName. The compose file's destination name must
+		// stay nuxt.compose.yaml - cmdPrepare's own default source-file
+		// fallback (no -f given, as this test relies on) is hardcoded to
+		// .agent-dev/nuxt.compose.yaml; the assets/nuxt/ source file
+		// itself is just compose.yaml, its own directory already saying
+		// which template it is.
+		files := map[string]string{
+			"Dockerfile": "Dockerfile", "entrypoint.sh": "entrypoint.sh", "nginx.conf": "nginx.conf",
+			"registry.npmrc": "registry.npmrc", "nuxt.compose.yaml": "compose.yaml",
+		}
+		for destName, srcName := range files {
+			data, err := os.ReadFile(filepath.Join(skillRoot, "assets", "nuxt", srcName))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(dest, name), data, 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(dest, destName), data, 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}
