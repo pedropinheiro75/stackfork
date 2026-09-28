@@ -9,7 +9,7 @@ Use the project's actual runtime, package manager and startup flow through `stac
 
 ## Reuse before rediscovering
 
-Run `stackfork where` (lists prepared instances and configured profiles) and `stackfork status` first. If `.stackfork/knowledge.md` is `verified`, apply its recorded adapter and recipe directly — no scan, no questions (`references/learning.md`). Otherwise run `stackfork learn`, read `.stackfork/knowledge.md`, and run the learn session in `references/learning.md`. Do not repeat a full discovery, or rewrite a launcher, for a routine restart of an unchanged adapter. To see every instance across every checkout at once instead of one at a time, run `stackfork list` (or `stackfork dashboard` for the same view in a local, read-mostly web page — never used for the destructive commands below).
+Run `stackfork where` (lists prepared instances and configured profiles) and `stackfork status` first. If `.stackfork/knowledge.md` is `verified`, apply its recorded adapter and recipe directly — no scan, no questions (`references/learning.md`). Otherwise run `stackfork learn`, read `.stackfork/knowledge.md`, and run the learn session in `references/learning.md`. Do not repeat a full discovery, or rewrite a launcher, for a routine restart of an unchanged adapter. Before preparing a brand-new instance, run `stackfork list` — an instance for this project may already exist elsewhere (another branch, another worktree) with data worth starting from via `clone-db --from <instance>` instead of an empty database (or `stackfork dashboard` for the same cross-checkout view in a local, read-mostly web page — never used for the destructive commands below).
 
 ## Follow profile context
 
@@ -26,7 +26,7 @@ For each profile `stackfork where` lists with `"context": true`, follow that pro
 
 ## Refusals and deletion
 
-Trust `stackfork prepare`'s refusals (fixed container names, external networks, Docker sockets, writable binds outside the checkout, fixed subnets) — never work around one. `down --volumes` deletes this instance's data and needs the user's own authorization for that specific deletion; never infer it from a request to restart. Never open or copy another project's real env files, registry credentials, certificates or private keys.
+Trust `stackfork prepare`'s refusals (fixed container names, external networks, Docker sockets, writable binds outside the checkout, fixed subnets) — never work around one. `down --volumes` and `gc --apply --volumes` delete data and need the user's own authorization for that specific deletion; never infer either from a request to restart or clean up in general — `gc` (orphaned instances whose checkout or branch is gone) only runs on explicit user request, never on your own initiative. Never open or copy another project's real env files, registry credentials, certificates or private keys.
 
 ## Report
 
