@@ -96,7 +96,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		return 0, cmdLearn(stdout, root)
+		return 0, cmdLearn(stdout, subArgs, root)
 	}
 	// proxy and doctor operate on the tool's shared state, not one instance,
 	// so they too skip the Git checkout/branch resolution below (task
@@ -267,13 +267,14 @@ type preparedRef struct {
 }
 
 type whereOutput struct {
-	Project           string        `json:"project"`
-	Root              string        `json:"root"`
-	Branch            string        `json:"branch"`
-	Hostname          string        `json:"hostname"`
-	State             string        `json:"state"`
-	PreparedInstances []preparedRef `json:"prepared_instances"`
-	Profiles          []ProfileInfo `json:"profiles"`
+	Project           string                     `json:"project"`
+	Root              string                     `json:"root"`
+	Branch            string                     `json:"branch"`
+	Hostname          string                     `json:"hostname"`
+	State             string                     `json:"state"`
+	PreparedInstances []preparedRef              `json:"prepared_instances"`
+	Profiles          []ProfileInfo              `json:"profiles"`
+	Knowledge         *inventory.KnowledgeStatus `json:"knowledge,omitempty"`
 }
 
 func cmdWhere(stdout io.Writer, root, branch, project, instanceDir, newStateBase, legacyStateBase string, profileDirs []string) error {
@@ -317,6 +318,12 @@ func cmdWhere(stdout io.Writer, root, branch, project, instanceDir, newStateBase
 		Project: project, Root: root, Branch: branch, Hostname: hostname,
 		State: instanceDir, PreparedInstances: instances,
 		Profiles: profileInfos(profileDirs),
+	}
+	// Task 13.7: verified knowledge goes stale here, at read time (same
+	// resolution the dashboard's own inventory read already uses), never
+	// rewritten to disk by a plain `where`.
+	if ks, ok := inventory.ReadKnowledgeStatus(root); ok {
+		out.Knowledge = ks
 	}
 	return printJSON(stdout, out)
 }

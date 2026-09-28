@@ -242,7 +242,7 @@ func TestCollectKnowledgeStale(t *testing.T) {
 	}
 	k := &knowledge.Knowledge{
 		Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified,
-		Inputs:       []knowledge.Input{{Path: trackedFile, SHA256: sha}},
+		Inputs:       []knowledge.Input{{Path: "compose.yaml", SHA256: sha}},
 		Verification: &knowledge.Verification{Date: "2026-09-20"},
 	}
 	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
@@ -280,8 +280,8 @@ func TestCollectKnowledgeStale(t *testing.T) {
 	if inst.Knowledge == nil || inst.Knowledge.Status != knowledge.StatusStale {
 		t.Fatalf("expected stale knowledge, got %+v", inst.Knowledge)
 	}
-	if len(inst.Knowledge.ChangedFiles) != 1 || inst.Knowledge.ChangedFiles[0] != trackedFile {
-		t.Fatalf("expected changed file %q, got %+v", trackedFile, inst.Knowledge.ChangedFiles)
+	if len(inst.Knowledge.ChangedFiles) != 1 || inst.Knowledge.ChangedFiles[0] != "compose.yaml" {
+		t.Fatalf("expected changed file %q (relative to root, as stored - task 13.7/committed-knowledge portability), got %+v", "compose.yaml", inst.Knowledge.ChangedFiles)
 	}
 	foundWarning := false
 	for _, w := range inst.Warnings {

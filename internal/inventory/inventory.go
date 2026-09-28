@@ -520,6 +520,15 @@ func busyPortWarnings(info *state.Manifest, rows []compose.StatusRow) []string {
 // knowledgeStatus reads <root>/.stackfork/knowledge.json, if any, and
 // resolves its effective status (verified knowledge goes stale here, at
 // read time, rather than being rewritten on disk).
+// ReadKnowledgeStatus exposes knowledgeStatus for the CLI's `where` (task
+// 13.7): the one place that resolves a project's effective knowledge
+// status (verified knowledge goes stale here, at read time, never
+// rewritten to disk), shared so the dashboard and the plain CLI can never
+// disagree about it.
+func ReadKnowledgeStatus(root string) (*KnowledgeStatus, bool) {
+	return knowledgeStatus(root)
+}
+
 func knowledgeStatus(root string) (*KnowledgeStatus, bool) {
 	k, err := knowledge.Load(knowledgeJSONPath(root))
 	if err != nil {
@@ -528,7 +537,7 @@ func knowledgeStatus(root string) (*KnowledgeStatus, bool) {
 	status := k.Status
 	var changed []string
 	if status == knowledge.StatusVerified {
-		if changed = k.StaleInputs(); len(changed) > 0 {
+		if changed = k.StaleInputs(root); len(changed) > 0 {
 			status = knowledge.StatusStale
 		}
 	}

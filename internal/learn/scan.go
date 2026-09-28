@@ -114,7 +114,7 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 		}
 	}
 
-	k.Inputs, err = hashInputs(inputs)
+	k.Inputs, err = hashInputs(root, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,11 @@ func envFilesUnderRoot(rendered interface{}, root string) []string {
 	return out
 }
 
-func hashInputs(paths map[string]bool) ([]knowledge.Input, error) {
+// hashInputs hashes each absolute path in paths, but stores it in the
+// result relative to root - knowledge.json is committed (design.md D10),
+// so an absolute path would both leak a home directory and be wrong on
+// every other clone.
+func hashInputs(root string, paths map[string]bool) ([]knowledge.Input, error) {
 	list := make([]string, 0, len(paths))
 	for p := range paths {
 		list = append(list, p)
@@ -182,7 +186,11 @@ func hashInputs(paths map[string]bool) ([]knowledge.Input, error) {
 		if err != nil {
 			return nil, fmt.Errorf("hashing %s: %w", p, err)
 		}
-		inputs = append(inputs, knowledge.Input{Path: p, SHA256: sum})
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			rel = p
+		}
+		inputs = append(inputs, knowledge.Input{Path: filepath.ToSlash(rel), SHA256: sum})
 	}
 	return inputs, nil
 }

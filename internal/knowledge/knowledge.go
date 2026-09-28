@@ -83,6 +83,10 @@ type Knowledge struct {
 }
 
 // Input is one file the scan read, with its content hash at scan time.
+// Path is relative to the project root, never absolute: knowledge.json is
+// meant to be committed (design.md D10), and an absolute path would both
+// leak whoever ran `learn`'s home directory into a shared file and be
+// simply wrong for every other teammate's own clone, at its own path.
 type Input struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
@@ -355,16 +359,17 @@ func (k *Knowledge) Markdown() string {
 	return b.String()
 }
 
-// StaleInputs returns the recorded input paths whose content no longer
-// matches the hash captured at scan time (design.md D10: "verified ->
-// stale when any recorded input hash changes"), or nil if every input is
-// unchanged (or unreadable, which also counts as changed - a missing input
-// is itself a reason to re-run learn). Callers only need this when Status is
-// verified; a draft doesn't track staleness.
-func (k *Knowledge) StaleInputs() []string {
+// StaleInputs returns the recorded input paths (relative to root, as
+// stored) whose content no longer matches the hash captured at scan time
+// (design.md D10: "verified -> stale when any recorded input hash
+// changes"), or nil if every input is unchanged (or unreadable, which also
+// counts as changed - a missing input is itself a reason to re-run learn).
+// Callers only need this when Status is verified; a draft doesn't track
+// staleness.
+func (k *Knowledge) StaleInputs(root string) []string {
 	var changed []string
 	for _, in := range k.Inputs {
-		h, err := state.SHA256File(in.Path)
+		h, err := state.SHA256File(filepath.Join(root, in.Path))
 		if err != nil || h != in.SHA256 {
 			changed = append(changed, in.Path)
 		}

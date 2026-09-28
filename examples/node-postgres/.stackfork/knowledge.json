@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "status": "verified",
+  "inputs": [
+    {
+      "path": "docker-compose.yml",
+      "sha256": "801021919470146abdc7c7bc0b90e3c7c7abb5b1e8fad8cbf593ecc532527c8f"
+    },
+    {
+      "path": "package.json",
+      "sha256": "19a04e1ed5b3631601ea0305eae6137a504d29cff31e3144bcdc3f702809ea66"
+    }
+  ],
+  "facts": {
+    "compose_files": [
+      "docker-compose.yml"
+    ],
+    "services": [
+      {
+        "name": "app",
+        "build": true,
+        "ports": [
+          "3000:3000"
+        ],
+        "networks": [
+          "default"
+        ]
+      },
+      {
+        "name": "db",
+        "image": "postgres:17",
+        "db_engine": "postgres",
+        "db_major_version": "17",
+        "ports": [
+          "5432:5432"
+        ],
+        "volumes": [
+          "pgdata"
+        ],
+        "networks": [
+          "default"
+        ],
+        "healthcheck": true
+      }
+    ],
+    "scripts": [
+      {
+        "role": "dev",
+        "name": "start",
+        "source": "package.json",
+        "command": "node server.js"
+      }
+    ]
+  },
+  "refusals": [
+    {
+      "kind": "renamed_volume",
+      "target": "volumes.pgdata",
+      "action": "rewrite",
+      "reason": "volumes.pgdata: renamed to sf-learn_pgdata so concurrent stacks don't collide"
+    },
+    {
+      "kind": "renamed_network",
+      "target": "networks.default",
+      "action": "rewrite",
+      "reason": "networks.default: renamed to sf-learn_default so concurrent stacks don't collide"
+    },
+    {
+      "kind": "build_image",
+      "target": "services.app",
+      "action": "rewrite",
+      "reason": "services.app: image renamed to sf-learn-app:dev for the isolated build"
+    },
+    {
+      "kind": "published_port",
+      "target": "services.app.ports[0]",
+      "action": "rewrite",
+      "reason": "services.app: published port stripped so Docker assigns a random host port"
+    },
+    {
+      "kind": "published_port",
+      "target": "services.db.ports[0]",
+      "action": "rewrite",
+      "reason": "services.db: published port stripped so Docker assigns a random host port"
+    }
+  ],
+  "recipe": {
+    "prepare": "stackfork prepare -f examples/node-postgres/docker-compose.yml (from the stackfork repo root, --hostname optional)",
+    "up": "stackfork up --build",
+    "login": [
+      "no login; GET / returns {\"visits\": N}, climbing on every request"
+    ]
+  },
+  "answers": [
+    {
+      "question": "the app service has no Docker healthcheck - should one be added, or is polling curl from the caller enough?",
+      "answer": "polling is enough for this example: the app already retries its own migration on startup, and ci-check.sh already polls with curl before asserting anything, so a Docker-level healthcheck would just duplicate that without adding real value here"
+    }
+  ],
+  "verification": {
+    "date": "2026-09-28",
+    "checks": [
+      "database identity (fresh Postgres volume per instance, verified via clone-db test)",
+      "app readiness (GET / returns real, incrementing Postgres-backed visit count)",
+      "two instances run side by side with independent data (ci-check.sh, real Docker)"
+    ],
+    "confirmation": "verified via examples/node-postgres/ci-check.sh, which passed against real Docker: two worktrees ran side by side, ports and Postgres data stayed independent, and the visits counter reflected real inserted rows"
+  }
+}

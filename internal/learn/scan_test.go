@@ -1,6 +1,7 @@
 package learn
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -201,5 +202,34 @@ func TestWriteKnowledge(t *testing.T) {
 	}
 	if reloaded.Status != knowledge.StatusDraft {
 		t.Fatalf("expected draft status, got %q", reloaded.Status)
+	}
+}
+
+// TestWriteKnowledgeGitignoreExcludesRuntimeEnv covers task 13.5's own
+// check directly: a real `git check-ignore` in a fixture repo must exclude
+// .stackfork/runtime.env and a real .env, while still tracking
+// knowledge.json/knowledge.md (and an .env.example, which isn't a secret).
+func TestWriteKnowledgeGitignoreExcludesRuntimeEnv(t *testing.T) {
+	root := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if err := WriteKnowledge(root, &knowledge.Knowledge{Status: knowledge.StatusDraft}); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{".stackfork/runtime.env", ".stackfork/local.env"} {
+		if err := os.WriteFile(filepath.Join(root, f), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []string{".stackfork/runtime.env", ".stackfork/local.env"} {
+		if err := exec.Command("git", "-C", root, "check-ignore", f).Run(); err != nil {
+			t.Fatalf("expected %s to be git-ignored: %v", f, err)
+		}
+	}
+	for _, f := range []string{".stackfork/knowledge.json", ".stackfork/knowledge.md"} {
+		if err := exec.Command("git", "-C", root, "check-ignore", f).Run(); err == nil {
+			t.Fatalf("expected %s to NOT be git-ignored (it's meant to be committed)", f)
+		}
 	}
 }
