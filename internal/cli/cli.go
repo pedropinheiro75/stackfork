@@ -781,6 +781,24 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		opts.Command = subArgs[1:]
 	}
 
+	// up/down/restart/start/stop all mutate this instance's manifest/compose
+	// snapshot and its proxy registration; take the same per-instance flock
+	// prepare already does, so two of them racing (e.g. a script and a
+	// person, or two agents) can't interleave writes. run/exec don't mutate
+	// instance state the same way (a one-off container or an exec into the
+	// existing one) and are left unlocked.
+	switch action {
+	case "up", "down", "restart", "start", "stop":
+		if err := os.MkdirAll(instanceDir, 0o700); err != nil {
+			return 0, err
+		}
+		lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
+		if err != nil {
+			return 0, err
+		}
+		defer lock.Release()
+	}
+
 	return lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
 }
 

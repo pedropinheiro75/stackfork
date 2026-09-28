@@ -18,6 +18,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 const (
@@ -99,13 +100,45 @@ func GenerateCaddyfile(routes []Route) string {
 }
 
 // WriteCaddyfile generates and writes the config (0600, private-writes
-// invariant).
+// invariant). Deliberately NOT temp-file+rename, unlike state.WritePrivate:
+// Up() bind-mounts this exact path into the proxy container as a single
+// file (`-v CaddyfilePath:/etc/caddy/Caddyfile:ro`), and Docker's single-file
+// bind mount is tied to the inode present at mount time, not the path -
+// verified directly against this machine's Docker: renaming a replacement
+// over a bind-mounted single file leaves the container seeing "No such file
+// or directory" from then on, breaking every route until the proxy is
+// recreated. A torn write is not a real hazard here to trade that safety
+// away for: Caddy never re-reads the file on its own, only when WithLock's
+// caller explicitly runs `caddy reload` immediately after this call returns,
+// so the write is always complete before anything reads it - WithLock's
+// flock is what actually needs to serialize callers, not this function.
 func WriteCaddyfile(stateBase string, routes []Route) error {
 	if err := os.MkdirAll(Dir(stateBase), 0o700); err != nil {
 		return err
 	}
 	data := []byte(GenerateCaddyfile(routes))
 	return os.WriteFile(CaddyfilePath(stateBase), data, 0o600)
+}
+
+// WithLock serializes a full "gather routes -> write Caddyfile -> reload"
+// sequence under an flock on a .lock file in the proxy's own state dir
+// (design.md D7 layer 3): without it, two callers racing (e.g. two `up`s
+// finishing around the same time, or a CLI reload racing the dashboard's own
+// register/unregister) can each read a route table, then write theirs back
+// in an order that drops the other's route - a lost update. Every caller
+// that does the full sequence must go through this, not just call
+// WriteCaddyfile directly.
+func WithLock(stateBase string, fn func() error) error {
+	dir := Dir(stateBase)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	lock, err := state.AcquireLock(filepath.Join(dir, ".lock"))
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	return fn()
 }
 
 // IsRunning reports whether the proxy container exists and is running. A

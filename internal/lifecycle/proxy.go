@@ -23,14 +23,17 @@ func ProxyUp(newStateBase, legacyStateBase string, port int) (proxy.Info, error)
 	if err := LocalDocker(); err != nil {
 		return proxy.Info{}, err
 	}
-	routes, err := GatherRoutes(newStateBase, legacyStateBase)
+	err := proxy.WithLock(newStateBase, func() error {
+		routes, err := GatherRoutes(newStateBase, legacyStateBase)
+		if err != nil {
+			return err
+		}
+		if err := proxy.WriteCaddyfile(newStateBase, routes); err != nil {
+			return err
+		}
+		return proxy.Up(newStateBase, port)
+	})
 	if err != nil {
-		return proxy.Info{}, err
-	}
-	if err := proxy.WriteCaddyfile(newStateBase, routes); err != nil {
-		return proxy.Info{}, err
-	}
-	if err := proxy.Up(newStateBase, port); err != nil {
 		return proxy.Info{}, err
 	}
 	return proxy.Info{Name: proxy.ContainerName(), Running: true, Port: port}, nil
@@ -53,14 +56,16 @@ func ProxyReload(newStateBase, legacyStateBase string) error {
 	if err := LocalDocker(); err != nil {
 		return err
 	}
-	routes, err := GatherRoutes(newStateBase, legacyStateBase)
-	if err != nil {
-		return err
-	}
-	if err := proxy.WriteCaddyfile(newStateBase, routes); err != nil {
-		return err
-	}
-	return proxy.Reload(newStateBase)
+	return proxy.WithLock(newStateBase, func() error {
+		routes, err := GatherRoutes(newStateBase, legacyStateBase)
+		if err != nil {
+			return err
+		}
+		if err := proxy.WriteCaddyfile(newStateBase, routes); err != nil {
+			return err
+		}
+		return proxy.Reload(newStateBase)
+	})
 }
 
 // ReloadProxyIfRunning is called after `up`/`down`/`route` change which

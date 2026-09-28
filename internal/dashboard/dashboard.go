@@ -332,25 +332,29 @@ func RegisterWithProxy(newStateBase string, routes []proxy.Route, port int) erro
 	all := append(append([]proxy.Route{}, routes...), proxy.Route{
 		Hostname: ProxyHostname, Target: fmt.Sprintf("host.docker.internal:%d", port),
 	})
-	if err := proxy.WriteCaddyfile(newStateBase, all); err != nil {
-		return err
-	}
-	if err := proxy.Reload(newStateBase); err != nil {
-		// The file was already written with the dashboard's route; a
-		// failed reload must not leave it there for the next caller to
-		// find (and never clean up, since cmdDashboard only unregisters
-		// when this call reported success).
-		proxy.WriteCaddyfile(newStateBase, routes) //nolint:errcheck // best-effort rollback; the reload error is what's reported
-		return err
-	}
-	return nil
+	return proxy.WithLock(newStateBase, func() error {
+		if err := proxy.WriteCaddyfile(newStateBase, all); err != nil {
+			return err
+		}
+		if err := proxy.Reload(newStateBase); err != nil {
+			// The file was already written with the dashboard's route; a
+			// failed reload must not leave it there for the next caller to
+			// find (and never clean up, since cmdDashboard only unregisters
+			// when this call reported success).
+			proxy.WriteCaddyfile(newStateBase, routes) //nolint:errcheck // best-effort rollback; the reload error is what's reported
+			return err
+		}
+		return nil
+	})
 }
 
 // UnregisterFromProxy removes the dashboard's route on shutdown, keeping
 // every instance route intact.
 func UnregisterFromProxy(newStateBase string, routes []proxy.Route) error {
-	if err := proxy.WriteCaddyfile(newStateBase, routes); err != nil {
-		return err
-	}
-	return proxy.Reload(newStateBase)
+	return proxy.WithLock(newStateBase, func() error {
+		if err := proxy.WriteCaddyfile(newStateBase, routes); err != nil {
+			return err
+		}
+		return proxy.Reload(newStateBase)
+	})
 }

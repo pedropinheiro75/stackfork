@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestContainerNameOverride(t *testing.T) {
@@ -90,5 +92,66 @@ func TestWriteCaddyfilePrivate(t *testing.T) {
 	}
 	if fi.Mode().Perm() != 0o600 {
 		t.Fatalf("expected 0600 Caddyfile, got %o", fi.Mode().Perm())
+	}
+}
+
+// WriteCaddyfile must write in place (same inode across calls), never
+// temp-file+rename: Up() bind-mounts CaddyfilePath as a single file into the
+// proxy container, and a rename-based replacement leaves that mount pointing
+// at a now-unlinked inode (verified directly against Docker on this
+// machine - see WriteCaddyfile's doc comment). This is the regression test
+// for that: two writes must land on the same inode.
+func TestWriteCaddyfileSameInodeAcrossWrites(t *testing.T) {
+	state := t.TempDir()
+	if err := WriteCaddyfile(state, []Route{{Hostname: "a.localhost", Target: "host.docker.internal:20001"}}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(CaddyfilePath(state))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteCaddyfile(state, []Route{{Hostname: "b.localhost", Target: "host.docker.internal:20002"}}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(CaddyfilePath(state))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("expected WriteCaddyfile to reuse the same inode across writes (in-place), not replace it - a bind-mounted proxy container would lose the file")
+	}
+}
+
+// WithLock must serialize concurrent callers: two goroutines racing to
+// read-modify-write a shared counter inside it must never interleave (task
+// 2, design.md D7 layer 3 - the same shape as a route rebuild+write+reload).
+func TestWithLockSerializesConcurrentCallers(t *testing.T) {
+	state := t.TempDir()
+	const n = 20
+	counter := 0
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := WithLock(state, func() error {
+				got := counter
+				time.Sleep(2 * time.Millisecond) // widen the race window
+				counter = got + 1
+				return nil
+			})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if counter != n {
+		t.Fatalf("expected %d (fully serialized), got %d (a lost update slipped through)", n, counter)
 	}
 }
