@@ -33,6 +33,8 @@ jobs:
       - run: go test ./...
         env:
           STACKFORK_LIVE: "1"
+      - run: go install ./cmd/stackfork
+      - run: bash examples/node-postgres/ci-check.sh
 
   gitleaks:
     runs-on: ubuntu-latest
