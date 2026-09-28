@@ -61,7 +61,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 	rest := top.Args()
 	if len(rest) == 0 {
-		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, restart, start, stop, logs, route, proxy, list, dashboard, doctor, learn, version)")
+		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, restart, start, stop, logs, route, proxy, list, dashboard, gc, doctor, learn, version)")
 	}
 	action := rest[0]
 	subArgs := rest[1:]
@@ -114,6 +114,11 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	}
 	if action == "dashboard" {
 		return cmdDashboard(context.Background(), stdout, stderr, subArgs, newStateBase, legacyStateBase)
+	}
+	// gc, like list/proxy/doctor, reports on and cleans up the whole
+	// machine's state, not one checkout+branch (design.md D8).
+	if action == "gc" {
+		return cmdGC(stdout, subArgs, newStateBase, legacyStateBase)
 	}
 	// down --instance NAME names its own instance directly (task 3.8/D2's
 	// orphan-cleanup escape hatch: `stackfork where` points at it, then

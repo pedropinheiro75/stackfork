@@ -539,6 +539,25 @@ func knowledgeStatus(root string) (*KnowledgeStatus, bool) {
 	return &KnowledgeStatus{Status: status, Date: date, ChangedFiles: changed}, true
 }
 
+// RunningProjects reuses the same `docker ps --all` listing every other
+// inventory read does, and returns the set of project names with at least
+// one currently-running container - the "never touches running instances"
+// guard `gc` needs (design.md D8), sharing one source of truth for
+// container state rather than a second docker call with its own parsing.
+func RunningProjects() (map[string]bool, error) {
+	rows, err := listContainers()
+	if err != nil {
+		return nil, err
+	}
+	running := map[string]bool{}
+	for _, r := range rows {
+		if strings.EqualFold(r.State, "running") {
+			running[r.Project] = true
+		}
+	}
+	return running, nil
+}
+
 // --- docker ps -----------------------------------------------------------
 
 // containerRow is one container from the single `docker ps --all` call,
