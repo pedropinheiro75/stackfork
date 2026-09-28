@@ -21,7 +21,7 @@ For each profile `stackfork where` lists with `"context": true`, follow that pro
 2. **Prepare:** `stackfork --root "$CHECKOUT" prepare -f <compose files> --env-file <runtime env>`
 3. **Start:** `stackfork --root "$CHECKOUT" up`
 4. **URLs:** `stackfork --root "$CHECKOUT" urls` — report the named `<instance>.localhost` URL it prints, never a bare `localhost`/`127.0.0.1` (`references/hostnames.md`).
-5. **Verify:** database identity and app readiness at minimum; login, HMR and a representative flow on first adoption.
+5. **Verify:** database identity and app readiness at minimum; login, HMR and a representative flow on first adoption. Stay inside the checked-out instance for this. If verifying something would need new infrastructure beyond it (a different environment mode, a second stack, anything you'd have to build rather than just check) — ask first; report the gap instead of silently building it.
 6. **Stop:** `stackfork --root "$CHECKOUT" down` (keeps data).
 
 ## Refusals and deletion
