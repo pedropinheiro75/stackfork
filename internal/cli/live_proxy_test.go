@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // freeTCPPort finds a free loopback port the same way net/http's httptest
@@ -118,14 +119,25 @@ func TestLiveProxyRoutesInstancesAndHostRoute(t *testing.T) {
 		}
 	}
 
-	get := func(hostname string) (int, string, error) {
-		resp, err := localhostClient.Get(fmt.Sprintf("http://%s:%d/", hostname, proxyPort))
-		if err != nil {
-			return 0, "", err
+	// `proxy up` returns as soon as `docker run` does, not once Caddy has
+	// actually bound its listener - image pull + container start + Caddy's
+	// own startup can take longer than an instant on a slower or cold
+	// machine (reproduced live on CI's first ever run: a bare connection
+	// refused right after `proxy up` returned). Retry briefly rather than
+	// fail on that race, the same pattern TestLiveDashboardProxyIntegration
+	// already uses for the same reason.
+	get := func(hostname string) (code int, body string, err error) {
+		for attempt := 0; attempt < 20; attempt++ {
+			var resp *http.Response
+			resp, err = localhostClient.Get(fmt.Sprintf("http://%s:%d/", hostname, proxyPort))
+			if err == nil {
+				defer resp.Body.Close()
+				b, _ := io.ReadAll(resp.Body)
+				return resp.StatusCode, string(b), nil
+			}
+			time.Sleep(200 * time.Millisecond)
 		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		return resp.StatusCode, string(body), nil
+		return 0, "", err
 	}
 
 	for i, h := range hostnames {
