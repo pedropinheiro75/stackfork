@@ -20,6 +20,88 @@ func underRoot(path, root string) bool {
 	return path == root || strings.HasPrefix(path, root+string(filepath.Separator))
 }
 
+// envFileDeclarations conservatively extracts every path a compose source
+// file's `env_file:` list entries declare - stdlib only, no YAML parser,
+// the same conservative line-scan approach as
+// inventory.serviceUsesEnvFile/serviceBlockPattern, good enough to answer
+// this one question. Used only to decide which missing files Scan should
+// tolerate (see touchMissingEnvFiles), never to read a value.
+func envFileDeclarations(text string) []string {
+	lines := strings.Split(text, "\n")
+	var out []string
+	for i, line := range lines {
+		if strings.TrimSpace(line) != "env_file:" {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		for _, entry := range lines[i+1:] {
+			trimmed := strings.TrimSpace(entry)
+			if trimmed == "" {
+				continue
+			}
+			entryIndent := len(entry) - len(strings.TrimLeft(entry, " \t"))
+			if entryIndent <= indent || !strings.HasPrefix(trimmed, "-") {
+				break
+			}
+			path := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
+			path = strings.TrimSpace(strings.TrimPrefix(path, "path:"))
+			path = strings.Trim(path, `"'`)
+			if path != "" {
+				out = append(out, path)
+			}
+		}
+	}
+	return out
+}
+
+// touchMissingEnvFiles creates an empty placeholder for every env_file a
+// compose source file declares but that doesn't exist yet, and returns a
+// cleanup func that removes exactly the ones it created. A project's real
+// env_file (e.g. .env) is typically gitignored, so a fresh checkout
+// commonly declares one that doesn't exist yet - that's a fact for the
+// recipe/gotchas step, not a scan failure (see the comment at Scan's
+// Render call), and `docker compose config --no-env-resolution` tolerates
+// this on newer Compose versions by itself. It does not on every version
+// (verified: hard-fails on v2.38.2, "env file ... not found", even with
+// --no-env-resolution/--no-path-resolution/--no-consistency), so Scan
+// creates the empty file itself rather than depending on that - its
+// contents are never resolved either way (--no-env-resolution), so empty
+// is exactly equivalent to "not resolved".
+func touchMissingEnvFiles(root string, composeFiles []string) (cleanup func(), err error) {
+	var created []string
+	cleanup = func() {
+		for _, p := range created {
+			os.Remove(p) //nolint:errcheck // best-effort: a placeholder this func itself created
+		}
+	}
+	for _, f := range composeFiles {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			cleanup()
+			return nil, err
+		}
+		dir := filepath.Dir(f)
+		for _, ref := range envFileDeclarations(string(data)) {
+			path := ref
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(dir, path)
+			}
+			if !underRoot(path, root) {
+				continue // never write outside the checkout
+			}
+			if fileExists(path) {
+				continue
+			}
+			if err := os.WriteFile(path, nil, 0o600); err != nil {
+				cleanup()
+				return nil, err
+			}
+			created = append(created, path)
+		}
+	}
+	return cleanup, nil
+}
+
 // renderProject is a throwaway Compose project name for `docker compose
 // config`; nothing is ever started under it (mirrors compose.RenderProject).
 const renderProject = "sf-learn"
@@ -52,6 +134,12 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 		for i, f := range composeFiles {
 			abs[i] = filepath.Join(root, f)
 		}
+		cleanup, err := touchMissingEnvFiles(root, abs)
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
+
 		rendered, _, err := compose.Render(root, abs, "", "", nil)
 		if err != nil {
 			return nil, err

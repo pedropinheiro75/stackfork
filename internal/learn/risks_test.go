@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 func hasKind(risks []knowledge.Risk, kind string) bool {
@@ -47,11 +48,9 @@ func TestDetectRisksFixture(t *testing.T) {
 }
 
 func TestDetectEnvKeysGroupedByPurpose(t *testing.T) {
+	testsupport.RequireCompose(t)
 	k, err := Scan(fixture("risky"))
 	if err != nil {
-		if !hasDocker(t) {
-			t.Skip("docker compose not available")
-		}
 		t.Fatal(err)
 	}
 	purposeOf := map[string]string{}
@@ -77,9 +76,7 @@ func TestDetectEnvKeysGroupedByPurpose(t *testing.T) {
 // canary values. Scanning it must never surface them anywhere: not in
 // knowledge.json, not in knowledge.md, not on stdout or stderr.
 func TestCanaryValuesNeverLeak(t *testing.T) {
-	if !hasDocker(t) {
-		t.Skip("docker compose not available")
-	}
+	testsupport.RequireCompose(t)
 	canaries := []string{"CANARY_DB_VALUE_9f8e7d3c", "CANARY_AUTH_VALUE_1a2b3c4d", "CANARY_NPM_TOKEN_7z6y5x4w"}
 
 	root := fixture("risky")

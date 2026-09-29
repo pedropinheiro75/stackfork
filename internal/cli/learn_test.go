@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 // learnFixtureRoot writes a minimal real Compose project so `stackfork
@@ -34,6 +35,7 @@ func TestLearnRecordRequiresPriorScan(t *testing.T) {
 // TestLearnRecordAnswerGotchaRecipe covers task 13.5: each kind appends/
 // sets correctly and persists to knowledge.json.
 func TestLearnRecordAnswerGotchaRecipe(t *testing.T) {
+	testsupport.RequireCompose(t)
 	root := learnFixtureRoot(t)
 	if _, stderr, code := runCLI(t, "--root", root, "learn"); code != 0 {
 		t.Fatalf("scan failed: %s", stderr)
@@ -78,6 +80,7 @@ func TestLearnRecordAnswerGotchaRecipe(t *testing.T) {
 // recording answers/gotchas/a recipe must not discard them, only refresh
 // Facts/Refusals/Risks/EnvKeys/Inputs.
 func TestLearnScanResumesDraft(t *testing.T) {
+	testsupport.RequireCompose(t)
 	root := learnFixtureRoot(t)
 	runCLI(t, "--root", root, "learn")
 	runCLI(t, "--root", root, "learn", "record", "answer", "q", "a")
@@ -106,6 +109,7 @@ func TestLearnScanResumesDraft(t *testing.T) {
 
 // TestLearnVerifyRequiresRecordedRecipe covers task 13.6's refusal.
 func TestLearnVerifyRequiresRecordedRecipe(t *testing.T) {
+	testsupport.RequireCompose(t)
 	root := learnFixtureRoot(t)
 	runCLI(t, "--root", root, "learn")
 
@@ -118,6 +122,7 @@ func TestLearnVerifyRequiresRecordedRecipe(t *testing.T) {
 // TestLearnVerifySetsStatus covers task 13.6: verify moves draft to
 // verified with a date, the checks and the user's own quoted confirmation.
 func TestLearnVerifySetsStatus(t *testing.T) {
+	testsupport.RequireCompose(t)
 	root := learnFixtureRoot(t)
 	runCLI(t, "--root", root, "learn")
 	runCLI(t, "--root", root, "learn", "record", "recipe", "--prepare", "stackfork prepare -f compose.yaml", "--up", "stackfork up")
@@ -147,6 +152,7 @@ func TestLearnVerifySetsStatus(t *testing.T) {
 // TestWhereReportsStaleKnowledge covers task 13.7: `where` reports
 // verified-but-stale knowledge without rewriting the file.
 func TestWhereReportsStaleKnowledge(t *testing.T) {
+	testsupport.RequireCompose(t)
 	root := learnFixtureRoot(t)
 	runCLI(t, "--root", root, "learn")
 	runCLI(t, "--root", root, "learn", "record", "recipe", "--prepare", "p", "--up", "u")

@@ -3,12 +3,12 @@ package compose
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 // Ported from the original Python CLI's check(): isolate() safety and refusals.
@@ -188,20 +188,10 @@ func TestPublicStatusAndEndpointLines(t *testing.T) {
 	}
 }
 
-func hasDocker(t *testing.T) bool {
-	t.Helper()
-	if _, err := exec.LookPath("docker"); err != nil {
-		return false
-	}
-	return exec.Command("docker", "compose", "version").Run() == nil
-}
-
 // Ported from the original Python CLI's check(): a real `docker compose
 // config` round trip, including literal $ handling.
 func TestRenderIsolateRoundTrip(t *testing.T) {
-	if !hasDocker(t) {
-		t.Skip("docker compose not available")
-	}
+	testsupport.RequireCompose(t)
 	dir := t.TempDir()
 	env := filepath.Join(dir, "runtime.env")
 	if err := os.WriteFile(env, []byte("VALUE=test\n"), 0o600); err != nil {
@@ -360,9 +350,7 @@ func TestWireSecretsNoNamesIsNoop(t *testing.T) {
 // future Compose version changes this, this test catches it rather than the
 // label silently going unused.
 func TestComposeConfigDropsServiceLevelExtensionKeys(t *testing.T) {
-	if !hasDocker(t) {
-		t.Skip("docker compose not available")
-	}
+	testsupport.RequireCompose(t)
 	dir := t.TempDir()
 	config := filepath.Join(dir, "source.json")
 	source := `{

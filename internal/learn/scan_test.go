@@ -7,15 +7,8 @@ import (
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
-
-func hasDocker(t *testing.T) bool {
-	t.Helper()
-	if _, err := exec.LookPath("docker"); err != nil {
-		return false
-	}
-	return exec.Command("docker", "compose", "version").Run() == nil
-}
 
 func fixture(name string) string {
 	return filepath.Join("..", "..", "testdata", "learn", name)
@@ -42,9 +35,7 @@ func hasScript(scripts []knowledge.Script, role, name string) bool {
 // Task 13.2 check: unit tests on fixtures for Nuxt/Bun, Node/npm, Yarn/Turbo
 // monorepo, and a no-Compose app.
 func TestScanNuxtBun(t *testing.T) {
-	if !hasDocker(t) {
-		t.Skip("docker compose not available")
-	}
+	testsupport.RequireCompose(t)
 	k, err := Scan(fixture("nuxt-bun"))
 	if err != nil {
 		t.Fatal(err)
@@ -84,9 +75,7 @@ func TestScanNuxtBun(t *testing.T) {
 }
 
 func TestScanNodeNpm(t *testing.T) {
-	if !hasDocker(t) {
-		t.Skip("docker compose not available")
-	}
+	testsupport.RequireCompose(t)
 	k, err := Scan(fixture("node-npm"))
 	if err != nil {
 		t.Fatal(err)
@@ -107,9 +96,7 @@ func TestScanNodeNpm(t *testing.T) {
 }
 
 func TestScanYarnTurboMonorepo(t *testing.T) {
-	if !hasDocker(t) {
-		t.Skip("docker compose not available")
-	}
+	testsupport.RequireCompose(t)
 	k, err := Scan(fixture("yarn-turbo-monorepo"))
 	if err != nil {
 		t.Fatal(err)
@@ -149,9 +136,7 @@ func TestScanNoCompose(t *testing.T) {
 // reports the fixed container_name from the pg17-fixed-name compose
 // fixture, without failing the scan.
 func TestScanRecordsIsolationFindings(t *testing.T) {
-	if !hasDocker(t) {
-		t.Skip("docker compose not available")
-	}
+	testsupport.RequireCompose(t)
 	k, err := Scan(filepath.Join("..", "..", "testdata", "pg17-fixed-name"))
 	if err != nil {
 		t.Fatal(err)
@@ -171,9 +156,7 @@ func TestScanRecordsIsolationFindings(t *testing.T) {
 // checkout (it's typically gitignored, e.g. `.env`): Scan must record that
 // rather than fail (found scanning a real project's fresh clone).
 func TestScanToleratesMissingEnvFile(t *testing.T) {
-	if !hasDocker(t) {
-		t.Skip("docker compose not available")
-	}
+	testsupport.RequireCompose(t)
 	k, err := Scan(fixture("missing-env-file"))
 	if err != nil {
 		t.Fatal(err)
