@@ -89,11 +89,13 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	// itself from serving on its own port.
 	registeredWithProxy := false
 	if running, _ := proxy.IsRunning(proxy.ContainerName()); running {
-		if routes, err := lifecycle.GatherRoutes(newStateBase, legacyStateBase); err == nil {
-			if err := dashboard.RegisterWithProxy(newStateBase, routes, port); err == nil {
-				registeredWithProxy = true
-			} else {
-				fmt.Fprintf(stderr, "warning: proxy registration skipped: %s\n", err)
+		if mode, err := proxy.Mode(); err == nil {
+			if routes, err := lifecycle.GatherRoutes(newStateBase, legacyStateBase, mode); err == nil {
+				if err := dashboard.RegisterWithProxy(newStateBase, routes, port); err == nil {
+					registeredWithProxy = true
+				} else {
+					fmt.Fprintf(stderr, "warning: proxy registration skipped: %s\n", err)
+				}
 			}
 		}
 	}
@@ -101,7 +103,11 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 		if !registeredWithProxy {
 			return
 		}
-		routes, err := lifecycle.GatherRoutes(newStateBase, legacyStateBase)
+		mode, err := proxy.Mode()
+		if err != nil {
+			return
+		}
+		routes, err := lifecycle.GatherRoutes(newStateBase, legacyStateBase, mode)
 		if err != nil {
 			return
 		}

@@ -45,10 +45,22 @@ func cmdDoctor(stdout io.Writer, subArgs []string, newStateBase string) (int, er
 		status, message, hint := checkProxyPort(newStateBase)
 		add("proxy port", status, message, hint)
 	}
+	mode := ""
 	if dockerAvailable() {
+		status, message, hint, m := checkProxyNetworkMode()
+		add("proxy network mode", status, message, hint)
+		mode = m
+	} else {
+		add("proxy network mode", "warn", "Docker daemon not reachable; skipped",
+			"start Docker (or select a reachable context) to run this check")
+	}
+	switch {
+	case mode == "host":
+		add("host.docker.internal", "ok", "not used in host network mode (routes go straight to 127.0.0.1)", "")
+	case dockerAvailable():
 		status, message, hint := checkHostDockerInternal()
 		add("host.docker.internal", status, message, hint)
-	} else {
+	default:
 		add("host.docker.internal", "warn", "Docker daemon not reachable; skipped",
 			"start Docker (or select a reachable context) to run this check")
 	}
@@ -139,6 +151,20 @@ func checkProxyPort(newStateBase string) (status, message, hint string) {
 	}
 	return "warn", fmt.Sprintf("port %d is already in use by something other than %s", port, name),
 		fmt.Sprintf("free port %d, or run `stackfork proxy up --port N` with a different one", port)
+}
+
+// checkProxyNetworkMode reports which network mode proxy.Mode() picked for
+// this Docker daemon (design.md D7): "bridge" (Docker Desktop, OrbStack,
+// similar VM-based engines - routes through host.docker.internal) or "host"
+// (a genuine native Linux dockerd - routes straight to 127.0.0.1, since
+// host-gateway there is just the bridge's own IP and can't reach a
+// 127.0.0.1-bound port). Always "ok": Mode() never refuses, it only picks.
+func checkProxyNetworkMode() (status, message, hint, mode string) {
+	m, err := proxy.Mode()
+	if err != nil {
+		return "warn", fmt.Sprintf("could not determine: %s", err), "", ""
+	}
+	return "ok", fmt.Sprintf("%s (see `stackfork proxy up`'s container for how it's applied)", m), "", m
 }
 
 // checkHostDockerInternal runs a throwaway, --rm alpine container (task

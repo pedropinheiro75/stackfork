@@ -23,15 +23,19 @@ func ProxyUp(newStateBase, legacyStateBase string, port int) (proxy.Info, error)
 	if err := LocalDocker(); err != nil {
 		return proxy.Info{}, err
 	}
-	err := proxy.WithLock(newStateBase, func() error {
-		routes, err := GatherRoutes(newStateBase, legacyStateBase)
+	mode, err := proxy.Mode()
+	if err != nil {
+		return proxy.Info{}, err
+	}
+	err = proxy.WithLock(newStateBase, func() error {
+		routes, err := GatherRoutes(newStateBase, legacyStateBase, mode)
 		if err != nil {
 			return err
 		}
-		if err := proxy.WriteCaddyfile(newStateBase, routes); err != nil {
+		if err := proxy.WriteCaddyfile(newStateBase, routes, mode, port); err != nil {
 			return err
 		}
-		return proxy.Up(newStateBase, port)
+		return proxy.Up(newStateBase, port, mode)
 	})
 	if err != nil {
 		return proxy.Info{}, err
@@ -51,17 +55,26 @@ func ProxyDown() (proxy.Info, error) {
 }
 
 // ProxyReload regenerates the Caddyfile from every manifest and asks the
-// running proxy to pick it up.
+// running proxy to pick it up, keeping whatever port is already configured
+// (proxy.ReadPort) and network Mode the daemon needs.
 func ProxyReload(newStateBase, legacyStateBase string) error {
 	if err := LocalDocker(); err != nil {
 		return err
 	}
+	mode, err := proxy.Mode()
+	if err != nil {
+		return err
+	}
+	port, err := proxy.ReadPort(newStateBase)
+	if err != nil {
+		return err
+	}
 	return proxy.WithLock(newStateBase, func() error {
-		routes, err := GatherRoutes(newStateBase, legacyStateBase)
+		routes, err := GatherRoutes(newStateBase, legacyStateBase, mode)
 		if err != nil {
 			return err
 		}
-		if err := proxy.WriteCaddyfile(newStateBase, routes); err != nil {
+		if err := proxy.WriteCaddyfile(newStateBase, routes, mode, port); err != nil {
 			return err
 		}
 		return proxy.Reload(newStateBase)
@@ -87,7 +100,7 @@ func ReloadProxyIfRunning(stderr io.Writer, newStateBase, legacyStateBase string
 // hostname, instance not running, no primary HTTP service, ...) is skipped
 // rather than failing the whole generation - one broken instance must never
 // take every other instance's routing down.
-func GatherRoutes(newStateBase, legacyStateBase string) ([]proxy.Route, error) {
+func GatherRoutes(newStateBase, legacyStateBase, mode string) ([]proxy.Route, error) {
 	var routes []proxy.Route
 	for _, dirPrefix := range []struct{ base, prefix string }{
 		{newStateBase, identity.Prefix},
@@ -102,7 +115,7 @@ func GatherRoutes(newStateBase, legacyStateBase string) ([]proxy.Route, error) {
 			if err != nil || info == nil {
 				continue
 			}
-			if route, ok := instanceRoute(info, filepath.Dir(m)); ok {
+			if route, ok := instanceRoute(info, filepath.Dir(m), mode); ok {
 				routes = append(routes, route)
 			}
 		}
@@ -114,8 +127,9 @@ func GatherRoutes(newStateBase, legacyStateBase string) ([]proxy.Route, error) {
 // registered host-run route wins when present (task 9.3), else the primary
 // HTTP service's currently published port, re-resolved via `docker compose
 // ps` every time (task 9.2) so a random-port/legacy instance's route never
-// goes stale. Only a RUNNING instance yields a route.
-func instanceRoute(info *state.Manifest, instanceDir string) (proxy.Route, bool) {
+// goes stale. Only a RUNNING instance yields a route. mode picks the
+// target's address (proxy.HostTarget, design.md D7).
+func instanceRoute(info *state.Manifest, instanceDir, mode string) (proxy.Route, bool) {
 	hostname, err := identity.BrowserHostname(info.Project, info.Hostname)
 	if err != nil {
 		return proxy.Route{}, false
@@ -133,7 +147,7 @@ func instanceRoute(info *state.Manifest, instanceDir string) (proxy.Route, bool)
 		}
 		sort.Strings(names)
 		port := info.Routes[names[0]]
-		return proxy.Route{Hostname: hostname, Target: fmt.Sprintf("host.docker.internal:%d", port)}, true
+		return proxy.Route{Hostname: hostname, Target: proxy.HostTarget(mode, port)}, true
 	}
 
 	configPath := filepath.Join(instanceDir, "compose.json")
@@ -153,7 +167,7 @@ func instanceRoute(info *state.Manifest, instanceDir string) (proxy.Route, bool)
 	if !ok {
 		return proxy.Route{}, false
 	}
-	return proxy.Route{Hostname: hostname, Target: fmt.Sprintf("host.docker.internal:%d", hostPort)}, true
+	return proxy.Route{Hostname: hostname, Target: proxy.HostTarget(mode, hostPort)}, true
 }
 
 // instancePsRows runs `docker compose ps` for one instance's snapshot and

@@ -329,11 +329,19 @@ const ProxyHostname = "stackfork.localhost"
 // running. routes is every other route (from the CLI's own route-gathering)
 // so this never drops instance routing.
 func RegisterWithProxy(newStateBase string, routes []proxy.Route, port int) error {
+	mode, err := proxy.Mode()
+	if err != nil {
+		return err
+	}
+	proxyPort, err := proxy.ReadPort(newStateBase)
+	if err != nil {
+		return err
+	}
 	all := append(append([]proxy.Route{}, routes...), proxy.Route{
-		Hostname: ProxyHostname, Target: fmt.Sprintf("host.docker.internal:%d", port),
+		Hostname: ProxyHostname, Target: proxy.HostTarget(mode, port),
 	})
 	return proxy.WithLock(newStateBase, func() error {
-		if err := proxy.WriteCaddyfile(newStateBase, all); err != nil {
+		if err := proxy.WriteCaddyfile(newStateBase, all, mode, proxyPort); err != nil {
 			return err
 		}
 		if err := proxy.Reload(newStateBase); err != nil {
@@ -341,7 +349,7 @@ func RegisterWithProxy(newStateBase string, routes []proxy.Route, port int) erro
 			// failed reload must not leave it there for the next caller to
 			// find (and never clean up, since cmdDashboard only unregisters
 			// when this call reported success).
-			proxy.WriteCaddyfile(newStateBase, routes) //nolint:errcheck // best-effort rollback; the reload error is what's reported
+			proxy.WriteCaddyfile(newStateBase, routes, mode, proxyPort) //nolint:errcheck // best-effort rollback; the reload error is what's reported
 			return err
 		}
 		return nil
@@ -351,8 +359,16 @@ func RegisterWithProxy(newStateBase string, routes []proxy.Route, port int) erro
 // UnregisterFromProxy removes the dashboard's route on shutdown, keeping
 // every instance route intact.
 func UnregisterFromProxy(newStateBase string, routes []proxy.Route) error {
+	mode, err := proxy.Mode()
+	if err != nil {
+		return err
+	}
+	proxyPort, err := proxy.ReadPort(newStateBase)
+	if err != nil {
+		return err
+	}
 	return proxy.WithLock(newStateBase, func() error {
-		if err := proxy.WriteCaddyfile(newStateBase, routes); err != nil {
+		if err := proxy.WriteCaddyfile(newStateBase, routes, mode, proxyPort); err != nil {
 			return err
 		}
 		return proxy.Reload(newStateBase)

@@ -1,8 +1,12 @@
 // Package proxy runs the tool-owned Caddy container that gives instances
 // portless hostname URLs (task 9.1, design.md D7 layer 3): one container,
-// no Docker socket, no network joins, routing to host.docker.internal on
-// every platform (host-gateway on Linux, built in on Docker
-// Desktop/OrbStack).
+// no Docker socket, loopback-only exposure. Two network modes depending on
+// the Docker daemon (see Mode): "bridge" (Docker Desktop, OrbStack and
+// similar VM-based engines) routes to host.docker.internal, which those
+// engines proxy to the host's own loopback themselves; "host" (a genuine
+// native Linux dockerd, where host-gateway is just a bridge IP that can't
+// reach a 127.0.0.1-bound port) runs the proxy with --network host and
+// routes directly to 127.0.0.1.
 package proxy
 
 import (
@@ -74,27 +78,102 @@ func WritePort(stateBase string, port int) error {
 	return os.WriteFile(portFilePath(stateBase), []byte(strconv.Itoa(port)+"\n"), 0o600)
 }
 
-// Route is one Caddy site: hostname -> the host.docker.internal target that
-// serves it, for a container-published (stable or currently-resolved
-// random) port or a host-run app registered via `route add` alike (task
-// 9.2/9.3).
+// Route is one Caddy site: hostname -> the target that serves it (via
+// HostTarget, mode-dependent), for a container-published (stable or
+// currently-resolved random) port or a host-run app registered via `route
+// add` alike (task 9.2/9.3).
 type Route struct {
 	Hostname string
 	Target   string
 }
 
+// Mode reports which network mode the proxy container must run in
+// (design.md D7), from the Docker daemon's own OS/runtime - never
+// runtime.GOOS, since the daemon a `docker` client talks to is not
+// necessarily on the same machine/OS as the process invoking it
+// (DOCKER_HOST, a remote context, stackfork itself running inside a
+// container, ...), and a Linux VM behind Docker Desktop/OrbStack (OSType is
+// always "linux" there too) behaves like macOS, not like a native Linux
+// host.
+//
+//   - "bridge" (the original, still the default everywhere but native
+//     Linux): the proxy joins no network but its own bridge, publishes
+//     127.0.0.1:<port>->80, and reaches every target through
+//     host.docker.internal:host-gateway. Correct for Docker Desktop,
+//     OrbStack and similar VM-based engines, which proxy that special
+//     hostname to the host's own loopback themselves.
+//   - "host": a genuine native Linux dockerd's host-gateway only ever
+//     resolves to the bridge network's own gateway IP, which cannot reach a
+//     service published on 127.0.0.1 - reproduced live on Linux CI
+//     (connection reset / never reachable). The proxy instead runs with
+//     --network host (sharing the host's network namespace directly, so it
+//     can reach 127.0.0.1 itself) and Caddy binds only 127.0.0.1:<port>
+//     (never 0.0.0.0, verified directly: "bind 127.0.0.1" keeps the same
+//     loopback-only exposure bridge mode's own docker -p 127.0.0.1:...
+//     always had).
+//
+// Detection is a documented heuristic (ponytail: the known ceiling is any
+// VM-based engine not named in vmEngines below; the upgrade path is adding
+// its OperatingSystem marker there, not a network probe).
+func Mode() (string, error) {
+	out, err := exec.Command("docker", "info", "--format", "{{.OSType}}|{{.OperatingSystem}}").Output()
+	if err != nil {
+		return "", fmt.Errorf("docker info: %w", err)
+	}
+	osType, operatingSystem, _ := strings.Cut(strings.TrimSpace(string(out)), "|")
+	return modeFromDaemonInfo(osType, operatingSystem), nil
+}
+
+// modeFromDaemonInfo is Mode's heuristic, split out so it's unit-testable
+// without a real Docker daemon.
+func modeFromDaemonInfo(osType, operatingSystem string) string {
+	if osType != "linux" {
+		return "bridge"
+	}
+	lower := strings.ToLower(operatingSystem)
+	for _, engine := range vmEngines {
+		if strings.Contains(lower, engine) {
+			return "bridge"
+		}
+	}
+	return "host"
+}
+
+// vmEngines names every known VM-based Docker engine whose Linux guest
+// still needs bridge mode - see Mode's doc comment for the ceiling this
+// list represents.
+var vmEngines = []string{"docker desktop", "orbstack", "rancher desktop", "colima", "lima"}
+
+// HostTarget is the address a Caddy route reaches a host-published port
+// through, for the network Mode a proxy cycle is using.
+func HostTarget(mode string, port int) string {
+	if mode == "host" {
+		return fmt.Sprintf("127.0.0.1:%d", port)
+	}
+	return fmt.Sprintf("host.docker.internal:%d", port)
+}
+
 // GenerateCaddyfile renders the config from every routed instance (task
 // 9.2): `auto_https off` in the global block, since Caddy must never try to
-// get a TLS cert for a .localhost name, and one `http://<hostname>` site per
-// route. Sorted by hostname for a deterministic, diff-friendly file.
-func GenerateCaddyfile(routes []Route) string {
+// get a TLS cert for a .localhost name, and one site per route, sorted by
+// hostname for a deterministic, diff-friendly file. In "host" mode every
+// site must explicitly bind 127.0.0.1 and declare the proxy's own port
+// (the container shares the host's network namespace directly, so nothing
+// else restricts which interface it listens on); in "bridge" mode a plain
+// `http://<hostname>` address is enough, since docker's own -p
+// 127.0.0.1:<port>:80 already restricts exposure.
+func GenerateCaddyfile(routes []Route, mode string, port int) string {
 	sorted := append([]Route(nil), routes...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Hostname < sorted[j].Hostname })
 
 	var b strings.Builder
 	b.WriteString("{\n\tauto_https off\n}\n")
 	for _, r := range sorted {
-		fmt.Fprintf(&b, "\nhttp://%s {\n\treverse_proxy %s\n}\n", r.Hostname, r.Target)
+		if mode == "host" {
+			fmt.Fprintf(&b, "\nhttp://%s:%d {\n\tbind 127.0.0.1\n\treverse_proxy %s\n}\n", r.Hostname, port, r.Target)
+		} else {
+			fmt.Fprintf(&b, "\nhttp://%s {\n\treverse_proxy %s\n}\n", r.Hostname, r.Target)
+		}
 	}
 	return b.String()
 }
@@ -112,11 +191,11 @@ func GenerateCaddyfile(routes []Route) string {
 // caller explicitly runs `caddy reload` immediately after this call returns,
 // so the write is always complete before anything reads it - WithLock's
 // flock is what actually needs to serialize callers, not this function.
-func WriteCaddyfile(stateBase string, routes []Route) error {
+func WriteCaddyfile(stateBase string, routes []Route, mode string, port int) error {
 	if err := os.MkdirAll(Dir(stateBase), 0o700); err != nil {
 		return err
 	}
-	data := []byte(GenerateCaddyfile(routes))
+	data := []byte(GenerateCaddyfile(routes, mode, port))
 	return os.WriteFile(CaddyfilePath(stateBase), data, 0o600)
 }
 
@@ -153,21 +232,24 @@ func IsRunning(name string) (bool, error) {
 	return strings.TrimSpace(string(out)) == "true", nil
 }
 
-// Up starts the proxy container on port, replacing any existing one bound to
-// a different port; recreates a stopped container left behind by a crash.
-// The Caddyfile at CaddyfilePath(stateBase) must already exist - callers
-// write it with WriteCaddyfile first, since Docker would otherwise bind-mount
-// an empty directory in its place. No Docker socket is mounted and no
-// networks are joined (task 9.1): the container only publishes 127.0.0.1 and
-// reaches every target through host.docker.internal.
-func Up(stateBase string, port int) error {
+// Up starts the proxy container on port in the given network Mode,
+// replacing any existing one bound to a different port; recreates a
+// stopped container left behind by a crash. The Caddyfile at
+// CaddyfilePath(stateBase) must already exist - callers write it with
+// WriteCaddyfile first (with this same mode/port), since Docker would
+// otherwise bind-mount an empty directory in its place. No Docker socket is
+// mounted (task 9.1) and exposure stays loopback-only either way: "bridge"
+// mode joins no other network and publishes 127.0.0.1:<port>->80; "host"
+// mode shares the host's network namespace directly (no docker -p at all)
+// but Caddy itself only ever binds 127.0.0.1 (GenerateCaddyfile).
+func Up(stateBase string, port int, mode string) error {
 	name := ContainerName()
 	running, err := IsRunning(name)
 	if err != nil {
 		return err
 	}
 	if running {
-		current, ok := publishedPort(name)
+		current, ok := currentPort(stateBase, name, mode)
 		if ok && current == port {
 			return Reload(stateBase)
 		}
@@ -179,14 +261,16 @@ func Up(stateBase string, port int) error {
 	if err := WritePort(stateBase, port); err != nil {
 		return err
 	}
-	args := []string{
-		"run", "-d", "--name", name,
-		"--label", identity.LabelProxy + "=true",
-		"-p", fmt.Sprintf("127.0.0.1:%d:80", port),
-		"--add-host", "host.docker.internal:host-gateway",
-		"-v", CaddyfilePath(stateBase) + ":/etc/caddy/Caddyfile:ro",
-		Image,
+	args := []string{"run", "-d", "--name", name, "--label", identity.LabelProxy + "=true"}
+	if mode == "host" {
+		args = append(args, "--network", "host")
+	} else {
+		args = append(args,
+			"-p", fmt.Sprintf("127.0.0.1:%d:80", port),
+			"--add-host", "host.docker.internal:host-gateway",
+		)
 	}
+	args = append(args, "-v", CaddyfilePath(stateBase)+":/etc/caddy/Caddyfile:ro", Image)
 	cmd := exec.Command("docker", args...)
 	cmd.Env = compose.DockerEnv()
 	var errBuf bytes.Buffer
@@ -197,10 +281,22 @@ func Up(stateBase string, port int) error {
 	return nil
 }
 
-// publishedPort reads the host port currently bound to the container's
-// published 80/tcp, so Up can tell "already running on the requested port"
-// (a no-op reload) from "running on a stale port" (must be recreated).
-func publishedPort(name string) (int, bool) {
+// currentPort reports the port the running proxy container is actually
+// serving on, so Up can tell "already running on the requested port" (a
+// no-op reload) from "running on a stale port" (must be recreated). Bridge
+// mode reads it off docker's own port mapping; host mode has none to read
+// (no docker -p at all, --network host shares the namespace directly), so
+// it trusts the port file Up itself always writes right before starting
+// the container - which is exactly what the running container was told to
+// bind (GenerateCaddyfile bakes the port into every site address).
+func currentPort(stateBase, name, mode string) (int, bool) {
+	if mode == "host" {
+		p, err := ReadPort(stateBase)
+		if err != nil {
+			return 0, false
+		}
+		return p, true
+	}
 	out, err := exec.Command("docker", "inspect", "-f",
 		`{{(index (index .NetworkSettings.Ports "80/tcp") 0).HostPort}}`, name).Output()
 	if err != nil {
