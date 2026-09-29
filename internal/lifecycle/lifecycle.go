@@ -165,13 +165,19 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		// into its value now, not at prepare, so a rotated env var or
 		// npmrc token is picked up without re-preparing. Only the value
 		// goes into the process env passed to `docker compose`; it is
-		// never written to the manifest or the snapshot.
+		// never written to the manifest or the snapshot. Set under every
+		// compose.SecretEnvAliases name (not just the secret's own manifest
+		// name), so a service that references it directly as `${NPM_TOKEN}`
+		// (253fb81's regression) resolves for real here, matching the same
+		// literal reference Render already preserved in the snapshot.
 		for name, ref := range info.ResolvedSecrets() {
 			value, err := compose.ResolveSecret(name, ref)
 			if err != nil {
 				return 0, err
 			}
-			os.Setenv(name, value)
+			for _, alias := range compose.SecretEnvAliases(name) {
+				os.Setenv(alias, value)
+			}
 		}
 		// D2: another branch stack from this checkout must be refused
 		// whether it was labelled under the current namespace or the

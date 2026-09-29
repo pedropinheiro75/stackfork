@@ -199,7 +199,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		}
 		return 0, cmdWhere(stdout, root, branch, project, instanceDir, newStateBase, legacyStateBase, profileDirs)
 	case "prepare":
-		return 0, cmdPrepare(stdout, subArgs, root, branch, project, instanceDir, *npmrcFlag, secretFlag, newStateBase, legacyStateBase)
+		return 0, cmdPrepare(stdout, stderr, subArgs, root, branch, project, instanceDir, *npmrcFlag, secretFlag, newStateBase, legacyStateBase)
 	case "up":
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "down":
@@ -407,7 +407,7 @@ type prepareOutput struct {
 	Result   string   `json:"result"`
 }
 
-func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, instanceDir, npmrcTop string, secretFlags []string, newStateBase, legacyStateBase string) error {
+func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, project, instanceDir, npmrcTop string, secretFlags []string, newStateBase, legacyStateBase string) error {
 	fs := flag.NewFlagSet("prepare", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var files stringList
@@ -490,33 +490,13 @@ func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, insta
 		return err
 	}
 
-	rendered, err := compose.Render(root, resolvedFiles, envFile, hostname)
-	if err != nil {
-		return err
-	}
-	model, err := compose.Isolate(rendered, root, project, envFile)
-	if err != nil {
-		return err
-	}
-
-	inputs := append([]string{}, resolvedFiles...)
-	if envFile != "" {
-		inputs = append(inputs, envFile)
-	}
-	inputHashes := map[string]string{}
-	for _, p := range inputs {
-		h, err := state.SHA256File(p)
-		if err != nil {
-			return err
-		}
-		inputHashes[p] = h
-	}
-
 	// Named secrets (task 6.1, design.md D6): start from whatever this
 	// instance already had (so a re-prepare without --secret keeps them,
 	// including one folded from a legacy manifest's npmrc key, task 6.2),
 	// then let --npmrc and --secret overlay by name. Only references are
-	// ever computed here - never a value.
+	// ever computed here - never a value. Computed before Render so it can
+	// protect each name from resolving to empty (design.md D6, 253fb81's
+	// regression).
 	secretRefs := map[string]string{}
 	if previous != nil {
 		secretRefs = previous.ResolvedSecrets()
@@ -539,6 +519,32 @@ func cmdPrepare(stdout io.Writer, subArgs []string, root, branch, project, insta
 	for name := range secretRefs {
 		secretNames = append(secretNames, name)
 	}
+
+	rendered, unresolved, err := compose.Render(root, resolvedFiles, envFile, hostname, secretNames)
+	if err != nil {
+		return err
+	}
+	if len(unresolved) > 0 {
+		fmt.Fprintf(stderr, "stackfork: warning: unresolved variable(s) in the Compose source, defaulted to empty: %s\n", strings.Join(unresolved, ", "))
+	}
+	model, err := compose.Isolate(rendered, root, project, envFile)
+	if err != nil {
+		return err
+	}
+
+	inputs := append([]string{}, resolvedFiles...)
+	if envFile != "" {
+		inputs = append(inputs, envFile)
+	}
+	inputHashes := map[string]string{}
+	for _, p := range inputs {
+		h, err := state.SHA256File(p)
+		if err != nil {
+			return err
+		}
+		inputHashes[p] = h
+	}
+
 	compose.WireSecrets(model, secretNames)
 
 	// HTTP marking (task 7.2, design.md D7): read the io.stackfork.http/

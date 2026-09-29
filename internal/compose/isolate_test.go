@@ -220,7 +220,7 @@ func TestRenderIsolateRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rendered, err := Render(dir, []string{config}, env, "")
+	rendered, _, err := Render(dir, []string{config}, env, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestRenderIsolateRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	roundtrip, err := Render(dir, []string{output}, "", "")
+	roundtrip, _, err := Render(dir, []string{output}, "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +374,7 @@ func TestComposeConfigDropsServiceLevelExtensionKeys(t *testing.T) {
 	if err := os.WriteFile(config, []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rendered, err := Render(dir, []string{config}, "", "")
+	rendered, _, err := Render(dir, []string{config}, "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

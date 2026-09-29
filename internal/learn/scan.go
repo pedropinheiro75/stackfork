@@ -52,7 +52,7 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 		for i, f := range composeFiles {
 			abs[i] = filepath.Join(root, f)
 		}
-		rendered, err := compose.Render(root, abs, "", "")
+		rendered, _, err := compose.Render(root, abs, "", "", nil)
 		if err != nil {
 			return nil, err
 		}
