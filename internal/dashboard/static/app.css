@@ -205,6 +205,12 @@ main.stale { opacity: 0.6; }
   padding: 0 10px;
   font-size: 12px;
 }
+/* .icon-btn's own `display: inline-flex` (an author-stylesheet rule) beats
+   the UA stylesheet's default `[hidden] { display: none }` - without this,
+   the button stays visible whenever the proxy is already running, right
+   next to "Proxy: running on <port>", even though `hidden` is set
+   correctly by both the server template and app.js's re-render. */
+#proxy-start[hidden] { display: none; }
 
 .app-strip {
   margin-top: 10px;
@@ -242,15 +248,37 @@ main.stale { opacity: 0.6; }
 }
 .stack-menu[hidden] { display: none; }
 
+/* Every click-to-copy element (.cli-command, .endpoint-copy alike) shares
+   this: a small leading copy icon and a hover color shift, so a copy
+   action reads as clearly clickable instead of plain text (maintainer
+   feedback). Shape (pill vs. full-width code block) stays per-class,
+   set below. */
+.copyable {
+  cursor: copy;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+.copyable::before {
+  content: "⧉";
+  display: inline-block;
+  margin-right: 5px;
+  font-size: 10px;
+  opacity: 0.6;
+}
+.copyable:hover::before { opacity: 1; }
+
 .cli-command {
+  display: block;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   color: var(--muted);
-  cursor: copy;
   white-space: pre-wrap;
   word-break: break-all;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
 }
-.cli-command:hover { color: var(--accent); }
+.cli-command:hover { color: var(--accent); border-color: var(--accent); }
 
 .warnings { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .warning { font-size: 12px; color: var(--warn); }
@@ -347,7 +375,16 @@ main.stale { opacity: 0.6; }
   color: var(--accent);
   white-space: nowrap;
 }
-.endpoint-copy { color: var(--muted); cursor: copy; }
+.endpoint-copy {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+}
+.endpoint-copy:hover { color: var(--accent); border-color: var(--accent); }
 .endpoint-link.stopped, .endpoint-copy.stopped { color: var(--muted); opacity: 0.7; }
 .endpoint-pending { font-size: 12px; color: var(--muted); font-style: italic; }
 
