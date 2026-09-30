@@ -29,8 +29,8 @@ func startListener(t *testing.T) int {
 
 // installFakeDocker puts a fake `docker` first on PATH: `docker ps --all
 // ...` prints $DOCKER_FAKE_PS (JSON lines), `docker inspect ...` (the
-// proxy's IsRunning probe) always reports "false", everything else
-// succeeds silently.
+// proxy's IsRunning probe) reports $DOCKER_FAKE_PROXY_RUNNING (default
+// "false"), everything else succeeds silently.
 func installFakeDocker(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
@@ -40,7 +40,7 @@ if [ "$1" = "ps" ]; then
   exit 0
 fi
 if [ "$1" = "inspect" ]; then
-  printf 'false'
+  printf '%s' "${DOCKER_FAKE_PROXY_RUNNING:-false}"
   exit 0
 fi
 exit 0

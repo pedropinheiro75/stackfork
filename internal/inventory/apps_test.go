@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/proxy"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -224,5 +225,64 @@ func TestAppsFromKnowledgeOnlyWhenNothingElseQualifies(t *testing.T) {
 	}
 	if len(inst.Apps) != 1 || inst.Apps[0].Source != "route" {
 		t.Fatalf("expected the route to replace the knowledge hint, got %+v", inst.Apps)
+	}
+}
+
+// TestAppsCollapsesProxiedAndDirectIntoOneChip is the regression test for
+// the duplicate "App" chips the maintainer found in the dashboard
+// screenshots: once the shared proxy is running and routing a stack's
+// primary HTTP service, that service carries both its own direct endpoint
+// and the proxy's extra portless one (servicesForInstance), and buildApps
+// must collapse that pair into a single chip - the proxied URL, with the
+// direct one kept as AppLink.Direct for the template's tooltip - never two
+// identically-labelled "App" chips.
+func TestAppsCollapsesProxiedAndDirectIntoOneChip(t *testing.T) {
+	installFakeDocker(t)
+	newBase := t.TempDir()
+	root := gitRepo(t, "main")
+
+	config := map[string]interface{}{"services": map[string]interface{}{
+		"web": map[string]interface{}{
+			"image": "node:22",
+			"ports": []interface{}{
+				map[string]interface{}{"target": json.Number("3000"), "published": "20050", "protocol": "tcp"},
+			},
+		},
+	}}
+	project := "sf-appsproxied-1"
+	writeAppsFixture(t, newBase, project, root, &state.Manifest{
+		HTTPPorts: []int{3000},
+	}, config)
+
+	t.Setenv("DOCKER_FAKE_PS", psLine(t, project, "web", "running", "Up 1 minute", "127.0.0.1:20050->3000/tcp")+"\n")
+	t.Setenv("DOCKER_FAKE_PROXY_RUNNING", "true")
+	if err := proxy.WritePort(newBase, 18089); err != nil {
+		t.Fatal(err)
+	}
+
+	inv, err := Collect(Options{NewStateBase: newBase, LegacyStateBase: t.TempDir(), Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inst Instance
+	for _, i := range inv.Instances {
+		if i.Project == project {
+			inst = i
+		}
+	}
+	if len(inst.Apps) != 1 {
+		t.Fatalf("expected exactly 1 App chip (proxied+direct collapsed), got %d: %+v", len(inst.Apps), inst.Apps)
+	}
+	app := inst.Apps[0]
+	if app.Label != "App" {
+		t.Errorf("expected label App, got %q", app.Label)
+	}
+	wantURL := "http://" + project + ".localhost:18089"
+	if app.URL != wantURL {
+		t.Errorf("expected the proxied URL to win, got %q want %q", app.URL, wantURL)
+	}
+	wantDirect := "http://" + project + ".localhost:20050"
+	if app.Direct != wantDirect {
+		t.Errorf("expected the direct URL kept as Direct, got %q want %q", app.Direct, wantDirect)
 	}
 }

@@ -79,7 +79,8 @@
   function appChipHtml(app) {
     if (app.url) {
       var stoppedClass = app.running ? "" : " stopped";
-      return '<a class="app-chip' + stoppedClass + '" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(app.url) + '">' +
+      var title = app.url + (app.direct ? " (direct: " + app.direct + ")" : "");
+      return '<a class="app-chip' + stoppedClass + '" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(title) + '">' +
         escapeHtml(app.label) + "</a>";
     }
     var hint = app.hint ? ": " + escapeHtml(app.hint) : "";

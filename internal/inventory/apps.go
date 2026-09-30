@@ -16,39 +16,57 @@ import (
 type AppLink struct {
 	Label   string `json:"label"`
 	URL     string `json:"url,omitempty"`
+	Direct  string `json:"direct,omitempty"`
 	Source  string `json:"source"` // service | route | knowledge
 	Running bool   `json:"running"`
 	Hint    string `json:"hint,omitempty"`
 }
 
-// buildApps collects every service-sourced app link: one per HTTP(S)
-// endpoint, labelled by role. A service's endpoints already carry a
-// portless, proxied one last (buildServiceEndpoints/proxyEndpoint); D3b
-// wants that one shown first, so it's resorted here without touching
-// Service.Endpoints itself (other code, and the golden test, depend on
-// that order staying as-is).
+// buildApps collects every service-sourced app link: one per distinct
+// container port with an HTTP(S) endpoint, labelled by role - never two
+// chips for the same port (maintainer feedback: the primary service's own
+// direct address and the proxy's portless one for that exact port were
+// rendering as two identically-labelled "App" chips). proxyEndpoint always
+// gives its extra entry the same Container as the direct one it stands in
+// for, so grouping by Container safely collapses exactly that pair - a
+// service that genuinely declares two different HTTP ports still gets two
+// chips, one per port. Within a group the proxied URL wins (D3b wants the
+// portless one shown first); the direct one, if any, rides along as
+// AppLink.Direct for the template to show as a tooltip/secondary link,
+// never a second chip.
 func buildApps(services []Service, info *state.Manifest, primaryService string, hasPrimary bool) []AppLink {
 	var apps []AppLink
 	for _, svc := range services {
 		label := appLabel(svc, hasPrimary && svc.Name == primaryService)
-		httpEndpoints := make([]Endpoint, 0, len(svc.Endpoints))
+		byTarget := map[int][]Endpoint{}
+		var targets []int
 		for _, ep := range svc.Endpoints {
-			if ep.Scheme == "http" || ep.Scheme == "https" {
-				httpEndpoints = append(httpEndpoints, ep)
+			if ep.Scheme != "http" && ep.Scheme != "https" {
+				continue
 			}
+			if _, seen := byTarget[ep.Container]; !seen {
+				targets = append(targets, ep.Container)
+			}
+			byTarget[ep.Container] = append(byTarget[ep.Container], ep)
 		}
-		sort.SliceStable(httpEndpoints, func(i, j int) bool {
-			return httpEndpoints[i].Proxied && !httpEndpoints[j].Proxied
-		})
-		for _, ep := range httpEndpoints {
+		for _, target := range targets {
+			group := byTarget[target]
+			sort.SliceStable(group, func(i, j int) bool {
+				return group[i].Proxied && !group[j].Proxied
+			})
+			best := group[0]
 			hint := ""
-			if !ep.Known {
+			if !best.Known {
 				hint = "port assigned on start"
 			}
-			apps = append(apps, AppLink{
-				Label: label, URL: ep.URL, Source: "service",
+			link := AppLink{
+				Label: label, URL: best.URL, Source: "service",
 				Running: svc.State == "running", Hint: hint,
-			})
+			}
+			if len(group) > 1 && group[1].URL != best.URL {
+				link.Direct = group[1].URL
+			}
+			apps = append(apps, link)
 		}
 	}
 	return apps
