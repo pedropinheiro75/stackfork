@@ -26,14 +26,23 @@ func cmdCloneDB(stdout io.Writer, subArgs []string, root, project, instanceDir, 
 	fs := flag.NewFlagSet("clone-db", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	from := fs.String("from", "", "")
+	fromDump := fs.String("from-dump", "", "")
 	volumeFlag := fs.String("volume", "", "")
+	serviceFlag := fs.String("service", "", "")
+	databaseFlag := fs.String("database", "", "")
 	replace := fs.Bool("replace", false, "")
 	allowRunning := fs.Bool("allow-running", false, "")
 	if err := fs.Parse(subArgs); err != nil {
 		return 2, fmt.Errorf("%s", err.Error())
 	}
+	if *from != "" && *fromDump != "" {
+		return 2, errors.New("--from and --from-dump are mutually exclusive")
+	}
+	if *fromDump != "" {
+		return cmdCloneDBFromDump(stdout, *fromDump, *serviceFlag, *databaseFlag, *replace, root, project, instanceDir)
+	}
 	if *from == "" {
-		return 2, errors.New("--from is required")
+		return 2, errors.New("--from or --from-dump is required")
 	}
 	if !identity.InstancePattern.MatchString(*from) {
 		return 0, errors.New("Invalid instance name")
