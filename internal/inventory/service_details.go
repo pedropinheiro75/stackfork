@@ -62,6 +62,14 @@ func imageKind(image string) string {
 	return kindForImageName(imageName(image))
 }
 
+// ImageKind exposes imageKind for callers outside Collect's own pipeline
+// (add-env-and-seed's clone-db --from-dump: which service is a
+// postgres/mysql/mariadb database, read straight off compose.json's
+// static image field, no live docker/Collect needed for that question).
+func ImageKind(image string) string {
+	return imageKind(image)
+}
+
 // mailCatcherHTTPPorts maps a mail catcher's image name to its known web UI
 // port(s) (fix 3: "Mailpit's web UI port 8025 ... should be treated as HTTP
 // by kind (known image -> known UI port)"). Keyed more specifically than

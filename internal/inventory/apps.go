@@ -146,10 +146,15 @@ func knowledgeJSONPath(root string) string {
 }
 
 // buildEnvBlock assembles the "Copy .env for host app" block (task 3.10,
-// design.md D3b §4): one line per qualifying kind, first match wins if a
-// stack somehow has more than one of the same kind (ponytail: good enough -
-// a stack with two Postgres services is unusual, and the App strip/per-
-// service copy buttons still cover the second one individually).
+// design.md D3b §4, extended by add-env-and-seed for `stackfork env`): one
+// line per qualifying kind, first match wins if a stack somehow has more
+// than one of the same kind (ponytail: good enough - a stack with two
+// Postgres services is unusual, and the App strip/per-service copy
+// buttons still cover the second one individually). Also one
+// <SERVICE>_URL line per HTTP(S)-serving service, so a host-run app gets
+// its sibling containers' addresses the same way it gets DATABASE_URL -
+// the exact URL buildApps would show as that service's App chip
+// (bestHTTPEndpoint shares its proxied-preferred rule).
 func buildEnvBlock(services []Service) string {
 	var lines []string
 	have := map[string]bool{}
@@ -175,6 +180,61 @@ func buildEnvBlock(services []Service) string {
 				}
 			}
 		}
+		if ep, ok := bestHTTPEndpoint(svc); ok {
+			add(envKeyForService(svc.Name)+"_URL", ep.URL)
+		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// bestHTTPEndpoint returns a service's most useful HTTP(S) address: when
+// the proxy is routing the service's first declared HTTP port, the
+// portless proxied one wins over the plain direct one for that exact
+// port (buildApps's own pairing rule, shared here rather than
+// reimplemented). A service with more than one distinct HTTP port only
+// ever contributes its first here - buildApps still gives each port its
+// own App chip; env's one-line-per-service scope doesn't need to.
+func bestHTTPEndpoint(svc Service) (Endpoint, bool) {
+	var group []Endpoint
+	firstTarget := -1
+	for _, ep := range svc.Endpoints {
+		if ep.Scheme != "http" && ep.Scheme != "https" {
+			continue
+		}
+		if firstTarget == -1 {
+			firstTarget = ep.Container
+		}
+		if ep.Container == firstTarget {
+			group = append(group, ep)
+		}
+	}
+	if len(group) == 0 {
+		return Endpoint{}, false
+	}
+	sort.SliceStable(group, func(i, j int) bool { return group[i].Proxied && !group[j].Proxied })
+	return group[0], true
+}
+
+// envKeyForService uppercases a service name into a valid shell/dotenv
+// identifier - Compose service names are conventionally already
+// alnum/hyphen (docker-compose.yml's own service-name schema), but this
+// never assumes it: anything else becomes "_", and a leading digit gets a
+// "_" prefix so the result is always a legal env var name.
+func envKeyForService(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(name) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	key := b.String()
+	if key == "" {
+		return "_"
+	}
+	if key[0] >= '0' && key[0] <= '9' {
+		key = "_" + key
+	}
+	return key
 }

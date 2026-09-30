@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
@@ -284,5 +285,66 @@ func TestAppsCollapsesProxiedAndDirectIntoOneChip(t *testing.T) {
 	wantDirect := "http://" + project + ".localhost:20050"
 	if app.Direct != wantDirect {
 		t.Errorf("expected the direct URL kept as Direct, got %q want %q", app.Direct, wantDirect)
+	}
+}
+
+// TestBuildEnvBlockIncludesServiceURL covers add-env-and-seed's host-env
+// capability: `stackfork env` reuses this exact block (inventory.Instance's
+// own EnvBlock field), so every HTTP(S)-serving service must contribute its
+// own <NAME>_URL line here, alongside DATABASE_URL/REDIS_URL/etc - a pure
+// unit test of buildEnvBlock/bestHTTPEndpoint/envKeyForService, no Collect
+// or docker needed.
+func TestBuildEnvBlockIncludesServiceURL(t *testing.T) {
+	services := []Service{
+		{
+			Name: "db", Kind: "postgres", State: "running",
+			ConnectionURL: "postgres://postgres:<password>@127.0.0.1:20050/app",
+		},
+		{
+			Name: "web-app", Kind: "", State: "running",
+			Endpoints: []Endpoint{
+				{Scheme: "http", URL: "http://myapp.localhost:20051", Container: 3000, Known: true},
+			},
+		},
+	}
+	block := buildEnvBlock(services)
+	lines := strings.Split(block, "\n")
+	want := map[string]string{
+		"DATABASE_URL": "postgres://postgres:<password>@127.0.0.1:20050/app",
+		"WEB_APP_URL":  "http://myapp.localhost:20051",
+	}
+	got := map[string]string{}
+	for _, l := range lines {
+		k, v, ok := strings.Cut(l, "=")
+		if ok {
+			got[k] = v
+		}
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("expected %s=%q, got %+v", k, v, got)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("expected exactly %d lines, got %+v", len(want), got)
+	}
+}
+
+// TestBuildEnvBlockPrefersProxiedServiceURL: the same proxied-preferred
+// pairing rule buildApps uses for App chips (bestHTTPEndpoint shares it).
+func TestBuildEnvBlockPrefersProxiedServiceURL(t *testing.T) {
+	services := []Service{{
+		Name: "app", State: "running",
+		Endpoints: []Endpoint{
+			{Scheme: "http", URL: "http://app.localhost:20051", Container: 3000, Known: true},
+			{Scheme: "http", URL: "http://app.localhost:18089", Container: 3000, Known: true, Proxied: true},
+		},
+	}}
+	block := buildEnvBlock(services)
+	if !strings.Contains(block, "APP_URL=http://app.localhost:18089") {
+		t.Errorf("expected the proxied address to win in APP_URL, got %q", block)
+	}
+	if strings.Contains(block, "20051") {
+		t.Errorf("expected only the proxied address, direct one leaked into the block: %q", block)
 	}
 }
