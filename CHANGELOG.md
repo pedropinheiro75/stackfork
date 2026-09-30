@@ -27,6 +27,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `stackfork restart SERVICE` and `stackfork logs [SERVICE] [--tail N]
   [--follow]`, and a new `internal/redact` package that replaces resolved
   secret values in log output with `[redacted:<name>]`.
+- `stackfork env [--format shell|dotenv] [--with-passwords]`: the current
+  instance's `DATABASE_URL`/`REDIS_URL`/`MONGODB_URL`, `SMTP_HOST`/
+  `SMTP_PORT`, and one `<SERVICE>_URL` per HTTP service (the portless proxy
+  URL when routed), for a host-run or hybrid app - `eval "$(stackfork
+  env)"`. Reuses the dashboard's own env-block/connection-URL logic; a real
+  password only ever appears with `--with-passwords`, and only for a
+  literal Compose value, never `--secret`/`env_file`/`${VAR}`.
+- `stackfork clone-db --from-dump FILE [--service NAME] [--database NAME]
+  [--replace]`: seeds this instance's own running database from a local
+  `.sql`, `.sql.gz`, or Postgres custom-format dump, streamed directly into
+  the container (never a temp copy on disk). Postgres supports all three
+  forms; MySQL/MariaDB gets plain SQL.
 
 ### Rewritten in Go
 

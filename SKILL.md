@@ -9,7 +9,7 @@ Use the project's actual runtime, package manager and startup flow through `stac
 
 ## Reuse before rediscovering
 
-Run `stackfork where` (lists prepared instances and configured profiles) and `stackfork status` first. If `.stackfork/knowledge.md` is `verified`, apply its recorded adapter and recipe directly — no scan, no questions (`references/learning.md`). Otherwise run `stackfork learn`, read `.stackfork/knowledge.md`, and run the learn session in `references/learning.md`. Do not repeat a full discovery, or rewrite a launcher, for a routine restart of an unchanged adapter. Before preparing a brand-new instance, run `stackfork list` — an instance for this project may already exist elsewhere (another branch, another worktree) with data worth starting from via `clone-db --from <instance>` instead of an empty database (or `stackfork dashboard` for the same cross-checkout view in a local, read-mostly web page — never used for the destructive commands below).
+Run `stackfork where` (lists prepared instances and configured profiles) and `stackfork status` first. If `.stackfork/knowledge.md` is `verified`, apply its recorded adapter and recipe directly — no scan, no questions (`references/learning.md`). Otherwise run `stackfork learn`, read `.stackfork/knowledge.md`, and run the learn session in `references/learning.md`. Do not repeat a full discovery, or rewrite a launcher, for a routine restart of an unchanged adapter. Before preparing a brand-new instance, run `stackfork list` — an instance for this project may already exist elsewhere (another branch, another worktree) with data worth starting from via `clone-db --from <instance>` instead of an empty database, or `clone-db --from-dump FILE` to seed from a local `.sql`/`.sql.gz`/Postgres dump (or `stackfork dashboard` for the same cross-checkout view in a local, read-mostly web page — never used for the destructive commands below).
 
 ## Follow profile context
 
@@ -19,7 +19,7 @@ For each profile `stackfork where` lists with `"context": true`, follow that pro
 
 1. **Discover:** resolve the checkout with Git, read AGENTS.md/README, and adapt the project's real Compose stack (`references/adapting-compose.md`, or a template for a bare app with no app-building Compose at all: `references/nuxt-template.md` for Nuxt, `references/go-template.md` for a Go web app). Use a separate worktree per concurrent agent (`references/worktrees.md`).
 2. **Prepare:** `stackfork --root "$CHECKOUT" prepare -f <compose files> --env-file <runtime env>`
-3. **Start:** `stackfork --root "$CHECKOUT" up`
+3. **Start:** `stackfork --root "$CHECKOUT" up`. A host-run/hybrid app instead uses `eval "$(stackfork --root "$CHECKOUT" env)"` for its env vars (`references/adapting-compose.md`).
 4. **URLs:** `stackfork --root "$CHECKOUT" urls` — report the named `<instance>.localhost` URL it prints, never a bare `localhost`/`127.0.0.1` (`references/hostnames.md`).
 5. **Verify:** database identity and app readiness at minimum; login, HMR and a representative flow on first adoption. Stay inside the checked-out instance for this. If verifying something would need new infrastructure beyond it (a different environment mode, a second stack, anything you'd have to build rather than just check) — ask first; report the gap instead of silently building it.
 6. **Stop:** `stackfork --root "$CHECKOUT" down` (keeps data).

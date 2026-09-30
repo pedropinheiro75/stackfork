@@ -52,6 +52,17 @@ Run `stackfork list` from either checkout to see both instances — and your ori
 
 **No Compose file yet?** `assets/nuxt/` and `assets/go/` are optional starting-point stacks (app + Postgres, no host installs needed) for a Nuxt or a Go web app with nothing to adapt — see `references/nuxt-template.md` / `references/go-template.md`. Everything else (any other language, any existing Compose setup) goes through the isolation flow above directly; the templates are a bootstrap for the one case that has nothing to isolate yet, not a requirement.
 
+### Host-run apps
+
+Only the dependencies need isolating? `stackfork prepare`/`up` your Compose file (database, cache, mail catcher, …), then run the app itself on the host, pointed at the isolated stack with:
+
+```sh
+eval "$(stackfork env)"   # DATABASE_URL, REDIS_URL, SMTP_HOST/PORT, <SERVICE>_URL — one per service
+npm run dev                # or however this project starts
+```
+
+`stackfork route add <name> <port>` gives it a portless `*.localhost` URL through the shared proxy, same as a containerized service. `--with-passwords` fills in a real credential, but only when it's a literal value in your Compose file — never a `--secret`/`env_file` one. Seeding that database from a teammate's dump or a production export instead of an empty one: `stackfork clone-db --from-dump backup.sql` (also takes `.sql.gz` or a Postgres custom-format dump).
+
 ## 🆚 How it's different
 
 stackfork isn't a new environment format and it doesn't run your project *for* you — it isolates the Compose stack you already maintain, as-is:
