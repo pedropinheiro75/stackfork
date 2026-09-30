@@ -70,6 +70,20 @@ stackfork dashboard --open
 
 A local, read-mostly web page listing every instance across every checkout it knows about: status, services, health, clickable app/DB/mail endpoints (labelled by role, not just raw ports), learned-knowledge status, plain-language warnings. Local-only (binds `127.0.0.1`, checks the `Host` header, a per-process token guards every action) — the only actions it can take are `up`, `down` (volumes always kept), per-service `restart`/`start`/`stop`, viewing logs, and the shared proxy's up/down/reload. Destructive or input-heavy operations (`down --volumes`, `prepare --reassign-ports`, `learn`) show up as an exact command to copy, never a button. `stackfork list` / `list --json` show the same data from a terminal.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-overview-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/dashboard-overview-light.png">
+  <img src="docs/screenshots/dashboard-overview-light.png" alt="Dashboard overview: three running instances (two container-based, one host-run) and one stopped, each with its app/DB/mail endpoints and branch/checkout shown">
+</picture>
+
+Each service's row expands to the exact command for a destructive action, and connection strings/CLI snippets copy with one click (a real password only ever appears if it's a literal value in your Compose file — see [SECURITY.md](SECURITY.md)):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-service-detail-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/dashboard-service-detail-light.png">
+  <img src="docs/screenshots/dashboard-service-detail-light.png" alt="One instance expanded, showing its down command to copy and each service's connection URL/psql/exec copy actions">
+</picture>
+
 ## 🔒 Safety model
 
 stackfork's job is **collision isolation between checkouts** — making sure parallel worktrees/branches of the same project don't collide on ports, volumes, networks, container names, databases or cookies, and refusing what it can't isolate safely (fixed container names, external networks, the Docker socket, writable binds outside the checkout, fixed subnets) rather than working around it silently.
