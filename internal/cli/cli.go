@@ -56,15 +56,28 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	top.Var(&profileDirFlag, "profile-dir", "")
 	var secretFlag stringList
 	top.Var(&secretFlag, "secret", "")
-	if err := top.Parse(args); err != nil {
+
+	// splitArgs recognizes a global flag wherever it appears - before or
+	// after the action word - since flag.FlagSet's own Parse only ever
+	// looks at what comes before the first non-flag argument (a real agent
+	// session tried `stackfork prepare --npmrc X` and got "flag provided
+	// but not defined: -npmrc").
+	globalArgs, action, subArgs, firstUnrecognized := splitArgs(args)
+
+	if action == "help" || action == "--help" || action == "-h" || (action == "" && len(args) == 0) {
+		printOverview(stdout)
+		return 0, nil
+	}
+	if action == "" {
+		printOverview(stderr)
+		if firstUnrecognized != "" {
+			return 2, fmt.Errorf("unknown action %q", firstUnrecognized)
+		}
+		return 2, errors.New("an action is required")
+	}
+	if err := top.Parse(globalArgs); err != nil {
 		return 2, fmt.Errorf("%s", err.Error())
 	}
-	rest := top.Args()
-	if len(rest) == 0 {
-		return 2, errors.New("an action is required (prepare, where, up, status, urls, down, run, exec, restart, start, stop, logs, clone-db, env, route, proxy, list, dashboard, gc, doctor, learn, version)")
-	}
-	action := rest[0]
-	subArgs := rest[1:]
 
 	if action == "version" {
 		fmt.Fprintf(stdout, "stackfork version %s\n", Version)
@@ -129,7 +142,10 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	// in the first place. root/branch come from the instance's own
 	// manifest instead of the (possibly nonexistent) cwd checkout.
 	if action == "down" {
-		instance, _, err := parseDownFlags(subArgs)
+		instance, _, err := parseDownFlags(stdout, subArgs)
+		if errors.Is(err, flag.ErrHelp) {
+			return 0, nil
+		}
 		if err != nil {
 			return 2, err
 		}
@@ -193,6 +209,10 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 
 	switch action {
 	case "where":
+		if isHelpRequest(subArgs) {
+			printFlaglessUsage(stdout, action, "where")
+			return 0, nil
+		}
 		profileDirs, err := resolveProfileDirs(profileDirFlag)
 		if err != nil {
 			return 0, err
@@ -205,6 +225,10 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	case "down":
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "status", "urls":
+		if isHelpRequest(subArgs) {
+			printFlaglessUsage(stdout, action, action)
+			return 0, nil
+		}
 		return 0, cmdStatusURLs(stdout, action, subArgs, root, branch, project, instanceDir, newStateBase)
 	case "run", "exec":
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
@@ -219,6 +243,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	case "route":
 		return 0, cmdRoute(stdout, stderr, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	default:
+		printOverview(stderr)
 		return 2, fmt.Errorf("unknown action %q", action)
 	}
 }
@@ -236,6 +261,23 @@ func resolveStateDir(flagValue string, defaultFn func() (string, error)) (string
 		dir = d
 	}
 	return identity.ResolvePath(dir)
+}
+
+// resolveAgainstRoot resolves a user-supplied path (prepare's -f/--env-file)
+// relative to root - the checkout, already an absolute path by the time any
+// caller has one to pass - instead of the process's own working directory.
+// stackfork is routinely invoked with --root pointing somewhere other than
+// where it's run from (an agent working from the main checkout, --root a
+// worktree it prepared separately): a real session's exact failure,
+// `stackfork --root .worktrees/pr630 prepare -f .agent-dev/nuxt.compose.yaml`
+// run from the main checkout, needs that relative -f to mean "relative to
+// .worktrees/pr630", not to the shell's own cwd. An already-absolute path
+// is untouched (identity.ResolvePath still resolves its symlinks).
+func resolveAgainstRoot(root, path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
+	}
+	return identity.ResolvePath(path)
 }
 
 // --- git helpers -----------------------------------------------------------
@@ -337,11 +379,10 @@ func cmdWhere(stdout io.Writer, root, branch, project, instanceDir, newStateBase
 // GET /api/instances renders the identical struct, so the two can never
 // disagree (task 2.1's golden test).
 func cmdList(stdout io.Writer, subArgs []string, newStateBase, legacyStateBase string) (int, error) {
-	fs := flag.NewFlagSet("list", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs := newFlagSet(stdout, "list")
 	jsonFlag := fs.Bool("json", false, "")
 	if err := fs.Parse(subArgs); err != nil {
-		return 2, fmt.Errorf("%s", err.Error())
+		return parseFailure(fs, err)
 	}
 
 	inv, err := inventory.Collect(inventory.Options{
@@ -410,8 +451,7 @@ type prepareOutput struct {
 }
 
 func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, project, instanceDir, npmrcTop string, secretFlags []string, newStateBase, legacyStateBase string) error {
-	fs := flag.NewFlagSet("prepare", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs := newFlagSet(stdout, "prepare")
 	var files stringList
 	fs.Var(&files, "f", "")
 	fs.Var(&files, "file", "")
@@ -420,7 +460,7 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	reassignPortsFlag := fs.Bool("reassign-ports", false, "")
 	randomPortsFlag := fs.Bool("random-ports", false, "")
 	if err := fs.Parse(subArgs); err != nil {
-		return fmt.Errorf("%s", err.Error())
+		return parseFailureErr(fs, err)
 	}
 
 	if err := os.MkdirAll(instanceDir, 0o700); err != nil {
@@ -443,7 +483,7 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	switch {
 	case len(files) > 0:
 		for _, f := range files {
-			p, err := identity.ResolvePath(f)
+			p, err := resolveAgainstRoot(root, f)
 			if err != nil {
 				return err
 			}
@@ -461,7 +501,7 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	var envFile string
 	switch {
 	case *envFileFlag != "":
-		envFile, err = identity.ResolvePath(*envFileFlag)
+		envFile, err = resolveAgainstRoot(root, *envFileFlag)
 		if err != nil {
 			return err
 		}
@@ -479,7 +519,8 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	for _, f := range resolvedFiles {
 		fi, err := os.Stat(f)
 		if err != nil || fi.IsDir() {
-			return errors.New("No source configuration found. Create .agent-dev/nuxt.compose.yaml or select source files with -f.")
+			return fmt.Errorf("No source configuration found at %s. Create .agent-dev/nuxt.compose.yaml or select source files with -f (relative to --root %s, not the current directory).",
+				strings.Join(resolvedFiles, ", "), root)
 		}
 	}
 
@@ -733,13 +774,26 @@ func replacePrimaryLine(lines []string, service string, https bool, newLine stri
 
 // --- up/down/run/exec ------------------------------------------------------
 
-func parseDownFlags(subArgs []string) (instance string, volumes bool, err error) {
-	fs := flag.NewFlagSet("down", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+// parseDownFlags returns flag.ErrHelp unchanged (never collapsed to nil)
+// when -h/--help was given, after printing its usage - unlike
+// parseFailure/parseFailureErr's own callers, this one doesn't return
+// straight back to run()'s dispatch: cmdUpDownRunExec still has real work
+// to do (actually calling down) once Parse returns without error, so its
+// caller needs to tell "stop, help was printed" apart from "proceed",
+// which a plain nil error can't do here.
+func parseDownFlags(stdout io.Writer, subArgs []string) (instance string, volumes bool, err error) {
+	fs := newFlagSet(stdout, "down")
 	fs.BoolVar(&volumes, "volumes", false, "")
 	fs.StringVar(&instance, "instance", "", "")
 	if err := fs.Parse(subArgs); err != nil {
-		return "", false, fmt.Errorf("%s", err.Error())
+		if errors.Is(err, flag.ErrHelp) {
+			// Parse already ran fs.Usage (newFlagSet installed it) before
+			// returning this - nothing left to print, just propagate the
+			// sentinel so both callers know to stop rather than proceed
+			// with volumes=false/instance="" as if nothing was wrong.
+			return "", false, flag.ErrHelp
+		}
+		return "", false, fmt.Errorf("%s (see `stackfork down --help`)", err.Error())
 	}
 	return instance, volumes, nil
 }
@@ -752,8 +806,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 
 	switch action {
 	case "up":
-		fs := flag.NewFlagSet("up", flag.ContinueOnError)
-		fs.SetOutput(io.Discard)
+		fs := newFlagSet(stdout, "up")
 		fs.BoolVar(&opts.Build, "build", false, "")
 		var profiles, services stringList
 		fs.Var(&profiles, "profile", "")
@@ -761,7 +814,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		var wt string
 		fs.StringVar(&wt, "wait-timeout", "180", "")
 		if err := fs.Parse(subArgs); err != nil {
-			return 2, fmt.Errorf("%s", err.Error())
+			return parseFailure(fs, err)
 		}
 		n, err := strconv.Atoi(wt)
 		if err != nil {
@@ -772,16 +825,27 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		opts.Services = services
 	case "down":
 		var err error
-		_, opts.Volumes, err = parseDownFlags(subArgs)
+		_, opts.Volumes, err = parseDownFlags(stdout, subArgs)
+		if errors.Is(err, flag.ErrHelp) {
+			return 0, nil
+		}
 		if err != nil {
 			return 2, err
 		}
 	case "restart", "start", "stop":
+		if isHelpRequest(subArgs) {
+			printFlaglessUsage(stdout, action, action+" SERVICE")
+			return 0, nil
+		}
 		if len(subArgs) < 1 {
 			return 2, errors.New("service is required")
 		}
 		opts.Service = subArgs[0]
 	case "run", "exec":
+		if isHelpRequest(subArgs) {
+			printFlaglessUsage(stdout, action, action+" SERVICE [COMMAND...]")
+			return 0, nil
+		}
 		if len(subArgs) < 1 {
 			return 2, errors.New("service is required")
 		}
