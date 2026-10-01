@@ -8,7 +8,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -58,12 +57,11 @@ func stableDashboardPort(stateBase string) (int, error) {
 }
 
 func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []string, newStateBase, legacyStateBase string) (int, error) {
-	fs := flag.NewFlagSet("dashboard", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs := newFlagSet(stdout, "dashboard")
 	portFlag := fs.Int("port", 0, "")
 	openFlag := fs.Bool("open", false, "")
 	if err := fs.Parse(subArgs); err != nil {
-		return 2, fmt.Errorf("%s", err.Error())
+		return parseFailure(fs, err)
 	}
 
 	port := *portFlag

@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -23,8 +22,7 @@ import (
 // container (`tar` pipe) - for starting a new branch's instance from an
 // existing one's data instead of an empty database.
 func cmdCloneDB(stdout io.Writer, subArgs []string, root, project, instanceDir, newStateBase, legacyStateBase string) (int, error) {
-	fs := flag.NewFlagSet("clone-db", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs := newFlagSet(stdout, "clone-db")
 	from := fs.String("from", "", "")
 	fromDump := fs.String("from-dump", "", "")
 	volumeFlag := fs.String("volume", "", "")
@@ -33,7 +31,7 @@ func cmdCloneDB(stdout io.Writer, subArgs []string, root, project, instanceDir, 
 	replace := fs.Bool("replace", false, "")
 	allowRunning := fs.Bool("allow-running", false, "")
 	if err := fs.Parse(subArgs); err != nil {
-		return 2, fmt.Errorf("%s", err.Error())
+		return parseFailure(fs, err)
 	}
 	if *from != "" && *fromDump != "" {
 		return 2, errors.New("--from and --from-dump are mutually exclusive")

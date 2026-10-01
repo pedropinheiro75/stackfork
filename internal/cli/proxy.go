@@ -8,7 +8,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -23,6 +22,10 @@ import (
 // --- proxy up/down/status/reload -------------------------------------------
 
 func cmdProxy(stdout, stderr io.Writer, subArgs []string, newStateBase, legacyStateBase string) (int, error) {
+	if isHelpRequest(subArgs) {
+		printFlaglessUsage(stdout, "proxy", "proxy up [--port N] | proxy down | proxy status | proxy reload")
+		return 0, nil
+	}
 	if len(subArgs) == 0 {
 		return 2, errors.New("proxy requires a subcommand (up, down, status, reload)")
 	}
@@ -31,11 +34,10 @@ func cmdProxy(stdout, stderr io.Writer, subArgs []string, newStateBase, legacySt
 
 	switch sub {
 	case "up":
-		fs := flag.NewFlagSet("proxy up", flag.ContinueOnError)
-		fs.SetOutput(io.Discard)
+		fs := newFlagSet(stdout, "proxy up")
 		portFlag := fs.Int("port", 0, "")
 		if err := fs.Parse(rest); err != nil {
-			return 2, fmt.Errorf("%s", err.Error())
+			return parseFailure(fs, err)
 		}
 		port := *portFlag
 		if port == 0 {
@@ -75,6 +77,10 @@ func cmdProxy(stdout, stderr io.Writer, subArgs []string, newStateBase, legacySt
 // --- route add/remove/list --------------------------------------------------
 
 func cmdRoute(stdout, stderr io.Writer, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string) error {
+	if isHelpRequest(subArgs) {
+		printFlaglessUsage(stdout, "route", "route add <name> <port> | route remove <name> | route list")
+		return nil
+	}
 	if len(subArgs) == 0 {
 		return errors.New("route requires a subcommand (add, remove, list)")
 	}

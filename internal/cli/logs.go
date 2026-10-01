@@ -7,8 +7,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -21,8 +19,7 @@ import (
 )
 
 func cmdLogs(stdout, stderr io.Writer, subArgs []string, root, branch, project, instanceDir string) (int, error) {
-	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs := newFlagSet(stdout, "logs")
 	tailFlag := fs.Int("tail", 200, "")
 	followFlag := fs.Bool("follow", false, "")
 
@@ -39,7 +36,7 @@ func cmdLogs(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		args = args[1:]
 	}
 	if err := fs.Parse(args); err != nil {
-		return 2, fmt.Errorf("%s", err.Error())
+		return parseFailure(fs, err)
 	}
 	if service == "" {
 		if rest := fs.Args(); len(rest) > 0 {

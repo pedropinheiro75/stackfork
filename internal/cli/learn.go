@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -31,6 +30,10 @@ type learnOutput struct {
 // cmdLearn dispatches the bare scan and the record/verify subcommands
 // (task 13.5/13.6) added on top of it.
 func cmdLearn(stdout io.Writer, subArgs []string, root string) error {
+	if isHelpRequest(subArgs) {
+		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe ... | learn verify --check ... --confirm ...")
+		return nil
+	}
 	if len(subArgs) == 0 {
 		return cmdLearnScan(stdout, root)
 	}
@@ -111,18 +114,25 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 	kind, rest := subArgs[0], subArgs[1:]
 	switch kind {
 	case "answer":
+		if isHelpRequest(rest) {
+			printFlaglessUsage(stdout, "learn record answer", "learn record answer <question> <answer>")
+			return nil
+		}
 		if len(rest) != 2 {
 			return errors.New("usage: learn record answer <question> <answer>")
 		}
 		k.Answers = append(k.Answers, knowledge.Answer{Question: rest[0], Answer: rest[1]})
 	case "gotcha":
+		if isHelpRequest(rest) {
+			printFlaglessUsage(stdout, "learn record gotcha", "learn record gotcha <problem> <fix>")
+			return nil
+		}
 		if len(rest) != 2 {
 			return errors.New("usage: learn record gotcha <problem> <fix>")
 		}
 		k.Gotchas = append(k.Gotchas, knowledge.Gotcha{Problem: rest[0], Fix: rest[1]})
 	case "recipe":
-		fs := flag.NewFlagSet("learn record recipe", flag.ContinueOnError)
-		fs.SetOutput(io.Discard)
+		fs := newFlagSet(stdout, "learn record recipe")
 		prepare := fs.String("prepare", "", "")
 		up := fs.String("up", "", "")
 		migrate := fs.String("migrate", "", "")
@@ -130,7 +140,7 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 		var login stringList
 		fs.Var(&login, "login", "")
 		if err := fs.Parse(rest); err != nil {
-			return fmt.Errorf("%s", err.Error())
+			return parseFailureErr(fs, err)
 		}
 		if *prepare != "" {
 			k.Recipe.Prepare = *prepare
@@ -166,13 +176,12 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 // were never recorded: verifying a recipe nobody wrote down defeats the
 // point of recording one.
 func cmdLearnVerify(stdout io.Writer, subArgs []string, root string) error {
-	fs := flag.NewFlagSet("learn verify", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs := newFlagSet(stdout, "learn verify")
 	var checks stringList
 	fs.Var(&checks, "check", "")
 	confirm := fs.String("confirm", "", "")
 	if err := fs.Parse(subArgs); err != nil {
-		return fmt.Errorf("%s", err.Error())
+		return parseFailureErr(fs, err)
 	}
 	if len(checks) == 0 {
 		return errors.New("at least one --check is required")

@@ -13,7 +13,6 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"strings"
@@ -22,12 +21,11 @@ import (
 )
 
 func cmdEnv(stdout io.Writer, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string) error {
-	fs := flag.NewFlagSet("env", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs := newFlagSet(stdout, "env")
 	format := fs.String("format", "shell", "")
 	withPasswords := fs.Bool("with-passwords", false, "")
 	if err := fs.Parse(subArgs); err != nil {
-		return fmt.Errorf("%s", err.Error())
+		return parseFailureErr(fs, err)
 	}
 	if *format != "shell" && *format != "dotenv" {
 		return fmt.Errorf("invalid --format %q; want shell or dotenv", *format)

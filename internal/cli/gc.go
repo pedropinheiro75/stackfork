@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -25,13 +24,12 @@ import (
 // running container is always excluded here regardless of what its
 // checkout looks like.
 func cmdGC(stdout io.Writer, subArgs []string, newStateBase, legacyStateBase string) (int, error) {
-	fs := flag.NewFlagSet("gc", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs := newFlagSet(stdout, "gc")
 	apply := fs.Bool("apply", false, "")
 	volumes := fs.Bool("volumes", false, "")
 	yes := fs.Bool("yes", false, "")
 	if err := fs.Parse(subArgs); err != nil {
-		return 2, fmt.Errorf("%s", err.Error())
+		return parseFailure(fs, err)
 	}
 	if *volumes && !*yes {
 		return 2, errors.New("--volumes also deletes this instance's data; pass --yes to confirm")
