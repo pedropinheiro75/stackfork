@@ -50,7 +50,7 @@ var commandSummaries = []struct{ name, summary string }{
 // args, not just before the action word.
 var knownGlobalFlags = map[string]bool{
 	"root": true, "npmrc": true, "state-dir": true, "legacy-state-dir": true,
-	"profile-dir": true, "secret": true,
+	"profile-dir": true, "secret": true, "instance": true,
 }
 
 // isKnownAction reports whether tok is a real command or one of the three
@@ -123,7 +123,7 @@ func printOverview(w io.Writer) {
 	}
 	tw.Flush()
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Global flags: --root DIR, --state-dir DIR, --legacy-state-dir DIR, --npmrc PATH, --secret NAME=REF, --profile-dir DIR (anywhere: before or after the command).")
+	fmt.Fprintln(w, "Global flags: --root DIR, --state-dir DIR, --legacy-state-dir DIR, --npmrc PATH, --secret NAME=REF, --profile-dir DIR, --instance NAME (anywhere: before or after the command).")
 	fmt.Fprintln(w, "Run `stackfork <command> --help` for that command's own flags, or see references/commands.md for the full reference.")
 }
 

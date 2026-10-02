@@ -56,6 +56,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	top.Var(&profileDirFlag, "profile-dir", "")
 	var secretFlag stringList
 	top.Var(&secretFlag, "secret", "")
+	instanceFlag := top.String("instance", "", "")
 
 	// splitArgs recognizes a global flag wherever it appears - before or
 	// after the action word - since flag.FlagSet's own Parse only ever
@@ -133,40 +134,28 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if action == "gc" {
 		return cmdGC(stdout, subArgs, newStateBase, legacyStateBase)
 	}
-	// down --instance NAME names its own instance directly (task 3.8/D2's
-	// orphan-cleanup escape hatch: `stackfork where` points at it, then
-	// `down --instance NAME --volumes` removes it). Unlike every other
-	// action it must never require --root to be inside a Git checkout -
-	// that is exactly the situation a missing-checkout/missing-branch
-	// instance is in, and is the most common reason to reach for this flag
-	// in the first place. root/branch come from the instance's own
-	// manifest instead of the (possibly nonexistent) cwd checkout.
-	if action == "down" {
-		instance, _, err := parseDownFlags(stdout, subArgs)
-		if errors.Is(err, flag.ErrHelp) {
-			return 0, nil
+	// A positional that is really an instance name (`restart sf-310-x`) is
+	// a mistake worth naming before anything else fails confusingly.
+	if (servicePositional[action] || action == "prepare") && !isHelpRequest(subArgs) {
+		if name := firstPositional(subArgs); name != "" && isInstanceName(name, newStateBase, legacyStateBase) {
+			return 2, instanceNameAsServiceError(action, name)
 		}
+	}
+
+	// --instance NAME addresses an instance directly, from any cwd (and
+	// down --instance is the orphan-cleanup escape hatch, task 3.8/D2): root
+	// and branch come from the manifest, so it never requires --root to be
+	// inside a Git checkout - a missing-checkout instance is exactly the
+	// case it exists for.
+	if *instanceFlag != "" {
+		if !instanceActions[action] {
+			return 2, fmt.Errorf("--instance is not supported by %s", action)
+		}
+		root, branch, instanceDir, err := resolveInstance(*instanceFlag, newStateBase, legacyStateBase)
 		if err != nil {
-			return 2, err
+			return 0, err
 		}
-		if instance != "" {
-			if !identity.InstancePattern.MatchString(instance) {
-				return 0, errors.New("Invalid instance name")
-			}
-			stateBase := newStateBase
-			if identity.IsLegacyInstance(instance) {
-				stateBase = legacyStateBase
-			}
-			instanceDir := filepath.Join(stateBase, instance)
-			info, err := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
-			if err != nil {
-				return 0, err
-			}
-			if info == nil {
-				return 0, fmt.Errorf("no such instance %q", instance)
-			}
-			return cmdUpDownRunExec(stdout, stderr, action, subArgs, info.Root, info.Branch, instance, instanceDir, newStateBase, legacyStateBase)
-		}
+		return dispatch(stdout, stderr, action, subArgs, root, branch, *instanceFlag, instanceDir, newStateBase, legacyStateBase, *npmrcFlag, secretFlag, profileDirFlag)
 	}
 
 	toplevel, err := gitToplevel(rootArg)
@@ -207,6 +196,19 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 
 	instanceDir := filepath.Join(stateBase, project)
 
+	// A checkout with no prepared stack: say where this repository's
+	// instances are instead of a bare "run prepare".
+	if instanceActions[action] && !isHelpRequest(subArgs) {
+		if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err != nil {
+			return 0, noStackError(root, newStateBase, legacyStateBase)
+		}
+	}
+	return dispatch(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase, *npmrcFlag, secretFlag, profileDirFlag)
+}
+
+// dispatch runs a per-instance action once root, branch, project and
+// instanceDir are known, whether from the cwd checkout or --instance.
+func dispatch(stdout, stderr io.Writer, action string, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase, npmrc string, secretFlag, profileDirFlag stringList) (int, error) {
 	switch action {
 	case "where":
 		if isHelpRequest(subArgs) {
@@ -219,7 +221,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		}
 		return 0, cmdWhere(stdout, root, branch, project, instanceDir, newStateBase, legacyStateBase, profileDirs)
 	case "prepare":
-		return 0, cmdPrepare(stdout, stderr, subArgs, root, branch, project, instanceDir, *npmrcFlag, secretFlag, newStateBase, legacyStateBase)
+		return 0, cmdPrepare(stdout, stderr, subArgs, root, branch, project, instanceDir, npmrc, secretFlag, newStateBase, legacyStateBase)
 	case "up":
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "down":
