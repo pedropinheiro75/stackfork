@@ -45,6 +45,8 @@ type DockerStatus struct {
 type ProxyStatus struct {
 	Running bool `json:"running"`
 	Port    int  `json:"port"`
+	// Hint is set when routes exist but the proxy is down.
+	Hint string `json:"hint,omitempty"`
 }
 
 // Endpoint is one published port, ready to render: a link for http/https, a
@@ -193,6 +195,7 @@ func Collect(opts Options) (Inventory, error) {
 		inv.Docker = DockerStatus{Reachable: false, Error: dockerErr.Error()}
 	} else {
 		inv.Docker = DockerStatus{Reachable: true}
+		inv.Proxy.Hint = proxy.DownHint(opts.NewStateBase, inv.Proxy.Running)
 	}
 	byProject := map[string][]containerRow{}
 	for _, c := range containers {

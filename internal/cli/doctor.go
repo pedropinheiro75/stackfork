@@ -45,6 +45,10 @@ func cmdDoctor(stdout io.Writer, subArgs []string, newStateBase string) (int, er
 		status, message, hint := checkProxyPort(newStateBase)
 		add("proxy port", status, message, hint)
 	}
+	{
+		status, message, hint := checkProxyRunning(newStateBase)
+		add("proxy running", status, message, hint)
+	}
 	mode := ""
 	if dockerAvailable() {
 		status, message, hint, m := checkProxyNetworkMode()
@@ -151,6 +155,19 @@ func checkProxyPort(newStateBase string) (status, message, hint string) {
 	}
 	return "warn", fmt.Sprintf("port %d is already in use by something other than %s", port, name),
 		fmt.Sprintf("free port %d, or run `stackfork proxy up --port N` with a different one", port)
+}
+
+// checkProxyRunning warns when routes exist but the proxy container is down
+// (e.g. it stayed Exited after Docker restarted).
+func checkProxyRunning(newStateBase string) (status, message, hint string) {
+	running, _ := proxy.IsRunning(proxy.ContainerName())
+	if running {
+		return "ok", "the proxy is running", ""
+	}
+	if proxy.DownHint(newStateBase, false) != "" {
+		return "warn", "routes exist but the proxy is down; portless URLs refuse to connect", "run `stackfork proxy up`"
+	}
+	return "ok", "the proxy is not running (no routes configured)", ""
 }
 
 // checkProxyNetworkMode reports which network mode proxy.Mode() picked for

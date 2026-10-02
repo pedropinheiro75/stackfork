@@ -253,6 +253,9 @@
     document.getElementById("proxy-start").hidden = inv.proxy.running;
 
     document.getElementById("docker-banner").hidden = inv.docker.reachable;
+    var proxyBanner = document.getElementById("proxy-banner");
+    proxyBanner.textContent = inv.proxy.hint || "";
+    proxyBanner.hidden = !inv.proxy.hint;
   }
 
   function poll() {

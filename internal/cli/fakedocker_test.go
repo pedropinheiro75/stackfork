@@ -21,6 +21,7 @@ import (
 //   - `docker compose ... logs ...`         -> $DOCKER_FAKE_LOGS (empty by default)
 //   - `docker inspect -f {{.State.Running}} ...` -> $DOCKER_FAKE_PROXY_RUNNING (false by default)
 //   - `docker inspect -f {{(index ...HostPort}} ...` -> $DOCKER_FAKE_PROXY_PORT (empty by default)
+//   - `docker inspect -f {{.HostConfig.NetworkMode}} ...` -> $DOCKER_FAKE_PROXY_NETMODE (bridge by default), exit 1 if $DOCKER_FAKE_PROXY_MISSING is set
 //   - anything else -> succeeds silently
 func installFakeDocker(t *testing.T) (logPath string) {
 	t.Helper()
@@ -58,6 +59,7 @@ fi
 if [ "$1" = "inspect" ]; then
   case " $* " in
     *".State.Running"*) printf '%s' "${DOCKER_FAKE_PROXY_RUNNING:-false}" ;;
+    *"HostConfig.NetworkMode"*) [ -n "$DOCKER_FAKE_PROXY_MISSING" ] && exit 1; printf '%s' "${DOCKER_FAKE_PROXY_NETMODE:-bridge}" ;;
     *) printf '%s' "$DOCKER_FAKE_PROXY_PORT" ;;
   esac
   exit 0

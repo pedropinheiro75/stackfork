@@ -251,17 +251,34 @@ func Up(stateBase string, port int, mode string) error {
 	if running {
 		current, ok := currentPort(stateBase, name, mode)
 		if ok && current == port {
+			setRestartPolicy(name) // a proxy created before the policy existed
 			return Reload(stateBase)
 		}
 	}
 
-	// Replace whatever's there (stopped, or running on a different port).
+	// A stopped container left by a Docker/OrbStack restart (or a crash) that
+	// still matches the requested port and network mode is simply started
+	// again: its mounts and flags are already right.
+	if !running {
+		if exists, netMode := inspectNetworkMode(name); exists {
+			saved, _ := ReadPort(stateBase)
+			if saved == port && (netMode == "host") == (mode == "host") {
+				if out, err := exec.Command("docker", "start", name).CombinedOutput(); err != nil {
+					return fmt.Errorf("docker start %s: %s", name, strings.TrimSpace(string(out)))
+				}
+				setRestartPolicy(name)
+				return Reload(stateBase)
+			}
+		}
+	}
+
+	// Replace whatever's there (stopped on another port, or running on one).
 	exec.Command("docker", "rm", "-f", name).Run() //nolint:errcheck // best effort; docker run below reports the real failure
 
 	if err := WritePort(stateBase, port); err != nil {
 		return err
 	}
-	args := []string{"run", "-d", "--name", name, "--label", identity.LabelProxy + "=true"}
+	args := []string{"run", "-d", "--name", name, "--restart", RestartPolicy, "--label", identity.LabelProxy + "=true"}
 	if mode == "host" {
 		args = append(args, "--network", "host")
 	} else {
@@ -279,6 +296,26 @@ func Up(stateBase string, port int, mode string) error {
 		return fmt.Errorf("docker run %s: %s", name, strings.TrimSpace(errBuf.String()))
 	}
 	return nil
+}
+
+// RestartPolicy lets the Docker engine bring the proxy back after a Docker
+// Desktop/OrbStack restart; only an explicit `proxy down` keeps it stopped.
+const RestartPolicy = "unless-stopped"
+
+// setRestartPolicy is best effort: it upgrades a proxy created before the
+// policy existed, and a failure must not fail `proxy up`.
+func setRestartPolicy(name string) {
+	exec.Command("docker", "update", "--restart", RestartPolicy, name).Run() //nolint:errcheck
+}
+
+// inspectNetworkMode reports whether the proxy container exists at all and
+// its docker network mode ("host" or a bridge-ish value).
+func inspectNetworkMode(name string) (exists bool, netMode string) {
+	out, err := exec.Command("docker", "inspect", "-f", "{{.HostConfig.NetworkMode}}", name).Output()
+	if err != nil {
+		return false, ""
+	}
+	return true, strings.TrimSpace(string(out))
 }
 
 // currentPort reports the port the running proxy container is actually
@@ -376,4 +413,20 @@ func Status(stateBase string) (Info, error) {
 		return Info{}, err
 	}
 	return Info{Name: name, Running: running, Port: port}, nil
+}
+
+// DownHint is the warning shown when routes exist but the proxy is not
+// running (the container stayed Exited after a Docker restart, say): every
+// portless URL refuses to connect until `proxy up`. "Routes exist" is read
+// from the last generated Caddyfile, so no Docker call is needed and a proxy
+// that was never used never warns. Returns "" when there is nothing to say.
+func DownHint(stateBase string, running bool) string {
+	if running {
+		return ""
+	}
+	data, err := os.ReadFile(CaddyfilePath(stateBase))
+	if err != nil || !strings.Contains(string(data), "reverse_proxy") {
+		return ""
+	}
+	return "routes exist but the proxy is down, so portless URLs refuse to connect; run `stackfork proxy up`"
 }

@@ -229,7 +229,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 			printFlaglessUsage(stdout, action, action)
 			return 0, nil
 		}
-		return 0, cmdStatusURLs(stdout, action, subArgs, root, branch, project, instanceDir, newStateBase)
+		return 0, cmdStatusURLs(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase)
 	case "run", "exec":
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "restart", "start", "stop":
@@ -686,7 +686,7 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 
 // --- status/urls ---------------------------------------------------------
 
-func cmdStatusURLs(stdout io.Writer, action string, subArgs []string, root, branch, project, instanceDir, newStateBase string) error {
+func cmdStatusURLs(stdout, stderr io.Writer, action string, subArgs []string, root, branch, project, instanceDir, newStateBase string) error {
 	info, err := lifecycle.LoadAndValidateManifest(instanceDir, root, branch, project, action)
 	if err != nil {
 		return err
@@ -709,6 +709,10 @@ func cmdStatusURLs(stdout io.Writer, action string, subArgs []string, root, bran
 	if err != nil {
 		return err
 	}
+	running, _ := proxy.IsRunning(proxy.ContainerName())
+	if hint := proxy.DownHint(newStateBase, running); hint != "" {
+		fmt.Fprintf(stderr, "stackfork: warning: %s\n", hint)
+	}
 	if action == "urls" {
 		hostname, err := identity.BrowserHostname(project, info.Hostname)
 		if err != nil {
@@ -720,7 +724,7 @@ func cmdStatusURLs(stdout io.Writer, action string, subArgs []string, root, bran
 		// service's line switches to the portless (or proxy-port) URL, since
 		// that's the URL that actually works. Every other published line
 		// (a database port, a secondary service, ...) is unaffected.
-		if running, _ := proxy.IsRunning(proxy.ContainerName()); running {
+		if running {
 			if configData, err := os.ReadFile(configPath); err == nil {
 				if model, err := compose.DecodeJSON(configData); err == nil {
 					if service, target, https, ok := compose.PrimaryHTTPService(model); ok {
