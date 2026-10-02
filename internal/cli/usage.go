@@ -35,6 +35,7 @@ var commandSummaries = []struct{ name, summary string }{
 	{"stop", "stop one running service"},
 	{"logs", "recent (or following) logs for a service"},
 	{"learn", "scan a project; record/verify what you learned"},
+	{"host", "run a host app on a stable port, routed and with this instance's env"},
 	{"open", "open this instance's app in the browser (--print: just the URL)"},
 	{"env", "print this instance's env vars (for a host-run app)"},
 	{"clone-db", "seed this instance's database from another instance or a dump"},

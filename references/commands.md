@@ -106,6 +106,14 @@ Flags: `--tool` (`claude`, the default, `codex` or `copilot`)
 echo '{"cwd":"/repo","tool_name":"Bash","tool_input":{"command":"bun run dev"}}' | stackfork guard
 ```
 
+### host
+The sanctioned way to run an app on the host in a managed checkout: `stackfork host NAME [--port N] -- COMMAND...`. The instance must be running. It gives COMMAND a stable free port (kept in the manifest), the same environment as `env --with-passwords` plus `PORT`, `NUXT_PORT`, `NITRO_PORT` and `HOST`, and a proxy route `NAME` for as long as it runs; signals are forwarded and the route is removed on exit. The guard allows it.
+Flags: `--port`
+```sh
+stackfork host app -- bun run dev
+stackfork host app --port 3000 --instance sf-310-parsed-report-8d0cca37ec66 -- bun run dev
+```
+
 ### clone-db
 Seed this instance's database from another instance's volume or a local dump.
 Flags: `--from`, `--from-dump`, `--service`, `--database`, `--volume`, `--replace`, `--allow-running`

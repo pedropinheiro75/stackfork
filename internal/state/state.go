@@ -33,13 +33,17 @@ type Manifest struct {
 	// (service, target port) at prepare (task 8.2, design.md D7 layer 2).
 	// Empty when the instance was prepared with --random-ports, or is a
 	// legacy (idv-) instance never re-prepared with --reassign-ports.
-	Ports        []PortAlloc       `json:"ports,omitempty"`
+	Ports []PortAlloc `json:"ports,omitempty"`
 	// Routes are host-run app registrations added via `route add <name>
 	// <port>` (task 9.3, design.md D7 layer 3): name -> the port the app
 	// listens on, on this instance's own hostname, routed by the shared proxy
 	// to host.docker.internal:<port>. Stored per-instance since the CLI
 	// already resolves one instance per checkout+branch.
-	Routes       map[string]int    `json:"routes,omitempty"`
+	Routes map[string]int `json:"routes,omitempty"`
+	// HostPorts remembers the stable port `stackfork host <name>` picked for
+	// each name, so a host-run app keeps its port across runs (Routes only
+	// holds it while the app runs).
+	HostPorts    map[string]int    `json:"host_ports,omitempty"`
 	Files        []string          `json:"files"`
 	EnvFile      *string           `json:"env_file"`
 	Inputs       map[string]string `json:"inputs"`

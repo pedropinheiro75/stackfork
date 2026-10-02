@@ -1,0 +1,208 @@
+// host.go implements `stackfork host NAME [--port N] -- COMMAND...`: the
+// sanctioned way to run an app on the host (not in a container) for a
+// stackfork-managed checkout. It gives the app a stable free port, the same
+// environment `stackfork env --with-passwords` exports, and a proxy route for
+// as long as it runs. The guard (internal/guard) allows it.
+package cli
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"syscall"
+
+	"github.com/pedropinheiro75/stackfork/internal/guard"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/ports"
+	"github.com/pedropinheiro75/stackfork/internal/state"
+)
+
+var hostNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
+func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string) (int, error) {
+	// Everything after the first `--` is the command; it is never parsed
+	// as stackfork flags.
+	var command []string
+	own := subArgs
+	for i, a := range subArgs {
+		if a == "--" {
+			own, command = subArgs[:i], subArgs[i+1:]
+			break
+		}
+	}
+	fs := newFlagSet(stdout, "host")
+	portFlag := fs.Int("port", 0, "")
+	var name string
+	if len(own) > 0 && !strings.HasPrefix(own[0], "-") {
+		name, own = own[0], own[1:]
+	}
+	if err := fs.Parse(own); err != nil {
+		return parseFailure(fs, err)
+	}
+	if name == "" && fs.NArg() > 0 {
+		name = fs.Arg(0)
+	}
+	if name == "" || len(command) == 0 {
+		return 2, errors.New("usage: host <name> [--port N] -- <command...>")
+	}
+	if !hostNamePattern.MatchString(name) {
+		return 2, fmt.Errorf("invalid name %q; use lowercase letters, digits and dashes", name)
+	}
+	if *portFlag < 0 || *portFlag > 65535 {
+		return 2, fmt.Errorf("invalid --port %d", *portFlag)
+	}
+
+	block, err := envBlock(project, instanceDir, newStateBase, legacyStateBase, true)
+	if err != nil {
+		return 0, err
+	}
+
+	port, err := registerHostRoute(name, *portFlag, root, branch, project, instanceDir, newStateBase, legacyStateBase, stderr)
+	if err != nil {
+		return 0, err
+	}
+	defer unregisterHostRoute(name, root, branch, project, instanceDir, newStateBase, legacyStateBase, stderr)
+
+	env := os.Environ()
+	for _, line := range strings.Split(block, "\n") {
+		if key, _, ok := strings.Cut(line, "="); ok && key != "" {
+			env = append(env, line)
+		}
+	}
+	p := strconv.Itoa(port)
+	env = append(env, "PORT="+p, "NUXT_PORT="+p, "NITRO_PORT="+p, "HOST=127.0.0.1", guard.HostRunEnv+"=1")
+
+	cmd := exec.Command(command[0], command[1:]...)
+	cmd.Env = env
+	cmd.Dir = hostWorkDir(root)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, stdout, stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // own group: signals reach the whole tree
+	sigCh := make(chan os.Signal, 4)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sigCh)
+
+	if err := cmd.Start(); err != nil {
+		return 0, fmt.Errorf("could not start %q: %w", command[0], err)
+	}
+	fmt.Fprintf(stderr, "stackfork: running %q on port %d for %s (routed while it runs)\n", name, port, project)
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	for {
+		select {
+		case sig := <-sigCh:
+			if s, ok := sig.(syscall.Signal); ok {
+				syscall.Kill(-cmd.Process.Pid, s) //nolint:errcheck // the group may already be gone
+			}
+		case err := <-done:
+			if err == nil {
+				return 0, nil
+			}
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+					return 128 + int(ws.Signal()), nil
+				}
+				return exitErr.ExitCode(), nil
+			}
+			return 0, err
+		}
+	}
+}
+
+// hostWorkDir keeps the caller's directory when it is inside the checkout
+// (a monorepo package, say) and falls back to the checkout root otherwise
+// (--instance from elsewhere).
+func hostWorkDir(root string) string {
+	if wd, err := os.Getwd(); err == nil {
+		if rel, err := filepath.Rel(root, wd); err == nil && !strings.HasPrefix(rel, "..") {
+			return wd
+		}
+	}
+	return root
+}
+
+// registerHostRoute picks (or reuses) name's stable port, persists it, and
+// registers the proxy route, all under the instance lock.
+func registerHostRoute(name string, requested int, root, branch, project, instanceDir, newStateBase, legacyStateBase string, stderr io.Writer) (int, error) {
+	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
+	if err != nil {
+		return 0, err
+	}
+	info, err := lifecycle.LoadAndValidateManifest(instanceDir, root, branch, project, "host")
+	if err != nil {
+		lock.Release()
+		return 0, err
+	}
+	port := requested
+	switch {
+	case port != 0:
+	case info.HostPorts[name] != 0:
+		port = info.HostPorts[name]
+	default:
+		taken, err := recordedPorts(newStateBase, legacyStateBase, project)
+		if err != nil {
+			lock.Release()
+			return 0, err
+		}
+		for _, a := range info.Ports {
+			taken[a.Host] = true
+		}
+		for _, p := range info.HostPorts {
+			taken[p] = true
+		}
+		port, err = ports.Allocate(project, "host/"+name, 0, ports.RangeFromEnv(), func(p int) bool {
+			return taken[p] || ports.Bound(p)
+		})
+		if err != nil {
+			lock.Release()
+			return 0, err
+		}
+	}
+	if ports.Bound(port) {
+		lock.Release()
+		return 0, fmt.Errorf("port %d is already in use; free it or pass --port N", port)
+	}
+	if info.HostPorts == nil {
+		info.HostPorts = map[string]int{}
+	}
+	if info.Routes == nil {
+		info.Routes = map[string]int{}
+	}
+	info.HostPorts[name] = port
+	info.Routes[name] = port
+	err = state.WritePrivate(filepath.Join(instanceDir, "manifest.json"), info)
+	lock.Release()
+	if err != nil {
+		return 0, err
+	}
+	lifecycle.ReloadProxyIfRunning(stderr, newStateBase, legacyStateBase)
+	return port, nil
+}
+
+// unregisterHostRoute removes the route when the command ends. HostPorts
+// keeps the port for next time.
+func unregisterHostRoute(name, root, branch, project, instanceDir, newStateBase, legacyStateBase string, stderr io.Writer) {
+	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
+	if err != nil {
+		fmt.Fprintf(stderr, "stackfork: warning: could not remove route %q: %v\n", name, err)
+		return
+	}
+	info, err := lifecycle.LoadAndValidateManifest(instanceDir, root, branch, project, "host")
+	if err == nil {
+		delete(info.Routes, name)
+		err = state.WritePrivate(filepath.Join(instanceDir, "manifest.json"), info)
+	}
+	lock.Release()
+	if err != nil {
+		fmt.Fprintf(stderr, "stackfork: warning: could not remove route %q: %v\n", name, err)
+		return
+	}
+	lifecycle.ReloadProxyIfRunning(stderr, newStateBase, legacyStateBase)
+}

@@ -31,41 +31,9 @@ func cmdEnv(stdout io.Writer, subArgs []string, root, branch, project, instanceD
 		return fmt.Errorf("invalid --format %q; want shell or dotenv", *format)
 	}
 
-	inv, err := inventory.Collect(inventory.Options{NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, Version: Version})
+	block, err := envBlock(project, instanceDir, newStateBase, legacyStateBase, *withPasswords)
 	if err != nil {
 		return err
-	}
-	var inst *inventory.Instance
-	for i := range inv.Instances {
-		if inv.Instances[i].Project == project {
-			inst = &inv.Instances[i]
-			break
-		}
-	}
-	if inst == nil {
-		return errors.New("No prepared stack for this checkout/branch. Run prepare first.")
-	}
-	// Anything short of every declared service actually running ("partial")
-	// can mean an unresolved/unassigned port behind one of the block's own
-	// lines (a service's ConnectionURL/endpoint URL is only ever built from
-	// a live, currently-bound port) - refuse rather than hand a host app a
-	// silently incomplete environment.
-	if inst.State != "running" {
-		return fmt.Errorf("instance is %s, not running; run `stackfork up` first", inst.State)
-	}
-
-	block := inst.EnvBlock
-	if *withPasswords {
-		svcRaw, err := inventory.ReadComposeServices(instanceDir)
-		if err != nil {
-			return err
-		}
-		if value, ok := inventory.CopyValue("env_block", "", inst.Services, inst.Files, svcRaw); ok {
-			block = value
-		}
-	}
-	if block == "" {
-		return errors.New("nothing to export: no database, cache, mail or HTTP service found for this instance")
 	}
 
 	for _, line := range strings.Split(block, "\n") {
@@ -97,4 +65,47 @@ func shellQuote(s string) string {
 func dotenvQuote(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 	return `"` + r.Replace(s) + `"`
+}
+
+// envBlock is the instance's env block, shared by `env` and `host`: the
+// placeholder-safe block by default, or - withPasswords - real values only
+// where LiteralPassword can verify a literal Compose value.
+func envBlock(project, instanceDir, newStateBase, legacyStateBase string, withPasswords bool) (string, error) {
+	inv, err := inventory.Collect(inventory.Options{NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, Version: Version})
+	if err != nil {
+		return "", err
+	}
+	var inst *inventory.Instance
+	for i := range inv.Instances {
+		if inv.Instances[i].Project == project {
+			inst = &inv.Instances[i]
+			break
+		}
+	}
+	if inst == nil {
+		return "", errors.New("No prepared stack for this checkout/branch. Run prepare first.")
+	}
+	// Anything short of every declared service actually running ("partial")
+	// can mean an unresolved/unassigned port behind one of the block's own
+	// lines (a service's ConnectionURL/endpoint URL is only ever built from
+	// a live, currently-bound port) - refuse rather than hand a host app a
+	// silently incomplete environment.
+	if inst.State != "running" {
+		return "", fmt.Errorf("instance is %s, not running; run `stackfork up` first", inst.State)
+	}
+
+	block := inst.EnvBlock
+	if withPasswords {
+		svcRaw, err := inventory.ReadComposeServices(instanceDir)
+		if err != nil {
+			return "", err
+		}
+		if value, ok := inventory.CopyValue("env_block", "", inst.Services, inst.Files, svcRaw); ok {
+			block = value
+		}
+	}
+	if block == "" {
+		return "", errors.New("nothing to export: no database, cache, mail or HTTP service found for this instance")
+	}
+	return block, nil
 }

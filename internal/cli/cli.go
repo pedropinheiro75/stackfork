@@ -246,6 +246,8 @@ func dispatch(stdout, stderr io.Writer, action string, subArgs []string, root, b
 		return cmdCloneDB(stdout, subArgs, root, project, instanceDir, newStateBase, legacyStateBase)
 	case "env":
 		return 0, cmdEnv(stdout, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
+	case "host":
+		return cmdHost(stdout, stderr, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "open":
 		return 0, cmdOpen(stdout, subArgs, project, newStateBase, legacyStateBase)
 	case "route":
