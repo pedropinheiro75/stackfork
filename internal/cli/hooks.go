@@ -68,6 +68,8 @@ func cmdHooks(stdout io.Writer, subArgs []string) (int, error) {
 				failed = true
 			case !st.Exists:
 				fmt.Fprintf(stdout, "%s: not installed (no %s)\n", t.Name, st.Path)
+			case st.Installed && hooks.NeedsTrust(t):
+				fmt.Fprintf(stdout, "%s: installed but untrusted (%s): %s\n", t.Name, st.Path, hooks.TrustNote)
 			case st.Installed:
 				fmt.Fprintf(stdout, "%s: installed (%s)\n", t.Name, st.Path)
 			default:
@@ -94,6 +96,9 @@ func cmdHooks(stdout io.Writer, subArgs []string) (int, error) {
 					msg += " (backup: " + backup + ")"
 				}
 				fmt.Fprintln(stdout, msg)
+			}
+			if sub == "install" && err == nil && hooks.NeedsTrust(t) {
+				fmt.Fprintf(stdout, "%s: installed - %s\n", t.Name, hooks.TrustNote)
 			}
 		}
 	}

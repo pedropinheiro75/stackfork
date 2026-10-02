@@ -27,6 +27,35 @@ type Tool struct {
 	copilot bool
 }
 
+// TrustNote is what to tell the user after installing the Codex hook: Codex
+// only runs a hook once the user has approved it. stackfork never writes
+// that approval (trusted_hash in config.toml) itself.
+const TrustNote = "trust it once in Codex (open `codex`, approve the new hook / run /hooks)"
+
+// NeedsTrust reports whether t is Codex and config.toml next to its hooks
+// file has no matching [hooks.state."..."] entry for a user-level (non-plugin)
+// pre_tool_use hook.
+//
+// ponytail: the entry key is matched by shape (`hooks.json:pre_tool_use:`, no
+// `@plugin`), not by hash or group index, so another trusted user-level hook
+// can mask an untrusted one; upgrade path is recomputing Codex's hash.
+func NeedsTrust(t Tool) bool {
+	if t.Name != "codex" {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(t.Path), "config.toml"))
+	if err != nil {
+		return true
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[hooks.state.") && strings.Contains(line, "hooks.json:pre_tool_use:") && !strings.Contains(line, "@") {
+			return false
+		}
+	}
+	return true
+}
+
 // Tools resolves each tool's config path: $CLAUDE_CONFIG_DIR, $CODEX_HOME and
 // $COPILOT_HOME win when set, else the usual dot-directory under home.
 func Tools(home string) []Tool {
