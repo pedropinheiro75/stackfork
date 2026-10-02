@@ -138,6 +138,7 @@ func TestRealFlagErrorPointsAtSubcommandHelp(t *testing.T) {
 // subcommand-specific flag (-f) before the action word broke the top-level
 // parse outright the same way.
 func TestGlobalFlagsWorkAnywhere(t *testing.T) {
+	requireDocker(t)
 	root := initRepo(t)
 	if err := exec.Command("git", "-C", root, "-c", "user.email=test@example.com", "-c", "user.name=test",
 		"commit", "-q", "--allow-empty", "-m", "init").Run(); err != nil {

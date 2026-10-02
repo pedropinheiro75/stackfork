@@ -73,3 +73,13 @@ exit 0
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return logPath
 }
+
+// requireDocker skips a test that renders a real Compose config
+// (`docker compose config`) on a machine without Docker, such as a GitHub
+// macOS runner.
+func requireDocker(t *testing.T) {
+	t.Helper()
+	if err := exec.Command("docker", "compose", "version").Run(); err != nil {
+		t.Skip("docker compose not available")
+	}
+}

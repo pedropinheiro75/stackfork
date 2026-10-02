@@ -15,8 +15,10 @@ import (
 // worktree's path.
 func gitWorktree(t *testing.T, mainRepo, worktreeRelPath, branch string) string {
 	t.Helper()
-	if err := exec.Command("git", "-C", mainRepo, "commit", "-q", "--allow-empty", "-m", "init").Run(); err != nil {
-		t.Fatal(err)
+	// An explicit identity: CI runners have no global git user configured.
+	if out, err := exec.Command("git", "-C", mainRepo, "-c", "user.email=test@example.com", "-c", "user.name=test",
+		"commit", "-q", "--allow-empty", "-m", "init").CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, out)
 	}
 	worktreePath := filepath.Join(mainRepo, worktreeRelPath)
 	if out, err := exec.Command("git", "-C", mainRepo, "worktree", "add", "-q", "-b", branch, worktreePath, "HEAD").CombinedOutput(); err != nil {
@@ -33,6 +35,7 @@ func gitWorktree(t *testing.T, mainRepo, worktreeRelPath, branch string) string 
 // configuration found" even though the file genuinely existed under the
 // worktree.
 func TestPrepareResolvesRelativeFilesAgainstRoot(t *testing.T) {
+	requireDocker(t)
 	mainRepo := initRepo(t)
 	worktree := gitWorktree(t, mainRepo, ".worktrees/pr630", "pr630")
 
