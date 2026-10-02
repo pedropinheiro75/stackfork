@@ -114,6 +114,14 @@ stackfork host app -- bun run dev
 stackfork host app --port 3000 --instance sf-310-parsed-report-8d0cca37ec66 -- bun run dev
 ```
 
+### hooks
+Install, remove or report the `guard` pre-tool-use hook in each agent tool's own config: `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR`), `~/.codex/hooks.json` (`$CODEX_HOME`) and `~/.copilot/config.json` (`$COPILOT_HOME`). Existing hooks are preserved, repeated runs change nothing, and a changed file is first copied to `<file>.stackfork-bak-<timestamp>`.
+Flags: `--tool` (repeatable: `claude`, `codex`, `copilot`; default all)
+```sh
+stackfork hooks status
+stackfork hooks install --tool claude
+```
+
 ### clone-db
 Seed this instance's database from another instance's volume or a local dump.
 Flags: `--from`, `--from-dump`, `--service`, `--database`, `--volume`, `--replace`, `--allow-running`

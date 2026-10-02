@@ -134,6 +134,9 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if action == "gc" {
 		return cmdGC(stdout, subArgs, newStateBase, legacyStateBase)
 	}
+	if action == "hooks" {
+		return cmdHooks(stdout, subArgs)
+	}
 	// guard is a hook handler: it must not touch Git or Docker.
 	if action == "guard" {
 		return cmdGuard(os.Stdin, stdout, stderr, subArgs, newStateBase, legacyStateBase)
