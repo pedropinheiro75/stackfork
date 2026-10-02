@@ -134,6 +134,10 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if action == "gc" {
 		return cmdGC(stdout, subArgs, newStateBase, legacyStateBase)
 	}
+	// guard is a hook handler: it must not touch Git or Docker.
+	if action == "guard" {
+		return cmdGuard(os.Stdin, stdout, stderr, subArgs, newStateBase, legacyStateBase)
+	}
 	// A positional that is really an instance name (`restart sf-310-x`) is
 	// a mistake worth naming before anything else fails confusingly.
 	if (servicePositional[action] || action == "prepare") && !isHelpRequest(subArgs) {

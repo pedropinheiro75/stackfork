@@ -1,0 +1,215 @@
+package guard
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/pedropinheiro75/stackfork/internal/state"
+)
+
+// Real sample payloads, one per tool.
+const (
+	claudePayload  = `{"session_id":"abc123","transcript_path":"/Users/x/.claude/projects/p/abc123.jsonl","cwd":"/repo","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"%s","description":"start the app"},"tool_use_id":"toolu_01"}`
+	codexPayload   = `{"session_id":"019a","turn_id":"turn-1","transcript_path":null,"cwd":"/repo","hook_event_name":"PreToolUse","model":"gpt-5-codex","tool_name":"Bash","tool_input":{"command":"%s"},"tool_use_id":"call_1"}`
+	copilotPayload = `{"timestamp":1704614600000,"cwd":"/repo","toolName":"bash","toolArgs":"{\"command\":\"%s\",\"description\":\"start\"}"}`
+)
+
+func payloads(command string) map[string]string {
+	esc := strings.ReplaceAll(command, `"`, `\"`)
+	return map[string]string{
+		ToolClaude:  strings.Replace(claudePayload, "%s", esc, 1),
+		ToolCodex:   strings.Replace(codexPayload, "%s", esc, 1),
+		ToolCopilot: strings.Replace(copilotPayload, "%s", strings.ReplaceAll(esc, `\`, `\\\`), 1),
+	}
+}
+
+func TestDecideTable(t *testing.T) {
+	t.Setenv(HostRunEnv, "")
+	cases := []struct {
+		cmd   string
+		block bool
+	}{
+		{"bun run dev", true},
+		{"bun dev", true},
+		{"npm run dev", true},
+		{"npm start", true},
+		{"pnpm dev", true},
+		{"pnpm --filter web dev", true},
+		{"pnpm run serve", true},
+		{"yarn dev", true},
+		{"yarn start", true},
+		{"npx nuxt dev", true},
+		{"bunx nuxt dev --port 3000", true},
+		{"nuxi dev", true},
+		{"npx vite", true},
+		{"vite --host", true},
+		{"next dev", true},
+		{"npx next dev -p 3001", true},
+		{"nodemon server.js", true},
+		{"docker compose up", true},
+		{"docker compose up -d --build", true},
+		{"docker compose -f compose.yaml up -d", true},
+		{"docker-compose up", true},
+		{"docker compose start web", true},
+		// chaining, wrappers, env prefixes
+		{"cd .worktrees/pr630 && bun run dev", true},
+		{"cd sub; npm run dev", true},
+		{"PORT=3000 bun run dev", true},
+		{"NODE_ENV=development env bun run dev", true},
+		{"time npm start", true},
+		{"git pull && bun run dev", true},
+		{"bun install | tee x; bun run dev", true},
+		{"bash -c 'cd app && bun run dev'", true},
+		{`sh -lc "npm run dev"`, true},
+		{"(cd app && yarn dev)", true},
+		// never blocked
+		{"bun test", false},
+		{"bun run test", false},
+		{"bun run build", false},
+		{"npm run lint", false},
+		{"npm install", false},
+		{"pnpm typecheck", false},
+		{"yarn build", false},
+		{"vite build", false},
+		{"vite preview", false},
+		{"next build", false},
+		{"nuxi build", false},
+		{"git status", false},
+		{"git log --oneline -5", false},
+		{"echo bun run dev", false},
+		{"grep -rn 'npm run dev' README.md", false},
+		{"docker compose ps", false},
+		{"docker compose logs web", false},
+		{"docker compose down", false},
+		{"docker compose -p sf-x -f /state/sf-x/compose.json up -d", false},
+		{"docker ps", false},
+		{"stackfork up", false},
+		{"stackfork host app -- bun run dev", false},
+		{"STACKFORK_HOST_RUN=1 bun run dev", false},
+		{"cd $WORKDIR && bun run dev", false}, // unknown directory: unsure, allow
+		{"", false},
+		{"bun run 'unterminated", false},
+	}
+	for _, tool := range []string{ToolClaude, ToolCodex, ToolCopilot} {
+		for _, c := range cases {
+			raw := payloads(c.cmd)[tool]
+			in, err := ParseInput(strings.NewReader(raw))
+			if err != nil {
+				t.Fatalf("%s: parse %q: %v", tool, raw, err)
+			}
+			if in.Command != c.cmd || in.Cwd != "/repo" {
+				t.Fatalf("%s: parsed %+v from %s", tool, in, raw)
+			}
+			got := Decide(in.Command, in.Cwd, func(string) bool { return true })
+			if got != c.block {
+				t.Errorf("%s: Decide(%q) = %v, want %v", tool, c.cmd, got, c.block)
+			}
+		}
+	}
+}
+
+func TestNotManagedNeverBlocks(t *testing.T) {
+	t.Setenv(HostRunEnv, "")
+	if Decide("bun run dev", "/repo", func(string) bool { return false }) {
+		t.Fatal("must allow outside a managed checkout")
+	}
+}
+
+func TestHostRunEnvAllows(t *testing.T) {
+	t.Setenv(HostRunEnv, "1")
+	if Decide("bun run dev", "/repo", func(string) bool { return true }) {
+		t.Fatal("the sanctioned host-run marker must allow")
+	}
+}
+
+func TestCdTracksDirectory(t *testing.T) {
+	t.Setenv(HostRunEnv, "")
+	var seen string
+	Decide("cd .worktrees/pr630 && bun run dev", "/repo", func(d string) bool { seen = d; return true })
+	if seen != "/repo/.worktrees/pr630" {
+		t.Fatalf("managed() saw %q", seen)
+	}
+}
+
+func TestParseInputToleratesOtherShapes(t *testing.T) {
+	for _, raw := range []string{
+		`{"cwd":"/r","tool_name":"Read","tool_input":{"file_path":"/x"}}`,
+		`{"cwd":"/r","toolName":"view","toolArgs":"{\"path\":\"/x\"}"}`,
+		`{"cwd":"/r"}`,
+		`{"cwd":"/r","tool_input":{"command":["bash","-lc","git status"]}}`,
+	} {
+		in, err := ParseInput(strings.NewReader(raw))
+		if err != nil {
+			t.Fatalf("%s: %v", raw, err)
+		}
+		if strings.Contains(raw, "bash") {
+			if in.Command != "bash -lc git status" {
+				t.Fatalf("array command: %q", in.Command)
+			}
+		} else if in.Command != "" {
+			t.Fatalf("%s: expected no command, got %q", raw, in.Command)
+		}
+	}
+	if _, err := ParseInput(strings.NewReader("not json")); err == nil {
+		t.Fatal("malformed input must error")
+	}
+}
+
+func TestIsManaged(t *testing.T) {
+	base := t.TempDir()
+	mk := func(name string, markers ...string) string {
+		root := filepath.Join(base, name)
+		if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range markers {
+			if err := os.MkdirAll(filepath.Join(root, m), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return root
+	}
+	plain := mk("plain")
+	agentDev := mk("agentdev", ".agent-dev")
+	stackfork := mk("sf", ".stackfork")
+	prepared := mk("prepared")
+	nonGit := filepath.Join(base, "nongit")
+	os.MkdirAll(nonGit, 0o755)
+
+	newBase, legacy := t.TempDir(), t.TempDir()
+	inst := filepath.Join(newBase, "sf-prepared-abc")
+	os.MkdirAll(inst, 0o700)
+	resolved, _ := filepath.EvalSymlinks(prepared)
+	if err := state.WritePrivate(filepath.Join(inst, "manifest.json"), &state.Manifest{Project: "sf-prepared-abc", Root: resolved, Branch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+
+	for dir, want := range map[string]bool{
+		plain: false, filepath.Join(plain, "src"): false,
+		agentDev: true, filepath.Join(agentDev, "src"): true,
+		stackfork: true,
+		prepared:  true, filepath.Join(prepared, "src"): true,
+		nonGit: false,
+	} {
+		if got := IsManaged(dir, newBase, legacy); got != want {
+			t.Errorf("IsManaged(%s) = %v, want %v", dir, got, want)
+		}
+	}
+}
+
+func TestAllowPathIsFast(t *testing.T) {
+	t.Setenv(HostRunEnv, "")
+	start := time.Now()
+	for i := 0; i < 200; i++ {
+		Decide("git status && bun test && npm run lint", "/repo", func(string) bool { t.Fatal("managed() must not run for an allowed command"); return false })
+	}
+	if per := time.Since(start) / 200; per > 5*time.Millisecond {
+		t.Fatalf("allow path too slow: %v per call", per)
+	}
+}

@@ -99,6 +99,13 @@ stackfork open --print
 stackfork open mailpit --instance sf-310-parsed-report-8d0cca37ec66
 ```
 
+### guard
+Pre-tool-use hook handler for Claude Code, Codex and Copilot CLI: reads the tool's hook JSON on stdin and blocks (exit 2, or a Copilot deny on stdout) only a dev server (`bun|npm|pnpm|yarn dev|start|serve`, `nuxt dev`, `vite`, `next dev`, `nodemon`) or a raw `docker compose up/start` started directly inside a stackfork-managed checkout. Everything else, and anything it cannot parse, is allowed. Install it with `stackfork hooks install`.
+Flags: `--tool` (`claude`, the default, `codex` or `copilot`)
+```sh
+echo '{"cwd":"/repo","tool_name":"Bash","tool_input":{"command":"bun run dev"}}' | stackfork guard
+```
+
 ### clone-db
 Seed this instance's database from another instance's volume or a local dump.
 Flags: `--from`, `--from-dump`, `--service`, `--database`, `--volume`, `--replace`, `--allow-running`

@@ -39,6 +39,7 @@ var commandSummaries = []struct{ name, summary string }{
 	{"env", "print this instance's env vars (for a host-run app)"},
 	{"clone-db", "seed this instance's database from another instance or a dump"},
 	{"gc", "remove state for checkouts/branches that no longer exist"},
+	{"guard", "pre-tool-use hook: block host dev servers in a managed checkout"},
 	{"proxy", "the shared portless-URL proxy: up/down/status/reload"},
 	{"route", "register a host-run app's port with the proxy"},
 	{"dashboard", "a local web page listing every instance"},
