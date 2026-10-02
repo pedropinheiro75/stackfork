@@ -763,6 +763,9 @@ func cmdStatusURLs(stdout, stderr io.Writer, action string, subArgs []string, ro
 		if row.Publishers == nil {
 			row.Publishers = []map[string]interface{}{}
 		}
+		if row.Hint = compose.RestartHint(row.Service, row.State, row.Health); row.Hint != "" {
+			fmt.Fprintf(stderr, "stackfork: %s\n", row.Hint)
+		}
 		b, err := json.Marshal(row)
 		if err != nil {
 			return err

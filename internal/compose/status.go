@@ -19,6 +19,23 @@ type StatusRow struct {
 	State      string                   `json:"State"`
 	Health     string                   `json:"Health"`
 	Publishers []map[string]interface{} `json:"Publishers"`
+	// Hint is set only by `status` for a service that is unhealthy or has
+	// exited (see RestartHint); absent otherwise, so the row is unchanged.
+	Hint string `json:"hint,omitempty"`
+}
+
+// RestartHint says how to recover a service that is unhealthy or no longer
+// running, or "" when nothing is wrong. A restart touches only this
+// instance's service; Docker itself never needs restarting for it.
+func RestartHint(service, state, health string) string {
+	state = strings.ToLower(state)
+	switch {
+	case strings.EqualFold(health, "unhealthy"):
+		return fmt.Sprintf("service %s is unhealthy; try `stackfork restart %s`", service, service)
+	case state == "exited" || state == "dead" || state == "restarting":
+		return fmt.Sprintf("service %s is %s; if that is unexpected, try `stackfork restart %s`", service, state, service)
+	}
+	return ""
 }
 
 // PublicStatus mirrors Python's public_status(output): parses `docker

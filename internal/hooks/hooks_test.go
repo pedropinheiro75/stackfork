@@ -12,9 +12,9 @@ import (
 const claudeSettings = `{
   "permissions": {"allow": ["Bash(git status)"]},
   "hooks": {
-    "SessionStart": [{"hooks": [{"type": "command", "command": "memory-plugin start", "timeout": 20}]}],
+    "SessionStart": [{"hooks": [{"type": "command", "command": "other-plugin start", "timeout": 20}]}],
     "PreToolUse": [
-      {"matcher": "^Bash$|^mcp__.+__(read|view|cat)(_file|_files)?$", "hooks": [{"type": "command", "command": "memory-plugin hook file-context", "timeout": 30}]}
+      {"matcher": "^Bash$|^mcp__.+__(read|view|cat)(_file|_files)?$", "hooks": [{"type": "command", "command": "other-plugin hook file-context", "timeout": 30}]}
     ]
   }
 }
@@ -102,7 +102,7 @@ func TestInstallIsIdempotentAndPreservesHooks(t *testing.T) {
 
 	// Existing hooks and unrelated settings survive.
 	claude, _ := os.ReadFile(tools["claude"].Path)
-	for _, keep := range []string{"memory-plugin hook file-context", "memory-plugin start", "Bash(git status)"} {
+	for _, keep := range []string{"other-plugin hook file-context", "other-plugin start", "Bash(git status)"} {
 		if !strings.Contains(string(claude), keep) {
 			t.Errorf("claude config lost %q:\n%s", keep, claude)
 		}

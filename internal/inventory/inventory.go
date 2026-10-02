@@ -273,6 +273,11 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		services, serviceState, apps := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
 		inst.Services = services
 		inst.State = serviceState
+		for _, svc := range services {
+			if hint := compose.RestartHint(svc.Name, svc.State, svc.Health); hint != "" {
+				inst.Warnings = append(inst.Warnings, hint)
+			}
+		}
 		inst.Apps = appendRouteAndKnowledgeApps(apps, info)
 		inst.EnvBlock = buildEnvBlock(services)
 	}

@@ -17,7 +17,7 @@ func TestHooksCommandOnTempHome(t *testing.T) {
 	}
 	settings := filepath.Join(home, ".claude", "settings.json")
 	os.MkdirAll(filepath.Dir(settings), 0o700)
-	os.WriteFile(settings, []byte(`{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"memory-plugin x"}]}]}}`), 0o600)
+	os.WriteFile(settings, []byte(`{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"other-plugin x"}]}]}}`), 0o600)
 
 	out, stderr, code := runCLI(t, "hooks", "status")
 	if code != 0 || !strings.Contains(out, "claude: not installed") || !strings.Contains(out, "codex: not installed (no ") {
@@ -41,7 +41,7 @@ func TestHooksCommandOnTempHome(t *testing.T) {
 		t.Fatalf("uninstall: %q", out)
 	}
 	data, _ := os.ReadFile(settings)
-	if !strings.Contains(string(data), "memory-plugin x") || strings.Contains(string(data), "guard --tool") {
+	if !strings.Contains(string(data), "other-plugin x") || strings.Contains(string(data), "guard --tool") {
 		t.Fatalf("settings after uninstall: %s", data)
 	}
 	if _, stderr, code := runCLI(t, "hooks", "install", "--tool", "vim"); code == 0 || !strings.Contains(stderr, "invalid --tool") {
