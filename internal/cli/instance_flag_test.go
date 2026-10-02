@@ -109,3 +109,52 @@ func TestInstanceNameGivenAsService(t *testing.T) {
 		t.Fatalf("prepare: expected the instance-name error, got %q", stderr)
 	}
 }
+
+func TestOpenPrintAndLaunch(t *testing.T) {
+	main, _, instance, flags, _ := worktreeFixture(t)
+	ps := `{"Labels":"io.stackfork.root=/whatever,com.docker.compose.project=` + instance +
+		`,com.docker.compose.service=web","State":"running","Status":"","Ports":"127.0.0.1:54321->8080/tcp"}`
+	t.Setenv("DOCKER_FAKE_PS", ps+"\n")
+	t.Setenv("DOCKER_FAKE_STATUS", `{"ID":"c1","Name":"web-1","Service":"web","State":"running","Health":"","Publishers":[{"Protocol":"tcp","PublishedPort":54321,"TargetPort":8080,"URL":"127.0.0.1"}]}`+"\n")
+	base := append(append([]string{}, flags...), "--root", main, "--instance", instance)
+
+	out, stderr, code := runCLI(t, append(base, "open", "--print")...)
+	if code != 0 {
+		t.Fatalf("open --print: code=%d %s", code, stderr)
+	}
+	if !strings.HasPrefix(out, "http://") || !strings.Contains(out, ":54321") {
+		t.Fatalf("expected the direct app URL, got %q", out)
+	}
+	if o2, _, code := runCLI(t, append(base, "open", "web", "--print")...); code != 0 || o2 != out {
+		t.Fatalf("open web --print: code=%d %q", code, o2)
+	}
+	if _, stderr, code := runCLI(t, append(base, "open", "db", "--print")...); code == 0 || !strings.Contains(stderr, "no HTTP URL") {
+		t.Fatalf("a service with no URL must be refused: %q", stderr)
+	}
+
+	// Without --print the opener runs: a fake `open`/`xdg-open` records the URL.
+	dir := t.TempDir()
+	rec := filepath.Join(dir, "opened")
+	script := "#!/bin/sh\necho \"$1\" >> " + rec + "\n"
+	for _, name := range []string{"open", "xdg-open"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if _, stderr, code := runCLI(t, append(base, "open")...); code != 0 {
+		t.Fatalf("open: %s", stderr)
+	}
+	got, _ := os.ReadFile(rec)
+	if !strings.Contains(string(got), ":54321") {
+		t.Fatalf("the opener should receive the URL, got %q", got)
+	}
+}
+
+func TestOpenRefusesStoppedInstance(t *testing.T) {
+	main, _, instance, flags, _ := worktreeFixture(t)
+	_, stderr, code := runCLI(t, append(append([]string{}, flags...), "--root", main, "--instance", instance, "open", "--print")...)
+	if code == 0 || !strings.Contains(stderr, "not running") {
+		t.Fatalf("expected a not-running refusal, got code=%d %q", code, stderr)
+	}
+}

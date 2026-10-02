@@ -2,7 +2,7 @@
 
 A compact cheat sheet, one section per subcommand. `stackfork help` (or bare `stackfork`) prints the same list; `stackfork <command> --help` prints that command's own flags. Every flag named here is checked against the real `flag.FlagSet` by `TestCommandsMdMatchesRealFlagSets` (`internal/cli/commands_md_test.go`), so it can't silently drift.
 
-Global flags, accepted anywhere (before or after the command): `--root DIR`, `--state-dir DIR`, `--legacy-state-dir DIR`, `--npmrc PATH`, `--secret NAME=REF`, `--profile-dir DIR`. A relative `-f`/`--env-file` resolves against `--root` (the checkout), not the directory you happen to run `stackfork` from.
+Global flags, accepted anywhere (before or after the command): `--root DIR`, `--state-dir DIR`, `--legacy-state-dir DIR`, `--npmrc PATH`, `--secret NAME=REF`, `--profile-dir DIR`, `--instance NAME`. `--instance NAME` (up, down, restart, start, stop, status, urls, logs, exec, run, env, open, host) addresses any prepared instance from any directory; `stackfork list` shows the names. A relative `-f`/`--env-file` resolves against `--root` (the checkout), not the directory you happen to run `stackfork` from.
 
 ### prepare
 Isolate this checkout+branch's copy of the Compose stack.
@@ -89,6 +89,14 @@ Flags: `--format` (`shell`, the default, or `dotenv`), `--with-passwords`
 ```sh
 eval "$(stackfork env)"
 stackfork env --format dotenv > .env.local
+```
+
+### open
+Open this instance's primary app URL in the browser (the portless one when the proxy routes it); `--print` only prints it. Add a SERVICE to open that service's URL instead.
+Flags: `--print`
+```sh
+stackfork open --print
+stackfork open mailpit --instance sf-310-parsed-report-8d0cca37ec66
 ```
 
 ### clone-db

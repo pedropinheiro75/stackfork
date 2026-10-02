@@ -15,6 +15,7 @@ import (
 // containers.
 type AppLink struct {
 	Label   string `json:"label"`
+	Service string `json:"service,omitempty"` // the service a Source "service" link belongs to
 	URL     string `json:"url,omitempty"`
 	Direct  string `json:"direct,omitempty"`
 	Source  string `json:"source"` // service | route | knowledge
@@ -60,7 +61,7 @@ func buildApps(services []Service, info *state.Manifest, primaryService string, 
 				hint = "port assigned on start"
 			}
 			link := AppLink{
-				Label: label, URL: best.URL, Source: "service",
+				Label: label, Service: svc.Name, URL: best.URL, Source: "service",
 				Running: svc.State == "running", Hint: hint,
 			}
 			if len(group) > 1 && group[1].URL != best.URL {
