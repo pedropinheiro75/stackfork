@@ -7,6 +7,27 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- The proxy container starts with `--restart unless-stopped` (an existing one
+  is updated on the next `proxy up`), and `proxy up` starts a stopped proxy
+  instead of recreating it. `status`, `urls`, `doctor` and the dashboard warn
+  when routes exist but the proxy is down.
+- Agent guard (`add-agent-guard`): `stackfork guard [--tool claude|codex|copilot]`
+  blocks a dev server (`bun|npm|pnpm|yarn dev|start|serve`, `nuxt dev`, `vite`,
+  `next dev`, `nodemon`) or a raw `docker compose up/start` started directly in
+  a stackfork-managed checkout, and allows everything else;
+  `stackfork hooks install|uninstall|status` wires it into Claude Code, Codex
+  and Copilot CLI (idempotent, existing hooks kept, a backup first).
+- `stackfork host NAME [--port N] -- COMMAND...`: the sanctioned host-run path
+  (stable port, `env --with-passwords` plus `PORT`/`NUXT_PORT`/`NITRO_PORT`/`HOST`,
+  a proxy route while it runs, signals forwarded).
+- Global `--instance NAME` on up, down, restart, start, stop, status, urls,
+  logs, exec, run, env, open and host; a checkout with no stack now lists this
+  repository's instances in other worktrees, and `restart <instance-name>` says
+  it is an instance, not a service.
+- `stackfork open [SERVICE] [--print]`: the instance's primary app URL.
+- `status`, `list` and the dashboard hint `stackfork restart <service>` for an
+  unhealthy or exited service (`status` adds an optional `hint` to the JSON row).
+
 - `assets/go/`: an optional Go web app template (mirrors the Nuxt one -
   app + Postgres, `go mod download` entrypoint, optional private-module
   netrc via a Compose secret). `assets/nuxt.compose.yaml` and friends moved

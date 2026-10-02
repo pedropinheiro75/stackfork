@@ -19,14 +19,14 @@ For each profile `stackfork where` lists with `"context": true`, follow that pro
 
 1. **Discover:** resolve the checkout with Git, read AGENTS.md/README, and adapt the project's real Compose stack (`references/adapting-compose.md`, or a template for a bare app with no app-building Compose at all: `references/nuxt-template.md` for Nuxt, `references/go-template.md` for a Go web app). Use a separate worktree per concurrent agent (`references/worktrees.md`).
 2. **Prepare:** `stackfork --root "$CHECKOUT" prepare -f <compose files> --env-file <runtime env>`
-3. **Start:** `stackfork --root "$CHECKOUT" up`. A host-run/hybrid app instead uses `eval "$(stackfork --root "$CHECKOUT" env)"` for its env vars (`references/adapting-compose.md`). Never start the app directly on the host (`bun run dev`, `npm run dev`, etc.) for a stackfork-managed checkout — that bypasses isolation.
+3. **Start:** `stackfork --root "$CHECKOUT" up`. A host-run/hybrid app instead runs as `stackfork --root "$CHECKOUT" host app -- <your command>` (stable port, this instance's env, a portless route; `references/adapting-compose.md`). Never start the app directly on the host (`bun run dev`, `npm run dev`, etc.) for a stackfork-managed checkout — that bypasses isolation, and the guard hook blocks it.
 4. **URLs:** `stackfork --root "$CHECKOUT" urls` — report the named `<instance>.localhost` URL it prints, never a bare `localhost`/`127.0.0.1` (`references/hostnames.md`).
 5. **Verify:** database identity and app readiness at minimum; login, HMR and a representative flow on first adoption. Stay inside the checked-out instance for this. If verifying something would need new infrastructure beyond it (a different environment mode, a second stack, anything you'd have to build rather than just check) — ask first; report the gap instead of silently building it.
 6. **Stop:** `stackfork --root "$CHECKOUT" down` (keeps data).
 
-## One-off builds and tests
+## One-off builds, tests and troubleshooting
 
-A one-off build or test that could fight the running dev process (a different install step, a migration, a full test run) uses `stackfork --root "$CHECKOUT" run <service> <cmd>` (a fresh, separate container), never `exec` into the running one. When it's done, `stackfork --root "$CHECKOUT" down` (data kept) unless the user asked to keep the instance running.
+A one-off build or test that could fight the running dev process (a different install step, a migration, a full test run) uses `stackfork --root "$CHECKOUT" run <service> <cmd>` (a fresh, separate container), never `exec` into the running one. When it's done, `stackfork --root "$CHECKOUT" down` (data kept) unless the user asked to keep the instance running. An unhealthy or exited service: `stackfork restart <service>` (affects only this instance; never restart Docker).
 
 ## Refusals and deletion
 
@@ -36,4 +36,4 @@ Trust `stackfork prepare`'s refusals (fixed container names, external networks, 
 
 Report checkout, branch, Compose project, app/DB/auxiliary endpoints, and the checks actually run, without any credential values. Distinguish a validated Compose model and running dependencies from a working application — do not describe a dependency-only check as full application validation.
 
-Full command reference: `references/commands.md`; or run `stackfork help` / `stackfork <command> --help`.
+From any directory, address an instance with `--instance NAME` (names: `stackfork list`) instead of `--root`. Full command reference: `references/commands.md`; or run `stackfork help` / `stackfork <command> --help`.

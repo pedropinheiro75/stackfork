@@ -121,6 +121,19 @@ Use $stackfork to prepare this checkout with an isolated development environment
 
 Project- or company-specific recipes (a client's known gotchas, a shared registry token source, a house Nuxt template) stay out of this repo entirely — they live in your own private profile directory (`~/.config/stackfork/profiles/*`, or `$STACKFORK_PROFILE_DIRS`), which `stackfork where` reports back to the agent when one applies.
 
+### Agent guardrails
+
+Agents drift: one that was told to use isolation will still, now and then, run `cd .worktrees/pr630 && bun run dev` straight on the host and collide with everything. stackfork ships a pre-tool-use hook that stops exactly that, and nothing else:
+
+```sh
+stackfork hooks install      # Claude Code, Codex and Copilot CLI (--tool to pick one); backs up each file first
+stackfork hooks status
+```
+
+`stackfork guard` then reads each tool's hook JSON and blocks only a dev server (`bun|npm|pnpm|yarn dev|start|serve`, `nuxt dev`, `vite`, `next dev`, `nodemon`) or a raw `docker compose up/start`, and only inside a stackfork-managed checkout. Tests, builds, lint, `git`, `stackfork` itself and anything outside a managed checkout pass untouched; when it can't tell, it allows. The sanctioned host-run path is `stackfork host app -- <your command>`: a stable port, this instance's env and a portless route for as long as it runs. It is a guardrail for cooperative agents, not a sandbox.
+
+Two related conveniences: `--instance NAME` (any command) addresses an instance from any directory, and `stackfork open` opens its app URL. If the portless URLs stop answering after a Docker restart, `stackfork proxy up` brings the proxy back (it now restarts with Docker by itself); `status`, `urls`, `doctor` and the dashboard say so when it is down.
+
 ## ✅ Checks
 
 ```sh

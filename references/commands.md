@@ -26,7 +26,7 @@ stackfork down --volumes
 ```
 
 ### status
-Machine-readable (JSON lines) state of every service.
+Machine-readable (JSON lines) state of every service. An unhealthy or exited service gets an optional `hint` field and a `try stackfork restart <service>` line on stderr; a down proxy with routes gets a warning on stderr.
 ```sh
 stackfork status
 ```
@@ -138,7 +138,7 @@ stackfork gc --apply --volumes --yes
 ```
 
 ### proxy
-The shared portless-URL proxy.
+The shared portless-URL proxy. It restarts with Docker (`--restart unless-stopped`); `proxy up` on a stopped one just starts it. `status`, `urls`, `doctor` and the dashboard warn when routes exist but it is down.
 Sub-forms: `proxy up [--port N]`, `proxy down`, `proxy status`, `proxy reload`
 ```sh
 stackfork proxy up --port 80
