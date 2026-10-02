@@ -25,6 +25,9 @@ type Tool struct {
 	Path string
 	// copilot is its own shape; claude and codex share Claude Code's.
 	copilot bool
+	// Legacy are older config files an earlier version wrote the hook to;
+	// install and uninstall remove it from them.
+	Legacy []string
 }
 
 // TrustNote is what to tell the user after installing the Codex hook: Codex
@@ -68,7 +71,11 @@ func Tools(home string) []Tool {
 	return []Tool{
 		{Name: "claude", Path: filepath.Join(dir("CLAUDE_CONFIG_DIR", ".claude"), "settings.json")},
 		{Name: "codex", Path: filepath.Join(dir("CODEX_HOME", ".codex"), "hooks.json")},
-		{Name: "copilot", Path: filepath.Join(dir("COPILOT_HOME", ".copilot"), "config.json"), copilot: true},
+		// settings.json, not config.json: Copilot CLI rewrites config.json
+		// when a session ends and drops hooks it did not write itself
+		// (observed on 1.0.89), while settings.json is the user-owned file.
+		{Name: "copilot", Path: filepath.Join(dir("COPILOT_HOME", ".copilot"), "settings.json"), copilot: true,
+			Legacy: []string{filepath.Join(dir("COPILOT_HOME", ".copilot"), "config.json")}},
 	}
 }
 
@@ -111,12 +118,25 @@ func Check(t Tool) (Status, error) {
 // Install adds the guard hook if absent. It reports whether the file changed
 // and the backup path (empty when nothing existed to back up).
 func Install(t Tool, command string) (changed bool, backup string, err error) {
-	return apply(t, command, true)
+	changed, backup, err = apply(t, command, true)
+	removeLegacy(t)
+	return
+}
+
+// removeLegacy best-effort drops the hook from files an older version used.
+func removeLegacy(t Tool) {
+	for _, p := range t.Legacy {
+		old := t
+		old.Path, old.Legacy = p, nil
+		apply(old, "", false) //nolint:errcheck // a stale entry in a file Copilot rewrites anyway
+	}
 }
 
 // Uninstall removes the guard hook if present.
 func Uninstall(t Tool) (changed bool, backup string, err error) {
-	return apply(t, "", false)
+	changed, backup, err = apply(t, "", false)
+	removeLegacy(t)
+	return
 }
 
 func apply(t Tool, command string, install bool) (bool, string, error) {

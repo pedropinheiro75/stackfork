@@ -168,8 +168,37 @@ func TestToolPathsHonorEnvOverrides(t *testing.T) {
 	for _, tool := range Tools("/home/u") {
 		got[tool.Name] = tool.Path
 	}
-	want := map[string]string{"claude": "/x/claude/settings.json", "codex": "/x/codex/hooks.json", "copilot": "/x/copilot/config.json"}
+	want := map[string]string{"claude": "/x/claude/settings.json", "codex": "/x/codex/hooks.json", "copilot": "/x/copilot/settings.json"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+// Copilot CLI rewrites config.json at session end and drops hooks it did not
+// write, so the hook lives in settings.json; an entry an older version put in
+// config.json is removed on install and uninstall.
+func TestCopilotUsesSettingsAndMigratesLegacy(t *testing.T) {
+	_, tools := fixture(t)
+	tool := tools["copilot"]
+	if filepath.Base(tool.Path) != "settings.json" || len(tool.Legacy) != 1 || filepath.Base(tool.Legacy[0]) != "config.json" {
+		t.Fatalf("unexpected copilot paths: %+v", tool)
+	}
+	legacy := tool.Legacy[0]
+	os.WriteFile(legacy, []byte(`{"keep":1,"hooks":{"preToolUse":[{"type":"command","bash":"/x/stackfork guard --tool copilot"},{"type":"command","bash":"./audit.sh"}]}}`), 0o600)
+	if _, _, err := Install(tool, Command("", "copilot")); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := Check(tool); !st.Installed {
+		t.Fatal("installed in settings.json")
+	}
+	raw, _ := os.ReadFile(legacy)
+	if strings.Contains(string(raw), "guard --tool") || !strings.Contains(string(raw), "audit.sh") || !strings.Contains(string(raw), `"keep"`) {
+		t.Fatalf("legacy entry should be gone and the rest kept: %s", raw)
+	}
+	if _, _, err := Uninstall(tool); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := Check(tool); st.Installed {
+		t.Fatal("uninstalled")
 	}
 }
