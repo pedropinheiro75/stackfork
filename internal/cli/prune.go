@@ -236,7 +236,7 @@ func (r pruneRun) printPlan(stdout io.Writer, plan prune.Plan, sel []prune.Candi
 		fmt.Fprintln(w, "PROJECT\tSTATE\tCHECKOUT\tBRANCH\tLEGACY\tVOLUMES\tIMAGES\tLAST ACTIVITY\tGROUPS")
 		for _, c := range sel {
 			state, legacy := c.State, "-"
-			if c.Running {
+			if c.Running && c.State != "running" {
 				state += " (running)"
 			}
 			if c.Legacy {
