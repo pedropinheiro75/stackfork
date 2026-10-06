@@ -7,6 +7,15 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `stackfork prune [--orphaned|--stopped|--all] [--older-than DURATION] [--keep-volumes] [--yes] [--json]`
+  (`add-prune`): dry run by default (table, groups, disk estimate), typed
+  confirmation for running instances or `--all`, exit 1 without a TTY and
+  `--yes`. Removes containers, networks, built images, state, routes and
+  volumes (unless `--keep-volumes`) of exactly the matching instances, legacy
+  `idv-` included; never by name prefix, never `docker system prune`. `gc` is
+  now an alias of `prune --orphaned --keep-volumes`. The guard blocks
+  `prune --yes`, `prune --all` and `gc --apply` for agents; the dashboard has a
+  read-only "Clean up" panel in the header menu (`GET /api/cleanup`).
 - The proxy container starts with `--restart unless-stopped` (an existing one
   is updated on the next `proxy up`), and `proxy up` starts a stopped proxy
   instead of recreating it. `status`, `urls`, `doctor` and the dashboard warn

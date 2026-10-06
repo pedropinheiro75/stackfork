@@ -30,7 +30,7 @@ A one-off build or test that could fight the running dev process (a different in
 
 ## Refusals and deletion
 
-Trust `stackfork prepare`'s refusals (fixed container names, external networks, Docker sockets, writable binds outside the checkout, fixed subnets) — never work around one. `down --volumes` and `gc --apply --volumes` delete data and need the user's own authorization for that specific deletion; never infer either from a request to restart or clean up in general — `gc` (orphaned instances whose checkout or branch is gone) only runs on explicit user request, never on your own initiative. Never open or copy another project's real env files, registry credentials, certificates or private keys.
+Trust `stackfork prepare`'s refusals (fixed container names, external networks, Docker sockets, writable binds outside the checkout, fixed subnets) — never work around one. `down --volumes`, `gc --apply` and `prune --yes`/`--all` delete data and need the user's own authorization for that specific deletion (the guard blocks them); agents may run only the dry run `stackfork prune`, and never prune for the user without an explicit request. Never open or copy another project's real env files, registry credentials, certificates or private keys.
 
 ## Report
 

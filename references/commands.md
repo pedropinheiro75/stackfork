@@ -130,8 +130,17 @@ stackfork clone-db --from sf-myapp-main-ab2267a
 stackfork clone-db --from-dump backup.sql --replace
 ```
 
+### prune
+Remove whole instances and their Docker resources: containers, networks, stackfork-built images (`<project>-<service>:dev`), state, proxy routes, and volumes unless `--keep-volumes`. **Dry run by default**: a table of what would go (project, state, checkout, branch, legacy, volumes, images, last activity) plus a best-effort disk estimate. `--orphaned` = checkout/branch gone (never a running one); `--stopped` = no running container; `--all` = everything, running ones stopped first, plus the proxy container. No scope flag: the dry run shows all three groups. `--older-than 7d|48h|2w` filters by last activity (newest of manifest/state mtime and container finish time; running = now). Deleting needs `--yes` or an interactive `y/N` (typing `prune` when running instances or `--all` are involved); without a TTY and `--yes` it prints the dry run and exits 1. Only objects labelled `io.stackfork.root`/`io.isolated-dev.root`, or exactly matching a known instance's compose project, are touched; never `docker system prune`. Covers legacy `idv-` instances. Agents may run the dry run only; the guard blocks `--yes` and `--all`.
+Flags: `--orphaned`, `--stopped`, `--all`, `--older-than`, `--keep-volumes`, `--yes`, `--json`
+```sh
+stackfork prune                       # dry run, all groups
+stackfork prune --stopped --older-than 7d
+stackfork prune --orphaned --keep-volumes --yes
+```
+
 ### gc
-Remove state for checkouts/branches that no longer exist. Dry-run by default.
+Alias of `prune --orphaned --keep-volumes`: instances whose checkout or branch is gone. Dry-run by default; `--apply` removes without a prompt; `--volumes` (needs `--yes`) also deletes their data.
 Flags: `--apply`, `--volumes`, `--yes`
 ```sh
 stackfork gc --apply --volumes --yes

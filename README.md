@@ -134,6 +134,19 @@ stackfork hooks status
 
 Two related conveniences: `--instance NAME` (any command) addresses an instance from any directory, and `stackfork open` opens its app URL. If the portless URLs stop answering after a Docker restart, `stackfork proxy up` brings the proxy back (it now restarts with Docker by itself); `status`, `urls`, `doctor` and the dashboard say so when it is down.
 
+### Cleaning up
+
+Instances pile up (one per worktree and branch). `stackfork prune` removes them with everything they own, and is a **dry run unless you say otherwise**:
+
+```sh
+stackfork prune                          # table of what would go, by group, plus the disk it would free; deletes nothing
+stackfork prune --stopped --older-than 7d
+stackfork prune --orphaned --keep-volumes --yes
+stackfork prune --all                    # also running instances (stopped first) and the shared proxy; asks you to type `prune`
+```
+
+`--orphaned` is an instance whose checkout or branch is gone (what `gc` always did; `gc` is now an alias), `--stopped` has no running container, `--all` is everything. Per instance it removes containers, networks, the images stackfork built (`<project>-<service>:dev`), state and proxy routes, and the volumes unless `--keep-volumes`. Without a TTY it needs `--yes`, or it prints the plan and exits 1. It only touches Docker objects carrying stackfork's labels or exactly matching a known instance's compose project, never by name prefix, and never runs `docker system prune`, so unrelated containers and volumes on the machine are safe. The agent guard blocks `prune --yes`, `prune --all` and `gc --apply` ("destructive; ask the user to run it") but lets agents see the dry run; the dashboard's header "…" menu has a read-only "Clean up" panel with the commands and counts to copy.
+
 ## ✅ Checks
 
 ```sh
