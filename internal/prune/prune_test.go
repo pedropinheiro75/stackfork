@@ -3,6 +3,8 @@ package prune
 import (
 	"testing"
 	"time"
+
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 )
 
 func TestParseDuration(t *testing.T) {
@@ -70,7 +72,7 @@ func TestSelect(t *testing.T) {
 func TestOwnership(t *testing.T) {
 	cs := []Container{
 		{ID: "a", Labels: map[string]string{"io.stackfork.root": "/r", composeProjectLabel: "p"}},
-		{ID: "b", Labels: map[string]string{"io.isolated-dev.root": "/r", composeProjectLabel: "p"}},
+		{ID: "b", Labels: map[string]string{identity.LegacyLabelRoot: "/r", composeProjectLabel: "p"}},
 		{ID: "c", Labels: map[string]string{composeProjectLabel: "p"}},                             // no stackfork label
 		{ID: "d", Labels: map[string]string{"io.stackfork.root": "/r", composeProjectLabel: "p2"}}, // other project
 		{ID: "e", Labels: map[string]string{"io.stackfork.root": "/r", composeProjectLabel: "p-x"}},
