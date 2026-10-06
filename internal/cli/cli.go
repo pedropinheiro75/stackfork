@@ -132,7 +132,10 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	// gc, like list/proxy/doctor, reports on and cleans up the whole
 	// machine's state, not one checkout+branch (design.md D8).
 	if action == "gc" {
-		return cmdGC(stdout, subArgs, newStateBase, legacyStateBase)
+		return cmdGC(stdout, stderr, subArgs, newStateBase, legacyStateBase)
+	}
+	if action == "prune" {
+		return cmdPrune(stdout, stderr, subArgs, newStateBase, legacyStateBase)
 	}
 	if action == "hooks" {
 		return cmdHooks(stdout, subArgs)

@@ -17,7 +17,7 @@ func gcPSLine(project, state string) string {
 // all in this test).
 func TestGCVolumesRequiresYes(t *testing.T) {
 	var out bytes.Buffer
-	code, err := cmdGC(&out, []string{"--volumes"}, t.TempDir(), t.TempDir())
+	code, err := cmdGC(&out, &out, []string{"--volumes"}, t.TempDir(), t.TempDir())
 	if code != 2 || err == nil || !strings.Contains(err.Error(), "--yes") {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
@@ -33,7 +33,7 @@ func TestGCDryRunListsButDoesNotRemove(t *testing.T) {
 	t.Setenv("DOCKER_FAKE_PS", "") // nothing running
 
 	var out bytes.Buffer
-	code, err := cmdGC(&out, nil, t.TempDir(), legacyBase)
+	code, err := cmdGC(&out, &out, nil, t.TempDir(), legacyBase)
 	if err != nil || code != 0 {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
@@ -59,7 +59,7 @@ func TestGCNeverTouchesRunningInstance(t *testing.T) {
 	t.Setenv("DOCKER_FAKE_PS", gcPSLine(project, "running")+"\n")
 
 	var out bytes.Buffer
-	code, err := cmdGC(&out, []string{"--apply", "--volumes", "--yes"}, t.TempDir(), legacyBase)
+	code, err := cmdGC(&out, &out, []string{"--apply", "--volumes", "--yes"}, t.TempDir(), legacyBase)
 	if err != nil || code != 0 {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
@@ -85,7 +85,7 @@ func TestGCApplyRemovesOrphanState(t *testing.T) {
 	t.Setenv("DOCKER_FAKE_PS", "")
 
 	var out bytes.Buffer
-	code, err := cmdGC(&out, []string{"--apply"}, t.TempDir(), legacyBase)
+	code, err := cmdGC(&out, &out, []string{"--apply"}, t.TempDir(), legacyBase)
 	if err != nil || code != 0 {
 		t.Fatalf("code=%d err=%v\n%s", code, err, out.String())
 	}
@@ -101,22 +101,27 @@ func TestGCApplyRemovesOrphanState(t *testing.T) {
 	}
 }
 
-// TestGCApplyVolumesDeletesData covers --apply --volumes --yes actually
-// passing --volumes to the underlying down.
-func TestGCApplyVolumesDeletesData(t *testing.T) {
-	log := installFakeDocker(t)
-	legacyBase := t.TempDir()
-	deletedRoot := filepath.Join(t.TempDir(), "checkout-that-no-longer-exists")
-	writeSyntheticLegacyInstance(t, legacyBase, deletedRoot, "main")
-	t.Setenv("DOCKER_FAKE_PS", "")
-
-	var out bytes.Buffer
-	code, err := cmdGC(&out, []string{"--apply", "--volumes", "--yes"}, t.TempDir(), legacyBase)
-	if err != nil || code != 0 {
-		t.Fatalf("code=%d err=%v\n%s", code, err, out.String())
-	}
-	data, _ := os.ReadFile(log)
-	if !strings.Contains(string(data), "--volumes") {
-		t.Fatalf("expected down to run with --volumes:\n%s", data)
+// TestGCIsPruneOrphaned covers the alias: --apply removes an orphan and
+// keeps its volumes; --apply --volumes --yes removes them too; neither ever
+// touches the stopped, still-valid instance.
+func TestGCIsPruneOrphaned(t *testing.T) {
+	for _, withVolumes := range []bool{false, true} {
+		m := newMachine(t)
+		args := []string{"--apply"}
+		if withVolumes {
+			args = append(args, "--volumes", "--yes")
+		}
+		var out bytes.Buffer
+		code, err := cmdGC(&out, &out, args, m.base, m.legacy)
+		if err != nil || code != 0 {
+			t.Fatalf("code=%d err=%v\n%s", code, err, out.String())
+		}
+		rm := m.f.removals(t)
+		if !hasRemoval(rm, "c-orphan") || hasRemoval(rm, "c-stopped") || hasRemoval(rm, "c-running") {
+			t.Fatalf("withVolumes=%v: %v", withVolumes, rm)
+		}
+		if got := hasRemoval(rm, m.orphan+"_pgdata"); got != withVolumes {
+			t.Fatalf("withVolumes=%v but volume removed=%v: %v", withVolumes, got, rm)
+		}
 	}
 }
