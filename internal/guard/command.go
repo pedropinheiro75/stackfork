@@ -315,3 +315,45 @@ func composeStarts(words []string) bool {
 	}
 	return up
 }
+
+// DestructiveMessage is shown when an agent tries a prune that deletes.
+const DestructiveMessage = "stackfork: destructive; ask the user to run it (a dry run, `stackfork prune`, is fine)"
+
+var globalValueFlags = map[string]bool{
+	"--root": true, "--state-dir": true, "--legacy-state-dir": true, "--npmrc": true,
+	"--secret": true, "--profile-dir": true, "--instance": true,
+}
+
+// Destructive reports whether command runs `stackfork prune` with --yes/-y or
+// --all, or `stackfork gc --apply`: the deleting forms. A dry run is not.
+// Unlike Decide this applies in any directory.
+func Destructive(command, cwd string) bool {
+	for _, seg := range Segments(command, cwd) {
+		w := seg.Words
+		if filepath.Base(w[0]) != "stackfork" {
+			continue
+		}
+		action, args := "", []string(nil)
+		for i := 1; i < len(w); i++ {
+			if strings.HasPrefix(w[i], "-") {
+				if globalValueFlags[w[i]] {
+					i++ // its value
+				}
+				continue
+			}
+			action, args = w[i], w[i+1:]
+			break
+		}
+		for _, a := range args {
+			a = strings.TrimLeft(a, "-")
+			name, _, _ := strings.Cut(a, "=")
+			switch {
+			case action == "prune" && (name == "yes" || name == "y" || name == "all"):
+				return true
+			case action == "gc" && name == "apply":
+				return true
+			}
+		}
+	}
+	return false
+}

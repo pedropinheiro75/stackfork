@@ -213,3 +213,36 @@ func TestAllowPathIsFast(t *testing.T) {
 		t.Fatalf("allow path too slow: %v per call", per)
 	}
 }
+
+func TestDestructiveTable(t *testing.T) {
+	for cmd, want := range map[string]bool{
+		"stackfork prune --stopped --yes":                 true,
+		"stackfork prune --yes --stopped":                 true,
+		"stackfork prune -y --orphaned":                   true,
+		"stackfork prune --all":                           true,
+		"stackfork prune --all --json":                    true,
+		"stackfork prune --yes=true --stopped":            true,
+		"stackfork --state-dir /x prune --stopped --yes":  true,
+		"cd /tmp && stackfork prune --orphaned --yes":     true,
+		"/usr/local/bin/stackfork prune --stopped --yes":  true,
+		"bash -c 'stackfork prune --stopped --yes'":       true,
+		"STACKFORK_X=1 stackfork prune --all":             true,
+		"stackfork gc --apply":                            true,
+		"stackfork gc --apply --volumes --yes":            true,
+		"stackfork prune":                                 false,
+		"stackfork prune --stopped":                       false,
+		"stackfork prune --orphaned --older-than 7d":      false,
+		"stackfork prune --stopped --keep-volumes --json": false,
+		"stackfork --instance x list --yes":               false,
+		"stackfork gc":                                    false,
+		"stackfork down --volumes":                        false,
+		"echo stackfork prune --yes":                      false,
+		"grep -r 'prune --all' README.md":                 false,
+		"git prune --all":                                 false,
+		"docker system prune --all":                       false,
+	} {
+		if got := Destructive(cmd, "/repo"); got != want {
+			t.Errorf("Destructive(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}

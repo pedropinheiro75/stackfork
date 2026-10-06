@@ -112,3 +112,30 @@ func TestGuardBinaryAllowPathUnder50ms(t *testing.T) {
 		t.Fatalf("a dev server in a managed checkout must exit 2, got %d", code)
 	}
 }
+
+func TestGuardBlocksDestructivePruneForEveryTool(t *testing.T) {
+	plain := t.TempDir() // not a managed checkout: the prune rule applies anywhere
+	payload := func(tool, cmd string) string {
+		switch tool {
+		case "copilot":
+			return `{"timestamp":1,"cwd":"` + plain + `","toolName":"bash","toolArgs":"{\"command\":\"` + cmd + `\"}"}`
+		}
+		return `{"cwd":"` + plain + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + cmd + `"}}`
+	}
+	for _, tool := range []string{"claude", "codex", "copilot"} {
+		for cmd, block := range map[string]bool{
+			"stackfork prune --stopped --yes": true, "stackfork prune --all": true, "stackfork gc --apply": true,
+			"stackfork prune --stopped": false, "stackfork prune": false,
+		} {
+			var out, errBuf bytes.Buffer
+			code, _ := cmdGuard(strings.NewReader(payload(tool, cmd)), &out, &errBuf, []string{"--tool", tool}, t.TempDir(), t.TempDir())
+			denied := (tool == "copilot" && strings.Contains(out.String(), "deny")) || code == 2
+			if denied != block {
+				t.Errorf("%s %q: denied=%v want %v (code=%d out=%q)", tool, cmd, denied, block, code, out.String())
+			}
+			if block && !strings.Contains(errBuf.String(), "destructive; ask the user to run it") {
+				t.Errorf("%s %q: stderr %q", tool, cmd, errBuf.String())
+			}
+		}
+	}
+}

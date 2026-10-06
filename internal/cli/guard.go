@@ -34,20 +34,25 @@ func cmdGuard(stdin io.Reader, stdout, stderr io.Writer, subArgs []string, newSt
 	if in.Command == "" || in.Cwd == "" {
 		return 0, nil
 	}
+	if guard.Destructive(in.Command, in.Cwd) {
+		return denyGuard(stdout, stderr, *tool, guard.DestructiveMessage), nil
+	}
 	blocked := guard.Decide(in.Command, in.Cwd, func(dir string) bool {
 		return guard.IsManaged(dir, newStateBase, legacyStateBase)
 	})
 	if !blocked {
 		return 0, nil
 	}
-	fmt.Fprintln(stderr, guard.BlockMessage)
-	if *tool == guard.ToolCopilot {
+	return denyGuard(stdout, stderr, *tool, guard.BlockMessage), nil
+}
+
+func denyGuard(stdout, stderr io.Writer, tool, msg string) int {
+	fmt.Fprintln(stderr, msg)
+	if tool == guard.ToolCopilot {
 		// Copilot CLI reads its decision from stdout JSON.
-		b, _ := json.Marshal(map[string]string{
-			"permissionDecision": "deny", "permissionDecisionReason": guard.BlockMessage,
-		})
+		b, _ := json.Marshal(map[string]string{"permissionDecision": "deny", "permissionDecisionReason": msg})
 		fmt.Fprintln(stdout, string(b))
-		return 0, nil
+		return 0
 	}
-	return 2, nil
+	return 2
 }
