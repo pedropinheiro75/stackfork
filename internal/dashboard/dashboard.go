@@ -21,6 +21,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
+	"github.com/pedropinheiro75/stackfork/internal/prune"
 )
 
 //go:embed static
@@ -105,6 +106,7 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /api/instances", s.handleInstances)
+	mux.HandleFunc("GET /api/cleanup", s.handleCleanup)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("POST /api/actions", s.handleActions)
 	mux.HandleFunc("POST /api/copy", s.handleCopy)
@@ -141,6 +143,42 @@ func (s *Server) handleInstances(w http.ResponseWriter, r *http.Request) {
 		// do but note it happened (there is no client left to answer).
 		return
 	}
+}
+
+// handleCleanup is the read-only dry-run summary behind the header's "Clean
+// up" panel: how many instances each `stackfork prune` scope would remove.
+// Nothing is deleted here or anywhere in the dashboard; the page only shows
+// the commands to copy.
+func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
+	inv, err := s.collect()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	l, err := prune.List()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	now := time.Now()
+	plan := prune.BuildPlan(inv, s.NewStateBase, s.LegacyStateBase, l, now)
+	type group struct {
+		Count        int    `json:"count"`
+		ReclaimBytes int64  `json:"reclaim_bytes"`
+		Partial      bool   `json:"reclaim_partial"`
+		Command      string `json:"command"`
+	}
+	mk := func(sc prune.Scopes, flag string) group {
+		sel := prune.Select(plan.Candidates, sc, 0, now)
+		b, partial := prune.Totals(sel, false)
+		return group{Count: len(sel), ReclaimBytes: b, Partial: partial, Command: "stackfork prune " + flag}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]group{
+		"stopped":  mk(prune.Scopes{Stopped: true}, "--stopped"),
+		"orphaned": mk(prune.Scopes{Orphaned: true}, "--orphaned"),
+		"all":      mk(prune.Scopes{All: true}, "--all"),
+	})
 }
 
 // cardData is one instance plus the render-only extras the template needs

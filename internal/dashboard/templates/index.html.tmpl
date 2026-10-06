@@ -18,6 +18,7 @@
       Proxy: {{if .Proxy.Running}}running on {{.Proxy.Port}}{{else}}stopped{{end}}
     </span>
     <span id="counts">{{.RunningCount}} / {{.Total}} running</span>
+    <button id="cleanup-toggle" class="icon-btn" title="More" aria-expanded="false">&hellip;</button>
     <button id="proxy-start" class="icon-btn" data-action="proxy-up" title="Start the proxy for portless URLs"{{if .Proxy.Running}} hidden{{end}}>Start proxy for portless URLs</button>
   </div>
   <div id="controls">
@@ -25,6 +26,12 @@
     <label><input id="running-only" type="checkbox"> running only</label>
   </div>
 </header>
+
+<div id="cleanup-panel" hidden>
+  <h2>Clean up</h2>
+  <p>Read-only: run these in a terminal. Each starts as a dry run that deletes nothing; add <code>--yes</code> there to delete.</p>
+  <ul id="cleanup-list"><li>loading...</li></ul>
+</div>
 
 <div id="docker-banner" class="banner" hidden>Docker is unreachable; showing the last known data.</div>
 <div id="proxy-banner" class="banner"{{if not .Proxy.Hint}} hidden{{end}}>{{.Proxy.Hint}}</div>

@@ -336,6 +336,41 @@
     });
   }
 
+  // Header "..." menu: "Clean up" shows the prune commands with dry-run
+  // counts. Read-only by design: nothing here deletes, it only copies text.
+  var cleanupLabels = [["stopped", "Stopped instances"], ["orphaned", "Orphaned (checkout or branch gone)"], ["all", "Everything, running included"]];
+
+  function loadCleanup() {
+    var list = document.getElementById("cleanup-list");
+    fetch("/api/cleanup", { credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw new Error("unavailable"); return r.json(); })
+      .then(function (data) {
+        list.innerHTML = cleanupLabels.map(function (l) {
+          var g = data[l[0]];
+          return "<li><code class=\"copyable cli-command\" data-copy=\"" + escapeHtml(g.command) + "\" title=\"click to copy\">" +
+            escapeHtml(g.command) + "</code> <span class=\"cleanup-count\">" + g.count + " instance(s)</span> " + escapeHtml(l[1]) + "</li>";
+        }).join("");
+      })
+      .catch(function () { list.innerHTML = "<li>Docker is unreachable; run <code>stackfork prune</code> in a terminal.</li>"; });
+  }
+
+  function wireCleanup() {
+    var panel = document.getElementById("cleanup-panel");
+    var toggle = document.getElementById("cleanup-toggle");
+    toggle.addEventListener("click", function () {
+      panel.hidden = !panel.hidden;
+      toggle.setAttribute("aria-expanded", String(!panel.hidden));
+      if (!panel.hidden) loadCleanup();
+    });
+    panel.addEventListener("click", function (e) {
+      var copy = e.target.closest(".copyable");
+      if (copy && navigator.clipboard) {
+        navigator.clipboard.writeText(copy.dataset.copy);
+        log("copied " + copy.textContent.trim());
+      }
+    });
+  }
+
   function wireActions() {
     document.getElementById("instances").addEventListener("click", function (e) {
       var toggleStack = e.target.closest("[data-toggle-stack]");
@@ -405,6 +440,7 @@
   function start() {
     wireControls();
     wireActions();
+    wireCleanup();
     wireLogsPanel();
     poll();
     setInterval(function () {
