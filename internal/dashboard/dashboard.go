@@ -155,7 +155,7 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	l, err := prune.List()
+	l, err := prune.List(false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -163,15 +163,12 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	plan := prune.BuildPlan(inv, s.NewStateBase, s.LegacyStateBase, l, now)
 	type group struct {
-		Count        int    `json:"count"`
-		ReclaimBytes int64  `json:"reclaim_bytes"`
-		Partial      bool   `json:"reclaim_partial"`
-		Command      string `json:"command"`
+		Count   int    `json:"count"`
+		Command string `json:"command"`
 	}
 	mk := func(sc prune.Scopes, flag string) group {
 		sel := prune.Select(plan.Candidates, sc, 0, now)
-		b, partial := prune.Totals(sel, false)
-		return group{Count: len(sel), ReclaimBytes: b, Partial: partial, Command: "stackfork prune " + flag}
+		return group{Count: len(sel), Command: "stackfork prune " + flag}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]group{

@@ -207,7 +207,7 @@ func TestPruneDryRunDeletesNothing(t *testing.T) {
 	}
 	out, _, _ := runPrune(t, m.base, m.legacy)
 	for _, want := range []string{m.stopped, m.running, m.orphan, "legacy", "--orphaned", "--stopped", "--all",
-		"1.7 GB", "(running)"} {
+		"1.5 GB", "(running)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("overview missing %q:\n%s", want, out)
 		}

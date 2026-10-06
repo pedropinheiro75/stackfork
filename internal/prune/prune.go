@@ -7,6 +7,7 @@ package prune
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -329,9 +330,19 @@ func FormatSize(n int64) string {
 
 // --- docker -----------------------------------------------------------------
 
-// Run is the one place prune calls Docker; tests replace it.
-var Run = func(args ...string) ([]byte, error) {
-	cmd := exec.Command("docker", args...)
+// Run is the one place prune calls Docker.
+func Run(args ...string) ([]byte, error) { return run(0, args...) }
+
+// run is Run with an optional timeout (0 = none); `docker system df -v`
+// can take tens of seconds on a machine with many volumes.
+func run(timeout time.Duration, args ...string) ([]byte, error) {
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Env = compose.DockerEnv()
 	var out, errBuf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errBuf
@@ -371,9 +382,11 @@ func jsonLines(data []byte, fn func(m map[string]interface{})) {
 func str(m map[string]interface{}, k string) string { s, _ := m[k].(string); return s }
 
 // List reads every listing the planner needs. Containers are required;
-// the rest (and sizes/activity) degrade to empty on failure.
-func List() (Listings, error) {
-	var l Listings
+// the rest (and sizes/activity) degrade to empty on failure. Image sizes come
+// from `image ls`; volume sizes need the slow `docker system df -v`, so they
+// are read only when withVolumeSizes is set (a dry run), with a timeout.
+func List(withVolumeSizes bool) (Listings, error) {
+	l := Listings{VolumeSize: map[string]int64{}, ImageSize: map[string]int64{}}
 	out, err := Run("ps", "--all", "--no-trunc", "--format", "json")
 	if err != nil {
 		return l, err
@@ -397,24 +410,22 @@ func List() (Listings, error) {
 		jsonLines(out, func(m map[string]interface{}) {
 			if repo, tag := str(m, "Repository"), str(m, "Tag"); repo != "" && tag != "" {
 				l.Images = append(l.Images, Image{Ref: repo + ":" + tag})
+				if n, ok := ParseSize(str(m, "Size")); ok {
+					l.ImageSize[repo+":"+tag] = n
+				}
 			}
 		})
 	}
-	l.VolumeSize, l.ImageSize = map[string]int64{}, map[string]int64{}
-	if out, err := Run("system", "df", "-v", "--format", "json"); err == nil {
-		var df struct {
-			Images  []map[string]interface{} `json:"Images"`
-			Volumes []map[string]interface{} `json:"Volumes"`
-		}
-		if json.Unmarshal(out, &df) == nil {
-			for _, m := range df.Volumes {
-				if n, ok := ParseSize(str(m, "Size")); ok {
-					l.VolumeSize[str(m, "Name")] = n
-				}
+	if withVolumeSizes {
+		if out, err := run(45*time.Second, "system", "df", "-v", "--format", "json"); err == nil {
+			var df struct {
+				Volumes []map[string]interface{} `json:"Volumes"`
 			}
-			for _, m := range df.Images {
-				if n, ok := ParseSize(str(m, "Size")); ok {
-					l.ImageSize[str(m, "Repository")+":"+str(m, "Tag")] = n
+			if json.Unmarshal(out, &df) == nil {
+				for _, m := range df.Volumes {
+					if n, ok := ParseSize(str(m, "Size")); ok {
+						l.VolumeSize[str(m, "Name")] = n
+					}
 				}
 			}
 		}

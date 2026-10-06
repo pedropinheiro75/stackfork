@@ -101,7 +101,7 @@ func (r pruneRun) run(stdout, stderr io.Writer) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	l, err := prune.List()
+	l, err := prune.List(!r.yes && !r.gc) // volume sizes are slow; only a dry run shows them
 	if err != nil {
 		return 0, err
 	}
