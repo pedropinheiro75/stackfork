@@ -190,6 +190,9 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 		}
 	}
 
+	k.Recipe.Migrate, k.Recipe.SeedOnce = DetectSeed(root)
+	k.Recipe.SeedPending = k.Recipe.SeedOnce != ""
+
 	k.Risks = detectRisks(root)
 	for _, rel := range findByPredicate(root, isEntrypointName) {
 		inputs[filepath.Join(root, rel)] = true

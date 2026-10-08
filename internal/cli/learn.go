@@ -91,7 +91,14 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 	changedInputs = existing.StaleInputs(root)
 	fresh.Status = existing.Status
 	fresh.AdapterFiles = existing.AdapterFiles
+	proposed := fresh.Recipe
 	fresh.Recipe = existing.Recipe
+	if fresh.Recipe.Migrate == "" {
+		fresh.Recipe.Migrate = proposed.Migrate
+	}
+	if fresh.Recipe.SeedOnce == "" {
+		fresh.Recipe.SeedOnce, fresh.Recipe.SeedPending = proposed.SeedOnce, proposed.SeedPending
+	}
 	fresh.Answers = existing.Answers
 	fresh.Gotchas = existing.Gotchas
 	fresh.Verification = existing.Verification
@@ -153,7 +160,7 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 			k.Recipe.Migrate = *migrate
 		}
 		if *seedOnce != "" {
-			k.Recipe.SeedOnce = *seedOnce
+			k.Recipe.SeedOnce, k.Recipe.SeedPending = *seedOnce, false
 		}
 		if *seedService != "" {
 			k.Recipe.SeedService = *seedService
@@ -201,6 +208,10 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root string) error {
 	}
 	if k.Recipe.Prepare == "" || k.Recipe.Up == "" {
 		return errors.New("recipe is incomplete (prepare/up not recorded); run `learn record recipe` before verifying")
+	}
+
+	if _, seed := learn.DetectSeed(root); seed != "" && (k.Recipe.SeedOnce == "" || k.Recipe.SeedPending) {
+		return fmt.Errorf("this project has a seed script (%s) and no decision on it: ask the user whether to run it once on every new database, then record it with `learn record recipe --seed-once CMD` or `--seed-once none`", seed)
 	}
 
 	k.Status = knowledge.StatusVerified

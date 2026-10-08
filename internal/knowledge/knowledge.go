@@ -155,6 +155,9 @@ type Recipe struct {
 	SeedOnce string   `json:"seed_once,omitempty"`
 	// SeedService is the service SeedOnce runs in; empty = the primary app.
 	SeedService string `json:"seed_service,omitempty"`
+	// SeedPending marks a seed_once the scan proposed that nobody decided
+	// on yet; "none" is the recorded answer "never seed".
+	SeedPending bool `json:"seed_pending,omitempty"`
 	Login    []string `json:"login,omitempty"`
 }
 

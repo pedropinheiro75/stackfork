@@ -13,6 +13,7 @@ The CLI only scans; you drive the rest, because it needs judgment the CLI can't 
 3. **Try it.** `prepare` → `up` → run the project's real migrate/seed-once command.
 4. **Verify.** Database identity and app readiness at minimum; a representative flow when this is the project's first adoption.
 5. **On failure,** fix the adapter (or ask the user when the fix isn't safe to pick alone), retry, and record what broke and how it was fixed.
+5b. **Ask about seeding.** When the scan found a seed or migrate script it pre-fills `recipe.migrate` and a proposed `recipe.seed_once`, marked pending. Ask the user: "this project has `<cmd>`; run it once on every new database?" Record the answer with `learn record recipe --seed-once "<cmd>"` or `--seed-once none` (add `--seed-service SVC` when it is not the primary app service). `learn verify` refuses while a detected seed script has no decision. `up` then runs it only on the up that creates the data volume; `stackfork seed` retries (`--force` reruns; ask first). A project started without verified knowledge (a sibling worktree) is asked at `start-env`, or on the dashboard.
 6. **On an ambiguous or unsafe decision** (several seed datasets, an optional service, where a credential comes from), ask the user — never guess — and record the question and their answer.
 7. **Ask the user to confirm the app works.** Never self-verify: knowledge only moves from `draft` to `verified` on the user's own confirmation, and the confirmation is recorded, quoted, in the knowledge.
 
@@ -23,7 +24,7 @@ Never hand-edit `knowledge.json` to add these — always the CLI, so the file st
 ```sh
 stackfork learn record answer "<question>" "<answer>"
 stackfork learn record gotcha "<problem>" "<fix>"
-stackfork learn record recipe --prepare "<cmd>" --up "<cmd>" [--migrate "<cmd>"] [--seed-once "<cmd>"] [--login "<step>" ...]
+stackfork learn record recipe --prepare "<cmd>" --up "<cmd>" [--migrate "<cmd>"] [--seed-once "<cmd>"|none] [--seed-service SVC] [--login "<step>" ...]
 ```
 
 `record recipe` only sets the flags given each call, so it can be recorded incrementally as the session goes. Each `record` call requires a prior `stackfork learn` (there is no draft to record into otherwise).
