@@ -1,0 +1,109 @@
+{{define "repos"}}
+<div id="repos-meta" data-configured="{{.Configured}}" data-scanning="{{.Scanning}}" hidden></div>
+{{if not .Configured}}
+<div class="empty-state">
+  <p><strong>No folders to scan yet.</strong> Add the folder that holds your repositories in <em>Settings</em>, or run <code class="copyable" data-copy="stackfork config add-root PATH" title="click to copy">stackfork config add-root PATH</code>.</p>
+</div>
+{{else if not .Repos}}
+<div class="empty-state"><p>No git repositories found under the configured folders{{if .Scanning}} (scanning...){{end}}.</p></div>
+{{end}}
+{{range .Groups}}
+<section class="repo-group">
+  <h3 class="group-title">{{if .Name}}{{.Name}}{{else}}(top level){{end}}</h3>
+  {{range .Repos}}{{$r := .Repo}}
+  <details class="repo" data-key="{{$r.Path}}" data-search="{{.Search}}" data-ready="{{if eq $r.Readiness "ready"}}1{{else}}0{{end}}">
+    <summary class="repo-summary">
+      <span class="repo-name">{{$r.Name}}</span>
+      <span class="readiness readiness-{{$r.Readiness}}" title="{{$r.ReadinessReason}}">{{$r.Readiness}}</span>
+      {{if $r.Running}}<span class="repo-running">{{$r.Running}} running</span>{{end}}
+      <span class="repo-counts">{{len $r.Worktrees}} worktree(s) &middot; {{len $r.Branches}} branch(es)</span>
+      <span class="repo-last" title="last commit">{{date $r.LastCommit}}</span>
+    </summary>
+    <div class="repo-body">
+      <div class="repo-meta">
+        <span class="stack-path" title="{{$r.Path}}">{{$r.Path}}</span>
+        <span class="muted">default branch <code>{{$r.DefaultBranch}}</code></span>
+        <button type="button" class="repo-btn" data-repo-action="fetch" data-repo="{{$r.Path}}" title="git fetch --prune in this repo only">Fetch</button>
+      </div>
+      <p class="muted reason">{{$r.ReadinessReason}}</p>
+      <h4>Worktrees</h4>
+      <ul class="wt-list">
+        {{range $r.Worktrees}}
+        <li class="wt-row">
+          <span class="branch-tag" title="{{.Branch}}">{{.Branch}}</span>
+          {{if .Main}}<span class="muted">main checkout</span>{{end}}
+          {{if .Dirty}}<span class="dirty" title="uncommitted changes">modified</span>{{end}}
+          <span class="stack-path" title="{{.Path}}">{{.Path}}</span>
+          {{if .Instance}}<a href="#" class="instance-link state-badge state-{{.Instance.State}}" data-project="{{.Instance.Project}}" title="{{.Instance.Project}}">{{.Instance.State}}</a>{{end}}
+          <span class="row-actions">
+            {{if eq $r.Readiness "ready"}}
+              {{if not (and .Instance (isRunning .Instance.State))}}<button type="button" class="repo-btn primary" data-repo-action="start" data-repo="{{$r.Path}}" data-path="{{.Path}}">Start</button>{{end}}
+            {{else}}
+              <button type="button" class="repo-btn copyable" data-copy="{{prompt $r.Name $r.Path .Branch}}" title="copy a prompt for Claude Code, Codex or Copilot CLI">Set up with your agent</button>
+            {{end}}
+            {{if not .Main}}<code class="copyable cli-command" data-copy="git -C {{shq $r.Path}} worktree remove {{shq .Path}}" title="click to copy; the page never removes a worktree">remove</code>{{end}}
+          </span>
+        </li>
+        {{end}}
+      </ul>
+      {{if $r.Branches}}
+      <h4>Branches without a worktree</h4>
+      <ul class="wt-list">
+        {{range $r.Branches}}
+        <li class="wt-row">
+          <span class="branch-tag" title="{{.Name}}">{{.Name}}</span>
+          <span class="muted">{{date .LastCommit}}</span>
+          {{if .Ahead}}<span class="muted">ahead {{.Ahead}}</span>{{end}}{{if .Behind}}<span class="muted">behind {{.Behind}}</span>{{end}}
+          <span class="row-actions">
+            {{if eq $r.Readiness "ready"}}
+              <button type="button" class="repo-btn primary" data-repo-action="start" data-repo="{{$r.Path}}" data-branch="{{.Name}}" data-confirm="Create the worktree {{worktreeAt $r.Path .Name}} and start its environment?">Start</button>
+            {{else}}
+              <button type="button" class="repo-btn copyable" data-copy="{{prompt $r.Name $r.Path .Name}}" title="copy a prompt for Claude Code, Codex or Copilot CLI">Set up with your agent</button>
+            {{end}}
+          </span>
+        </li>
+        {{end}}
+      </ul>
+      {{end}}
+    </div>
+  </details>
+  {{end}}
+</section>
+{{end}}
+{{end}}
+
+{{define "settings"}}
+<h2>Settings</h2>
+<p class="muted">Config file: <code>{{.ConfigPath}}</code>. Removing a folder only stops scanning it; nothing on disk is changed.</p>
+<h3>Folders to scan</h3>
+<ul class="settings-list">
+  {{range .Roots}}
+  <li><code>{{.Path}}</code> <span class="muted">{{.Repos}} repo(s)</span>
+    <button type="button" class="repo-btn" data-config-op="remove-root" data-value="{{.Path}}">Remove</button></li>
+  {{else}}
+  <li class="muted">None yet.</li>
+  {{end}}
+</ul>
+<form class="settings-form" data-config-op="add-root">
+  <input type="text" name="value" placeholder="/path/to/folder or ~/folder" aria-label="Folder to scan" autocomplete="off">
+  <button type="submit" class="repo-btn primary">Add folder</button>
+</form>
+<p class="muted">Or in a terminal: <code class="copyable" data-copy="stackfork config add-root PATH" title="click to copy">stackfork config add-root PATH</code></p>
+<h3>Skip folders named</h3>
+<ul class="settings-list">
+  {{range .Exclude}}
+  <li><code>{{.}}</code> <button type="button" class="repo-btn" data-config-op="remove-exclude" data-value="{{.}}">Remove</button></li>
+  {{else}}
+  <li class="muted">None (node_modules, vendor, .worktrees and hidden folders are always skipped).</li>
+  {{end}}
+</ul>
+<form class="settings-form" data-config-op="add-exclude">
+  <input type="text" name="value" placeholder="folder name, e.g. Backup" aria-label="Folder name to skip" autocomplete="off">
+  <button type="submit" class="repo-btn">Add</button>
+</form>
+<h3>Max depth</h3>
+<form class="settings-form" data-config-op="set-max-depth">
+  <input type="number" name="value" min="1" max="12" value="{{.MaxDepth}}" aria-label="Maximum folder depth">
+  <button type="submit" class="repo-btn">Save</button>
+</form>
+{{end}}

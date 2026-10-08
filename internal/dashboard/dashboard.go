@@ -55,8 +55,15 @@ type Server struct {
 	Port            int // this server's own listening port (Host allowlist)
 	Token           string
 
-	mux   http.Handler
-	cache *inventoryCache
+	// ProfileDirs and StartEnv are set by the CLI after New: profile
+	// directories for readiness, and the Start button's code path.
+	ProfileDirs []string
+	StartEnv    StartFunc
+
+	mux      http.Handler
+	cache    *inventoryCache
+	repos    reposState
+	configMu sync.Mutex
 
 	// actionMu serializes actions per project (design.md D4: "one at a
 	// time per instance"); a project already running an action gets 409.
@@ -106,6 +113,10 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /api/instances", s.handleInstances)
+	mux.HandleFunc("GET /api/repos", s.handleRepos)
+	mux.HandleFunc("GET /fragments/repos", s.handleReposFragment)
+	mux.HandleFunc("GET /fragments/settings", s.handleSettingsFragment)
+	mux.HandleFunc("POST /api/config", s.handleConfig)
 	mux.HandleFunc("GET /api/cleanup", s.handleCleanup)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("POST /api/actions", s.handleActions)

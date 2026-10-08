@@ -67,7 +67,8 @@ func cmdRepos(stdout io.Writer, subArgs []string, newStateBase, legacyStateBase 
 		return 0, nil
 	}
 	if *jsonFlag {
-		return 0, printJSON(stdout, res)
+		_, err := stdout.Write(repos.Marshal(res))
+		return 0, err
 	}
 	if !res.Configured {
 		fmt.Fprintln(stdout, "No scan roots configured. Add one with: stackfork config add-root PATH")

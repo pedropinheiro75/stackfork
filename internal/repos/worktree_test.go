@@ -139,3 +139,17 @@ func TestAddWorktreeCopiesOnlyAllowedAdapterFiles(t *testing.T) {
 		t.Fatal("main checkout changed")
 	}
 }
+
+func TestFetchUpdatesRemoteRefsOfThatRepoOnly(t *testing.T) {
+	repo, origin := mkWithOrigin(t)
+	clone := filepath.Join(tempRoot(t), "clone")
+	git(t, filepath.Dir(clone), "clone", "-q", origin, clone)
+	git(t, clone, "checkout", "-q", "-b", "pushed")
+	git(t, clone, "push", "-q", "origin", "pushed")
+	if _, err := Fetch(repo); err != nil {
+		t.Fatal(err)
+	}
+	if !refExists(repo, "refs/remotes/origin/pushed") {
+		t.Fatal("fetch did not bring the new remote branch")
+	}
+}

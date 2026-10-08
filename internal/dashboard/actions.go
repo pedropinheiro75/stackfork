@@ -23,6 +23,12 @@ type actionRequest struct {
 	Action  string `json:"action"`
 	Project string `json:"project"`
 	Service string `json:"service,omitempty"`
+
+	// Repo browser actions (start, worktree-add, fetch): the repo's path,
+	// then an existing worktree's path or a branch without a worktree.
+	Repo   string `json:"repo,omitempty"`
+	Path   string `json:"path,omitempty"`
+	Branch string `json:"branch,omitempty"`
 }
 
 type actionResponse struct {
@@ -61,6 +67,10 @@ func (s *Server) handleActions(w http.ResponseWriter, r *http.Request) {
 	var req actionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if repoActions[req.Action] {
+		s.handleRepoAction(w, req)
 		return
 	}
 	if !validActions[req.Action] {

@@ -77,6 +77,17 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	if err != nil {
 		return 0, err
 	}
+	// The repo browser's Start button runs the same code as `start-env`.
+	profiles, err := resolveProfileDirs(nil)
+	if err != nil {
+		return 0, err
+	}
+	srv.ProfileDirs = profiles
+	srv.StartEnv = func(out, errOut io.Writer, checkout string) error {
+		return StartEnv(out, errOut, StartOptions{
+			Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles,
+		})
+	}
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
 

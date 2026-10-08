@@ -222,3 +222,19 @@ func Denied(rel, path string) string {
 	}
 	return ""
 }
+
+// Fetch runs `git fetch --prune` in one repo: the only network access the
+// repo browser ever makes, and only on an explicit click.
+func Fetch(repo string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", repo, "fetch", "--prune")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	if os.Getenv("GIT_SSH_COMMAND") == "" {
+		cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
+	}
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	err := cmd.Run()
+	return strings.TrimSpace(out.String()), err
+}

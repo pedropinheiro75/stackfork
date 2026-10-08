@@ -1,6 +1,7 @@
 package repos
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -157,4 +158,11 @@ func FindRepo(res Result, arg string) (*Repo, error) {
 		ps = append(ps, h.Path)
 	}
 	return nil, errAmbiguous(arg, strings.Join(ps, ", "))
+}
+
+// Marshal is the one JSON encoding of a Result, shared by `stackfork repos
+// --json` and GET /api/repos so the two are byte-identical.
+func Marshal(r Result) []byte {
+	b, _ := json.MarshalIndent(r, "", "  ")
+	return append(b, '\n')
 }
