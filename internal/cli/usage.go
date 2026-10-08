@@ -45,7 +45,8 @@ var commandSummaries = []struct{ name, summary string }{
 	{"hooks", "install/uninstall/status of the guard hook in Claude Code, Codex and Copilot CLI"},
 	{"proxy", "the shared portless-URL proxy: up/down/status/reload"},
 	{"route", "register a host-run app's port with the proxy"},
-	{"dashboard", "a local web page listing every instance"},
+	{"dashboard", "a local web page listing every instance and repo"},
+	{"config", "show or edit the folders the repo browser scans"},
 	{"doctor", "check the local environment the proxy/tool depend on"},
 	{"version", "print the version"},
 }
