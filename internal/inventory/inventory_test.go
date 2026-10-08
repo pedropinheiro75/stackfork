@@ -324,3 +324,68 @@ func TestCollectBusyPortWarning(t *testing.T) {
 		t.Fatalf("expected a busy-port warning, got %+v", inst.Warnings)
 	}
 }
+
+func TestOptionalProfileServicesAreNotStopped(t *testing.T) {
+	installFakeDocker(t)
+	base := t.TempDir()
+	root := gitRepo(t, "main")
+	writeInstance(t, base, "sf-opt-1", root, "main", []string{"web", "db", "nginx", "playwright", "worker"}, nil)
+	cfg := map[string]interface{}{"services": map[string]interface{}{
+		"web": map[string]interface{}{}, "db": map[string]interface{}{}, "worker": map[string]interface{}{},
+		"nginx":      map[string]interface{}{"profiles": []interface{}{"proxy"}},
+		"playwright": map[string]interface{}{"profiles": []interface{}{"e2e"}},
+	}}
+	if err := state.WritePrivate(filepath.Join(base, "sf-opt-1", "compose.json"), cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_FAKE_PS", strings.Join([]string{
+		psLine(t, "sf-opt-1", "web", "running", "Up 1 minute", ""),
+		psLine(t, "sf-opt-1", "db", "running", "Up 1 minute", ""),
+	}, "\n")+"\n")
+	inv, err := Collect(Options{NewStateBase: base, LegacyStateBase: t.TempDir(), Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst := inv.Instances[0]
+	got := map[string]string{}
+	for _, s := range inst.Services {
+		got[s.Name] = s.State
+	}
+	for _, n := range []string{"nginx", "playwright", "worker"} {
+		if got[n] != ServiceOptional {
+			t.Errorf("%s: want optional, got %q", n, got[n])
+		}
+	}
+	if inst.State != StateRunning {
+		t.Errorf("instance %q, want running", inst.State)
+	}
+	if len(inst.Warnings) != 0 {
+		t.Errorf("unexpected warnings %v", inst.Warnings)
+	}
+
+	// an exited container is still a real stop, and makes the instance partial
+	t.Setenv("DOCKER_FAKE_PS", strings.Join([]string{
+		psLine(t, "sf-opt-1", "web", "running", "Up 1 minute", ""),
+		psLine(t, "sf-opt-1", "db", "exited", "Exited (1) 1 minute ago", ""),
+	}, "\n")+"\n")
+	inv, _ = Collect(Options{NewStateBase: base, LegacyStateBase: t.TempDir(), Version: "test"})
+	if inv.Instances[0].State != StatePartial || len(inv.Instances[0].Warnings) == 0 {
+		t.Errorf("exited db: state %q warnings %v", inv.Instances[0].State, inv.Instances[0].Warnings)
+	}
+
+	// nothing running: profile services stay optional, the rest are stopped
+	t.Setenv("DOCKER_FAKE_PS", "")
+	inv, _ = Collect(Options{NewStateBase: base, LegacyStateBase: t.TempDir(), Version: "test"})
+	for _, s := range inv.Instances[0].Services {
+		want := StateStopped
+		if s.Name == "nginx" || s.Name == "playwright" {
+			want = ServiceOptional
+		}
+		if s.State != want {
+			t.Errorf("down: %s is %q, want %q", s.Name, s.State, want)
+		}
+	}
+	if inv.Instances[0].State != StateStopped {
+		t.Errorf("down: instance %q", inv.Instances[0].State)
+	}
+}

@@ -342,6 +342,7 @@ main.stale { opacity: 0.6; }
 }
 .status-dot.running { background: var(--ok); }
 .status-dot.exited, .status-dot.stopped { background: var(--bad); }
+.status-dot.optional { background: var(--muted); }
 .status-dot.unhealthy, .status-dot.starting { background: var(--warn); }
 
 .service-text {

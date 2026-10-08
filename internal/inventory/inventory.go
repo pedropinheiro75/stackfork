@@ -33,6 +33,11 @@ const (
 	StateMissingCheckout = "missing-checkout"
 	StateMissingBranch   = "missing-branch"
 	StateUnknown         = "unknown"
+
+	// ServiceOptional is a service that never started: it has no container
+	// at all and is either behind a Compose profile or not part of the
+	// default `up`. It is not "stopped", and never makes an instance partial.
+	ServiceOptional = "optional"
 )
 
 // DockerStatus reports whether the daemon answered `docker ps`.
@@ -394,6 +399,13 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 	running, total := 0, len(names)
 	for _, name := range names {
 		svc := Service{Name: name, State: StateStopped}
+		raw0, _ := svcMap[name].(map[string]interface{})
+		if _, ok := rowByService[name]; !ok {
+			if p, _ := raw0["profiles"].([]interface{}); len(p) > 0 || len(rowByService) > 0 {
+				svc.State = ServiceOptional // ponytail: no container ever created
+				total--
+			}
+		}
 		if row, ok := rowByService[name]; ok {
 			svc.State = strings.ToLower(row.State)
 			svc.Health = row.Health

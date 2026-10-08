@@ -87,12 +87,12 @@
     return '<span class="app-chip stopped">' + escapeHtml(app.label) + hint + "</span>";
   }
 
-  function endpointHtml(ep, running) {
+  function endpointHtml(ep, running, optional) {
     if (!ep.known) {
       return '<span class="endpoint-pending">container ' + ep.container + ' &mdash; assigned on start</span>';
     }
     var stoppedClass = running ? "" : " stopped";
-    var stoppedNote = running ? "" : " (stopped)";
+    var stoppedNote = running ? "" : (optional ? " (not started)" : " (stopped)");
     var proxiedNote = ep.proxied ? " (proxy)" : "";
     if (ep.scheme === "http" || ep.scheme === "https") {
       return '<a class="endpoint-link' + stoppedClass + '" href="' + escapeHtml(ep.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(ep.url) + '">' +
@@ -131,7 +131,7 @@
   function serviceHtml(inst, svc) {
     var key = inst.project + "/" + svc.name;
     var running = svc.state === "running";
-    var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, running); }).join("");
+    var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, running, svc.state === "optional"); }).join("");
     if (svc.connection_url) {
       endpoints += '<span class="endpoint-copy copyable connection-url" data-copy="' + escapeHtml(svc.connection_url) +
         '" data-copy-kind="database_url" data-copy-project="' + escapeHtml(inst.project) + '" data-copy-service="' + escapeHtml(svc.name) +
@@ -142,7 +142,8 @@
         '" data-copy-kind="cli" data-copy-project="' + escapeHtml(inst.project) + '" data-copy-service="' + escapeHtml(svc.name) +
         '" title="click to copy: ' + escapeHtml(c.value) + '">' + escapeHtml(c.label) + "</span>";
     });
-    var image = svc.image ? '<span class="service-image">' + escapeHtml(svc.image) + "</span>" : "";
+    var image = svc.state === "optional" ? '<span class="service-image">not started (optional)</span>'
+      : svc.image ? '<span class="service-image">' + escapeHtml(svc.image) + "</span>" : "";
     var settingsOpen = !!openSettings[key];
     return (
       '<div class="service-row" data-service="' + escapeHtml(svc.name) + '">' +
