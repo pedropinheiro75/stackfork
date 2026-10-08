@@ -129,6 +129,16 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if action == "repos" {
 		return cmdRepos(stdout, subArgs, newStateBase, legacyStateBase)
 	}
+	if action == "start-env" {
+		var global []string
+		if *npmrcFlag != "" {
+			global = append(global, "--npmrc", *npmrcFlag)
+		}
+		for _, sec := range secretFlag {
+			global = append(global, "--secret", sec)
+		}
+		return cmdStartEnv(stdout, stderr, subArgs, rootArg, newStateBase, legacyStateBase, global)
+	}
 	if action == "worktree" {
 		return cmdWorktree(stdout, subArgs, newStateBase, legacyStateBase)
 	}
@@ -190,30 +200,10 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		return 0, err
 	}
 
-	// D2: a checkout+branch that already has a legacy (idv-) instance keeps
-	// operating on it - prepare, up, down, status and urls all target the
-	// legacy state dir and project name, so a running stack is never
-	// orphaned and a second copy is never created. A checkout+branch with
-	// no legacy state gets the current (sf-) identity.
-	project, err := identity.ProjectName(root, branch)
+	project, instanceDir, err := checkoutInstance(root, branch, newStateBase, legacyStateBase)
 	if err != nil {
 		return 0, err
 	}
-	stateBase := newStateBase
-	legacyProject, err := identity.LegacyProjectName(root, branch)
-	if err != nil {
-		return 0, err
-	}
-	legacyManifest, err := state.ReadManifest(filepath.Join(legacyStateBase, legacyProject, "manifest.json"))
-	if err != nil {
-		return 0, err
-	}
-	if legacyManifest != nil {
-		project = legacyProject
-		stateBase = legacyStateBase
-	}
-
-	instanceDir := filepath.Join(stateBase, project)
 
 	// A checkout with no prepared stack: say where this repository's
 	// instances are instead of a bare "run prepare".
@@ -223,6 +213,33 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		}
 	}
 	return dispatch(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase, *npmrcFlag, secretFlag, profileDirFlag)
+}
+
+// checkoutInstance names the instance (project and state dir) for a
+// checkout+branch. D2: one that already has a legacy (idv-) instance keeps
+// operating on it - prepare, up, down, status and urls all target the
+// legacy state dir and project name, so a running stack is never orphaned
+// and a second copy is never created. Anything else gets the current (sf-)
+// identity.
+func checkoutInstance(root, branch, newStateBase, legacyStateBase string) (project, instanceDir string, err error) {
+	project, err = identity.ProjectName(root, branch)
+	if err != nil {
+		return "", "", err
+	}
+	stateBase := newStateBase
+	legacyProject, err := identity.LegacyProjectName(root, branch)
+	if err != nil {
+		return "", "", err
+	}
+	legacyManifest, err := state.ReadManifest(filepath.Join(legacyStateBase, legacyProject, "manifest.json"))
+	if err != nil {
+		return "", "", err
+	}
+	if legacyManifest != nil {
+		project = legacyProject
+		stateBase = legacyStateBase
+	}
+	return project, filepath.Join(stateBase, project), nil
 }
 
 // dispatch runs a per-instance action once root, branch, project and

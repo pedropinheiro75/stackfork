@@ -102,3 +102,77 @@ func TestWorktreeAddByNameAndPath(t *testing.T) {
 		t.Fatalf("%d %s", code, e)
 	}
 }
+
+const readyCompose = "services:\n  db:\n    image: postgres:17\n"
+
+// readyRepo is a scratch repo with an adapter compose file, so it is ready.
+func readyRepo(t *testing.T, root string) string {
+	t.Helper()
+	repo := scratchRepo(t, filepath.Join(root, "ready"))
+	os.MkdirAll(filepath.Join(repo, ".agent-dev"), 0o755)
+	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(readyCompose), 0o644)
+	return repo
+}
+
+func countLines(log, sub string) int { return strings.Count(log, sub) }
+
+func TestStartEnvPreparesOnlyWhenNeededThenUps(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := readyRepo(t, root)
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+
+	out, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if code != 0 {
+		t.Fatalf("%d %s %s", code, out, e)
+	}
+	if !strings.Contains(out, "preparing") || !strings.Contains(out, "started") {
+		t.Fatalf("progress lines missing: %s", out)
+	}
+	b, _ := os.ReadFile(log)
+	if countLines(string(b), " up -d ") != 1 || countLines(string(b), " config ") != 1 {
+		t.Fatalf("first start: %s", b)
+	}
+
+	out, _, code = runCLI(t, append(base, "start-env", repo)...)
+	b, _ = os.ReadFile(log)
+	if code != 0 || !strings.Contains(out, "already prepared") || countLines(string(b), " config ") != 1 || countLines(string(b), " up -d ") != 2 {
+		t.Fatalf("second start must not re-prepare: %d %s\n%s", code, out, b)
+	}
+
+	// an input change forces prepare again
+	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(readyCompose+"  cache:\n    image: redis:7\n"), 0o644)
+	out, _, code = runCLI(t, append(base, "start-env", repo)...)
+	b, _ = os.ReadFile(log)
+	if code != 0 || !strings.Contains(out, "preparing") || countLines(string(b), " config ") != 2 {
+		t.Fatalf("changed input must re-prepare: %d %s\n%s", code, out, b)
+	}
+}
+
+func TestStartEnvRefusesUnknownWithoutStartingAnything(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := scratchRepo(t, filepath.Join(root, "mystery"))
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	_, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if code == 0 || !strings.Contains(e, "unknown") || !strings.Contains(e, "repos --prompt") {
+		t.Fatalf("%d %s", code, e)
+	}
+	b, _ := os.ReadFile(log)
+	if strings.Contains(string(b), " up ") || strings.Contains(string(b), " config ") {
+		t.Fatalf("docker was used for an unknown repo:\n%s", b)
+	}
+}
+
+func TestRecipePrepareArgs(t *testing.T) {
+	got := recipePrepareArgs(`stackfork --root "$CHECKOUT" prepare -f .agent-dev/a.compose.yaml --env-file '.agent-dev/runtime.env' --random-ports`)
+	want := []string{"-f", ".agent-dev/a.compose.yaml", "--env-file", ".agent-dev/runtime.env", "--random-ports"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("%v", got)
+	}
+	for _, bad := range []string{"stackfork prepare -f $X/a.yaml", "stackfork prepare --npmrc /x", "stackfork up", "stackfork prepare -f a.yaml && rm -rf x"} {
+		if recipePrepareArgs(bad) != nil {
+			t.Errorf("%q must be rejected", bad)
+		}
+	}
+}

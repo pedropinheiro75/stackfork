@@ -134,3 +134,16 @@ func mainRepoOfWorktree(dir string) string {
 	}
 	return ""
 }
+
+// MainRepoOf returns the main checkout for a repo root or a linked
+// worktree, or "" when dir is neither.
+func MainRepoOf(dir string) string {
+	fi, err := os.Lstat(filepath.Join(dir, ".git"))
+	switch {
+	case err != nil:
+		return ""
+	case fi.IsDir():
+		return dir
+	}
+	return mainRepoOfWorktree(dir)
+}
