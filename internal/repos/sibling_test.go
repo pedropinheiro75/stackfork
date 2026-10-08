@@ -168,3 +168,67 @@ func TestRewriteEnvHandlesBothMacSpellingsAndBoundaries(t *testing.T) {
 		t.Fatalf("%q %v", out, keys)
 	}
 }
+
+func TestSiblingCopiesReferenceOnlyRegistryConfig(t *testing.T) {
+	main, sib, inst := siblingFixture(t)
+	write(t, filepath.Join(sib, ".npmrc"), "@rrglobal:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=${NPM_TOKEN}\n", 0o644)
+	write(t, filepath.Join(sib, ".yarnrc.yml"), "npmAuthToken: \"${NPM_TOKEN}\"\n", 0o644)
+	write(t, filepath.Join(sib, "bunfig.toml"), "[install.scopes]\n\"@a\" = { token = \"$NPM_TOKEN\", url = \"https://x\" }\n", 0o644)
+	// literal tokens are never copied, even next to a reference
+	write(t, filepath.Join(sib, ".yarnrc"), "npmAuthToken \"ghp_"+canary+"\"\n", 0o644)
+	write(t, filepath.Join(sib, ".pnpmrc"), "//r/:_authToken=${A}\n//r2/:_authToken=ghp_"+canary+"\n", 0o644)
+	// a tracked registry file is the worktree's own business
+	write(t, filepath.Join(main, ".bunfig.toml"), "x=1\n", 0o644)
+	res, err := AddWorktree(main, "feat-c", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := FindSiblingRecipe(main, res.Path, "", []inventory.Instance{inst})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := r.Apply(res.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{".npmrc", ".yarnrc.yml", "bunfig.toml"} {
+		if _, err := os.Stat(filepath.Join(res.Path, f)); err != nil {
+			t.Errorf("%s not copied", f)
+		}
+		if !strings.Contains(strings.Join(rep.Copied, "\n"), f) {
+			t.Errorf("%s not reported: %v", f, rep.Copied)
+		}
+	}
+	for _, f := range []string{".yarnrc", ".pnpmrc"} {
+		if _, err := os.Lstat(filepath.Join(res.Path, f)); err == nil {
+			t.Errorf("%s with a literal token was copied", f)
+		}
+	}
+	all := strings.Join(append(rep.Copied, rep.Skipped...), "\n")
+	if strings.Contains(all, canary) {
+		t.Errorf("report leaks value: %s", all)
+	}
+}
+
+func TestSiblingLeavesTrackedRegistryConfigAlone(t *testing.T) {
+	main := mkRepo(t, filepath.Join(tempRoot(t), "proj"))
+	write(t, filepath.Join(main, "docker-compose.yml"), "services: {app: {image: x}}\n", 0o644)
+	write(t, filepath.Join(main, ".npmrc"), "registry=https://tracked.example\n", 0o644)
+	git(t, main, "add", ".")
+	git(t, main, "commit", "-q", "-m", "c")
+	sibRes, _ := AddWorktree(main, "feat-a", "main")
+	write(t, filepath.Join(sibRes.Path, ".npmrc"), "registry=https://edited.example\n", 0o644)
+	inst := inventory.Instance{Project: "p", Root: sibRes.Path, Used: time.Now(), Files: []string{filepath.Join(sibRes.Path, "docker-compose.yml")}}
+	res, _ := AddWorktree(main, "feat-b", "main")
+	r, err := FindSiblingRecipe(main, res.Path, "", []inventory.Instance{inst})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, _ := r.Apply(res.Path)
+	if b, _ := os.ReadFile(filepath.Join(res.Path, ".npmrc")); !strings.Contains(string(b), "tracked.example") {
+		t.Errorf("tracked .npmrc touched: %s", b)
+	}
+	if strings.Contains(strings.Join(rep.Copied, ","), ".npmrc") {
+		t.Errorf("reported tracked file: %v", rep.Copied)
+	}
+}

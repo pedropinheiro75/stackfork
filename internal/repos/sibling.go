@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -172,6 +173,7 @@ func recipeFrom(c inventory.Instance, main, target, ref string) (*SiblingRecipe,
 // rewritten, mode 0600.
 func (r *SiblingRecipe) Apply(target string) (SiblingReport, error) {
 	var rep SiblingReport
+	rep.Copied = r.copyRegistryConfig(target)
 	dirs := map[string]bool{}
 	for _, x := range r.untracked {
 		dirs[filepath.Dir(x)] = true
@@ -278,4 +280,94 @@ func rewriteEnv(src []byte, froms []string, to, toEnv string) ([]byte, []string)
 		}
 	}
 	return []byte(strings.Join(lines, "\n")), keys
+}
+
+// registryFiles are the repo-root package-manager configs that point an
+// install at a private registry.
+var registryFiles = []string{".npmrc", ".yarnrc.yml", ".yarnrc", ".pnpmrc", "bunfig.toml"}
+
+var envRef = regexp.MustCompile(`^\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)$`)
+
+// refOnlyRegistry reports whether every auth-looking value in a registry
+// config is an environment reference (${VAR}), never a literal, and no URL
+// carries credentials.
+func refOnlyRegistry(b []byte) bool {
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line[0] == '#' || line[0] == ';' {
+			continue
+		}
+		if i := strings.Index(line, "://"); i >= 0 {
+			if rest := line[i+3:]; strings.Contains(strings.SplitN(rest, "/", 2)[0], "@") {
+				return false
+			}
+		}
+		low := strings.ToLower(line)
+		if !strings.ContainsAny(low, "=:") && !strings.Contains(low, " ") {
+			continue
+		}
+		for _, kw := range []string{"auth", "token", "password", "secret", "_pass"} {
+			if !strings.Contains(low, kw) {
+				continue
+			}
+			if !authValuesAreRefs(line) {
+				return false
+			}
+			break
+		}
+	}
+	return true
+}
+
+// authValuesAreRefs checks each value on an auth-looking line (npmrc
+// "k=v", yaml "k: v", bunfig inline "{ token = "v", url = ... }").
+func authValuesAreRefs(line string) bool {
+	line = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(line), " }"))
+	for _, seg := range strings.Split(line, ",") {
+		i := strings.LastIndexAny(seg, "=")
+		if i < 0 {
+			if i = strings.Index(seg, ": "); i < 0 {
+				if i = strings.IndexByte(seg, ' '); i < 0 {
+					return false
+				}
+			}
+		}
+		key := strings.ToLower(seg[:i])
+		val := strings.Trim(strings.TrimSpace(seg[i+1:]), "\"'")
+		sensitive := false
+		for _, kw := range []string{"auth", "token", "password", "secret", "_pass"} {
+			sensitive = sensitive || strings.Contains(key, kw)
+		}
+		if sensitive && !envRef.MatchString(val) {
+			return false
+		}
+	}
+	return true
+}
+
+// copyRegistryConfig copies untracked root-level registry configs whose auth
+// values are all env references, never over an existing file.
+func (r *SiblingRecipe) copyRegistryConfig(target string) []string {
+	var copied []string
+	for _, f := range registryFiles {
+		src, dst := filepath.Join(r.Source, f), filepath.Join(target, f)
+		if _, err := gitRun(r.Source, "ls-files", "--error-unmatch", "--", f); err == nil {
+			continue // tracked: the worktree has its own
+		}
+		fi, err := os.Lstat(src)
+		if err != nil || !fi.Mode().IsRegular() || fi.Size() > maxAdapterFile {
+			continue
+		}
+		if _, err := os.Lstat(dst); err == nil {
+			continue
+		}
+		b, err := os.ReadFile(src)
+		if err != nil || !refOnlyRegistry(b) {
+			continue
+		}
+		if os.WriteFile(dst, b, fi.Mode().Perm()) == nil {
+			copied = append(copied, f)
+		}
+	}
+	return copied
 }
