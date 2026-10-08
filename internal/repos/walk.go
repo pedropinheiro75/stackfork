@@ -63,7 +63,9 @@ func Walk(roots, exclude []string, maxDepth int) []string {
 				return nil
 			case fi.IsDir():
 				add(path)
-				return fs.SkipDir
+				// Keep descending: a repo can hold other independent repos
+				// (e.g. a projects folder that is itself a git repo).
+				return nil
 			case fi.Mode().IsRegular():
 				if main := mainRepoOfWorktree(path); main != "" && underAny(roots, main) && !excludedPath(roots, skip, main) {
 					add(main)

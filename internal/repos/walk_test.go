@@ -44,3 +44,15 @@ func TestWalkWorktreeWhoseMainIsOutsideRootsIsIgnored(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+// A root that is itself a git repo (a projects folder) must not hide the
+// independent repos inside it.
+func TestWalkFindsReposInsideARepoRoot(t *testing.T) {
+	root := mkRepo(t, filepath.Join(tempRoot(t), "work"))
+	inner := mkRepo(t, filepath.Join(root, "Company", "Client", "app"))
+	got := Walk([]string{root}, nil, 6)
+	want := []string{root, inner}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v\nwant %v", got, want)
+	}
+}
