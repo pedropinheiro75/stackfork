@@ -32,7 +32,7 @@ func TestLiveStartEnv(t *testing.T) {
 	mustRun(t, "git", "init", "-q", "-b", "main", repo)
 	files := map[string]string{
 		"Dockerfile":                  "FROM alpine:latest\nCMD [\"sleep\", \"3600\"]\n",
-		".agent-dev/app.compose.yaml": "services:\n  app:\n    build: ..\n    volumes:\n      - data:/data\nvolumes:\n  data: {}\n",
+		".agent-dev/app.compose.yaml": "services:\n  app:\n    build: .\n    volumes:\n      - data:/data\nvolumes:\n  data: {}\n",
 		"f":                           "x",
 	}
 	for f, c := range files {
