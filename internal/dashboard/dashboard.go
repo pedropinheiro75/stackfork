@@ -306,18 +306,41 @@ type pageData struct {
 	Stopped      []cardData
 	Total        int
 	RunningCount int
+	// Loading: the first inventory collection is still running; the page
+	// renders at once and app.js fills it in from /api/instances.
+	Loading bool
 }
 
+// IndexWait is how long the page waits for a cold inventory before it
+// renders in its "loading" state instead (a var so tests can wait longer).
+var IndexWait = 250 * time.Millisecond
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	inv, err := s.collect()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	type collected struct {
+		inv inventory.Inventory
+		err error
 	}
-	running, stopped := buildCards(inv.Instances)
-	data := pageData{
-		Version: s.Version, Token: s.Token, Docker: inv.Docker, Proxy: inv.Proxy,
-		Running: running, Stopped: stopped, Total: len(inv.Instances), RunningCount: len(running),
+	ch := make(chan collected, 1)
+	go func() {
+		inv, err := s.collect()
+		ch <- collected{inv, err}
+	}()
+	var data pageData
+	select {
+	case c := <-ch:
+		if c.err != nil {
+			http.Error(w, c.err.Error(), http.StatusInternalServerError)
+			return
+		}
+		running, stopped := buildCards(c.inv.Instances)
+		data = pageData{
+			Version: s.Version, Token: s.Token, Docker: c.inv.Docker, Proxy: c.inv.Proxy,
+			Running: running, Stopped: stopped, Total: len(c.inv.Instances), RunningCount: len(running),
+		}
+	case <-time.After(IndexWait):
+		// Docker is slow: show the shell now (the collection keeps running
+		// and warms the cache for the poll that app.js makes at once).
+		data = pageData{Version: s.Version, Token: s.Token, Docker: inventory.DockerStatus{Reachable: true}, Loading: true}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := indexTemplate.Execute(w, data); err != nil {

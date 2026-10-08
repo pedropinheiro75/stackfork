@@ -202,3 +202,37 @@ func TestStatusDotsFollowHealthAndOneOffsShowApart(t *testing.T) {
 		}
 	}
 }
+
+// A cold, slow Docker never delays the page: it renders at once in its
+// loading state, and /api/instances (what app.js polls) fills it in.
+func TestIndexRendersLoadingStateWhenDockerIsSlow(t *testing.T) {
+	srv, _, project, _ := seedStack(t)
+	old := dashboard.IndexWait
+	dashboard.IndexWait = 50 * time.Millisecond
+	defer func() { dashboard.IndexWait = old }()
+	t.Setenv("DOCKER_FAKE_PS_SLEEP", "1")
+	start := time.Now()
+	body := indexBody(srv)
+	if d := time.Since(start); d > 700*time.Millisecond {
+		t.Fatalf("page took %v", d)
+	}
+	for _, want := range []string{`id="loading-note"`, "loading...", "checking..."} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, `<article class="stack"`) || strings.Contains(body, "Docker: unreachable") {
+		t.Errorf("loading page must not show cards or a docker error:\n%s", body)
+	}
+	// the data arrives through the API the script polls
+	req := httptest.NewRequest("GET", "/api/instances", nil)
+	req.Host = seedHost
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), project) {
+		t.Fatalf("api: %s", rec.Body.String())
+	}
+	if js, _ := os.ReadFile("static/app.js"); !strings.Contains(string(js), "    poll();\n    setInterval") {
+		t.Error("app.js must poll at once on start")
+	}
+}

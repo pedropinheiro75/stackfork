@@ -50,6 +50,7 @@ if [ "$1" = "context" ] && [ "$2" = "inspect" ]; then
   exit 0
 fi
 if [ "$1" = "ps" ]; then
+  [ -n "$DOCKER_FAKE_PS_SLEEP" ] && sleep "$DOCKER_FAKE_PS_SLEEP"
   case " $* " in
     *"` + identity.LegacyLabelRoot + `"*) printf '%s' "$DOCKER_FAKE_PS_LEGACY" ;;
     *) printf '%s' "$DOCKER_FAKE_PS" ;;

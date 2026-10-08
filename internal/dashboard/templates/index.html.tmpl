@@ -17,12 +17,12 @@
   </nav>
   <div id="status-bar">
     <span id="docker-status" class="{{if .Docker.Reachable}}ok{{else}}down{{end}}">
-      Docker: {{if .Docker.Reachable}}ok{{else}}unreachable{{end}}
+      Docker: {{if .Loading}}checking...{{else if .Docker.Reachable}}ok{{else}}unreachable{{end}}
     </span>
     <span id="proxy-status" class="{{if .Proxy.Running}}ok{{else}}down{{end}}">
-      Proxy: {{if .Proxy.Running}}running on {{.Proxy.Port}}{{else}}stopped{{end}}
+      Proxy: {{if .Loading}}checking...{{else if .Proxy.Running}}running on {{.Proxy.Port}}{{else}}stopped{{end}}
     </span>
-    <span id="counts">{{.RunningCount}} / {{.Total}} running</span>
+    <span id="counts">{{if .Loading}}loading...{{else}}{{.RunningCount}} / {{.Total}} running{{end}}</span>
     <button id="settings-toggle" class="icon-btn" title="Settings: folders to scan" aria-expanded="false">Settings</button>
     <button id="cleanup-toggle" class="icon-btn" title="More" aria-expanded="false">&hellip;</button>
     <button id="proxy-start" class="icon-btn" data-action="proxy-up" title="Start the proxy for portless URLs"{{if .Proxy.Running}} hidden{{end}}>Start proxy for portless URLs</button>
@@ -51,6 +51,7 @@
   <section class="section" data-section="running">
     <h2 class="section-title">Running <span class="section-count">{{len .Running}}</span></h2>
     <div class="stack-list">
+      {{if .Loading}}<p class="muted" id="loading-note" role="status">loading...</p>{{end}}
       {{range .Running}}{{template "stack" .}}{{end}}
     </div>
   </section>
