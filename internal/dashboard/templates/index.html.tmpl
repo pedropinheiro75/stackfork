@@ -127,6 +127,12 @@
     {{range .Warnings}}<li class="warning">{{.}}</li>{{end}}
   </ul>
   {{end}}
+  {{if or .OneOffRunning .OneOffLeftover}}
+  <div class="oneoff-bar" data-oneoff="1">
+    {{if .OneOffRunning}}<span>{{.OneOffRunning}} one-off task(s) running</span>{{end}}
+    {{if .OneOffLeftover}}<span>{{.OneOffLeftover}} leftover one-off container(s){{if .OneOffCleanup}}: <code class="copyable cli-command" data-copy="{{.OneOffCleanup}}" title="click to copy">{{.OneOffCleanup}}</code>{{end}}</span>{{end}}
+  </div>
+  {{end}}
   {{if .SeedCommand}}
   <div class="seed-bar" data-seed="failed">The database seed failed &mdash; retry with
     <code class="copyable cli-command" data-copy="{{.SeedCommand}}" title="click to copy">{{.SeedCommand}}</code>
@@ -138,7 +144,7 @@
     <div class="service-row" data-service="{{.Name}}">
       <div class="service-summary" data-toggle-settings data-key="{{$inst.Project}}/{{.Name}}">
         <span class="service-logo" data-kind="{{.Kind}}"></span>
-        <span class="status-dot {{.State}}"></span>
+        <span class="status-dot {{dotClass .}}" title="{{dotTitle .}}"></span>
         <div class="service-text">
           <span class="service-name">{{.Name}}</span>
           {{if eq .State "optional"}}<span class="service-image">not started (optional)</span>{{else}}          {{if .Image}}<span class="service-image">{{.Image}}</span>{{end}}{{end}}
@@ -147,9 +153,9 @@
           {{range .Endpoints}}
           {{if .Known}}
             {{if or (eq .Scheme "http") (eq .Scheme "https")}}
-            <a class="endpoint-link{{if ne $svc.State "running"}} stopped{{end}}" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}">{{.URL}}{{if ne $svc.State "running"}} {{if eq $svc.State "optional"}}(not started){{else}}(stopped){{end}}{{end}}{{if .Proxied}} (proxy){{end}}</a>
+            <a class="endpoint-link{{if ne $svc.State "running"}} stopped{{end}}" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}">{{.URL}}{{if ne $svc.State "running"}} {{if or (eq $svc.State "optional") (eq $svc.State "not-started")}}(not started){{else}}(stopped){{end}}{{end}}{{if .Proxied}} (proxy){{end}}</a>
             {{else}}
-            <span class="endpoint-copy copyable{{if ne $svc.State "running"}} stopped{{end}}" data-copy="{{.URL}}" title="click to copy">{{.URL}}{{if ne $svc.State "running"}} {{if eq $svc.State "optional"}}(not started){{else}}(stopped){{end}}{{end}}</span>
+            <span class="endpoint-copy copyable{{if ne $svc.State "running"}} stopped{{end}}" data-copy="{{.URL}}" title="click to copy">{{.URL}}{{if ne $svc.State "running"}} {{if or (eq $svc.State "optional") (eq $svc.State "not-started")}}(not started){{else}}(stopped){{end}}{{end}}</span>
             {{end}}
           {{else}}
             <span class="endpoint-pending">container {{.Container}} &mdash; assigned on start</span>

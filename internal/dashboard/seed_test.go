@@ -167,3 +167,38 @@ func TestReposTabShowsReadOnlyRecipe(t *testing.T) {
 		t.Errorf("recipe-seed action still exists: %d", rec.Code)
 	}
 }
+
+func TestStatusDotsFollowHealthAndOneOffsShowApart(t *testing.T) {
+	srv, _, project, _ := seedStack(t)
+	ps := func(service, name, state, status string, oneoff bool) string {
+		l := "com.docker.compose.project=" + project + ",com.docker.compose.service=" + service + ",io.stackfork.root=/x,com.docker.compose.oneoff=" + map[bool]string{true: "True", false: "False"}[oneoff]
+		b, _ := json.Marshal(map[string]string{"ID": name, "Names": name, "Labels": l, "State": state, "Status": status})
+		return string(b)
+	}
+	t.Setenv("DOCKER_FAKE_PS", strings.Join([]string{
+		ps("db", project+"-db-1", "running", "Up 1 hour (unhealthy)", false),
+		ps("db", project+"-db-run-1", "created", "Created", true),
+		ps("db", project+"-db-run-2", "running", "Up 2 minutes", true),
+	}, "\n")+"\n")
+	body := indexBody(srv)
+	for _, want := range []string{`status-dot unhealthy`, "1 one-off task(s) running", "1 leftover one-off container(s)", `data-copy="docker rm ` + project + `-db-run-1"`, "db unhealthy"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, `status-dot running`) {
+		t.Error("an unhealthy service must not be green")
+	}
+	js, _ := os.ReadFile("static/app.js")
+	css, _ := os.ReadFile("static/app.css")
+	for _, want := range []string{"function dotClass", "oneOffHtml(inst)"} {
+		if !strings.Contains(string(js), want) {
+			t.Errorf("app.js lacks %s", want)
+		}
+	}
+	for _, want := range []string{".status-dot.not-started", ".status-dot.unhealthy", ".status-dot.optional"} {
+		if !strings.Contains(string(css), want) {
+			t.Errorf("css lacks %s", want)
+		}
+	}
+}

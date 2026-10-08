@@ -82,3 +82,15 @@ func TestOwnership(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+// A leftover or running one-off `compose run` container carries the project
+// label, so pruning an instance removes it with the rest.
+func TestOneOffContainersAreOwned(t *testing.T) {
+	cs := []Container{
+		{ID: "svc", Labels: map[string]string{"io.stackfork.root": "/r", composeProjectLabel: "p"}},
+		{ID: "run", Labels: map[string]string{"io.stackfork.root": "/r", composeProjectLabel: "p", "com.docker.compose.oneoff": "True"}},
+	}
+	if got := ownedContainers(cs, "p"); len(got) != 2 || got[1].ID != "run" {
+		t.Fatalf("%+v", got)
+	}
+}

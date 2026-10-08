@@ -63,9 +63,10 @@ stackfork exec db psql -U postgres app
 ```
 
 ### restart / start / stop
-Restart, start or stop one service.
+Restart, start or stop one or more services.
 ```sh
 stackfork restart app
+stackfork restart app db
 ```
 
 ### logs

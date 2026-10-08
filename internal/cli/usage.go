@@ -30,7 +30,7 @@ var commandSummaries = []struct{ name, summary string }{
 	{"list", "every instance across every checkout"},
 	{"run", "run a one-off command in a fresh container"},
 	{"exec", "run a command in an already-running container"},
-	{"restart", "restart one service"},
+	{"restart", "restart one or more services"},
 	{"start", "start one stopped service"},
 	{"stop", "stop one running service"},
 	{"logs", "recent (or following) logs for a service"},

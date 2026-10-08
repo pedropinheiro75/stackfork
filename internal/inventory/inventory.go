@@ -34,6 +34,9 @@ const (
 	StateMissingCheckout = "missing-checkout"
 	StateMissingBranch   = "missing-branch"
 	StateUnknown         = "unknown"
+	// StateNotStarted is a service whose container exists but never ran
+	// (docker's "created"): red, and it counts toward partial.
+	StateNotStarted = "not-started"
 
 	// ServiceOptional is a service that never started: it has no container
 	// at all and is either behind a Compose profile or not part of the
@@ -91,10 +94,12 @@ type VolumeMount struct {
 
 // Service is one Compose service's current row within an instance.
 type Service struct {
-	Name      string     `json:"name"`
-	State     string     `json:"state"`
-	Health    string     `json:"health,omitempty"`
-	Endpoints []Endpoint `json:"endpoints,omitempty"`
+	Name   string `json:"name"`
+	State  string `json:"state"`
+	Health string `json:"health,omitempty"`
+	// HealthDetail is the last health-check line of an unhealthy service.
+	HealthDetail string     `json:"health_detail,omitempty"`
+	Endpoints    []Endpoint `json:"endpoints,omitempty"`
 
 	// The rest are read from the snapshot already on disk (design.md D3a):
 	// no extra docker call. Image and Kind pick the dashboard's logo;
@@ -168,7 +173,13 @@ type Instance struct {
 	// the manifest and a seed to run): the dashboard shows a warning with the
 	// copyable retry commands. A successful or absent seed shows nothing.
 	SeedCommand string `json:"seed_command,omitempty"`
-	SeedForce   string `json:"seed_force,omitempty"`
+	// OneOffRunning counts `compose run` containers still running;
+	// OneOffLeftover those created or exited and never removed, with the
+	// `docker rm` that clears them.
+	OneOffRunning  int    `json:"oneoff_running,omitempty"`
+	OneOffLeftover int    `json:"oneoff_leftover,omitempty"`
+	OneOffCleanup  string `json:"oneoff_cleanup,omitempty"`
+	SeedForce      string `json:"seed_force,omitempty"`
 
 	// Recipe inputs recorded at prepare, kept out of the JSON: a sibling
 	// worktree's recipe is derived from them (add-repo-browser D6a).
@@ -303,11 +314,8 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		services, serviceState, apps := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
 		inst.Services = services
 		inst.State = serviceState
-		for _, svc := range services {
-			if hint := compose.RestartHint(svc.Name, svc.State, svc.Health); hint != "" {
-				inst.Warnings = append(inst.Warnings, hint)
-			}
-		}
+		inst.Warnings = append(inst.Warnings, serviceWarnings(project, services)...)
+		fillOneOffs(&inst, rows)
 		inst.Apps = appendRouteAndKnowledgeApps(apps, info)
 		inst.EnvBlock = buildEnvBlock(services)
 	}
@@ -419,6 +427,10 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 		}
 		if row, ok := rowByService[name]; ok {
 			svc.State = strings.ToLower(row.State)
+			if svc.State == "created" {
+				svc.State = StateNotStarted
+			}
+			svc.HealthDetail = row.HealthDetail
 			svc.Health = row.Health
 			if svc.State == "running" {
 				running++
@@ -621,6 +633,8 @@ func RunningProjects() (map[string]bool, error) {
 type containerRow struct {
 	Project, Service, State, Health string
 	Publishers                      []map[string]interface{}
+	ID, Name, HealthDetail          string
+	OneOff                          bool // a `compose run` container, not a service replica
 }
 
 var healthPattern = regexp.MustCompile(`\((healthy|unhealthy|health: starting)\)`)
@@ -659,6 +673,8 @@ func listContainers() ([]containerRow, error) {
 			State  string `json:"State"`
 			Status string `json:"Status"`
 			Ports  string `json:"Ports"`
+			ID     string `json:"ID"`
+			Names  string `json:"Names"`
 		}
 		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
@@ -673,6 +689,8 @@ func listContainers() ([]containerRow, error) {
 			Project: labels["com.docker.compose.project"],
 			Service: labels["com.docker.compose.service"],
 			State:   raw.State,
+			ID:      raw.ID, Name: raw.Names,
+			OneOff: strings.EqualFold(labels["com.docker.compose.oneoff"], "true"),
 		}
 		if m := healthPattern.FindStringSubmatch(raw.Status); m != nil {
 			row.Health = m[1]
@@ -680,7 +698,54 @@ func listContainers() ([]containerRow, error) {
 		row.Publishers = parsePorts(raw.Ports)
 		rows = append(rows, row)
 	}
+	fillHealthDetails(rows)
 	return rows, nil
+}
+
+var secretish = regexp.MustCompile(`(?i)(password|passwd|token|secret|api[_-]?key|authorization)(\s*[=:]\s*)\S+`)
+
+// fillHealthDetails reads the output of the latest health check of every
+// unhealthy service container with ONE `docker inspect` (Docker can be slow
+// to answer, so never one call per container), keeping the last non-empty
+// line, masked and shortened.
+func fillHealthDetails(rows []containerRow) {
+	var ids []string
+	for _, r := range rows {
+		if r.Health == "unhealthy" && !r.OneOff && r.ID != "" {
+			ids = append(ids, r.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	args := append([]string{"inspect", "--format", `{{.Id}} {{json .State.Health.Log}}`}, ids...)
+	cmd := exec.Command("docker", args...)
+	cmd.Env = compose.DockerEnv()
+	out, _ := cmd.Output() // best effort: a missing detail only shortens the warning
+	lines := map[string]string{}
+	for _, l := range strings.Split(string(out), "\n") {
+		full, js, ok := strings.Cut(strings.TrimSpace(l), " ")
+		if !ok {
+			continue
+		}
+		var log []struct{ Output string }
+		if json.Unmarshal([]byte(js), &log) != nil || len(log) == 0 {
+			continue
+		}
+		parts := strings.Split(strings.TrimSpace(log[len(log)-1].Output), "\n")
+		line := secretish.ReplaceAllString(strings.TrimSpace(parts[len(parts)-1]), "$1$2***")
+		if r := []rune(line); len(r) > 160 {
+			line = string(r[:160]) + "..."
+		}
+		lines[full] = line
+	}
+	for i := range rows {
+		for full, line := range lines {
+			if rows[i].ID != "" && strings.HasPrefix(full, rows[i].ID) {
+				rows[i].HealthDetail = line
+			}
+		}
+	}
 }
 
 func parseLabels(s string) map[string]string {
@@ -743,11 +808,16 @@ func parsePorts(s string) []map[string]interface{} {
 	return out
 }
 
+// toStatusRows keeps only service containers: a one-off `compose run`
+// container never decides a service's state or health.
 func toStatusRows(rows []containerRow) []compose.StatusRow {
 	out := make([]compose.StatusRow, 0, len(rows))
 	for _, r := range rows {
+		if r.OneOff {
+			continue
+		}
 		out = append(out, compose.StatusRow{
-			Service: r.Service, State: r.State, Health: r.Health, Publishers: r.Publishers,
+			Service: r.Service, State: r.State, Health: r.Health, Publishers: r.Publishers, HealthDetail: r.HealthDetail,
 		})
 	}
 	return out
@@ -775,4 +845,86 @@ func fillSeed(inst *Instance, info *state.Manifest) {
 	}
 	run := "stackfork --instance " + info.Project + " seed"
 	inst.SeedCommand, inst.SeedForce = run, run+" --force"
+}
+
+// serviceWarnings turns the services' states into one warning per kind
+// (unhealthy, exited, not started), each naming every affected service and
+// the one command that recovers them.
+func serviceWarnings(project string, services []Service) []string {
+	type group struct {
+		names  []string
+		reason string
+	}
+	var unhealthy, exited, notStarted []group
+	add := func(gs *[]group, name, reason string) {
+		for i := range *gs {
+			if (*gs)[i].reason == reason {
+				(*gs)[i].names = append((*gs)[i].names, name)
+				return
+			}
+		}
+		*gs = append(*gs, group{names: []string{name}, reason: reason})
+	}
+	for _, s := range services {
+		switch {
+		case s.Health == "unhealthy":
+			add(&unhealthy, s.Name, healthReason(s.HealthDetail))
+		case s.State == "exited" || s.State == "dead" || s.State == "restarting":
+			add(&exited, s.Name, s.State)
+		case s.State == StateNotStarted:
+			add(&notStarted, s.Name, "")
+		}
+	}
+	cmd := func(verb string, names []string) string {
+		return "`stackfork " + verb + strings.Join(append([]string{""}, names...), " ") + "`"
+	}
+	var out []string
+	for _, g := range unhealthy {
+		msg := strings.Join(g.names, ", ") + " unhealthy"
+		if g.reason != "" {
+			msg += ": " + g.reason
+		}
+		out = append(out, msg+" - try "+cmd("restart", g.names))
+	}
+	for _, g := range exited {
+		out = append(out, strings.Join(g.names, ", ")+" "+g.reason+" - if that is unexpected, try "+cmd("restart", g.names))
+	}
+	for _, g := range notStarted {
+		out = append(out, strings.Join(g.names, ", ")+" not started - run `stackfork up`")
+	}
+	return out
+}
+
+// healthReason words why a health check fails: a timeout is usually load,
+// not a broken service; anything else shows the check's own last line.
+func healthReason(detail string) string {
+	switch {
+	case strings.Contains(strings.ToLower(detail), "health check exceeded timeout"):
+		return "health check timing out (Docker may be overloaded or the service is slow to answer)"
+	default:
+		return detail
+	}
+}
+
+// fillOneOffs counts a project's `compose run` containers apart from its
+// services: running ones, and leftovers (created or exited, never removed).
+func fillOneOffs(inst *Instance, rows []containerRow) {
+	var names []string
+	for _, r := range rows {
+		if !r.OneOff {
+			continue
+		}
+		if strings.EqualFold(r.State, "running") {
+			inst.OneOffRunning++
+			continue
+		}
+		inst.OneOffLeftover++
+		if r.Name != "" {
+			names = append(names, r.Name)
+		}
+	}
+	if len(names) > 0 {
+		sort.Strings(names)
+		inst.OneOffCleanup = "docker rm " + strings.Join(names, " ")
+	}
 }

@@ -22,6 +22,10 @@ type StatusRow struct {
 	// Hint is set only by `status` for a service that is unhealthy or has
 	// exited (see RestartHint); absent otherwise, so the row is unchanged.
 	Hint string `json:"hint,omitempty"`
+	// HealthDetail is the last health-check output line (redacted, short),
+	// set by the inventory for an unhealthy container; never read from
+	// `compose ps`.
+	HealthDetail string `json:"health_detail,omitempty"`
 }
 
 // RestartHint says how to recover a service that is unhealthy or no longer

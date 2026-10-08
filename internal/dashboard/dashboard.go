@@ -35,6 +35,8 @@ var indexTemplateSrc embed.FS
 // (design.md D3a); everything else (escaping, formatting) is either
 // html/template's own job or already done in Go before Execute.
 var indexFuncs = template.FuncMap{
+	"dotClass": dotClass,
+	"dotTitle": dotTitle,
 	"initial": func(project string) string {
 		for _, r := range projectSlug(project) {
 			return strings.ToUpper(string(r))

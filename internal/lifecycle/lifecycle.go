@@ -32,7 +32,8 @@ type Options struct {
 	Services    []string
 	WaitTimeout int // up only; 0 means 180
 	Volumes     bool
-	Service     string   // restart/run/exec
+	Service     string   // restart/start/stop/run/exec
+	Targets     []string // restart/start/stop: several services at once (Service is the first)
 	Command     []string // run/exec
 }
 
@@ -226,14 +227,21 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 			dockerCommand = append(dockerCommand, "--volumes")
 		}
 	case "restart", "start", "stop":
-		hasService, err := serviceInSnapshot(configPath, opts.Service)
-		if err != nil {
-			return 0, err
+		targets := opts.Targets
+		if len(targets) == 0 {
+			targets = []string{opts.Service}
 		}
-		if opts.Service == "" || !hasService {
-			return 0, errors.New("Specify a service in this snapshot")
+		for _, t := range targets {
+			hasService, err := serviceInSnapshot(configPath, t)
+			if err != nil {
+				return 0, err
+			}
+			if t == "" || !hasService {
+				return 0, errors.New("Specify a service in this snapshot")
+			}
 		}
-		dockerCommand = append(dockerCommand, action, opts.Service)
+		dockerCommand = append(dockerCommand, action)
+		dockerCommand = append(dockerCommand, targets...)
 	case "run", "exec":
 		hasService, err := serviceInSnapshot(configPath, opts.Service)
 		if err != nil {

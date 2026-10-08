@@ -888,13 +888,13 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 	case "restart", "start", "stop":
 		if isHelpRequest(subArgs) {
-			printFlaglessUsage(stdout, action, action+" SERVICE")
+			printFlaglessUsage(stdout, action, action+" SERVICE [SERVICE...]")
 			return 0, nil
 		}
 		if len(subArgs) < 1 {
 			return 2, errors.New("service is required")
 		}
-		opts.Service = subArgs[0]
+		opts.Service, opts.Targets = subArgs[0], subArgs
 	case "run", "exec":
 		if isHelpRequest(subArgs) {
 			printFlaglessUsage(stdout, action, action+" SERVICE [COMMAND...]")

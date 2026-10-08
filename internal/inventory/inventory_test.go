@@ -40,6 +40,9 @@ if [ "$1" = "ps" ]; then
   exit 0
 fi
 if [ "$1" = "inspect" ]; then
+  case " $* " in
+    *"State.Health.Log"*) shift; shift; shift; for id in "$@"; do printf '%s %s\n' "$id" "$DOCKER_FAKE_HEALTH_LOG"; done; exit 0 ;;
+  esac
   printf '%s' "${DOCKER_FAKE_PROXY_RUNNING:-false}"
   exit 0
 fi
@@ -424,5 +427,96 @@ func TestSeedWarningOnlyWhenASeedFailed(t *testing.T) {
 	}
 	if i := set("none", &f); i.SeedCommand != "" {
 		t.Errorf("never seed must not warn: %+v", i)
+	}
+}
+
+// psRow is a `docker ps --format json` line with an id, a name and extra labels.
+func psRow(t *testing.T, project, service, name, state, status string, oneoff bool) string {
+	t.Helper()
+	labels := "com.docker.compose.project=" + project + ",com.docker.compose.service=" + service + ",io.stackfork.root=/x"
+	if oneoff {
+		labels += ",com.docker.compose.oneoff=True"
+	} else {
+		labels += ",com.docker.compose.oneoff=False"
+	}
+	b, _ := json.Marshal(map[string]string{"ID": "id-" + name, "Names": name, "Labels": labels, "State": state, "Status": status})
+	return string(b)
+}
+
+func collectOne(t *testing.T, base string) Instance {
+	t.Helper()
+	inv, err := Collect(Options{NewStateBase: base, LegacyStateBase: t.TempDir(), Version: "test"})
+	if err != nil || len(inv.Instances) != 1 {
+		t.Fatalf("%v %+v", err, inv.Instances)
+	}
+	return inv.Instances[0]
+}
+
+func svcStates(i Instance) map[string]string {
+	m := map[string]string{}
+	for _, s := range i.Services {
+		m[s.Name] = s.State + "/" + s.Health
+	}
+	return m
+}
+
+func TestUnhealthyServicesAreGroupedAndTimeoutIsNamed(t *testing.T) {
+	installFakeDocker(t)
+	base := t.TempDir()
+	root := gitRepo(t, "main")
+	writeInstance(t, base, "sf-311", root, "main", []string{"app", "db", "nginx"}, nil)
+	t.Setenv("DOCKER_FAKE_HEALTH_LOG", `[{"Output":"old"},{"Output":"pg_isready: Health check exceeded timeout (3s)\n"}]`)
+	t.Setenv("DOCKER_FAKE_PS", strings.Join([]string{
+		psRow(t, "sf-311", "app", "sf-311-app-1", "running", "Up 17 hours (unhealthy)", false),
+		psRow(t, "sf-311", "db", "sf-311-db-1", "running", "Up 18 hours (unhealthy)", false),
+		psRow(t, "sf-311", "nginx", "sf-311-nginx-1", "running", "Up 18 hours", false),
+	}, "\n")+"\n")
+	i := collectOne(t, base)
+	want := "app, db unhealthy: health check timing out (Docker may be overloaded or the service is slow to answer) - try `stackfork restart app db`"
+	if len(i.Warnings) != 1 || i.Warnings[0] != want {
+		t.Fatalf("warnings %q", i.Warnings)
+	}
+	if st := svcStates(i); st["app"] != "running/unhealthy" || st["db"] != "running/unhealthy" || st["nginx"] != "running/" {
+		t.Fatalf("states %v", st)
+	}
+}
+
+func TestOtherHealthFailureShowsRedactedLastLine(t *testing.T) {
+	installFakeDocker(t)
+	base := t.TempDir()
+	writeInstance(t, base, "sf-1", gitRepo(t, "main"), "main", []string{"db"}, nil)
+	t.Setenv("DOCKER_FAKE_HEALTH_LOG", `[{"Output":"warming up\nFATAL: password=hunter2 rejected "}]`)
+	t.Setenv("DOCKER_FAKE_PS", psRow(t, "sf-1", "db", "sf-1-db-1", "running", "Up 1 minute (unhealthy)", false)+"\n")
+	w := collectOne(t, base).Warnings
+	if len(w) != 1 || !strings.Contains(w[0], "FATAL: password=*** rejected") || strings.Contains(w[0], "hunter2") {
+		t.Fatalf("warnings %q", w)
+	}
+}
+
+func TestCreatedIsNotStartedNotOptionalAndOneOffsAreSeparate(t *testing.T) {
+	installFakeDocker(t)
+	base := t.TempDir()
+	root := gitRepo(t, "main")
+	writeInstance(t, base, "sf-312", root, "main", []string{"app", "db", "nginx"}, nil)
+	t.Setenv("DOCKER_FAKE_HEALTH_LOG", `[{"Output":"Health check exceeded timeout (3s)"}]`)
+	t.Setenv("DOCKER_FAKE_PS", strings.Join([]string{
+		psRow(t, "sf-312", "db", "sf-312-db-1", "running", "Up 1 hour (unhealthy)", false),
+		psRow(t, "sf-312", "app", "sf-312-app-1", "created", "Created", false),
+		psRow(t, "sf-312", "nginx", "sf-312-nginx-1", "created", "Created", false),
+		psRow(t, "sf-312", "app", "sf-312-app-run-44991bcf731a", "running", "Up 12 minutes (unhealthy)", true),
+		psRow(t, "sf-312", "app", "sf-312-app-run-fc1dbee3e9d1", "created", "Created", true),
+	}, "\n")+"\n")
+	i := collectOne(t, base)
+	if st := svcStates(i); st["app"] != "not-started/" || st["nginx"] != "not-started/" || st["db"] != "running/unhealthy" {
+		t.Fatalf("states %v", st)
+	}
+	if i.State != StatePartial {
+		t.Errorf("instance %q, want partial (not-started counts)", i.State)
+	}
+	if len(i.Warnings) != 2 || !strings.Contains(i.Warnings[0], "db unhealthy") || i.Warnings[1] != "app, nginx not started - run `stackfork up`" {
+		t.Fatalf("warnings %q", i.Warnings)
+	}
+	if i.OneOffRunning != 1 || i.OneOffLeftover != 1 || i.OneOffCleanup != "docker rm sf-312-app-run-fc1dbee3e9d1" {
+		t.Fatalf("one-offs %+v", i)
 	}
 }

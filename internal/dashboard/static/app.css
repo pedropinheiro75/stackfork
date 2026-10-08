@@ -341,7 +341,8 @@ main.stale { opacity: 0.6; }
   background: var(--muted);
 }
 .status-dot.running { background: var(--ok); }
-.status-dot.exited, .status-dot.stopped { background: var(--bad); }
+.status-dot.exited, .status-dot.stopped, .status-dot.dead, .status-dot.not-started { background: var(--bad); }
+.status-dot.restarting { background: var(--warn); }
 .status-dot.optional { background: var(--muted); }
 .status-dot.unhealthy, .status-dot.starting { background: var(--warn); }
 
@@ -538,3 +539,5 @@ code.setting-value { display: inline-block; }
 .seed-bar code { overflow-wrap: anywhere; }
 .recipe { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 6px 0 10px; font-size: 13px; }
 .recipe code { overflow-wrap: anywhere; }
+.oneoff-bar { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 14px 10px; padding: 6px 12px; font-size: 13px; color: var(--muted); }
+.oneoff-bar code { overflow-wrap: anywhere; }

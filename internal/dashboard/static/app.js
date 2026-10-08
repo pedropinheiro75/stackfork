@@ -128,10 +128,39 @@
     return out;
   }
 
+  // dotClass must match dashboard/dot.go's dotClass.
+  function dotClass(svc) {
+    if (svc.state === "running") {
+      if (svc.health === "unhealthy") return "unhealthy";
+      if (svc.health === "health: starting") return "starting";
+    }
+    return svc.state;
+  }
+
+  function dotTitle(svc) {
+    if (svc.state === "optional") return "not started (optional)";
+    if (svc.state === "not-started") return "not started";
+    if (svc.state === "running" && svc.health === "unhealthy") return "running, unhealthy";
+    if (svc.state === "running" && svc.health === "health: starting") return "running, health check starting";
+    return svc.state;
+  }
+
+  function oneOffHtml(inst) {
+    if (!inst.oneoff_running && !inst.oneoff_leftover) return "";
+    var h = '<div class="oneoff-bar" data-oneoff="1">';
+    if (inst.oneoff_running) h += "<span>" + inst.oneoff_running + " one-off task(s) running</span>";
+    if (inst.oneoff_leftover) {
+      h += "<span>" + inst.oneoff_leftover + " leftover one-off container(s)";
+      if (inst.oneoff_cleanup) h += ': <code class="copyable cli-command" data-copy="' + escapeHtml(inst.oneoff_cleanup) + '" title="click to copy">' + escapeHtml(inst.oneoff_cleanup) + "</code>";
+      h += "</span>";
+    }
+    return h + "</div>";
+  }
+
   function serviceHtml(inst, svc) {
     var key = inst.project + "/" + svc.name;
     var running = svc.state === "running";
-    var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, running, svc.state === "optional"); }).join("");
+    var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, running, svc.state === "optional" || svc.state === "not-started"); }).join("");
     if (svc.connection_url) {
       endpoints += '<span class="endpoint-copy copyable connection-url" data-copy="' + escapeHtml(svc.connection_url) +
         '" data-copy-kind="database_url" data-copy-project="' + escapeHtml(inst.project) + '" data-copy-service="' + escapeHtml(svc.name) +
@@ -149,7 +178,7 @@
       '<div class="service-row" data-service="' + escapeHtml(svc.name) + '">' +
       '<div class="service-summary" data-toggle-settings data-key="' + escapeHtml(key) + '">' +
       '<span class="service-logo" data-kind="' + escapeHtml(svc.kind || "") + '"></span>' +
-      '<span class="status-dot ' + escapeHtml(svc.state) + '"></span>' +
+      '<span class="status-dot ' + escapeHtml(dotClass(svc)) + '" title="' + escapeHtml(dotTitle(svc)) + '"></span>' +
       '<div class="service-text"><span class="service-name">' + escapeHtml(svc.name) + "</span>" + image + "</div>" +
       '<div class="service-endpoints">' + endpoints + "</div>" +
       '<div class="service-icons">' +
@@ -196,7 +225,7 @@
       "</div></header>" +
       (appStrip ? '<div class="app-strip">' + appStrip + "</div>" : "") +
       '<div class="stack-menu"' + (menuOpen ? "" : " hidden") + ">" + commandsHtml(inst) + "</div>" +
-      (warnings ? '<ul class="warnings">' + warnings + "</ul>" : "") + seedBar +
+      (warnings ? '<ul class="warnings">' + warnings + "</ul>" : "") + oneOffHtml(inst) + seedBar +
       '<div class="stack-body">' + services + "</div></article>"
     );
   }

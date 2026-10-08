@@ -66,3 +66,27 @@ func TestStartStopUnknownServiceRefused(t *testing.T) {
 		}
 	}
 }
+
+// restart/start/stop take several services and pass them in one docker call.
+func TestRestartSeveralServices(t *testing.T) {
+	log := installFakeDocker(t)
+	root := initRepo(t)
+	composePath := filepath.Join(root, "compose.yaml")
+	if err := os.WriteFile(composePath, []byte("services:\n  app:\n    image: alpine\n  db:\n    image: postgres:17\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(t.TempDir(), "state")
+	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "prepare", "-f", composePath); code != 0 {
+		t.Fatalf("prepare: %s", stderr)
+	}
+	os.Truncate(log, 0)
+	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "restart", "app", "db"); code != 0 {
+		t.Fatalf("restart: %s", stderr)
+	}
+	if b, _ := os.ReadFile(log); !strings.Contains(string(b), "restart app db") {
+		t.Fatalf("one restart call for both services expected:\n%s", b)
+	}
+	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "restart", "app", "ghost"); code == 0 || !strings.Contains(stderr, "Specify a service") {
+		t.Fatalf("an unknown service must refuse the whole call: %d %s", code, stderr)
+	}
+}
