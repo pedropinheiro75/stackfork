@@ -200,7 +200,7 @@ main.stale { opacity: 0.6; }
 }
 .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-#proxy-start {
+#proxy-start, #settings-toggle {
   width: auto;
   padding: 0 10px;
   font-size: 12px;
@@ -526,3 +526,4 @@ code.setting-value { display: inline-block; }
 .settings-form input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font-size: 13px; }
 .settings-form input[type="number"] { flex: 0 0 90px; }
 .form-error { color: var(--bad); font-size: 13px; min-height: 1em; margin: 6px 0 0; }
+.instance-link { text-decoration: none; }

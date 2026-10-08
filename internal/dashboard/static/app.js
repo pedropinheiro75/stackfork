@@ -531,7 +531,9 @@
     var d = btn.dataset;
     if (d.confirm && !window.confirm(d.confirm)) return;
     var body = { action: d.repoAction, repo: d.repo, path: d.path || "", branch: d.branch || "" };
-    var label = (d.path || d.branch || d.repo) + " " + d.repoAction;
+    var name = d.repo.split("/").pop();
+    var what = d.branch || (d.path && d.path !== d.repo ? d.path.split("/").pop() : "");
+    var label = name + (what ? ":" + what : "") + " " + d.repoAction;
     btn.disabled = true;
     log(label + ": started");
     fetch("/api/actions", {
