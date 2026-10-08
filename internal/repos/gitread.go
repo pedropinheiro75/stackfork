@@ -40,8 +40,8 @@ func readGit(path string) (gitData, error) {
 		return d, fmt.Errorf("%s: %w", path, err)
 	}
 	all := map[string]Branch{}
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		f := strings.Split(line, "\t")
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		f := strings.Split(line, "\t") // not TrimSpace: empty trailing fields are tabs
 		if len(f) < 4 {
 			continue
 		}

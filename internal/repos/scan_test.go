@@ -102,3 +102,41 @@ func TestScanWithNoRootsScansNothing(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 }
+
+func TestSecondScanOfUnchangedRepoRunsNoGit(t *testing.T) {
+	root := tempRoot(t)
+	repo := mkRepo(t, filepath.Join(root, "proj"))
+	cfg := &config.Config{Roots: []string{root}}
+	cacheFile := filepath.Join(t.TempDir(), "repos-cache.json")
+	logPath := installGitLog(t)
+
+	first := Scan(Options{Config: cfg, CacheFile: cacheFile})
+	if readLog(t, logPath) == "" || len(first.Repos) != 1 {
+		t.Fatalf("first scan should have run git: %+v", first)
+	}
+	os.Truncate(logPath, 0)
+	second := Scan(Options{Config: cfg, CacheFile: cacheFile})
+	if got := readLog(t, logPath); got != "" {
+		t.Fatalf("unchanged repo re-read:\n%s", got)
+	}
+	if len(second.Repos) != 1 || second.Repos[0].Worktrees[0].Branch != "main" {
+		t.Fatalf("%+v", second)
+	}
+
+	// a change in the repo's refs is picked up
+	git(t, repo, "branch", "newbranch")
+	third := Scan(Options{Config: cfg, CacheFile: cacheFile})
+	if got := readLog(t, logPath); got == "" || len(third.Repos[0].Branches) != 1 {
+		t.Fatalf("changed repo not re-read: %q %+v", got, third.Repos[0].Branches)
+	}
+
+	// --rescan forces a re-read even when nothing changed
+	os.Truncate(logPath, 0)
+	Scan(Options{Config: cfg, CacheFile: cacheFile, Rescan: true})
+	if readLog(t, logPath) == "" {
+		t.Fatal("rescan must re-read")
+	}
+	if fi, err := os.Stat(cacheFile); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("cache file: %v %v", fi, err)
+	}
+}
