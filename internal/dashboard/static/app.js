@@ -412,7 +412,7 @@
         openSettings[toggleSettings.dataset.key] = openNow;
         return;
       }
-      var btn = e.target.closest(".icon-btn[data-action]");
+      var btn = e.target.closest(".icon-btn[data-action], .repo-btn[data-action]");
       if (btn) {
         runAction(btn.dataset.action, btn.dataset.project, btn.dataset.service);
         return;

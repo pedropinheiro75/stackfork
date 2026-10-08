@@ -31,7 +31,7 @@
         {{if .Recipe.Migrate}}<span>migrate <code>{{.Recipe.Migrate}}</code></span>{{end}}
         <span>seed: {{if eq .Recipe.State "seed"}}<code>{{.Recipe.Seed}}</code>{{else if eq .Recipe.State "never"}}never{{else}}not decided yet{{end}}</span>
         <select class="recipe-choice" aria-label="Seed decision for {{$r.Name}}">
-          {{if .Recipe.Detected}}<option value="detected">Seed with {{.Recipe.Detected}}</option>{{end}}
+          {{if .Recipe.Detected}}<option value="detected"{{if eq .Recipe.State "seed"}} selected{{end}}>Seed with {{.Recipe.Detected}}</option>{{end}}
           <option value="never"{{if eq .Recipe.State "never"}} selected{{end}}>Never seed</option>
           <option value="clear"{{if eq .Recipe.State "undecided"}} selected{{end}}>Not decided</option>
         </select>

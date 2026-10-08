@@ -146,6 +146,9 @@ func TestSeedControlsEscapeHostileCommands(t *testing.T) {
 	}
 	// the page script builds the same markup client-side from JSON: it must escape too
 	js, _ := os.ReadFile("static/app.js")
+	if !strings.Contains(string(js), `.repo-btn[data-action]`) {
+		t.Error("the click handler does not reach the seed buttons")
+	}
 	for _, want := range []string{"escapeHtml(inst.seed_proposal)", "escapeHtml(inst.seed_command)"} {
 		if !strings.Contains(string(js), want) {
 			t.Errorf("app.js does not escape %s", want)
