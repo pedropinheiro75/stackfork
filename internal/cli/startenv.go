@@ -147,6 +147,14 @@ func prepareArgs(root, main, instanceDir string) ([]string, error) {
 			return fileArgs([]string{rel}), nil
 		}
 	}
+	if main != root {
+		for _, dir := range []string{".stackfork", ".agent-dev"} {
+			if m, _ := filepath.Glob(filepath.Join(main, dir, "*.compose.yaml")); len(m) > 0 {
+				return nil, fmt.Errorf("the adapter %s exists only in the main checkout, not in this worktree; list it under adapter_files in .stackfork/knowledge.json so `worktree add` copies it, or copy it here",
+					filepath.Join(dir, filepath.Base(m[0])))
+			}
+		}
+	}
 	return nil, errors.New("no recorded prepare recipe or adapter compose file for this project; run `stackfork prepare -f FILE` once")
 }
 

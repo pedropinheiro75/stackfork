@@ -176,3 +176,17 @@ func TestRecipePrepareArgs(t *testing.T) {
 		}
 	}
 }
+
+func TestStartEnvInWorktreeMissingAnUntrackedAdapterSaysSo(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := readyRepo(t, root) // the adapter is untracked: a new worktree will not have it
+	installFakeDocker(t)
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "wt", filepath.Join(repo, ".worktrees", "wt")).CombinedOutput(); err != nil {
+		t.Fatalf("%s", out)
+	}
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	_, e, code := runCLI(t, append(base, "start-env", filepath.Join(repo, ".worktrees", "wt"))...)
+	if code == 0 || !strings.Contains(e, "only in the main checkout") || !strings.Contains(e, "adapter_files") {
+		t.Fatalf("%d %s", code, e)
+	}
+}
