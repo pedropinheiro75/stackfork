@@ -11,6 +11,10 @@
 <body>
 <header id="header">
   <h1>stackfork <span id="version">{{.Version}}</span></h1>
+  <nav id="tabs" aria-label="Views">
+    <button type="button" class="tab" data-tab="instances" aria-selected="true">Instances</button>
+    <button type="button" class="tab" data-tab="repos" aria-selected="false">Repos</button>
+  </nav>
   <div id="status-bar">
     <span id="docker-status" class="{{if .Docker.Reachable}}ok{{else}}down{{end}}">
       Docker: {{if .Docker.Reachable}}ok{{else}}unreachable{{end}}
@@ -19,14 +23,20 @@
       Proxy: {{if .Proxy.Running}}running on {{.Proxy.Port}}{{else}}stopped{{end}}
     </span>
     <span id="counts">{{.RunningCount}} / {{.Total}} running</span>
+    <button id="settings-toggle" class="icon-btn" title="Settings: folders to scan" aria-expanded="false">Settings</button>
     <button id="cleanup-toggle" class="icon-btn" title="More" aria-expanded="false">&hellip;</button>
     <button id="proxy-start" class="icon-btn" data-action="proxy-up" title="Start the proxy for portless URLs"{{if .Proxy.Running}} hidden{{end}}>Start proxy for portless URLs</button>
   </div>
-  <div id="controls">
+  <div id="controls" data-for="instances">
     <input id="filter" type="text" placeholder="filter by project, branch or checkout">
     <label><input id="running-only" type="checkbox"> running only</label>
   </div>
 </header>
+
+<div id="settings-panel" class="panel" hidden>
+  <div id="settings-body"></div>
+  <p id="settings-error" class="form-error" role="alert"></p>
+</div>
 
 <div id="cleanup-panel" hidden>
   <h2>Clean up</h2>
@@ -50,6 +60,16 @@
       {{range .Stopped}}{{template "stack" .}}{{end}}
     </div>
   </section>
+</main>
+
+<main id="repos-view" hidden>
+  <div id="repos-controls">
+    <input id="repo-filter" type="text" placeholder="search repos" aria-label="Search repos">
+    <label><input id="ready-only" type="checkbox"> ready only</label>
+    <button type="button" id="rescan" class="repo-btn" title="Walk the folders again and re-read every repo">Rescan</button>
+    <span id="scan-state" class="muted"></span>
+  </div>
+  <div id="repos-list" aria-live="polite"></div>
 </main>
 
 <div id="activity-log"></div>

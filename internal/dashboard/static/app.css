@@ -459,3 +459,70 @@ code.setting-value { display: inline-block; }
 #cleanup-list { list-style: none; margin: 6px 0 0; padding: 0; }
 #cleanup-list li { margin: 4px 0; }
 .cleanup-count { font-weight: 600; margin: 0 6px; }
+
+/* --- Repos tab and Settings (add-repo-browser) --- */
+#tabs { display: flex; gap: 4px; }
+.tab {
+  padding: 5px 12px; border: 1px solid transparent; border-radius: 6px;
+  background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer;
+}
+.tab[aria-selected="true"] { color: var(--fg); background: var(--bg); border-color: var(--border); font-weight: 600; }
+#controls[hidden] { display: none; }
+
+#repos-view { max-width: 1100px; margin: 0 auto; padding: 20px; }
+#repos-view[hidden], main#instances[hidden] { display: none; }
+#repos-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; font-size: 13px; }
+#repo-filter {
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--card-bg); color: var(--fg); font-size: 13px; width: 260px;
+}
+.muted { color: var(--muted); font-size: 13px; }
+.group-title {
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); margin: 18px 0 8px;
+}
+.repo { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
+.repo[hidden] { display: none; }
+.repo-summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px 16px; cursor: pointer; list-style: none;
+}
+.repo-summary::-webkit-details-marker { display: none; }
+.repo-summary::before { content: "\25B8"; color: var(--muted); }
+.repo[open] > .repo-summary::before { content: "\25BE"; }
+.repo-name { font-weight: 600; }
+.repo-counts, .repo-last { color: var(--muted); font-size: 12px; }
+.repo-last { margin-left: auto; }
+.repo-running { color: var(--ok); font-size: 12px; font-weight: 600; }
+.readiness { font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); }
+.readiness-ready { color: var(--ok); border-color: var(--ok); }
+.readiness-draft { color: var(--warn); border-color: var(--warn); }
+.readiness-unknown { color: var(--muted); }
+.repo-body { padding: 0 16px 14px; border-top: 1px solid var(--border); }
+.repo-meta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding-top: 10px; }
+.reason { margin: 6px 0; }
+.repo-body h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 14px 0 6px; }
+.wt-list { list-style: none; margin: 0; padding: 0; }
+.wt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.wt-row:last-child { border-bottom: none; }
+.wt-row .stack-path { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+.dirty { color: var(--warn); font-size: 12px; }
+.repo-btn {
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--card-bg); color: var(--fg); font: inherit; font-size: 12px; cursor: pointer;
+}
+.repo-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.repo-btn:disabled { opacity: 0.5; cursor: progress; }
+.empty-state { padding: 28px; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted); text-align: center; }
+.panel { max-width: 760px; margin: 12px auto; padding: 4px 20px 16px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; }
+.panel[hidden] { display: none; }
+.panel h2 { font-size: 16px; margin: 14px 0 4px; }
+.panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; }
+.settings-list { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.settings-list li { display: flex; gap: 10px; align-items: center; padding: 3px 0; }
+.settings-list .repo-btn { margin-left: auto; }
+.settings-form { display: flex; gap: 8px; margin: 8px 0; }
+.settings-form input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font-size: 13px; }
+.settings-form input[type="number"] { flex: 0 0 90px; }
+.form-error { color: var(--bad); font-size: 13px; min-height: 1em; margin: 6px 0 0; }

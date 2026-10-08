@@ -437,11 +437,189 @@
     });
   }
 
+  // --- Repos tab and Settings (add-repo-browser) ---------------------------
+  // The tab's HTML is rendered by the server (html/template escapes every
+  // repo and branch name); this code only swaps it in, filters it, and posts
+  // the actions. Branch and path values travel in data-* attributes.
+
+  var reposState = { tab: "instances", filter: "", readyOnly: false, autoShownSettings: false };
+
+  function copyText(text, label) {
+    if (navigator.clipboard) navigator.clipboard.writeText(text);
+    log("copied " + label);
+  }
+
+  function setTab(tab) {
+    reposState.tab = tab;
+    try { localStorage.setItem("stackfork:tab", tab); } catch (e) { /* ignore */ }
+    document.querySelectorAll(".tab").forEach(function (b) {
+      b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+    });
+    document.getElementById("instances").hidden = tab !== "instances";
+    document.getElementById("controls").hidden = tab !== "instances";
+    document.getElementById("repos-view").hidden = tab !== "repos";
+    if (tab === "repos") loadRepos();
+  }
+
+  function applyRepoFilters() {
+    var needle = reposState.filter.toLowerCase();
+    document.querySelectorAll("#repos-list .repo").forEach(function (el) {
+      var hide = (needle && el.dataset.search.indexOf(needle) === -1) || (reposState.readyOnly && el.dataset.ready !== "1");
+      el.hidden = !!hide;
+    });
+    document.querySelectorAll("#repos-list .repo-group").forEach(function (g) {
+      g.hidden = !g.querySelector(".repo:not([hidden])");
+    });
+  }
+
+  function loadRepos() {
+    fetch("/fragments/repos", { credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw new Error("status " + r.status); return r.text(); })
+      .then(function (html) {
+        var list = document.getElementById("repos-list");
+        var open = {};
+        list.querySelectorAll("details.repo[open]").forEach(function (d) { open[d.dataset.key] = true; });
+        list.innerHTML = html;
+        list.querySelectorAll("details.repo").forEach(function (d) { if (open[d.dataset.key]) d.open = true; });
+        applyRepoFilters();
+        var meta = document.getElementById("repos-meta");
+        document.getElementById("scan-state").textContent = meta && meta.dataset.scanning === "true" ? "scanning..." : "";
+        if (meta && meta.dataset.configured === "false" && !reposState.autoShownSettings) {
+          reposState.autoShownSettings = true;
+          toggleSettings(true);
+        }
+      })
+      .catch(function () { /* keep what is shown */ });
+  }
+
+  function toggleSettings(show) {
+    var panel = document.getElementById("settings-panel");
+    var btn = document.getElementById("settings-toggle");
+    panel.hidden = show === undefined ? !panel.hidden : !show;
+    btn.setAttribute("aria-expanded", String(!panel.hidden));
+    if (!panel.hidden) loadSettings();
+  }
+
+  function loadSettings() {
+    fetch("/fragments/settings", { credentials: "same-origin" })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { document.getElementById("settings-body").innerHTML = html; });
+  }
+
+  function postConfig(op, value) {
+    var err = document.getElementById("settings-error");
+    err.textContent = "";
+    return fetch("/api/config", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Stackfork-Token": token },
+      body: JSON.stringify({ op: op, value: value }),
+    })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (res) {
+        if (!res.ok) { err.textContent = res.body.message || "refused"; return; }
+        log("settings: " + res.body.message);
+        loadSettings();
+        setTimeout(loadRepos, 600);
+      })
+      .catch(function (e) { err.textContent = e.message; });
+  }
+
+  // runRepoAction posts start / fetch / worktree-add. A start answers with
+  // newline-delimited JSON so progress lines reach the activity log live.
+  function runRepoAction(btn) {
+    var d = btn.dataset;
+    if (d.confirm && !window.confirm(d.confirm)) return;
+    var body = { action: d.repoAction, repo: d.repo, path: d.path || "", branch: d.branch || "" };
+    var label = (d.path || d.branch || d.repo) + " " + d.repoAction;
+    btn.disabled = true;
+    log(label + ": started");
+    fetch("/api/actions", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Stackfork-Token": token },
+      body: JSON.stringify(body),
+    })
+      .then(function (r) {
+        if ((r.headers.get("Content-Type") || "").indexOf("ndjson") === -1) {
+          return r.json().then(function (b) { log(label + ": " + (b.message || (r.ok ? "ok" : "failed"))); });
+        }
+        var reader = r.body.getReader();
+        var dec = new TextDecoder();
+        var buf = "";
+        function handle(line) {
+          if (!line.trim()) return;
+          var o = JSON.parse(line);
+          if (o.line !== undefined) log(label + ": " + o.line);
+          else log(label + ": " + (o.ok ? "done - " : "failed - ") + o.message);
+        }
+        function pump() {
+          return reader.read().then(function (res) {
+            if (res.done) { handle(buf); return; }
+            buf += dec.decode(res.value, { stream: true });
+            var i;
+            while ((i = buf.indexOf("\n")) >= 0) { handle(buf.slice(0, i)); buf = buf.slice(i + 1); }
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function (e) { log(label + ": " + e.message); })
+      .then(function () { btn.disabled = false; loadRepos(); poll(); });
+  }
+
+  function wireRepos() {
+    document.querySelectorAll(".tab").forEach(function (b) {
+      b.addEventListener("click", function () { setTab(b.dataset.tab); });
+    });
+    document.getElementById("repo-filter").addEventListener("input", function (e) {
+      reposState.filter = e.target.value; applyRepoFilters();
+    });
+    document.getElementById("ready-only").addEventListener("change", function (e) {
+      reposState.readyOnly = e.target.checked; applyRepoFilters();
+    });
+    document.getElementById("rescan").addEventListener("click", function () { postConfig("rescan", "").then(function () { setTimeout(loadRepos, 800); }); });
+    document.getElementById("settings-toggle").addEventListener("click", function () { toggleSettings(); });
+    document.getElementById("repos-list").addEventListener("click", function (e) {
+      var inst = e.target.closest(".instance-link");
+      if (inst) {
+        e.preventDefault();
+        setTab("instances");
+        var art = document.querySelector('.stack[data-project="' + inst.dataset.project.replace(/"/g, "") + '"]');
+        if (art) { art.dataset.collapsed = "0"; art.scrollIntoView({ block: "center" }); }
+        return;
+      }
+      var act = e.target.closest("[data-repo-action]");
+      if (act) { runRepoAction(act); return; }
+      var copy = e.target.closest(".copyable");
+      if (copy) { e.preventDefault(); copyText(copy.dataset.copy, copy.textContent.trim()); }
+    });
+    var panel = document.getElementById("settings-panel");
+    panel.addEventListener("click", function (e) {
+      var rm = e.target.closest("button[data-config-op]");
+      if (rm) { postConfig(rm.dataset.configOp, rm.dataset.value); return; }
+      var copy = e.target.closest(".copyable");
+      if (copy) copyText(copy.dataset.copy, copy.textContent.trim());
+    });
+    panel.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var form = e.target.closest("form[data-config-op]");
+      if (form) postConfig(form.dataset.configOp, form.elements.value.value);
+    });
+    var saved = "instances";
+    try { saved = localStorage.getItem("stackfork:tab") || "instances"; } catch (e) { /* ignore */ }
+    setTab(saved === "repos" ? "repos" : "instances");
+    setInterval(function () {
+      if (document.visibilityState === "visible" && reposState.tab === "repos" && document.getElementById("settings-panel").hidden) loadRepos();
+    }, 3000);
+  }
+
   function start() {
     wireControls();
     wireActions();
     wireCleanup();
     wireLogsPanel();
+    wireRepos();
     poll();
     setInterval(function () {
       if (document.visibilityState === "visible") poll();
