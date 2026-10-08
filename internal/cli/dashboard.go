@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -96,20 +97,19 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	// dashboard runs, and comes back out on shutdown. Best effort, like
 	// every other proxy reload - a problem here never blocks the dashboard
 	// itself from serving on its own port.
-	registeredWithProxy := false
-	if running, _ := proxy.IsRunning(proxy.ContainerName()); running {
-		if mode, err := proxy.Mode(); err == nil {
-			if routes, err := lifecycle.GatherRoutes(newStateBase, legacyStateBase, mode); err == nil {
-				if err := dashboard.RegisterWithProxy(newStateBase, routes, port); err == nil {
-					registeredWithProxy = true
-				} else {
-					fmt.Fprintf(stderr, "warning: proxy registration skipped: %s\n", err)
-				}
-			}
+	// It runs in the background, after the address is announced: Docker can
+	// take seconds to answer, and the page must not wait for it.
+	var registeredWithProxy atomic.Bool
+	registered := make(chan struct{})
+	startRegistration := func() {
+		defer close(registered)
+		if registerDashboardWithProxy(newStateBase, legacyStateBase, port, stderr) {
+			registeredWithProxy.Store(true)
 		}
 	}
 	unregister := func() {
-		if !registeredWithProxy {
+		<-registered // never unregister while the registration is still running
+		if !registeredWithProxy.Load() {
 			return
 		}
 		mode, err := proxy.Mode()
@@ -137,6 +137,8 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	go func() { errCh <- httpServer.ListenAndServe() }()
 
 	fmt.Fprintf(stdout, "stackfork dashboard listening on http://%s\n", addr)
+	go startRegistration()
+	go srv.Warm() // first collection and repo scan, off the request path
 	if *openFlag {
 		openBrowser("http://" + addr)
 	}
@@ -170,4 +172,27 @@ func openBrowser(url string) {
 		cmd = exec.Command("xdg-open", url)
 	}
 	cmd.Run() //nolint:errcheck // best effort; the printed URL is the fallback
+}
+
+// registerDashboardWithProxy joins the shared proxy, if it is running
+// (design.md D2/task 2.4): stackfork.localhost routes to the dashboard while
+// it runs. Best effort - a problem here never blocks the dashboard. A var so
+// a test can make it slow.
+var registerDashboardWithProxy = func(newStateBase, legacyStateBase string, port int, stderr io.Writer) bool {
+	if running, _ := proxy.IsRunning(proxy.ContainerName()); !running {
+		return false
+	}
+	mode, err := proxy.Mode()
+	if err != nil {
+		return false
+	}
+	routes, err := lifecycle.GatherRoutes(newStateBase, legacyStateBase, mode)
+	if err != nil {
+		return false
+	}
+	if err := dashboard.RegisterWithProxy(newStateBase, routes, port); err != nil {
+		fmt.Fprintf(stderr, "warning: proxy registration skipped: %s\n", err)
+		return false
+	}
+	return true
 }

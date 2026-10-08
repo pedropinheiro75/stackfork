@@ -97,6 +97,13 @@ func New(newStateBase, legacyStateBase, version string, port int) (*Server, erro
 	return s, nil
 }
 
+// Warm fills the inventory cache and the repo scan, so the first page load
+// finds them ready. Best effort; callers run it in the background.
+func (s *Server) Warm() {
+	s.collect() //nolint:errcheck // a failure just leaves the cache cold
+	s.currentRepos()
+}
+
 // Handler returns the full stack: security headers and the Host allowlist
 // wrap every route (design.md D5).
 func (s *Server) Handler() http.Handler {

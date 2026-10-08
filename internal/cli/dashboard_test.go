@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -73,6 +74,9 @@ func TestStableDashboardPortReallocatesWhenBusy(t *testing.T) {
 // exercised by cmdDashboard's own signal.Notify, which this test doesn't
 // need to re-prove).
 func TestDashboardStartStop(t *testing.T) {
+	// Never read the developer's real config (its scan roots can hold hundreds
+	// of repos and delay startup past the deadline below).
+	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
 	stateDir := t.TempDir()
 	legacyStateDir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -119,4 +123,30 @@ func TestDashboardStartStop(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("cmdDashboard did not shut down after cancel")
 	}
+}
+
+// The address is announced at once, however slow Docker/the proxy is to
+// answer: registration with the proxy runs in the background.
+func TestDashboardAnnouncesBeforeSlowProxyRegistration(t *testing.T) {
+	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
+	old := registerDashboardWithProxy
+	registerDashboardWithProxy = func(string, string, int, io.Writer) bool { time.Sleep(3 * time.Second); return false }
+	defer func() { registerDashboardWithProxy = old }()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var stdout, stderr syncBuffer
+	done := make(chan int, 1)
+	start := time.Now()
+	go func() {
+		code, _ := cmdDashboard(ctx, &stdout, &stderr, []string{"--port", "0"}, t.TempDir(), t.TempDir())
+		done <- code
+	}()
+	for !strings.Contains(stdout.String(), "listening on") {
+		if time.Since(start) > 1500*time.Millisecond {
+			t.Fatalf("not announced within 1.5 s (registration takes 3 s); stderr=%s", stderr.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
 }
