@@ -7,6 +7,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Repo browser (`add-repo-browser`): `stackfork config` (scan roots, excludes, max
+  depth in `config.json`), `stackfork repos [--json] [--rescan] [--prompt REPO BRANCH]`
+  (repos under the roots with branches, worktrees, instance state and a
+  `ready`/`draft`/`unknown` readiness, local git only, mtime-cached),
+  `stackfork worktree add REPO BRANCH [--from BASE]` (`<repo>/.worktrees/<branch>`,
+  local git exclude, allowlisted adapter-file copy with a credential denylist) and
+  `stackfork start-env [CHECKOUT]` (prepare when needed, then up). The dashboard
+  gets a Repos tab (search, ready-only, Start, "Set up with your agent", per-repo
+  Fetch, copy-only worktree removal), a Settings panel for the roots
+  (`POST /api/config`, server-side validation) and `GET /api/repos`
+  (byte-identical to `repos --json`); new POST actions `start`, `worktree-add`
+  and `fetch` only accept repos and worktrees the scan found under a root.
 - `stackfork prune [--orphaned|--stopped|--all] [--older-than DURATION] [--keep-volumes] [--yes] [--json]`
   (`add-prune`): dry run by default (table, groups, disk estimate), typed
   confirmation for running instances or `--all`, exit 1 without a TTY and

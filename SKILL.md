@@ -17,7 +17,7 @@ For each profile `stackfork where` lists with `"context": true`, follow that pro
 
 ## Prepare, start, verify, stop
 
-1. **Discover:** resolve the checkout with Git, read AGENTS.md/README, and adapt the project's real Compose stack (`references/adapting-compose.md`, or a template for a bare app with no app-building Compose at all: `references/nuxt-template.md` for Nuxt, `references/go-template.md` for a Go web app). Use a separate worktree per concurrent agent (`references/worktrees.md`).
+1. **Discover:** resolve the checkout with Git, read AGENTS.md/README, and adapt the project's real Compose stack (`references/adapting-compose.md`, or a template for a bare app with no app-building Compose at all: `references/nuxt-template.md` for Nuxt, `references/go-template.md` for a Go web app). Use a separate worktree per concurrent agent, created with `stackfork worktree add REPO BRANCH` (`references/worktrees.md`).
 2. **Prepare:** `stackfork --root "$CHECKOUT" prepare -f <compose files> --env-file <runtime env>`
 3. **Start:** `stackfork --root "$CHECKOUT" up`. A host-run/hybrid app instead runs as `stackfork --root "$CHECKOUT" host app -- <your command>` (stable port, this instance's env, a portless route; `references/adapting-compose.md`). Never start the app directly on the host (`bun run dev`, `npm run dev`, etc.) for a stackfork-managed checkout — that bypasses isolation, and the guard hook blocks it.
 4. **URLs:** `stackfork --root "$CHECKOUT" urls` — report the named `<instance>.localhost` URL it prints, never a bare `localhost`/`127.0.0.1` (`references/hostnames.md`).

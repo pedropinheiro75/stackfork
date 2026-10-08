@@ -161,10 +161,37 @@ stackfork route add app 5173
 ```
 
 ### dashboard
-A local web page (127.0.0.1-only) listing every instance.
+A local web page (127.0.0.1-only) listing every instance, plus a Repos tab (find a repo under your configured folders, see its branches and worktrees, Start one) and a Settings panel for those folders.
 Flags: `--port`, `--open`
 ```sh
 stackfork dashboard --open
+```
+
+### config
+Show or edit `<config dir>/config.json` (`STACKFORK_CONFIG_DIR` respected): the folders (`roots`) the repo browser scans, folder names to skip (`exclude`) and `maxDepth` (default 6). Sub-forms: `config get`, `config add-root PATH`, `config remove-root PATH`, `config add-exclude NAME`, `config remove-exclude NAME`, `config set max-depth N`, `config set roots PATH...`, `config set exclude NAME...`. A root must exist, be a folder, not be `/` or the bare home directory, and not sit inside (or contain) another root. Removing a root deletes nothing on disk.
+```sh
+stackfork config add-root ~/code
+```
+
+### repos
+List the git repos under the configured roots: group, readiness (`ready` = verified knowledge, an adapter, a prepared instance or a profile reference; `draft`; `unknown`), running count, worktrees, branches without a worktree, last commit. Local git only, never a network call; results are cached per repo while its git metadata is unchanged. With no roots it says how to add one. `--prompt REPO BRANCH` prints the text to give an agent for a project stackfork does not know yet.
+Flags: `--json`, `--rescan`, `--prompt`
+```sh
+stackfork repos --json
+stackfork repos --prompt storefront fix/login
+```
+
+### worktree
+`worktree add REPO BRANCH [--from BASE]` creates `<repo>/.worktrees/<branch>` (slashes become dashes) for an existing local branch, or a tracking branch for one that exists only as `origin/<branch>`; a new branch needs `--from`. It excludes `/.worktrees/` in the repo's local git exclude and copies only the files the project's `.stackfork/knowledge.json` lists under `adapter_files`, never `.env*`, keys, certificates or a token-bearing `.npmrc` (what was copied and skipped is printed). REPO is a path or a scanned repo name. Refuses when the folder already exists.
+Flags: `--from`
+```sh
+stackfork worktree add storefront fix/login
+```
+
+### start-env
+`start-env [CHECKOUT]`: for a project stackfork already knows how to run (readiness `ready`), `prepare` only when needed (no prepared instance, or its inputs changed) with the recorded recipe/adapter, then `up`; progress lines are printed. The dashboard's Start button runs this same code. Refuses `draft`/`unknown` projects. Not the per-service `start`.
+```sh
+stackfork start-env .worktrees/fix-login
 ```
 
 ### doctor

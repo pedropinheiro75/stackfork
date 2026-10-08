@@ -79,7 +79,7 @@ stackfork isn't a new environment format and it doesn't run your project *for* y
 stackfork dashboard --open
 ```
 
-A local, read-mostly web page listing every instance across every checkout it knows about: status, services, health, clickable app/DB/mail endpoints (labelled by role, not just raw ports), learned-knowledge status, plain-language warnings. Local-only (binds `127.0.0.1`, checks the `Host` header, a per-process token guards every action) — the only actions it can take are `up`, `down` (volumes always kept), per-service `restart`/`start`/`stop`, viewing logs, and the shared proxy's up/down/reload. Destructive or input-heavy operations (`down --volumes`, `prepare --reassign-ports`, `learn`) show up as an exact command to copy, never a button. `stackfork list` / `list --json` show the same data from a terminal.
+A local, read-mostly web page listing every instance across every checkout it knows about: status, services, health, clickable app/DB/mail endpoints (labelled by role, not just raw ports), learned-knowledge status, plain-language warnings. Local-only (binds `127.0.0.1`, checks the `Host` header, a per-process token guards every action) — the only actions it can take are `up`, `down` (volumes always kept), per-service `restart`/`start`/`stop`, viewing logs, the shared proxy's up/down/reload, and, from the Repos tab, Start, creating a worktree and a per-repo fetch. Destructive or input-heavy operations (`down --volumes`, `prepare --reassign-ports`, `learn`) show up as an exact command to copy, never a button. `stackfork list` / `list --json` show the same data from a terminal.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-overview-dark.png">
@@ -93,6 +93,23 @@ Each service's row expands to the exact command for a destructive action, and co
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-service-detail-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/dashboard-service-detail-light.png">
   <img src="docs/screenshots/dashboard-service-detail-light.png" alt="One instance expanded, showing its down command to copy and each service's connection URL/psql/exec copy actions">
+</picture>
+
+## 🗂️ Repos
+
+```sh
+stackfork config add-root ~/code     # or use the Settings panel in the dashboard
+stackfork repos                      # every repo under your folders, with readiness
+stackfork worktree add storefront fix/login
+stackfork start-env .worktrees/fix-login
+```
+
+The dashboard's **Repos** tab (next to Instances) finds any repo under the folders you configure (search, ready-only filter, grouped by folder), shows its branches, worktrees and instance state, and starts one with a click. Discovery uses local git only and is cached; **Fetch** (one repo, on click) is the only network access. **Start** works for projects stackfork already knows how to run (verified knowledge, an adapter, a prepared instance or a profile reference): it prepares when needed, creates `<repo>/.worktrees/<branch>` first for a branch with no worktree (after a confirmation), then brings it up. For a project it has never seen, the page offers **Set up with your agent**, a prompt to copy into Claude Code, Codex or Copilot CLI. It never deletes a worktree or branch (it shows the command to copy), never switches a checkout and never pushes or pulls. Requests are accepted only for repos the scan found under your configured folders. Nothing is scanned until you add a folder (Settings panel, or `stackfork config add-root PATH`).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/repos-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/repos-light.png">
+  <img src="docs/screenshots/repos-light.png" alt="Repos tab: repositories grouped by folder with readiness badges, worktrees, branches without a worktree and Start buttons">
 </picture>
 
 ## 🔒 Safety model

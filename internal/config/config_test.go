@@ -52,7 +52,7 @@ func TestTildeExpansionAndRootValidation(t *testing.T) {
 	tempConfig(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	os.MkdirAll(filepath.Join(home, "Work", "sub"), 0o755)
+	os.MkdirAll(filepath.Join(home, "code", "sub"), 0o755)
 	os.WriteFile(filepath.Join(home, "file"), nil, 0o600)
 	c, _ := Load()
 
@@ -65,7 +65,7 @@ func TestTildeExpansionAndRootValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(got, "/Work") || len(c.Roots) != 1 {
+	if !strings.HasSuffix(got, "/code") || len(c.Roots) != 1 {
 		t.Fatalf("got %q roots=%v", got, c.Roots)
 	}
 	if _, err := c.AddRoot("~/code/sub"); err == nil || !strings.Contains(err.Error(), "inside") {
@@ -77,7 +77,7 @@ func TestTildeExpansionAndRootValidation(t *testing.T) {
 	if err := c.RemoveRoot("~/code"); err != nil || len(c.Roots) != 0 {
 		t.Fatalf("remove: %v %v", err, c.Roots)
 	}
-	if _, err := os.Stat(filepath.Join(home, "Work", "sub")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, "code", "sub")); err != nil {
 		t.Fatal("removing a root must not touch the disk")
 	}
 }
