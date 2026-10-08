@@ -48,6 +48,13 @@ type Manifest struct {
 	EnvFile      *string           `json:"env_file"`
 	Inputs       map[string]string `json:"inputs"`
 	ConfigSHA256 string            `json:"config_sha256"`
+	// SeedOnce is the command that seeds a fresh database (recorded from a
+	// sibling worktree's manifest when no knowledge file has one), run in
+	// SeedService after the first up that created the data volume. Seeded is
+	// nil until that decision is made, false until the seed succeeded.
+	SeedOnce    string `json:"seed_once,omitempty"`
+	SeedService string `json:"seed_service,omitempty"`
+	Seeded      *bool  `json:"seeded,omitempty"`
 }
 
 // PortAlloc is one (service, target port) -> stable host port allocation

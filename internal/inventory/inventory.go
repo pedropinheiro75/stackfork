@@ -163,12 +163,18 @@ type Instance struct {
 	// qualifying service, in the same placeholder-safe form as
 	// Service.ConnectionURL. Empty when nothing in the stack qualifies.
 	EnvBlock string `json:"env_block,omitempty"`
+	// SeedCommand is set while the instance has a recorded seed recipe that
+	// has not succeeded yet: the dashboard warns and offers to copy it.
+	SeedCommand string `json:"seed_command,omitempty"`
 
 	// Recipe inputs recorded at prepare, kept out of the JSON: a sibling
 	// worktree's recipe is derived from them (add-repo-browser D6a).
 	EnvFile string            `json:"-"`
 	Secrets map[string]string `json:"-"` // references only, never values
 	Used    time.Time         `json:"-"` // manifest mtime
+	// SeedOnce/SeedService are the manifest's recorded seed recipe.
+	SeedOnce    string `json:"-"`
+	SeedService string `json:"-"`
 }
 
 // Inventory is the whole machine's state, task 1.1's D1 type.
@@ -274,6 +280,10 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 	}
 	if info.EnvFile != nil {
 		inst.EnvFile = *info.EnvFile
+	}
+	inst.SeedOnce, inst.SeedService = info.SeedOnce, info.SeedService
+	if info.Seeded != nil && !*info.Seeded {
+		inst.SeedCommand = "stackfork --instance " + project + " seed"
 	}
 	if fi, err := os.Stat(manifestPath); err == nil {
 		inst.Used = fi.ModTime()

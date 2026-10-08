@@ -122,9 +122,10 @@
     <code class="copyable cli-command env-block" data-copy="{{.EnvBlock}}" data-copy-kind="env_block" data-copy-project="{{.Project}}" title="click to copy">Copy .env for host app</code>
     {{end}}
   </div>
-  {{if .Warnings}}
+  {{if or .Warnings .SeedCommand}}
   <ul class="warnings">
     {{range .Warnings}}<li class="warning">{{.}}</li>{{end}}
+    {{if .SeedCommand}}<li class="warning seed-warning">database not seeded &mdash; run <code class="copyable cli-command" data-copy="{{.SeedCommand}}" title="click to copy">{{.SeedCommand}}</code> <button class="icon-btn copyable" data-copy="{{.SeedCommand}}" title="Copy">copy</button></li>{{end}}
   </ul>
   {{end}}
   <div class="stack-body">

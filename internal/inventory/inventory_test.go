@@ -389,3 +389,28 @@ func TestOptionalProfileServicesAreNotStopped(t *testing.T) {
 		t.Errorf("down: instance %q", inv.Instances[0].State)
 	}
 }
+
+func TestUnseededInstanceCarriesSeedCommand(t *testing.T) {
+	installFakeDocker(t)
+	base := t.TempDir()
+	root := gitRepo(t, "main")
+	writeInstance(t, base, "sf-seed-1", root, "main", []string{"web"}, nil)
+	mp := filepath.Join(base, "sf-seed-1", "manifest.json")
+	m, _ := state.ReadManifest(mp)
+	f := false
+	m.Seeded = &f
+	if err := state.WritePrivate(mp, m); err != nil {
+		t.Fatal(err)
+	}
+	inv, _ := Collect(Options{NewStateBase: base, LegacyStateBase: t.TempDir(), Version: "test"})
+	if got := inv.Instances[0].SeedCommand; got != "stackfork --instance sf-seed-1 seed" {
+		t.Fatalf("seed command %q", got)
+	}
+	tr := true
+	m.Seeded = &tr
+	state.WritePrivate(mp, m)
+	inv, _ = Collect(Options{NewStateBase: base, LegacyStateBase: t.TempDir(), Version: "test"})
+	if inv.Instances[0].SeedCommand != "" {
+		t.Fatal("seeded instance still warns")
+	}
+}

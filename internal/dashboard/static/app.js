@@ -171,7 +171,9 @@
     var services = (inst.services || []).map(function (s) { return serviceHtml(inst, s); }).join("");
     var legacy = inst.legacy ? '<span class="legacy-tag">legacy</span>' : "";
     var knowledge = inst.knowledge ? '<span class="knowledge knowledge-' + escapeHtml(inst.knowledge.status) + '">' + escapeHtml(inst.knowledge.status) + "</span>" : "";
-    var warnings = (inst.warnings || []).map(function (w) { return '<li class="warning">' + escapeHtml(w) + "</li>"; }).join("");
+    var warnings = (inst.warnings || []).map(function (w) { return '<li class="warning">' + escapeHtml(w) + "</li>"; }).join("") +
+      (inst.seed_command ? '<li class="warning seed-warning">database not seeded &mdash; run <code class="copyable cli-command" data-copy="' + escapeHtml(inst.seed_command) +
+        '" title="click to copy">' + escapeHtml(inst.seed_command) + '</code> <button class="icon-btn copyable" data-copy="' + escapeHtml(inst.seed_command) + '" title="Copy">copy</button></li>' : "");
     var menuOpen = !!openMenus[inst.project];
     var colorIndex = stackColorIndex(inst.project);
     var appStrip = (inst.apps || []).map(appChipHtml).join("");

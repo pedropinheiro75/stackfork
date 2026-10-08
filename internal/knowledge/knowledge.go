@@ -153,6 +153,8 @@ type Recipe struct {
 	Up       string   `json:"up,omitempty"`
 	Migrate  string   `json:"migrate,omitempty"`
 	SeedOnce string   `json:"seed_once,omitempty"`
+	// SeedService is the service SeedOnce runs in; empty = the primary app.
+	SeedService string `json:"seed_service,omitempty"`
 	Login    []string `json:"login,omitempty"`
 }
 
