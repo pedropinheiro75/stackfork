@@ -87,6 +87,7 @@ func newBrowserEnv(t *testing.T) *browserEnv {
 		return nil
 	}
 	e.srv = srv
+	t.Cleanup(srv.Wait)
 	return e
 }
 
@@ -304,6 +305,7 @@ func TestFirstRunShowsSettingsHintAndAddFolderField(t *testing.T) {
 	installFakeDocker(t)
 	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
 	srv, _ := dashboard.New(t.TempDir(), t.TempDir(), "test", reposPort)
+	t.Cleanup(srv.Wait)
 	e := &browserEnv{srv: srv, t: t}
 	body := e.get("/fragments/repos").Body.String()
 	if !strings.Contains(body, `data-configured="false"`) || !strings.Contains(body, "stackfork config add-root PATH") {

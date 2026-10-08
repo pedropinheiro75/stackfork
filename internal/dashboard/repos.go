@@ -51,6 +51,19 @@ type reposState struct {
 	res      *repos.Result
 	at       time.Time
 	scanning bool
+	bg       sync.WaitGroup // background scans in flight
+}
+
+// Wait blocks until background scans have finished (tests use it so a scan
+// never outlives its temp directories).
+func (s *Server) Wait() { s.repos.bg.Wait() }
+
+func (s *Server) goScan(full bool) {
+	s.repos.bg.Add(1)
+	go func() {
+		defer s.repos.bg.Done()
+		s.scanNow(full)
+	}()
 }
 
 // rescanAfter is how old the in-memory scan may get before a request kicks
@@ -85,7 +98,7 @@ func (s *Server) currentRepos() (res repos.Result, scanning bool) {
 	cur := s.repos.res
 	if cur != nil && !s.repos.scanning && time.Since(s.repos.at) > rescanAfter {
 		s.repos.scanning = true
-		go s.scanNow(false)
+		s.goScan(false)
 	}
 	scanning = s.repos.scanning
 	s.repos.mu.Unlock()
@@ -104,7 +117,7 @@ func (s *Server) rescanAsync(full bool) {
 	}
 	s.repos.scanning = true
 	s.repos.mu.Unlock()
-	go s.scanNow(full)
+	s.goScan(full)
 }
 
 func (s *Server) handleRepos(w http.ResponseWriter, r *http.Request) {
