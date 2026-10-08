@@ -41,7 +41,11 @@ func TestReadiness(t *testing.T) {
 
 	profiles := t.TempDir()
 	os.MkdirAll(filepath.Join(profiles, "p", "references"), 0o755)
-	os.WriteFile(filepath.Join(profiles, "p", "references", "profiled-app.md"), nil, 0o644)
+	os.WriteFile(filepath.Join(profiles, "p", "references", "recipes.md"),
+		[]byte("| Project | Startup |\n|---|---|\n| profiled-app | Nuxt + Postgres |\n"), 0o644)
+	// a word in context.md or in a reference's prose is not a recipe row
+	os.WriteFile(filepath.Join(profiles, "p", "context.md"), []byte("read the mentioned-app brief first\n"), 0o644)
+	mentioned := mk("mentioned-app")
 	profiled := mk("profiled-app")
 
 	insts := []inventory.Instance{{Project: "sf-prepared-1", Root: prepared, Branch: "main"}}
@@ -54,6 +58,7 @@ func TestReadiness(t *testing.T) {
 		{"adapter", adapter, Ready, "adapter"},
 		{"prepared", prepared, Ready, "sf-prepared-1"},
 		{"profiled-app", profiled, Ready, "profile"},
+		{"mentioned-app", mentioned, Unknown, "never learned"},
 		{"mystery", unknown, Unknown, "never learned"},
 	}
 	for _, c := range cases {

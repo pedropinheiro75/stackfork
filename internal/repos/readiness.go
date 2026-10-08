@@ -54,23 +54,27 @@ func ReadinessOf(name string, checkouts []string, insts []inventory.Instance, pr
 	return Unknown, "never learned: no knowledge, adapter, instance or profile reference"
 }
 
-// profileMention returns the profile file that names the repo, as a whole
-// word, among its references/ file names and its context.md.
+// profileMention returns the profile reference that has a recipe row for
+// the repo: a markdown table row whose first cell is the repo name, in any
+// references/*.md file. context.md is personal instructions, not recipes, so
+// a word there (e.g. "notes", "platform") never makes a repo ready.
 func profileMention(name string, profileDirs []string) string {
 	if len(name) < 3 {
 		return ""
 	}
-	re := regexp.MustCompile(`(?i)(^|[^a-z0-9])` + regexp.QuoteMeta(name) + `([^a-z0-9]|$)`)
+	row := regexp.MustCompile(`(?im)^\|\s*` + regexp.QuoteMeta(name) + `\s*\|`)
 	for _, d := range profileDirs {
-		if entries, err := os.ReadDir(filepath.Join(d, "references")); err == nil {
-			for _, e := range entries {
-				if !e.IsDir() && re.MatchString(strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))) {
-					return "references/" + e.Name()
-				}
-			}
+		entries, err := os.ReadDir(filepath.Join(d, "references"))
+		if err != nil {
+			continue
 		}
-		if b, err := os.ReadFile(filepath.Join(d, "context.md")); err == nil && re.Match(b) {
-			return "context.md"
+		for _, e := range entries {
+			if e.IsDir() || filepath.Ext(e.Name()) != ".md" {
+				continue
+			}
+			if b, err := os.ReadFile(filepath.Join(d, "references", e.Name())); err == nil && row.Match(b) {
+				return "references/" + e.Name()
+			}
 		}
 	}
 	return ""
