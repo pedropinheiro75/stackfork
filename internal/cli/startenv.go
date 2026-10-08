@@ -48,29 +48,37 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 	if main == "" {
 		main = root
 	}
-	var insts []inventory.Instance
-	if inv, err := inventory.Collect(inventory.Options{NewStateBase: o.NewStateBase, LegacyStateBase: o.LegacyStateBase, Version: Version}); err == nil {
-		insts = inv.Instances
-	}
-	level, reason := repos.ReadinessOf(filepath.Base(main), []string{main, root}, insts, o.ProfileDirs)
-	if level != repos.Ready {
-		return fmt.Errorf("%s is %s (%s); stackfork only starts projects it already knows how to run. Ask your agent to learn it: `stackfork repos --prompt %s %s`",
-			filepath.Base(main), level, reason, filepath.Base(main), branch)
-	}
+	insts := collectInstances(o.NewStateBase, o.LegacyStateBase)
 	project, instanceDir, err := checkoutInstance(root, branch, o.NewStateBase, o.LegacyStateBase)
 	if err != nil {
 		return err
 	}
 	base := append([]string{"--state-dir", o.NewStateBase, "--legacy-state-dir", o.LegacyStateBase, "--root", root}, o.Global...)
 
+	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err != nil {
+		level, reason := repos.ReadinessOf(filepath.Base(main), []string{main, root}, repos.DefaultBranchOf(main), insts, o.ProfileDirs)
+		if level != repos.Ready {
+			return fmt.Errorf("%s is %s (%s); stackfork only starts projects it already knows how to run. Ask your agent to learn it: `stackfork repos --prompt %s %s`",
+				filepath.Base(main), level, reason, filepath.Base(main), branch)
+		}
+	}
+
 	if needsPrepare(instanceDir, root, branch, project) {
 		args, err := prepareArgs(root, main, instanceDir)
+		pbase := base
+		if errors.Is(err, errNoRecipe) {
+			var secrets []string
+			args, secrets, err = seedFromSibling(out, root, main, insts, err)
+			for _, sec := range secrets {
+				pbase = append(append([]string{}, pbase...), "--secret", sec)
+			}
+		}
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "preparing %s (%s)\n", project, branch)
 		var pOut, pErr bytes.Buffer
-		code, err := run(append(append(append([]string{}, base...), "prepare"), args...), &pOut, &pErr)
+		code, err := run(append(append(append([]string{}, pbase...), "prepare"), args...), &pOut, &pErr)
 		if err != nil {
 			return err
 		}
@@ -155,7 +163,67 @@ func prepareArgs(root, main, instanceDir string) ([]string, error) {
 			}
 		}
 	}
-	return nil, errors.New("no recorded prepare recipe or adapter compose file for this project; run `stackfork prepare -f FILE` once")
+	return nil, errNoRecipe
+}
+
+var errNoRecipe = errors.New("no recorded prepare recipe or adapter compose file for this project; run `stackfork prepare -f FILE` once")
+
+func collectInstances(newBase, legacyBase string) []inventory.Instance {
+	inv, err := inventory.Collect(inventory.Options{NewStateBase: newBase, LegacyStateBase: legacyBase, Version: Version})
+	if err != nil {
+		return nil
+	}
+	return inv.Instances
+}
+
+// seedFromSibling builds the prepare recipe for a checkout nothing is known
+// about from another worktree of the same repo (design.md D6a): it copies
+// the sibling's untracked adapter files, writes the rewritten runtime env,
+// and returns the prepare flags and the secret references to reuse. none is
+// the error to return when no sibling can help.
+func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instance, none error) ([]string, []string, error) {
+	r, err := repos.FindSiblingRecipe(main, root, "", insts)
+	if r == nil {
+		if err != nil {
+			return nil, nil, fmt.Errorf("%w; the prepared instance of another worktree cannot be reused: %v", none, err)
+		}
+		return nil, nil, none
+	}
+	rep, err := r.Apply(root)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reusing the recipe of %s: %w", r.Project, err)
+	}
+	fmt.Fprintf(out, "reusing the recipe of %s (%s): %s", r.Project, r.Source, strings.Join(r.Files, ", "))
+	if r.EnvFile != "" {
+		fmt.Fprintf(out, "; env file %s", r.EnvFile)
+	}
+	fmt.Fprintln(out)
+	for _, c := range rep.Copied {
+		fmt.Fprintf(out, "copied %s\n", c)
+	}
+	if len(rep.Rewritten) > 0 {
+		fmt.Fprintf(out, "rewrote %s in %s to point at %s\n", strings.Join(rep.Rewritten, ", "), r.EnvFile, root)
+	}
+	for _, sk := range rep.Skipped {
+		fmt.Fprintf(out, "skipped %s\n", sk)
+	}
+	args := fileArgs(r.Files)
+	if r.EnvFile != "" {
+		args = append(args, "--env-file", r.EnvFile)
+	}
+	var secrets []string
+	names := make([]string, 0, len(r.Secrets))
+	for n := range r.Secrets {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		secrets = append(secrets, n+"="+r.Secrets[n])
+	}
+	if len(names) > 0 {
+		fmt.Fprintf(out, "reusing secret references %s (values stay where they are)\n", strings.Join(names, ", "))
+	}
+	return args, secrets, nil
 }
 
 func fileArgs(files []string) []string {

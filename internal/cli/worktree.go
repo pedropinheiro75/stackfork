@@ -75,5 +75,14 @@ func cmdWorktree(stdout io.Writer, subArgs []string, newStateBase, legacyStateBa
 	for _, s := range res.Skipped {
 		fmt.Fprintf(stdout, "skipped %s\n", s)
 	}
+	// A checkout nothing is known about gets its recipe from a prepared
+	// sibling worktree now, so `start-env` has what it needs (design.md D6a).
+	if _, dir, err := checkoutInstance(res.Path, res.Branch, newStateBase, legacyStateBase); err == nil {
+		if _, err := prepareArgs(res.Path, repo, dir); errors.Is(err, errNoRecipe) {
+			if _, _, err := seedFromSibling(stdout, res.Path, repo, collectInstances(newStateBase, legacyStateBase), err); err != nil && err != errNoRecipe {
+				fmt.Fprintf(stdout, "note: %v\n", err)
+			}
+		}
+	}
 	return 0, nil
 }

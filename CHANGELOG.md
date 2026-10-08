@@ -7,6 +7,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- A new worktree of a repo that another worktree already runs can be started: `start-env` (and
+  `worktree add`) rebuild the recipe from that sibling's prepared instance, copying its untracked
+  adapter files and runtime env with checkout paths rewritten (never `.env`, keys or tokens), and
+  `ready` now means a worktree is startable. A failed Start shows on the repo row with the CLI command to retry.
 - Repo browser (`add-repo-browser`): `stackfork config` (scan roots, excludes, max
   depth in `config.json`), `stackfork repos [--json] [--rescan] [--prompt REPO BRANCH]`
   (repos under the roots with branches, worktrees, instance state and a
