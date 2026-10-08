@@ -20,6 +20,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/learn"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -163,9 +164,14 @@ type Instance struct {
 	// qualifying service, in the same placeholder-safe form as
 	// Service.ConnectionURL. Empty when nothing in the stack qualifies.
 	EnvBlock string `json:"env_block,omitempty"`
-	// SeedCommand is set while the instance has a recorded seed recipe that
-	// has not succeeded yet: the dashboard warns and offers to copy it.
-	SeedCommand string `json:"seed_command,omitempty"`
+	// Seed* drive the dashboard's seed controls. SeedProposal: a seed script
+	// was found and nobody decided yet. SeedCommand: decided but not seeded
+	// yet (retry command). Seeded + SeedForce: done; the force command is
+	// copy-only.
+	SeedProposal string `json:"seed_proposal,omitempty"`
+	SeedCommand  string `json:"seed_command,omitempty"`
+	Seeded       bool   `json:"seeded,omitempty"`
+	SeedForce    string `json:"seed_force,omitempty"`
 
 	// Recipe inputs recorded at prepare, kept out of the JSON: a sibling
 	// worktree's recipe is derived from them (add-repo-browser D6a).
@@ -282,9 +288,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		inst.EnvFile = *info.EnvFile
 	}
 	inst.SeedOnce, inst.SeedService = info.SeedOnce, info.SeedService
-	if info.Seeded != nil && !*info.Seeded {
-		inst.SeedCommand = "stackfork --instance " + project + " seed"
-	}
+	fillSeed(&inst, info)
 	if fi, err := os.Stat(manifestPath); err == nil {
 		inst.Used = fi.ModTime()
 	}
@@ -757,4 +761,26 @@ func toStatusRows(rows []containerRow) []compose.StatusRow {
 type InstanceRef struct {
 	Project string `json:"project"`
 	State   string `json:"state"`
+}
+
+// fillSeed derives the seed controls from the recorded decision, the
+// manifest's seeded marker and, for an undecided instance, a quick scan of
+// its checkout for a seed script.
+func fillSeed(inst *Instance, info *state.Manifest) {
+	decided, cmd, _ := learn.SeedDecision([]string{info.Root}, info)
+	seeded := info.Seeded != nil && *info.Seeded
+	run := "stackfork --instance " + info.Project + " seed"
+	switch {
+	case !decided:
+		if !seeded && checkoutExists(info.Root) {
+			if _, seed := learn.DetectSeed(info.Root); seed != "" {
+				inst.SeedProposal = seed
+			}
+		}
+	case !learn.SeedActive(cmd):
+	case seeded:
+		inst.Seeded, inst.SeedForce = true, run+" --force"
+	default:
+		inst.SeedCommand = run
+	}
 }

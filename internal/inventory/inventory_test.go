@@ -390,27 +390,39 @@ func TestOptionalProfileServicesAreNotStopped(t *testing.T) {
 	}
 }
 
-func TestUnseededInstanceCarriesSeedCommand(t *testing.T) {
+func TestSeedControlsFollowTheDecision(t *testing.T) {
 	installFakeDocker(t)
 	base := t.TempDir()
 	root := gitRepo(t, "main")
-	writeInstance(t, base, "sf-seed-1", root, "main", []string{"web"}, nil)
-	mp := filepath.Join(base, "sf-seed-1", "manifest.json")
-	m, _ := state.ReadManifest(mp)
-	f := false
-	m.Seeded = &f
-	if err := state.WritePrivate(mp, m); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"scripts":{"db:seed":"bun scripts/seed"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	inv, _ := Collect(Options{NewStateBase: base, LegacyStateBase: t.TempDir(), Version: "test"})
-	if got := inv.Instances[0].SeedCommand; got != "stackfork --instance sf-seed-1 seed" {
-		t.Fatalf("seed command %q", got)
+	writeInstance(t, base, "sf-seed-1", root, "main", []string{"web"}, nil)
+	mp := filepath.Join(base, "sf-seed-1", "manifest.json")
+	set := func(once string, seeded *bool) Instance {
+		m, _ := state.ReadManifest(mp)
+		m.SeedOnce, m.Seeded = once, seeded
+		if err := state.WritePrivate(mp, m); err != nil {
+			t.Fatal(err)
+		}
+		inv, _ := Collect(Options{NewStateBase: base, LegacyStateBase: t.TempDir(), Version: "test"})
+		return inv.Instances[0]
 	}
-	tr := true
-	m.Seeded = &tr
-	state.WritePrivate(mp, m)
-	inv, _ = Collect(Options{NewStateBase: base, LegacyStateBase: t.TempDir(), Version: "test"})
-	if inv.Instances[0].SeedCommand != "" {
-		t.Fatal("seeded instance still warns")
+	f, tr := false, true
+	run := "stackfork --instance sf-seed-1 seed"
+	if i := set("", nil); i.SeedProposal != "npm run db:seed" || i.SeedCommand != "" {
+		t.Errorf("undecided: %+v", i)
+	}
+	if i := set("", &tr); i.SeedProposal != "" {
+		t.Errorf("seeded by hand must not ask: %+v", i)
+	}
+	if i := set("bun run db:seed", &f); i.SeedCommand != run || i.SeedProposal != "" || i.Seeded {
+		t.Errorf("decided, not seeded: %+v", i)
+	}
+	if i := set("bun run db:seed", &tr); !i.Seeded || i.SeedForce != run+" --force" || i.SeedCommand != "" {
+		t.Errorf("seeded: %+v", i)
+	}
+	if i := set("none", nil); i.SeedProposal != "" || i.SeedCommand != "" || i.Seeded {
+		t.Errorf("never: %+v", i)
 	}
 }

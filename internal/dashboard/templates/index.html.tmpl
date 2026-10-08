@@ -98,6 +98,7 @@
     <span class="branch-tag" title="{{.Branch}}">{{.Branch}}</span>
     {{if .Legacy}}<span class="legacy-tag">legacy</span>{{end}}
     {{if .Knowledge}}<span class="knowledge knowledge-{{.Knowledge.Status}}">{{.Knowledge.Status}}</span>{{end}}
+    {{if .Seeded}}<span class="seed-badge" title="the database was seeded">seeded</span>{{end}}
     <span class="state-badge state-{{.State}}">{{.State}}</span>
     <div class="stack-actions">
       {{if ne .State "running"}}<button class="icon-btn" data-action="up" data-project="{{.Project}}" title="Up">&#9654;</button>{{end}}
@@ -118,15 +119,24 @@
   {{end}}
   <div class="stack-menu" hidden>
     {{range .Commands}}<code class="copyable cli-command" data-copy="{{.}}" title="click to copy">{{.}}</code>{{end}}
+    {{if .SeedForce}}<code class="copyable cli-command" data-copy="{{.SeedForce}}" title="click to copy; re-runs the seed on a seeded database">{{.SeedForce}}</code>{{end}}
     {{if .EnvBlock}}
     <code class="copyable cli-command env-block" data-copy="{{.EnvBlock}}" data-copy-kind="env_block" data-copy-project="{{.Project}}" title="click to copy">Copy .env for host app</code>
     {{end}}
   </div>
-  {{if or .Warnings .SeedCommand}}
+  {{if .Warnings}}
   <ul class="warnings">
     {{range .Warnings}}<li class="warning">{{.}}</li>{{end}}
-    {{if .SeedCommand}}<li class="warning seed-warning">database not seeded &mdash; run <code class="copyable cli-command" data-copy="{{.SeedCommand}}" title="click to copy">{{.SeedCommand}}</code> <button class="icon-btn copyable" data-copy="{{.SeedCommand}}" title="Copy">copy</button></li>{{end}}
   </ul>
+  {{end}}
+  {{if .SeedProposal}}
+  <div class="seed-bar" data-seed="proposal">This project has <code>{{.SeedProposal}}</code>. Seed the new database?
+    <button type="button" class="repo-btn primary" data-action="seed-now" data-project="{{.Project}}">Seed now</button>
+    <button type="button" class="repo-btn" data-action="seed-never" data-project="{{.Project}}">Never for this project</button></div>
+  {{else if .SeedCommand}}
+  <div class="seed-bar" data-seed="pending">database not seeded &mdash;
+    <button type="button" class="repo-btn primary" data-action="seed-now" data-project="{{.Project}}">Seed now</button>
+    <code class="copyable cli-command" data-copy="{{.SeedCommand}}" title="click to copy">{{.SeedCommand}}</code></div>
   {{end}}
   <div class="stack-body">
     {{range .Services}}

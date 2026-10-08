@@ -66,6 +66,7 @@
       var cmd = cliCommand(w);
       if (cmd && cmds.indexOf(cmd) === -1) cmds.push(cmd);
     });
+    if (inst.seed_force) cmds.push(inst.seed_force);
     var html = cmds.map(function (c) {
       return '<code class="copyable cli-command" data-copy="' + escapeHtml(c) + '" title="click to copy">' + escapeHtml(c) + "</code>";
     }).join("");
@@ -171,9 +172,17 @@
     var services = (inst.services || []).map(function (s) { return serviceHtml(inst, s); }).join("");
     var legacy = inst.legacy ? '<span class="legacy-tag">legacy</span>' : "";
     var knowledge = inst.knowledge ? '<span class="knowledge knowledge-' + escapeHtml(inst.knowledge.status) + '">' + escapeHtml(inst.knowledge.status) + "</span>" : "";
-    var warnings = (inst.warnings || []).map(function (w) { return '<li class="warning">' + escapeHtml(w) + "</li>"; }).join("") +
-      (inst.seed_command ? '<li class="warning seed-warning">database not seeded &mdash; run <code class="copyable cli-command" data-copy="' + escapeHtml(inst.seed_command) +
-        '" title="click to copy">' + escapeHtml(inst.seed_command) + '</code> <button class="icon-btn copyable" data-copy="' + escapeHtml(inst.seed_command) + '" title="Copy">copy</button></li>' : "");
+    var warnings = (inst.warnings || []).map(function (w) { return '<li class="warning">' + escapeHtml(w) + "</li>"; }).join("");
+    var seedBar = "";
+    var btn = function (act, label, cls) { return '<button type="button" class="repo-btn' + cls + '" data-action="' + act + '" data-project="' + p + '">' + label + "</button>"; };
+    if (inst.seed_proposal) {
+      seedBar = '<div class="seed-bar" data-seed="proposal">This project has <code>' + escapeHtml(inst.seed_proposal) + "</code>. Seed the new database? " +
+        btn("seed-now", "Seed now", " primary") + " " + btn("seed-never", "Never for this project", "") + "</div>";
+    } else if (inst.seed_command) {
+      seedBar = '<div class="seed-bar" data-seed="pending">database not seeded &mdash; ' + btn("seed-now", "Seed now", " primary") +
+        ' <code class="copyable cli-command" data-copy="' + escapeHtml(inst.seed_command) + '" title="click to copy">' + escapeHtml(inst.seed_command) + "</code></div>";
+    }
+    var seededBadge = inst.seeded ? '<span class="seed-badge" title="the database was seeded">seeded</span>' : "";
     var menuOpen = !!openMenus[inst.project];
     var colorIndex = stackColorIndex(inst.project);
     var appStrip = (inst.apps || []).map(appChipHtml).join("");
@@ -185,6 +194,7 @@
       '<span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.root) + "</span></div>" +
       '<span class="branch-tag" title="' + escapeHtml(inst.branch) + '">' + escapeHtml(inst.branch) + "</span>" +
       legacy + knowledge +
+      seededBadge +
       '<span class="state-badge state-' + escapeHtml(inst.state) + '">' + escapeHtml(inst.state) + "</span>" +
       '<div class="stack-actions">' +
       (inst.state !== "running" ? '<button class="icon-btn" data-action="up" data-project="' + p + '" title="Up">&#9654;</button>' : "") +
@@ -193,7 +203,7 @@
       "</div></header>" +
       (appStrip ? '<div class="app-strip">' + appStrip + "</div>" : "") +
       '<div class="stack-menu"' + (menuOpen ? "" : " hidden") + ">" + commandsHtml(inst) + "</div>" +
-      (warnings ? '<ul class="warnings">' + warnings + "</ul>" : "") +
+      (warnings ? '<ul class="warnings">' + warnings + "</ul>" : "") + seedBar +
       '<div class="stack-body">' + services + "</div></article>"
     );
   }
@@ -634,6 +644,23 @@
       .then(function () { btn.disabled = false; loadRepos(); poll(); });
   }
 
+  // setRecipeSeed records the repo's seed decision; it never runs anything.
+  function setRecipeSeed(btn) {
+    var sel = btn.parentNode.querySelector(".recipe-choice");
+    var name = btn.dataset.repo.split("/").pop();
+    btn.disabled = true;
+    fetch("/api/actions", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Stackfork-Token": token },
+      body: JSON.stringify({ action: "recipe-seed", repo: btn.dataset.repo, choice: sel.value }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (b) { log(name + " recipe: " + b.message); })
+      .catch(function (e) { log(name + " recipe: " + e.message); })
+      .then(function () { btn.disabled = false; loadRepos(); poll(); });
+  }
+
   function wireRepos() {
     document.querySelectorAll(".tab").forEach(function (b) {
       b.addEventListener("click", function () { setTab(b.dataset.tab); });
@@ -657,6 +684,8 @@
       }
       var dis = e.target.closest("[data-dismiss-repo]");
       if (dis) { delete reposState.errors[dis.dataset.dismissRepo]; renderRepoErrors(); return; }
+      var rs = e.target.closest("[data-recipe-set]");
+      if (rs) { setRecipeSeed(rs); return; }
       var act = e.target.closest("[data-repo-action]");
       if (act) { runRepoAction(act); return; }
       var copy = e.target.closest(".copyable");

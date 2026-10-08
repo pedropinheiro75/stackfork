@@ -29,6 +29,11 @@ type actionRequest struct {
 	Repo   string `json:"repo,omitempty"`
 	Path   string `json:"path,omitempty"`
 	Branch string `json:"branch,omitempty"`
+
+	// Choice is the seed controls' answer: "seed"/"never" for an instance,
+	// "detected"/"never"/"clear" for a repo's recipe. The command to run is
+	// never taken from the request; it is re-detected from the checkout.
+	Choice string `json:"choice,omitempty"`
 }
 
 type actionResponse struct {
@@ -43,6 +48,7 @@ var validActions = map[string]bool{
 	"up": true, "down": true, "restart": true,
 	"service-start": true, "service-stop": true,
 	"proxy-up": true, "proxy-down": true, "proxy-reload": true,
+	"seed-now": true, "seed-never": true,
 }
 
 // proxyLockKey is the mutex key for the three proxy-* actions, which are
@@ -67,6 +73,10 @@ func (s *Server) handleActions(w http.ResponseWriter, r *http.Request) {
 	var req actionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Action == "recipe-seed" {
+		s.handleRecipeSeed(w, req)
 		return
 	}
 	if repoActions[req.Action] {
@@ -123,6 +133,9 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 		code, err := lifecycle.Execute(&out, &out, lifecycleAction, root, branch, req.Project, instanceDir,
 			s.NewStateBase, s.LegacyStateBase, opts)
 		return execResult(lifecycleAction, code, err, out.String())
+	case "seed-now", "seed-never":
+		defer s.cache.invalidate()
+		return s.seedAction(req)
 	case "proxy-up":
 		port, err := proxy.ReadPort(s.NewStateBase)
 		if err != nil {

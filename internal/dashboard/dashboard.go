@@ -334,6 +334,14 @@ type inventoryCache struct {
 	pending chan struct{}
 }
 
+// invalidate drops the cached result so the next read reflects a change an
+// action just made.
+func (c *inventoryCache) invalidate() {
+	c.mu.Lock()
+	c.lastAt = time.Time{}
+	c.mu.Unlock()
+}
+
 func (c *inventoryCache) get(opts inventory.Options) (inventory.Inventory, error) {
 	c.mu.Lock()
 	if c.pending == nil && time.Since(c.lastAt) < cacheTTL {

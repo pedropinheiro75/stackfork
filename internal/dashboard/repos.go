@@ -135,6 +135,7 @@ type repoGroup struct {
 type repoView struct {
 	repos.Repo
 	Search string
+	Recipe recipeView
 }
 
 type reposPage struct {
@@ -151,7 +152,7 @@ func (s *Server) handleReposFragment(w http.ResponseWriter, r *http.Request) {
 			page.Groups = append(page.Groups, repoGroup{Name: repo.Group})
 		}
 		g := &page.Groups[len(page.Groups)-1]
-		g.Repos = append(g.Repos, repoView{Repo: repo, Search: strings.ToLower(repo.Group + " " + repo.Name)})
+		g.Repos = append(g.Repos, repoView{Repo: repo, Search: strings.ToLower(repo.Group + " " + repo.Name), Recipe: s.repoRecipe(repo)})
 	}
 	s.renderFragment(w, "repos", page)
 }

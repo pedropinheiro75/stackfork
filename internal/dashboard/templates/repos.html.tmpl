@@ -26,6 +26,17 @@
         <button type="button" class="repo-btn" data-repo-action="fetch" data-repo="{{$r.Path}}" title="git fetch --prune in this repo only">Fetch</button>
       </div>
       <p class="muted reason">{{$r.ReadinessReason}}</p>
+      <div class="recipe" data-recipe="{{.Recipe.State}}">
+        <span class="muted">Startup recipe</span>
+        {{if .Recipe.Migrate}}<span>migrate <code>{{.Recipe.Migrate}}</code></span>{{end}}
+        <span>seed: {{if eq .Recipe.State "seed"}}<code>{{.Recipe.Seed}}</code>{{else if eq .Recipe.State "never"}}never{{else}}not decided yet{{end}}</span>
+        <select class="recipe-choice" aria-label="Seed decision for {{$r.Name}}">
+          {{if .Recipe.Detected}}<option value="detected">Seed with {{.Recipe.Detected}}</option>{{end}}
+          <option value="never"{{if eq .Recipe.State "never"}} selected{{end}}>Never seed</option>
+          <option value="clear"{{if eq .Recipe.State "undecided"}} selected{{end}}>Not decided</option>
+        </select>
+        <button type="button" class="repo-btn" data-recipe-set data-repo="{{$r.Path}}" title="records the answer; runs nothing">Change</button>
+      </div>
       <h4>Worktrees</h4>
       <ul class="wt-list">
         {{range $r.Worktrees}}
