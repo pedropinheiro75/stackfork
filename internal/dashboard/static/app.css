@@ -527,3 +527,8 @@ code.setting-value { display: inline-block; }
 .settings-form input[type="number"] { flex: 0 0 90px; }
 .form-error { color: var(--bad); font-size: 13px; min-height: 1em; margin: 6px 0 0; }
 .instance-link { text-decoration: none; }
+
+.repo-error { margin: 0; padding: 10px 16px; border-top: 1px solid var(--bad); border-left: 4px solid var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); font-size: 13px; }
+.repo-error strong { color: var(--bad); }
+.repo-error-msg { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.repo-error .repo-btn { margin-top: 8px; }

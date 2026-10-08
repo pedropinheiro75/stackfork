@@ -442,7 +442,7 @@
   // repo and branch name); this code only swaps it in, filters it, and posts
   // the actions. Branch and path values travel in data-* attributes.
 
-  var reposState = { tab: "instances", filter: "", readyOnly: false, autoShownSettings: false };
+  var reposState = { tab: "instances", filter: "", readyOnly: false, autoShownSettings: false, errors: {} };
 
   function copyText(text, label) {
     if (navigator.clipboard) navigator.clipboard.writeText(text);
@@ -482,6 +482,7 @@
         list.innerHTML = html;
         list.querySelectorAll("details.repo").forEach(function (d) { if (open[d.dataset.key]) d.open = true; });
         applyRepoFilters();
+        renderRepoErrors();
         var meta = document.getElementById("repos-meta");
         document.getElementById("scan-state").textContent = meta && meta.dataset.scanning === "true" ? "scanning..." : "";
         if (meta && meta.dataset.configured === "false" && !reposState.autoShownSettings) {
@@ -525,6 +526,53 @@
       .catch(function (e) { err.textContent = e.message; });
   }
 
+  function shq(v) { return "'" + String(v).replace(/'/g, "'\\''") + "'"; }
+
+  // A failed start / worktree-add stays on its repo row (not only in the
+  // activity log) with the exact CLI command to retry it; it survives the
+  // list refresh until dismissed or the action succeeds.
+  function renderRepoErrors() {
+    var list = document.getElementById("repos-list");
+    list.querySelectorAll(".repo-error").forEach(function (e) { e.remove(); });
+    list.querySelectorAll("details.repo").forEach(function (d) {
+      var err = reposState.errors[d.dataset.key];
+      if (!err) return;
+      var box = document.createElement("div");
+      box.className = "repo-error";
+      box.setAttribute("role", "alert");
+      box.dataset.repo = d.dataset.key;
+      var head = document.createElement("strong");
+      head.textContent = err.label + " failed";
+      var msg = document.createElement("pre");
+      msg.className = "repo-error-msg";
+      msg.textContent = err.message;
+      var retry = document.createElement("div");
+      retry.appendChild(document.createTextNode("Retry in a terminal: "));
+      var code = document.createElement("code");
+      code.className = "copyable";
+      code.dataset.copy = err.command;
+      code.title = "click to copy";
+      code.textContent = err.command;
+      retry.appendChild(code);
+      var dismiss = document.createElement("button");
+      dismiss.type = "button";
+      dismiss.className = "repo-btn";
+      dismiss.dataset.dismissRepo = d.dataset.key;
+      dismiss.textContent = "Dismiss";
+      box.appendChild(head); box.appendChild(msg); box.appendChild(retry); box.appendChild(dismiss);
+      var summary = d.querySelector("summary");
+      summary.parentNode.insertBefore(box, summary.nextSibling);
+      d.open = true;
+    });
+  }
+
+  function retryCommand(d, created) {
+    if (d.repoAction === "fetch") return "git -C " + shq(d.repo) + " fetch --prune";
+    if (d.repoAction === "start" && d.path) return "stackfork start-env " + shq(d.path);
+    if (created) return "stackfork start-env " + shq(created);
+    return "stackfork worktree add " + shq(d.repo) + " " + shq(d.branch) + (d.repoAction === "start" ? " && stackfork start-env " + shq(d.repo + "/.worktrees/" + d.branch.replace(/\//g, "-")) : "");
+  }
+
   // runRepoAction posts start / fetch / worktree-add. A start answers with
   // newline-delimited JSON so progress lines reach the activity log live.
   function runRepoAction(btn) {
@@ -534,7 +582,12 @@
     var name = d.repo.split("/").pop();
     var what = d.branch || (d.path && d.path !== d.repo ? d.path.split("/").pop() : "");
     var label = name + (what ? ":" + what : "") + " " + d.repoAction;
+    var created = "";
+    function fail(msg) {
+      reposState.errors[d.repo] = { label: label, message: msg, command: retryCommand(d, created) };
+    }
     btn.disabled = true;
+    delete reposState.errors[d.repo];
     log(label + ": started");
     fetch("/api/actions", {
       method: "POST",
@@ -544,7 +597,10 @@
     })
       .then(function (r) {
         if ((r.headers.get("Content-Type") || "").indexOf("ndjson") === -1) {
-          return r.json().then(function (b) { log(label + ": " + (b.message || (r.ok ? "ok" : "failed"))); });
+          return r.json().then(function (b) {
+            log(label + ": " + (b.message || (r.ok ? "ok" : "failed")));
+            if (!r.ok || b.ok === false) fail(b.message || "refused (status " + r.status + ")");
+          });
         }
         var reader = r.body.getReader();
         var dec = new TextDecoder();
@@ -552,8 +608,13 @@
         function handle(line) {
           if (!line.trim()) return;
           var o = JSON.parse(line);
-          if (o.line !== undefined) log(label + ": " + o.line);
-          else log(label + ": " + (o.ok ? "done - " : "failed - ") + o.message);
+          if (o.line !== undefined) {
+            log(label + ": " + o.line);
+            if (o.line.indexOf("created ") === 0) created = o.line.slice(8).split(" (copied")[0];
+          } else {
+            log(label + ": " + (o.ok ? "done - " : "failed - ") + o.message);
+            if (!o.ok) fail(o.message);
+          }
         }
         function pump() {
           return reader.read().then(function (res) {
@@ -566,7 +627,7 @@
         }
         return pump();
       })
-      .catch(function (e) { log(label + ": " + e.message); })
+      .catch(function (e) { log(label + ": " + e.message); fail(e.message); })
       .then(function () { btn.disabled = false; loadRepos(); poll(); });
   }
 
@@ -591,6 +652,8 @@
         if (art) { art.dataset.collapsed = "0"; art.scrollIntoView({ block: "center" }); }
         return;
       }
+      var dis = e.target.closest("[data-dismiss-repo]");
+      if (dis) { delete reposState.errors[dis.dataset.dismissRepo]; renderRepoErrors(); return; }
       var act = e.target.closest("[data-repo-action]");
       if (act) { runRepoAction(act); return; }
       var copy = e.target.closest(".copyable");
