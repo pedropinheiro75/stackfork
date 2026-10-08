@@ -129,6 +129,9 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if action == "repos" {
 		return cmdRepos(stdout, subArgs, newStateBase, legacyStateBase)
 	}
+	if action == "worktree" {
+		return cmdWorktree(stdout, subArgs, newStateBase, legacyStateBase)
+	}
 	if action == "config" {
 		return cmdConfig(stdout, subArgs)
 	}

@@ -78,3 +78,27 @@ func TestReposListsJSONTableAndPrompt(t *testing.T) {
 		t.Fatal("rescan failed")
 	}
 }
+
+func TestWorktreeAddByNameAndPath(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := scratchRepo(t, filepath.Join(root, "proj"))
+	runCLI(t, "config", "add-root", root)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+
+	out, e, code := runCLI(t, append(base, "worktree", "add", "proj", "feat/x", "--from", "main")...)
+	if code != 0 || !strings.Contains(out, filepath.Join(repo, ".worktrees", "feat-x")) {
+		t.Fatalf("%d %s %s", code, out, e)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".worktrees", "feat-x", "f")); err != nil {
+		t.Fatal(err)
+	}
+	if _, e, code := runCLI(t, append(base, "worktree", "add", repo, "feat/x")...); code == 0 || !strings.Contains(e, "already exists") {
+		t.Fatalf("%d %s", code, e)
+	}
+	if _, e, code := runCLI(t, append(base, "worktree", "add", "nope", "x")...); code == 0 || !strings.Contains(e, "no repo") {
+		t.Fatalf("%d %s", code, e)
+	}
+	if _, e, code := runCLI(t, append(base, "worktree", "add", "proj")...); code == 0 || !strings.Contains(e, "usage") {
+		t.Fatalf("%d %s", code, e)
+	}
+}
