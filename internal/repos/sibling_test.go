@@ -232,3 +232,16 @@ func TestSiblingLeavesTrackedRegistryConfigAlone(t *testing.T) {
 		t.Errorf("reported tracked file: %v", rep.Copied)
 	}
 }
+
+func TestSiblingRecipeCarriesSeedOnce(t *testing.T) {
+	main, _, inst := siblingFixture(t)
+	inst.SeedOnce, inst.SeedService = "bun run db:seed", "web"
+	res, err := AddWorktree(main, "feat-s", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := FindSiblingRecipe(main, res.Path, "", []inventory.Instance{inst})
+	if err != nil || r.SeedOnce != "bun run db:seed" || r.SeedService != "web" {
+		t.Fatalf("%+v %v", r, err)
+	}
+}

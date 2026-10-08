@@ -21,6 +21,8 @@ type SiblingRecipe struct {
 	Files   []string          // compose files, relative to the checkout root
 	EnvFile string            // relative; "" when the instance had none
 	Secrets map[string]string // name -> reference
+	// SeedOnce/SeedService: the sibling's recorded seed recipe, if any.
+	SeedOnce, SeedService string
 	// untracked lists the Files (and EnvFile) git does not track: Apply
 	// copies their folders from the sibling.
 	untracked []string
@@ -94,7 +96,7 @@ func FindSiblingRecipe(main, target, ref string, insts []inventory.Instance) (*S
 }
 
 func recipeFrom(c inventory.Instance, main, target, ref string) (*SiblingRecipe, error) {
-	r := &SiblingRecipe{Source: c.Root, Project: c.Project, Secrets: c.Secrets}
+	r := &SiblingRecipe{Source: c.Root, Project: c.Project, Secrets: c.Secrets, SeedOnce: c.SeedOnce, SeedService: c.SeedService}
 	where := "the new checkout"
 	if target == "" {
 		where = ref

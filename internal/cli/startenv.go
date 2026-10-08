@@ -66,9 +66,10 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 	if needsPrepare(instanceDir, root, branch, project) {
 		args, err := prepareArgs(root, main, instanceDir)
 		pbase := base
+		var seedCmd, seedSvc string
 		if errors.Is(err, errNoRecipe) {
 			var secrets []string
-			args, secrets, err = seedFromSibling(out, root, main, insts, err)
+			args, secrets, seedCmd, seedSvc, err = seedFromSibling(out, root, main, insts, err)
 			for _, sec := range secrets {
 				pbase = append(append([]string{}, pbase...), "--secret", sec)
 			}
@@ -87,6 +88,9 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 		}
 		if w := strings.TrimSpace(pErr.String()); w != "" {
 			fmt.Fprintln(out, w)
+		}
+		if seedCmd != "" {
+			recordSeedRecipe(instanceDir, seedCmd, seedSvc)
 		}
 	} else {
 		fmt.Fprintf(out, "%s is already prepared\n", project)
@@ -181,17 +185,17 @@ func collectInstances(newBase, legacyBase string) []inventory.Instance {
 // the sibling's untracked adapter files, writes the rewritten runtime env,
 // and returns the prepare flags and the secret references to reuse. none is
 // the error to return when no sibling can help.
-func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instance, none error) ([]string, []string, error) {
-	r, err := repos.FindSiblingRecipe(main, root, "", insts)
+func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instance, none error) (args, secrets []string, seedCmd, seedSvc string, err error) {
+	r, ferr := repos.FindSiblingRecipe(main, root, "", insts)
 	if r == nil {
-		if err != nil {
-			return nil, nil, fmt.Errorf("%w; the prepared instance of another worktree cannot be reused: %v", none, err)
+		if ferr != nil {
+			return nil, nil, "", "", fmt.Errorf("%w; the prepared instance of another worktree cannot be reused: %v", none, ferr)
 		}
-		return nil, nil, none
+		return nil, nil, "", "", none
 	}
-	rep, err := r.Apply(root)
-	if err != nil {
-		return nil, nil, fmt.Errorf("reusing the recipe of %s: %w", r.Project, err)
+	rep, aerr := r.Apply(root)
+	if aerr != nil {
+		return nil, nil, "", "", fmt.Errorf("reusing the recipe of %s: %w", r.Project, aerr)
 	}
 	fmt.Fprintf(out, "reusing the recipe of %s (%s): %s", r.Project, r.Source, strings.Join(r.Files, ", "))
 	if r.EnvFile != "" {
@@ -207,11 +211,10 @@ func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instanc
 	for _, sk := range rep.Skipped {
 		fmt.Fprintf(out, "skipped %s\n", sk)
 	}
-	args := fileArgs(r.Files)
+	args = fileArgs(r.Files)
 	if r.EnvFile != "" {
 		args = append(args, "--env-file", r.EnvFile)
 	}
-	var secrets []string
 	names := make([]string, 0, len(r.Secrets))
 	for n := range r.Secrets {
 		names = append(names, n)
@@ -223,7 +226,17 @@ func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instanc
 	if len(names) > 0 {
 		fmt.Fprintf(out, "reusing secret references %s (values stay where they are)\n", strings.Join(names, ", "))
 	}
-	return args, secrets, nil
+	seedCmd, seedSvc = r.SeedOnce, r.SeedService
+	if seedCmd == "" {
+		// the sibling's recipe may live only in its knowledge file
+		if k, kerr := knowledge.Load(filepath.Join(r.Source, ".stackfork", "knowledge.json")); kerr == nil {
+			seedCmd, seedSvc = k.Recipe.SeedOnce, k.Recipe.SeedService
+		}
+	}
+	if seedCmd != "" {
+		fmt.Fprintln(out, "carrying the seed_once recipe (runs once, when this instance's data is first created)")
+	}
+	return args, secrets, seedCmd, seedSvc, nil
 }
 
 func fileArgs(files []string) []string {
@@ -285,4 +298,14 @@ func cmdStartEnv(stdout, stderr io.Writer, subArgs []string, rootArg, newStateBa
 		Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase,
 		Global: global, ProfileDirs: profiles,
 	})
+}
+
+// recordSeedRecipe persists a sibling's seed_once in the new instance's
+// manifest, unless the checkout's own knowledge already carries one.
+func recordSeedRecipe(instanceDir, cmd, svc string) {
+	path := filepath.Join(instanceDir, "manifest.json")
+	if m, _ := state.ReadManifest(path); m != nil && m.SeedOnce == "" {
+		m.SeedOnce, m.SeedService = cmd, svc
+		_ = state.WritePrivate(path, m)
+	}
 }
