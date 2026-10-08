@@ -128,6 +128,7 @@ func cmdCloneDB(stdout io.Writer, subArgs []string, root, project, instanceDir, 
 		return 0, err
 	}
 	fmt.Fprintf(stdout, "copied %s (%s) into %s (%s)\n", *from, srcVolume, project, dstVolume)
+	setSeeded(instanceDir, boolPtr(true)) // data came from elsewhere: never seed it
 	return 0, nil
 }
 

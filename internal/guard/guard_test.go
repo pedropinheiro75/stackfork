@@ -246,3 +246,12 @@ func TestDestructiveTable(t *testing.T) {
 		}
 	}
 }
+
+func TestSeedForceIsDestructiveButSeedIsNot(t *testing.T) {
+	if Destructive("stackfork seed", "/tmp") {
+		t.Error("plain seed must be allowed")
+	}
+	if !Destructive("stackfork seed --force", "/tmp") {
+		t.Error("seed --force must be blocked")
+	}
+}

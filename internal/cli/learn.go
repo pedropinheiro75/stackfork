@@ -137,6 +137,7 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 		up := fs.String("up", "", "")
 		migrate := fs.String("migrate", "", "")
 		seedOnce := fs.String("seed-once", "", "")
+		seedService := fs.String("seed-service", "", "")
 		var login stringList
 		fs.Var(&login, "login", "")
 		if err := fs.Parse(rest); err != nil {
@@ -153,6 +154,9 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 		}
 		if *seedOnce != "" {
 			k.Recipe.SeedOnce = *seedOnce
+		}
+		if *seedService != "" {
+			k.Recipe.SeedService = *seedService
 		}
 		if len(login) > 0 {
 			k.Recipe.Login = login

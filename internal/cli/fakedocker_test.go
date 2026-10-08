@@ -40,10 +40,14 @@ if [ "$1" = "compose" ]; then
     fi
   done
   case " $* " in
+    *" exec "*) exit "${DOCKER_FAKE_EXEC_EXIT:-0}" ;;
     *" ps "*) printf '%s' "$DOCKER_FAKE_STATUS" ;;
     *" logs "*) printf '%s' "$DOCKER_FAKE_LOGS" ;;
   esac
   exit "${DOCKER_FAKE_EXIT:-0}"
+fi
+if [ "$1" = "volume" ] && [ "$2" = "inspect" ]; then
+  exit "${DOCKER_FAKE_VOLUME_EXIT:-0}"
 fi
 if [ "$1" = "context" ] && [ "$2" = "inspect" ]; then
   printf '%s' '[{"Endpoints":{"docker":{"Host":"unix:///var/run/docker.sock"}}}]'

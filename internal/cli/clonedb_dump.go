@@ -97,6 +97,7 @@ func cmdCloneDBFromDump(stdout io.Writer, dumpArg, serviceFlag, databaseFlag str
 		return 0, err
 	}
 	fmt.Fprintf(stdout, "seeded %s (service %s, database %s) from %s\n", project, service, database, dumpArg)
+	setSeeded(instanceDir, boolPtr(true)) // data came from elsewhere: never seed it
 	return 0, nil
 }
 

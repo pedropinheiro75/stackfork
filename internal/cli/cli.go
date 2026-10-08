@@ -274,6 +274,8 @@ func dispatch(stdout, stderr io.Writer, action string, subArgs []string, root, b
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "logs":
 		return cmdLogs(stdout, stderr, subArgs, root, branch, project, instanceDir)
+	case "seed":
+		return cmdSeed(stdout, stderr, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "clone-db":
 		return cmdCloneDB(stdout, subArgs, root, project, instanceDir, newStateBase, legacyStateBase)
 	case "env":
@@ -698,6 +700,9 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 		Ports: portAllocs, Files: resolvedFiles, EnvFile: envFileOut, Inputs: inputHashes,
 	}
 
+	if previous != nil {
+		info.SeedOnce, info.SeedService, info.Seeded = previous.SeedOnce, previous.SeedService, previous.Seeded
+	}
 	if err := state.WritePrivate(configPath, model); err != nil {
 		return err
 	}
@@ -920,7 +925,16 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		defer lock.Release()
 	}
 
-	return lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
+	seedNow := action == "up" && planSeed(root, instanceDir)
+	code, err := lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
+	if seedNow {
+		if err != nil || code != 0 {
+			setSeeded(instanceDir, nil) // up failed: decide again next time
+		} else {
+			runSeed(stdout, stderr, root, branch, project, instanceDir, newStateBase, legacyStateBase)
+		}
+	}
+	return code, err
 }
 
 // --- output ------------------------------------------------------------

@@ -352,6 +352,8 @@ func Destructive(command, cwd string) bool {
 				return true
 			case action == "gc" && name == "apply":
 				return true
+			case action == "seed" && name == "force":
+				return true
 			}
 		}
 	}
