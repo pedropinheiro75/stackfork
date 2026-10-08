@@ -126,6 +126,9 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if action == "list" {
 		return cmdList(stdout, subArgs, newStateBase, legacyStateBase)
 	}
+	if action == "repos" {
+		return cmdRepos(stdout, subArgs, newStateBase, legacyStateBase)
+	}
 	if action == "config" {
 		return cmdConfig(stdout, subArgs)
 	}

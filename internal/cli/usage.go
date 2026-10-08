@@ -46,6 +46,7 @@ var commandSummaries = []struct{ name, summary string }{
 	{"proxy", "the shared portless-URL proxy: up/down/status/reload"},
 	{"route", "register a host-run app's port with the proxy"},
 	{"dashboard", "a local web page listing every instance and repo"},
+	{"repos", "list git repos under the configured roots with branches, worktrees and readiness"},
 	{"config", "show or edit the folders the repo browser scans"},
 	{"doctor", "check the local environment the proxy/tool depend on"},
 	{"version", "print the version"},
