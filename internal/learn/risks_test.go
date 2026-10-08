@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -166,5 +167,37 @@ func TestGitignoreIgnoresRuntimeEnv(t *testing.T) {
 	cmd = exec.Command("git", "-C", root, "check-ignore", ".stackfork/knowledge.json")
 	if err := cmd.Run(); err == nil {
 		t.Fatal("knowledge.json must not be git-ignored: it is meant to be committed")
+	}
+}
+
+func TestUnpinnedToolchainRisks(t *testing.T) {
+	dir := t.TempDir()
+	df := "FROM oven/bun:latest AS base\nFROM node AS dev\nFROM base AS web\nFROM node:20.11-alpine\nFROM scratch\n" +
+		"RUN npm install -g bun\nRUN npm i -g pnpm@9.1.0\nRUN npm i -g pnpm turbo@2 && echo ok\n" +
+		"RUN curl -fsSL https://bun.sh/install | bash\nRUN curl -fsSL https://bun.sh/install | bash -s bun-v1.1.0\n" +
+		"# RUN npm i -g commented\nRUN npm install left-pad\n"
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile.dev"), []byte(df), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "entrypoint.sh"), []byte("#!/bin/sh\nnpm install --global yarn\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, r := range detectRisks(dir) {
+		if r.Kind == riskUnpinnedToolchain {
+			if r.Line == 0 || !strings.Contains(r.Detail, "pin a version; a newer tool can reject the lockfile") {
+				t.Fatalf("no file:line or hint: %+v", r)
+			}
+			got[r.File+":"+strconv.Itoa(r.Line)] = r.Detail
+		}
+	}
+	want := []string{"Dockerfile.dev:1", "Dockerfile.dev:2", "Dockerfile.dev:6", "Dockerfile.dev:8", "Dockerfile.dev:9", "entrypoint.sh:2"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v", got)
+	}
+	for _, w := range want {
+		if _, ok := got[w]; !ok {
+			t.Errorf("missing %s in %v", w, got)
+		}
 	}
 }

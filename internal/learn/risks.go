@@ -14,6 +14,7 @@ const (
 	riskWritesEnvOrNpmrc  = "writes_env_or_npmrc"
 	riskHardcodedComposeP = "hardcoded_compose_project"
 	riskHardcodedExec     = "hardcoded_docker_exec"
+	riskUnpinnedToolchain = "unpinned_toolchain"
 )
 
 var (
@@ -31,6 +32,18 @@ var (
 	// composeProjectPattern flags `docker compose -p <fixed-name>`; a
 	// variable reference ($NAME, ${NAME}) is not fixed and is not flagged.
 	composeProjectPattern = regexp.MustCompile(`docker\s+compose\s+(?:--\S+\s+|-[a-zA-Z]\s+\S+\s+)*-p\s+([^\s$][^\s]*)`)
+
+	// globalInstallPattern captures the package list of `npm i -g ...`,
+	// `pnpm add --global ...`, `yarn global add ...`, `bun add -g ...`.
+	globalInstallPattern = regexp.MustCompile(`\b(?:npm|pnpm|yarn|bun)\s+(?:global\s+)?(?:install|i|add)\b([^&|;]*)`)
+
+	globalFlagPattern = regexp.MustCompile(`(^|\s)(-g|--global)\b|yarn\s+global`)
+
+	// curlPipePattern flags `curl ... | bash` style installers.
+	curlPipePattern = regexp.MustCompile(`\b(?:curl|wget)\b[^|]*\|\s*(?:sudo\s+)?(?:ba|z)?sh\b`)
+
+	// versionLikePattern: a pinned version somewhere on the line.
+	versionLikePattern = regexp.MustCompile(`(?i)\bv?\d+\.\d+|VERSION|@\d`)
 
 	// dockerExecPattern flags `docker exec [-flags] <fixed-name>`.
 	dockerExecPattern = regexp.MustCompile(`docker\s+exec\s+(?:-\w+\s+)*([^\s$-][^\s]*)`)
@@ -53,6 +66,7 @@ func detectRisks(root string) []knowledge.Risk {
 	lines = append(lines, makeTargetLines(root, "justfile")...)
 
 	var risks []knowledge.Risk
+	risks = append(risks, unpinnedToolchains(root)...)
 	for _, l := range lines {
 		if l.onStart {
 			if m := resetSeedPattern.FindString(l.text); m != "" {
@@ -136,4 +150,71 @@ func makeTargetLines(root, filename string) []scriptLine {
 		}
 	}
 	return lines
+}
+
+const pinHint = "pin a version; a newer tool can reject the lockfile"
+
+// unpinnedToolchains flags global toolchain installs and floating base
+// images in Dockerfiles and entrypoints.
+func unpinnedToolchains(root string) []knowledge.Risk {
+	isDockerfile := func(n string) bool {
+		l := strings.ToLower(n)
+		return strings.HasPrefix(l, "dockerfile") || strings.HasSuffix(l, ".dockerfile")
+	}
+	files := append(findByPredicate(root, isDockerfile), findByPredicate(root, isEntrypointName)...)
+	var risks []knowledge.Risk
+	flag := func(rel string, n int, what, text string) {
+		risks = append(risks, knowledge.Risk{Kind: riskUnpinnedToolchain, File: rel, Line: n,
+			Detail: what + ": " + strings.TrimSpace(text) + " (" + pinHint + ")"})
+	}
+	for _, rel := range files {
+		data, ok := readFileNoSymlink(filepath.Join(root, rel))
+		if !ok {
+			continue
+		}
+		stages := map[string]bool{}
+		for i, text := range strings.Split(string(data), "\n") {
+			t := strings.TrimSpace(text)
+			if t == "" || strings.HasPrefix(t, "#") {
+				continue
+			}
+			f := strings.Fields(t)
+			if strings.EqualFold(f[0], "FROM") {
+				var img string
+				for _, a := range f[1:] {
+					if !strings.HasPrefix(a, "--") {
+						img = a
+						break
+					}
+				}
+				name := strings.ToLower(img)
+				last := name[strings.LastIndex(name, "/")+1:]
+				switch {
+				case img == "" || name == "scratch" || strings.Contains(img, "$") || stages[name] || strings.Contains(img, "@sha256:"):
+				case !strings.Contains(last, ":"):
+					flag(rel, i+1, "base image without a tag", t)
+				case strings.HasSuffix(name, ":latest"):
+					flag(rel, i+1, "base image on :latest", t)
+				}
+				if len(f) >= 3 && strings.EqualFold(f[len(f)-2], "AS") {
+					stages[strings.ToLower(f[len(f)-1])] = true
+				}
+				continue
+			}
+			if m := globalInstallPattern.FindStringSubmatch(t); m != nil && globalFlagPattern.MatchString(t) {
+				for _, a := range strings.Fields(m[1]) {
+					if strings.HasPrefix(a, "-") || strings.Contains(a, "$") {
+						continue
+					}
+					if !strings.Contains(a[1:], "@") && a != "global" {
+						flag(rel, i+1, "global install of "+a+" without a version", t)
+					}
+				}
+			}
+			if curlPipePattern.MatchString(t) && !versionLikePattern.MatchString(t) {
+				flag(rel, i+1, "installer piped to a shell without a version", t)
+			}
+		}
+	}
+	return risks
 }
