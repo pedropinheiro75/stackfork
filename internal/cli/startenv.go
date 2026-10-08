@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/learn"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -26,6 +28,10 @@ type StartOptions struct {
 	LegacyStateBase string
 	Global          []string // extra global flags (--npmrc, --secret) to forward
 	ProfileDirs     []string
+	// Interactive lets start-env ask the seed question on In (os.Stdin
+	// when nil); the dashboard never sets it.
+	Interactive bool
+	In          io.Reader
 }
 
 // StartEnv prepares (only when needed) and starts the instance of one
@@ -95,6 +101,8 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 	} else {
 		fmt.Fprintf(out, "%s is already prepared\n", project)
 	}
+
+	decideSeed(out, errOut, o, root, project, instanceDir)
 
 	fmt.Fprintf(out, "starting %s\n", project)
 	code, err := run(append(append([]string{}, base...), "up"), out, errOut)
@@ -228,12 +236,10 @@ func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instanc
 	}
 	seedCmd, seedSvc = r.SeedOnce, r.SeedService
 	if seedCmd == "" {
-		// the sibling's recipe may live only in its knowledge file
-		if k, kerr := knowledge.Load(filepath.Join(r.Source, ".stackfork", "knowledge.json")); kerr == nil {
-			seedCmd, seedSvc = k.Recipe.SeedOnce, k.Recipe.SeedService
-		}
+		// the sibling's decision may live only in its knowledge file
+		_, seedCmd, seedSvc = learn.SeedDecision([]string{r.Source}, nil)
 	}
-	if seedCmd != "" {
+	if learn.SeedActive(seedCmd) {
 		fmt.Fprintln(out, "carrying the seed_once recipe (runs once, when this instance's data is first created)")
 	}
 	return args, secrets, seedCmd, seedSvc, nil
@@ -296,7 +302,7 @@ func cmdStartEnv(stdout, stderr io.Writer, subArgs []string, rootArg, newStateBa
 	}
 	return 0, StartEnv(stdout, stderr, StartOptions{
 		Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase,
-		Global: global, ProfileDirs: profiles,
+		Global: global, ProfileDirs: profiles, Interactive: isTerminal(os.Stdin),
 	})
 }
 
@@ -307,5 +313,38 @@ func recordSeedRecipe(instanceDir, cmd, svc string) {
 	if m, _ := state.ReadManifest(path); m != nil && m.SeedOnce == "" {
 		m.SeedOnce, m.SeedService = cmd, svc
 		_ = state.WritePrivate(path, m)
+	}
+}
+
+// decideSeed settles "seed the new database?" before up when nobody has:
+// a quick scan of the checkout finds a seed script, then a TTY is asked
+// (seed now / never); otherwise start normally and say how to seed later.
+func decideSeed(out, errOut io.Writer, o StartOptions, root, project, instanceDir string) {
+	if seedDecided(root, instanceDir) {
+		return
+	}
+	_, cmd := learn.DetectSeed(root)
+	if cmd == "" {
+		return
+	}
+	if !o.Interactive {
+		fmt.Fprintf(errOut, "this project has `%s` and no decision on seeding the new database; started without it. Seed once with `stackfork --instance %s seed`\n", cmd, project)
+		return
+	}
+	in := o.In
+	if in == nil {
+		in = os.Stdin
+	}
+	fmt.Fprintf(out, "This project has `%s`. Seed the new database? [s]eed now / [n]ever for this project: ", cmd)
+	line, _ := bufio.NewReader(in).ReadString('\n')
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "s", "seed", "seed now", "y", "yes":
+		persistSeedDecision(root, instanceDir, cmd)
+		fmt.Fprintln(out, "will seed once, when the database is first created")
+	case "n", "never":
+		persistSeedDecision(root, instanceDir, learn.SeedNone)
+		fmt.Fprintln(out, "recorded: never seed this project")
+	default:
+		fmt.Fprintf(errOut, "no decision recorded; run `stackfork --instance %s seed` to seed later\n", project)
 	}
 }

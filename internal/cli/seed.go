@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
-	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/learn"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -17,33 +17,31 @@ import (
 
 func boolPtr(b bool) *bool { return &b }
 
-// setSeeded records the seeded marker in the instance manifest (nil clears it).
-func setSeeded(instanceDir string, v *bool) {
-	path := filepath.Join(instanceDir, "manifest.json")
-	m, err := state.ReadManifest(path)
-	if err != nil || m == nil {
-		return
+func setSeeded(instanceDir string, v *bool) { lifecycle.SetSeeded(instanceDir, v) }
+
+// seedRecipe returns the active seed_once command and its service ("" when
+// none was decided, or the decision is "never").
+func seedRecipe(root, instanceDir string) (cmd, service string) {
+	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+	decided, c, svc := learn.SeedDecision([]string{root, repos.MainRepoOf(root)}, m)
+	if !decided || !learn.SeedActive(c) {
+		return "", ""
 	}
-	m.Seeded = v
-	_ = state.WritePrivate(path, m)
+	return c, svc
 }
 
-// seedRecipe finds the recorded seed_once command and its service: the
-// checkout's (or main checkout's) knowledge recipe first, else the manifest.
-func seedRecipe(root, instanceDir string) (cmd, service string) {
-	main := repos.MainRepoOf(root)
-	for _, dir := range []string{root, main} {
-		if dir == "" {
-			continue
-		}
-		if k, err := knowledge.Load(filepath.Join(dir, ".stackfork", "knowledge.json")); err == nil && k.Recipe.SeedOnce != "" {
-			return k.Recipe.SeedOnce, k.Recipe.SeedService
-		}
-	}
-	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
-		return m.SeedOnce, m.SeedService
-	}
-	return "", ""
+// seedDecided reports whether anyone decided about seeding this project yet.
+func seedDecided(root, instanceDir string) bool {
+	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+	d, _, _ := learn.SeedDecision([]string{root, repos.MainRepoOf(root)}, m)
+	return d
+}
+
+// persistSeedDecision stores the answer where decisions live: the instance
+// manifest and, if the checkout has one, its knowledge recipe.
+func persistSeedDecision(root, instanceDir, cmd string) {
+	lifecycle.SetSeedDecision(instanceDir, cmd)
+	_ = learn.RecordSeedDecision(root, cmd)
 }
 
 // dataVolumesExist reports whether any named volume of the instance's
@@ -93,30 +91,9 @@ func planSeed(root, instanceDir string) bool {
 	return true
 }
 
-// runSeed execs the recorded seed_once command in its service. On success
-// it records seeded:true; on failure it leaves false and says how to retry.
 func runSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase string) bool {
 	cmd, service := seedRecipe(root, instanceDir)
-	retry := "stackfork --instance " + project + " seed"
-	if service == "" {
-		data, _ := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
-		model, _ := compose.DecodeJSON(data)
-		service, _, _, _ = compose.PrimaryHTTPService(model)
-	}
-	if service == "" {
-		fmt.Fprintf(stderr, "not seeded: no service to run %q in; set --seed-service with `stackfork learn record recipe`, then run `%s`\n", cmd, retry)
-		return false
-	}
-	fmt.Fprintf(stdout, "seeding %s once in %s: %s\n", project, service, cmd)
-	code, err := lifecycle.Execute(stdout, stderr, "exec", root, branch, project, instanceDir, newBase, legacyBase,
-		lifecycle.Options{Service: service, Command: []string{"sh", "-c", cmd}})
-	if err != nil || code != 0 {
-		fmt.Fprintf(stderr, "not seeded: the seed command failed (%v, status %d); retry with `%s`\n", err, code, retry)
-		return false
-	}
-	setSeeded(instanceDir, boolPtr(true))
-	fmt.Fprintf(stdout, "seeded %s\n", project)
-	return true
+	return lifecycle.RunSeed(stdout, stderr, root, branch, project, instanceDir, newBase, legacyBase, cmd, service)
 }
 
 // cmdSeed is `stackfork seed [--force]`: runs the recorded seed_once unless
@@ -129,7 +106,14 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	cmd, _ := seedRecipe(root, instanceDir)
 	if cmd == "" {
-		return 0, errors.New("no seed_once recorded for this project; record one with `stackfork learn record recipe --seed-once CMD`")
+		if seedDecided(root, instanceDir) {
+			return 0, errors.New("this project is recorded as never seeded; change it with `stackfork learn record recipe --seed-once CMD`")
+		}
+		_, proposal := learn.DetectSeed(root)
+		if proposal == "" {
+			return 0, errors.New("no seed script found for this project; record one with `stackfork learn record recipe --seed-once CMD`")
+		}
+		persistSeedDecision(root, instanceDir, proposal) // running it is the decision
 	}
 	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
 	if m == nil {
@@ -154,4 +138,9 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		return 1, nil
 	}
 	return 0, nil
+}
+
+func isTerminal(f *os.File) bool {
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
