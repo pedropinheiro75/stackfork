@@ -37,6 +37,10 @@ const (
 	// StateNotStarted is a service whose container exists but never ran
 	// (docker's "created"): red, and it counts toward partial.
 	StateNotStarted = "not-started"
+	// StateWaiting is a service that was never started only because what it
+	// depends on is still starting (Compose starts it by itself afterwards):
+	// amber, with WaitingFor naming the dependencies.
+	StateWaiting = "waiting"
 
 	// ServiceOptional is a service that never started: it has no container
 	// at all and is either behind a Compose profile or not part of the
@@ -98,8 +102,10 @@ type Service struct {
 	State  string `json:"state"`
 	Health string `json:"health,omitempty"`
 	// HealthDetail is the last health-check line of an unhealthy service.
-	HealthDetail string     `json:"health_detail,omitempty"`
-	Endpoints    []Endpoint `json:"endpoints,omitempty"`
+	HealthDetail string `json:"health_detail,omitempty"`
+	// WaitingFor lists the dependencies a StateWaiting service waits for.
+	WaitingFor []string   `json:"waiting_for,omitempty"`
+	Endpoints  []Endpoint `json:"endpoints,omitempty"`
 
 	// The rest are read from the snapshot already on disk (design.md D3a):
 	// no extra docker call. Image and Kind pick the dashboard's logo;
@@ -457,6 +463,7 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 		services = append(services, svc)
 	}
 
+	markWaiting(services)
 	apps := buildApps(services, info, primaryService, hasPrimary)
 
 	switch {
@@ -855,7 +862,7 @@ func serviceWarnings(project string, services []Service) []string {
 		names  []string
 		reason string
 	}
-	var unhealthy, exited, notStarted []group
+	var unhealthy, exited, notStarted, waiting []group
 	add := func(gs *[]group, name, reason string) {
 		for i := range *gs {
 			if (*gs)[i].reason == reason {
@@ -871,6 +878,8 @@ func serviceWarnings(project string, services []Service) []string {
 			add(&unhealthy, s.Name, healthReason(s.HealthDetail))
 		case s.State == "exited" || s.State == "dead" || s.State == "restarting":
 			add(&exited, s.Name, s.State)
+		case s.State == StateWaiting:
+			add(&waiting, s.Name, "waiting for "+strings.Join(s.WaitingFor, ", ")+" to become healthy")
 		case s.State == StateNotStarted:
 			add(&notStarted, s.Name, "")
 		}
@@ -888,6 +897,9 @@ func serviceWarnings(project string, services []Service) []string {
 	}
 	for _, g := range exited {
 		out = append(out, strings.Join(g.names, ", ")+" "+g.reason+" - if that is unexpected, try "+cmd("restart", g.names))
+	}
+	for _, g := range waiting {
+		out = append(out, strings.Join(g.names, ", ")+" "+g.reason)
 	}
 	for _, g := range notStarted {
 		out = append(out, strings.Join(g.names, ", ")+" not started - run `stackfork up`")
@@ -926,5 +938,36 @@ func fillOneOffs(inst *Instance, rows []containerRow) {
 	if len(names) > 0 {
 		sort.Strings(names)
 		inst.OneOffCleanup = "docker rm " + strings.Join(names, " ")
+	}
+}
+
+// markWaiting turns a never-started service into "waiting" when something it
+// depends on is still starting (health starting, or itself waiting), so a
+// stack that is simply coming up in order does not look broken.
+func markWaiting(services []Service) {
+	byName := map[string]*Service{}
+	for i := range services {
+		byName[services[i].Name] = &services[i]
+	}
+	starting := func(s *Service) bool {
+		return (s.State == "running" && s.Health == "health: starting") || s.State == StateWaiting
+	}
+	for changed := true; changed; {
+		changed = false
+		for i := range services {
+			s := &services[i]
+			if s.State != StateNotStarted {
+				continue
+			}
+			var deps []string
+			for _, d := range s.DependsOn {
+				if dep := byName[d]; dep != nil && starting(dep) {
+					deps = append(deps, d)
+				}
+			}
+			if len(deps) > 0 {
+				s.State, s.WaitingFor, changed = StateWaiting, deps, true
+			}
+		}
 	}
 }

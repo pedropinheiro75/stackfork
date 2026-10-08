@@ -153,9 +153,9 @@
           {{range .Endpoints}}
           {{if .Known}}
             {{if or (eq .Scheme "http") (eq .Scheme "https")}}
-            <a class="endpoint-link{{if ne $svc.State "running"}} stopped{{end}}" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}">{{.URL}}{{if ne $svc.State "running"}} {{if or (eq $svc.State "optional") (eq $svc.State "not-started")}}(not started){{else}}(stopped){{end}}{{end}}{{if .Proxied}} (proxy){{end}}</a>
+            <a class="endpoint-link{{if ne $svc.State "running"}} stopped{{end}}" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}">{{.URL}}{{if ne $svc.State "running"}} {{if or (eq $svc.State "optional") (eq $svc.State "not-started") (eq $svc.State "waiting") (eq $svc.State "waiting")}}(not started){{else}}(stopped){{end}}{{end}}{{if .Proxied}} (proxy){{end}}</a>
             {{else}}
-            <span class="endpoint-copy copyable{{if ne $svc.State "running"}} stopped{{end}}" data-copy="{{.URL}}" title="click to copy">{{.URL}}{{if ne $svc.State "running"}} {{if or (eq $svc.State "optional") (eq $svc.State "not-started")}}(not started){{else}}(stopped){{end}}{{end}}</span>
+            <span class="endpoint-copy copyable{{if ne $svc.State "running"}} stopped{{end}}" data-copy="{{.URL}}" title="click to copy">{{.URL}}{{if ne $svc.State "running"}} {{if or (eq $svc.State "optional") (eq $svc.State "not-started") (eq $svc.State "waiting") (eq $svc.State "waiting")}}(not started){{else}}(stopped){{end}}{{end}}</span>
             {{end}}
           {{else}}
             <span class="endpoint-pending">container {{.Container}} &mdash; assigned on start</span>

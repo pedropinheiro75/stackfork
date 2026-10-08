@@ -11,6 +11,7 @@ import (
 )
 
 func TestContainerNameOverride(t *testing.T) {
+	t.Setenv("STACKFORK_PROXY_NAME", "") // TestMain isolates it; this test checks the default
 	if got := ContainerName(); got != "stackfork-proxy" {
 		t.Fatalf("expected default stackfork-proxy, got %q", got)
 	}

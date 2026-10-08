@@ -342,7 +342,7 @@ main.stale { opacity: 0.6; }
 }
 .status-dot.running { background: var(--ok); }
 .status-dot.exited, .status-dot.stopped, .status-dot.dead, .status-dot.not-started { background: var(--bad); }
-.status-dot.restarting { background: var(--warn); }
+.status-dot.restarting, .status-dot.waiting { background: var(--warn); }
 .status-dot.optional { background: var(--muted); }
 .status-dot.unhealthy, .status-dot.starting { background: var(--warn); }
 

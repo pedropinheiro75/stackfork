@@ -520,3 +520,45 @@ func TestCreatedIsNotStartedNotOptionalAndOneOffsAreSeparate(t *testing.T) {
 		t.Fatalf("one-offs %+v", i)
 	}
 }
+
+func TestCreatedServiceWaitingForAStartingDependencyIsNotAnAlarm(t *testing.T) {
+	installFakeDocker(t)
+	base := t.TempDir()
+	root := gitRepo(t, "main")
+	writeInstance(t, base, "sf-w", root, "main", []string{"app", "nginx", "worker"}, nil)
+	cfg := map[string]interface{}{"services": map[string]interface{}{
+		"app":    map[string]interface{}{},
+		"nginx":  map[string]interface{}{"depends_on": map[string]interface{}{"app": map[string]interface{}{"condition": "service_healthy"}}},
+		"worker": map[string]interface{}{},
+	}}
+	if err := state.WritePrivate(filepath.Join(base, "sf-w", "compose.json"), cfg); err != nil {
+		t.Fatal(err)
+	}
+	ps := func(appStatus string) {
+		t.Setenv("DOCKER_FAKE_PS", strings.Join([]string{
+			psRow(t, "sf-w", "app", "sf-w-app-1", "running", appStatus, false),
+			psRow(t, "sf-w", "nginx", "sf-w-nginx-1", "created", "Created", false),
+			psRow(t, "sf-w", "worker", "sf-w-worker-1", "created", "Created", false),
+		}, "\n")+"\n")
+	}
+	ps("Up 1 minute (health: starting)")
+	i := collectOne(t, base)
+	st := svcStates(i)
+	if st["nginx"] != "waiting/" || st["worker"] != "not-started/" {
+		t.Fatalf("states %v", st)
+	}
+	if i.State != StatePartial {
+		t.Errorf("instance %q", i.State)
+	}
+	if len(i.Warnings) != 2 || i.Warnings[0] != "nginx waiting for app to become healthy" || i.Warnings[1] != "worker not started - run `stackfork up`" {
+		t.Fatalf("warnings %q", i.Warnings)
+	}
+	if w := i.Services[1].WaitingFor; len(w) != 1 || w[0] != "app" {
+		t.Fatalf("waiting_for %v", w)
+	}
+	// once the dependency is up, a service still never started IS a problem
+	ps("Up 2 minutes (healthy)")
+	if st := svcStates(collectOne(t, base)); st["nginx"] != "not-started/" {
+		t.Fatalf("states %v", st)
+	}
+}

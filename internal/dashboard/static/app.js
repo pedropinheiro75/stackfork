@@ -140,6 +140,7 @@
   function dotTitle(svc) {
     if (svc.state === "optional") return "not started (optional)";
     if (svc.state === "not-started") return "not started";
+    if (svc.state === "waiting") return "waiting for " + (svc.waiting_for || []).join(", ") + " to become healthy";
     if (svc.state === "running" && svc.health === "unhealthy") return "running, unhealthy";
     if (svc.state === "running" && svc.health === "health: starting") return "running, health check starting";
     return svc.state;
@@ -160,7 +161,7 @@
   function serviceHtml(inst, svc) {
     var key = inst.project + "/" + svc.name;
     var running = svc.state === "running";
-    var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, running, svc.state === "optional" || svc.state === "not-started"); }).join("");
+    var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, running, svc.state === "optional" || svc.state === "not-started" || svc.state === "waiting"); }).join("");
     if (svc.connection_url) {
       endpoints += '<span class="endpoint-copy copyable connection-url" data-copy="' + escapeHtml(svc.connection_url) +
         '" data-copy-kind="database_url" data-copy-project="' + escapeHtml(inst.project) + '" data-copy-service="' + escapeHtml(svc.name) +

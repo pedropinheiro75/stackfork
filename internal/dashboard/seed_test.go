@@ -196,7 +196,7 @@ func TestStatusDotsFollowHealthAndOneOffsShowApart(t *testing.T) {
 			t.Errorf("app.js lacks %s", want)
 		}
 	}
-	for _, want := range []string{".status-dot.not-started", ".status-dot.unhealthy", ".status-dot.optional"} {
+	for _, want := range []string{".status-dot.not-started", ".status-dot.waiting", ".status-dot.unhealthy", ".status-dot.optional"} {
 		if !strings.Contains(string(css), want) {
 			t.Errorf("css lacks %s", want)
 		}
