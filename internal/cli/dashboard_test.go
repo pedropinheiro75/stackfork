@@ -150,3 +150,49 @@ func TestDashboardAnnouncesBeforeSlowProxyRegistration(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// A port that is already taken fails at once: non-zero, a clear message and
+// never a "listening" line.
+func TestDashboardPortInUseFailsWithoutAnnouncing(t *testing.T) {
+	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+	var stdout, stderr syncBuffer
+	code := Run([]string{"--state-dir", t.TempDir(), "--legacy-state-dir", t.TempDir(), "dashboard", "--port", strconv.Itoa(port)}, &stdout, &stderr)
+	if code == 0 || strings.Contains(stdout.String(), "listening") {
+		t.Fatalf("code %d stdout %q", code, stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "in use") || !strings.Contains(stderr.String(), "--port") {
+		t.Fatalf("message: %q", stderr.String())
+	}
+}
+
+// A second dashboard on a port a stackfork dashboard already serves says so.
+func TestDashboardDetectsARunningDashboardOnThePort(t *testing.T) {
+	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
+	free, _ := net.Listen("tcp", "127.0.0.1:0")
+	port := free.Addr().(*net.TCPAddr).Port
+	free.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	var out1, err1 syncBuffer
+	done := make(chan struct{})
+	go func() {
+		cmdDashboard(ctx, &out1, &err1, []string{"--port", strconv.Itoa(port)}, t.TempDir(), t.TempDir())
+		close(done)
+	}()
+	defer func() { cancel(); <-done }()
+	for deadline := time.Now().Add(3 * time.Second); !strings.Contains(out1.String(), "listening on"); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("first dashboard never started: %s", err1.String())
+		}
+	}
+	var out2, err2 syncBuffer
+	code, err := cmdDashboard(context.Background(), &out2, &err2, []string{"--port", strconv.Itoa(port)}, t.TempDir(), t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "already running") || strings.Contains(out2.String(), "listening") {
+		t.Fatalf("code %d err %v out %q", code, err, out2.String())
+	}
+}

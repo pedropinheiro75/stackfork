@@ -7,9 +7,11 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -92,6 +94,14 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
 
+	// Bind first: nothing is announced, registered or warmed up unless the
+	// port is really ours.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return 0, bindError(addr, err)
+	}
+	defer ln.Close()
+
 	// Register with the shared proxy, if it's running (design.md D2/task
 	// 2.4): stackfork.localhost joins every instance's route while the
 	// dashboard runs, and comes back out on shutdown. Best effort, like
@@ -134,7 +144,7 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	defer signal.Stop(sigCh)
 
 	errCh := make(chan error, 1)
-	go func() { errCh <- httpServer.ListenAndServe() }()
+	go func() { errCh <- httpServer.Serve(ln) }()
 
 	fmt.Fprintf(stdout, "stackfork dashboard listening on http://%s\n", addr)
 	go startRegistration()
@@ -195,4 +205,21 @@ var registerDashboardWithProxy = func(newStateBase, legacyStateBase string, port
 		return false
 	}
 	return true
+}
+
+// bindError explains a failed bind, and says so when the port is held by
+// another stackfork dashboard (its API answers) rather than something else.
+func bindError(addr string, err error) error {
+	client := &http.Client{Timeout: 800 * time.Millisecond}
+	if resp, gerr := client.Get("http://" + addr + "/api/instances"); gerr == nil {
+		defer resp.Body.Close()
+		var probe struct {
+			Instances json.RawMessage `json:"instances"`
+			Docker    json.RawMessage `json:"docker"`
+		}
+		if resp.StatusCode == 200 && json.NewDecoder(resp.Body).Decode(&probe) == nil && probe.Docker != nil {
+			return fmt.Errorf("a stackfork dashboard is already running at http://%s; open it, stop it first, or pass another --port", addr)
+		}
+	}
+	return fmt.Errorf("cannot listen on %s (%v); the port is in use, so another process or dashboard may be running - pass another --port", addr, err)
 }
