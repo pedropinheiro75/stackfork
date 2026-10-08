@@ -5,90 +5,23 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 
-	"github.com/pedropinheiro75/stackfork/internal/compose"
-	"github.com/pedropinheiro75/stackfork/internal/learn"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
-func boolPtr(b bool) *bool { return &b }
-
 func setSeeded(instanceDir string, v *bool) { lifecycle.SetSeeded(instanceDir, v) }
 
-// seedRecipe returns the active seed_once command and its service ("" when
-// none was decided, or the decision is "never").
+func boolPtr(b bool) *bool { return &b }
+
 func seedRecipe(root, instanceDir string) (cmd, service string) {
-	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
-	decided, c, svc := learn.SeedDecision([]string{root, repos.MainRepoOf(root)}, m)
-	if !decided || !learn.SeedActive(c) {
-		return "", ""
-	}
-	return c, svc
+	return lifecycle.SeedRecipe(root, repos.MainRepoOf(root), instanceDir)
 }
 
-// seedDecided reports whether anyone decided about seeding this project yet.
-func seedDecided(root, instanceDir string) bool {
-	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
-	d, _, _ := learn.SeedDecision([]string{root, repos.MainRepoOf(root)}, m)
-	return d
-}
-
-// persistSeedDecision stores the answer where decisions live: the instance
-// manifest and, if the checkout has one, its knowledge recipe.
-func persistSeedDecision(root, instanceDir, cmd string) {
-	lifecycle.SetSeedDecision(instanceDir, cmd)
-	_ = learn.RecordSeedDecision(root, cmd)
-}
-
-// dataVolumesExist reports whether any named volume of the instance's
-// snapshot already exists in Docker.
-func dataVolumesExist(instanceDir string) bool {
-	data, err := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
-	if err != nil {
-		return true // cannot tell: never seed
-	}
-	model, err := compose.DecodeJSON(data)
-	if err != nil {
-		return true
-	}
-	top, _ := model.(map[string]interface{})
-	vols, _ := top["volumes"].(map[string]interface{})
-	for logical, v := range vols {
-		name := logical
-		if vm, ok := v.(map[string]interface{}); ok {
-			if n, ok := vm["name"].(string); ok && n != "" {
-				name = n
-			}
-		}
-		if exec.Command("docker", "volume", "inspect", name).Run() == nil {
-			return true
-		}
-	}
-	return false
-}
-
-// planSeed decides, before an `up`, whether this up is the one that creates
-// the data and so should seed it. It records seeded:false (this up will
-// seed) or seeded:true (data already there). Once decided it never runs
-// again: restarts and later ups of a decided instance are left alone.
 func planSeed(root, instanceDir string) bool {
-	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
-	if m == nil || m.Seeded != nil {
-		return false
-	}
-	if cmd, _ := seedRecipe(root, instanceDir); cmd == "" {
-		return false
-	}
-	if dataVolumesExist(instanceDir) {
-		setSeeded(instanceDir, boolPtr(true))
-		return false
-	}
-	setSeeded(instanceDir, boolPtr(false))
-	return true
+	return lifecycle.PlanSeed(root, repos.MainRepoOf(root), instanceDir)
 }
 
 func runSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase string) bool {
@@ -106,14 +39,7 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	cmd, _ := seedRecipe(root, instanceDir)
 	if cmd == "" {
-		if seedDecided(root, instanceDir) {
-			return 0, errors.New("this project is recorded as never seeded; change it with `stackfork learn record recipe --seed-once CMD`")
-		}
-		_, proposal := learn.DetectSeed(root)
-		if proposal == "" {
-			return 0, errors.New("no seed script found for this project; record one with `stackfork learn record recipe --seed-once CMD`")
-		}
-		persistSeedDecision(root, instanceDir, proposal) // running it is the decision
+		return 0, errors.New("nothing to seed: this project is recorded as never seeded, or no seed script was found; record one with `stackfork learn record recipe --seed-once CMD`")
 	}
 	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
 	if m == nil {
@@ -138,9 +64,4 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		return 1, nil
 	}
 	return 0, nil
-}
-
-func isTerminal(f *os.File) bool {
-	fi, err := f.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }

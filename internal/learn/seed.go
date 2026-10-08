@@ -2,9 +2,7 @@ package learn
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -88,23 +86,4 @@ func SeedDecision(dirs []string, m *state.Manifest) (decided bool, cmd, service 
 		return true, m.SeedOnce, m.SeedService
 	}
 	return false, "", ""
-}
-
-// RecordSeedDecision writes the answer into root's knowledge recipe when a
-// knowledge file exists there (no file: nothing to update).
-func RecordSeedDecision(root, cmd string) error {
-	path := filepath.Join(root, ".stackfork", "knowledge.json")
-	if _, err := os.Stat(path); err != nil {
-		return nil
-	}
-	k, err := knowledge.Load(path)
-	if err != nil {
-		return err
-	}
-	k.Recipe.SeedOnce, k.Recipe.SeedPending = strings.TrimSpace(cmd), false
-	if k.Recipe.SeedOnce == "" { // back to undecided: propose the detected script again
-		_, k.Recipe.SeedOnce = DetectSeed(root)
-		k.Recipe.SeedPending = k.Recipe.SeedOnce != ""
-	}
-	return WriteKnowledge(root, k)
 }

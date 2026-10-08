@@ -62,13 +62,11 @@ func TestSeedDecisionPrecedence(t *testing.T) {
 	if d, c, _ := SeedDecision([]string{root}, &state.Manifest{SeedOnce: SeedNone}); !d || SeedActive(c) {
 		t.Fatalf("manifest 'none' = decided, never: %v %q", d, c)
 	}
-	if err := RecordSeedDecision(root, "make seed"); err != nil {
+	k.Recipe.SeedPending = false
+	if err := WriteKnowledge(root, k); err != nil {
 		t.Fatal(err)
 	}
 	if d, c, _ := SeedDecision([]string{root}, &state.Manifest{SeedOnce: SeedNone}); !d || c != "make seed" {
 		t.Fatalf("knowledge wins: %v %q", d, c)
-	}
-	if err := RecordSeedDecision(os.TempDir()+"/nope-stackfork", "x"); err != nil {
-		t.Fatalf("no knowledge file = nothing to do: %v", err)
 	}
 }

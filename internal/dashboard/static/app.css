@@ -536,7 +536,5 @@ code.setting-value { display: inline-block; }
 
 .seed-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 14px 10px; padding: 8px 12px; border-radius: 8px; background: var(--card-alt, rgba(128,128,128,.12)); border: 1px solid var(--border, rgba(128,128,128,.3)); font-size: 13px; }
 .seed-bar code { overflow-wrap: anywhere; }
-.seed-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--ok); color: #fff; }
 .recipe { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 6px 0 10px; font-size: 13px; }
 .recipe code { overflow-wrap: anywhere; }
-.recipe-choice { background: var(--card-bg, transparent); color: inherit; border: 1px solid var(--border, rgba(128,128,128,.4)); border-radius: 6px; padding: 3px 6px; font: inherit; }

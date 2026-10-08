@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,7 +122,7 @@ func seedScriptRoot(t *testing.T) string {
 	return root
 }
 
-func TestLearnPrefillsPendingSeedAndVerifyNeedsADecision(t *testing.T) {
+func TestLearnPrefillsPendingSeedAndVerifyOnlyWarns(t *testing.T) {
 	root := seedScriptRoot(t)
 	if _, stderr, code := runCLI(t, "--root", root, "learn"); code != 0 {
 		t.Fatalf("learn: %s", stderr)
@@ -133,20 +132,11 @@ func TestLearnPrefillsPendingSeedAndVerifyNeedsADecision(t *testing.T) {
 		t.Fatalf("recipe %+v err %v", k.Recipe, err)
 	}
 	runCLI(t, "--root", root, "learn", "record", "recipe", "--prepare", "p", "--up", "u")
-	_, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "yes")
-	if code == 0 || !strings.Contains(stderr, "seed script") || !strings.Contains(stderr, "--seed-once none") {
-		t.Fatalf("verify must refuse while undecided: %d %s", code, stderr)
+	out, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "yes")
+	if code != 0 || !strings.Contains(out, "seeded with it automatically") {
+		t.Fatalf("verify must pass with a warning: %d %s %s", code, out, stderr)
 	}
-	// re-running learn keeps the proposal pending
-	runCLI(t, "--root", root, "learn")
-	if k, _ := knowledge.Load(filepath.Join(root, ".stackfork", "knowledge.json")); !k.Recipe.SeedPending {
-		t.Fatal("rescan lost the pending proposal")
-	}
-	// an explicit "none" is a decision
 	runCLI(t, "--root", root, "learn", "record", "recipe", "--seed-once", "none")
-	if _, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "yes"); code != 0 {
-		t.Fatalf("verify after none: %s", stderr)
-	}
 	if k, _ := knowledge.Load(filepath.Join(root, ".stackfork", "knowledge.json")); k.Recipe.SeedOnce != "none" || k.Recipe.SeedPending {
 		t.Fatalf("recipe %+v", k.Recipe)
 	}
@@ -166,46 +156,81 @@ func seedPrepared(t *testing.T, root string) (stateDir, instanceDir string) {
 	return stateDir, filepath.Dir(ms[0])
 }
 
-func TestStartEnvAsksSeedQuestionOnce(t *testing.T) {
-	installFakeDocker(t)
-	for _, c := range []struct{ answer, want string }{{"s\n", "npm run db:seed"}, {"never\n", "none"}} {
-		root := seedScriptRoot(t)
-		_, dir := seedPrepared(t, root)
-		var out, errOut bytes.Buffer
-		decideSeed(&out, &errOut, StartOptions{Interactive: true, In: strings.NewReader(c.answer)}, root, "p", dir)
-		m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json"))
-		if m.SeedOnce != c.want || !strings.Contains(out.String(), "Seed the new database?") {
-			t.Errorf("%q: manifest %q out %q", c.answer, m.SeedOnce, out.String())
+// autoSeedFixture: a prepared instance whose checkout has a seed script and
+// no recorded decision.
+func autoSeedFixture(t *testing.T) (root, stateDir, dir, log string) {
+	log = installFakeDocker(t)
+	root = seedScriptRoot(t)
+	stateDir, dir = seedPrepared(t, root)
+	return
+}
+
+func TestNewVolumeIsSeededAutomaticallyOnceWithNoQuestion(t *testing.T) {
+	root, stateDir, _, log := autoSeedFixture(t)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	args := []string{"--root", root, "--state-dir", stateDir}
+	out, stderr, code := runCLI(t, append(args, "up")...)
+	if code != 0 || !strings.Contains(out, "seeded new database with npm run db:seed") {
+		t.Fatalf("up: %d %s %s", code, out, stderr)
+	}
+	for _, a := range []string{"down", "up", "restart"} {
+		sub := []string{a}
+		if a == "restart" {
+			sub = append(sub, "db")
 		}
-		out.Reset()
-		decideSeed(&out, &errOut, StartOptions{Interactive: true, In: strings.NewReader("n\n")}, root, "p", dir)
-		if out.Len() != 0 {
-			t.Errorf("asked again after a decision: %q", out.String())
-		}
+		runCLI(t, append(args, sub...)...)
+	}
+	b, _ := os.ReadFile(log)
+	if n := strings.Count(string(b), "npm run db:seed"); n != 1 {
+		t.Fatalf("seeded %d times", n)
+	}
+	// start-env never asks anything either
+	if strings.Contains(out, "?") {
+		t.Fatalf("a question was printed: %s", out)
 	}
 }
 
-func TestStartEnvNonInteractiveWarnsAndRecordsNothing(t *testing.T) {
-	installFakeDocker(t)
+func TestExistingInstanceIsNeverSeededOrAsked(t *testing.T) {
+	root, stateDir, dir, log := autoSeedFixture(t) // fake docker: the volume already exists
+	out, _, code := runCLI(t, "--root", root, "--state-dir", stateDir, "up")
+	b, _ := os.ReadFile(log)
+	m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json"))
+	if code != 0 || strings.Contains(string(b), "npm run db:seed") || strings.Contains(out, "seed") || m.Seeded == nil || !*m.Seeded {
+		t.Fatalf("code %d out %q seeded %v log %s", code, out, m.Seeded, b)
+	}
+}
+
+func TestNoneDisablesTheAutomaticSeed(t *testing.T) {
+	root, stateDir, dir, log := autoSeedFixture(t)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+
+	if err := os.MkdirAll(filepath.Join(root, ".stackfork"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(root, ".stackfork", "knowledge.json"), []byte(`{"schema":1,"recipe":{"seed_once":"none"}}`), 0o644)
+	runCLI(t, "--root", root, "--state-dir", stateDir, "up")
+	b, _ := os.ReadFile(log)
+	m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json"))
+	if strings.Contains(string(b), "npm run db:seed") || m.Seeded != nil {
+		t.Fatalf("none was ignored: %v %s", m.Seeded, b)
+	}
+}
+
+func TestStatelessStackIsNeverSeeded(t *testing.T) {
+	log := installFakeDocker(t)
 	root := seedScriptRoot(t)
-	_, dir := seedPrepared(t, root)
-	var out, errOut bytes.Buffer
-	decideSeed(&out, &errOut, StartOptions{}, root, "sf-x", dir)
-	if m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json")); m.SeedOnce != "" {
-		t.Fatalf("recorded %q without an answer", m.SeedOnce)
-	}
-	if w := errOut.String(); !strings.Contains(w, "npm run db:seed") || !strings.Contains(w, "stackfork --instance sf-x seed") {
-		t.Fatalf("warning %q", w)
-	}
-	// no seed script: silent
-	errOut.Reset()
-	decideSeed(&out, &errOut, StartOptions{}, initRepo(t), "p", dir)
-	if errOut.Len() != 0 {
-		t.Fatalf("unexpected output %q", errOut.String())
+	composePath := filepath.Join(root, "compose.yaml")
+	os.WriteFile(composePath, []byte("services:\n  db:\n    image: postgres:17\n"), 0o600)
+	stateDir := filepath.Join(t.TempDir(), "state")
+	runCLI(t, "--root", root, "--state-dir", stateDir, "prepare", "-f", composePath)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	runCLI(t, "--root", root, "--state-dir", stateDir, "up")
+	if b, _ := os.ReadFile(log); strings.Contains(string(b), "db:seed") {
+		t.Fatalf("seeded a stack with no volume: %s", b)
 	}
 }
 
-func TestSeedCommandOnUndecidedRunsDetectedAndRecordsIt(t *testing.T) {
+func TestSeedCommandOnUndecidedRunsTheDetectedScript(t *testing.T) {
 	log := installFakeDocker(t)
 	root := seedScriptRoot(t)
 	stateDir, dir := seedPrepared(t, root)
@@ -214,7 +239,7 @@ func TestSeedCommandOnUndecidedRunsDetectedAndRecordsIt(t *testing.T) {
 	}
 	b, _ := os.ReadFile(log)
 	m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json"))
-	if !strings.Contains(string(b), "npm run db:seed") || m.SeedOnce != "npm run db:seed" || m.Seeded == nil || !*m.Seeded {
+	if !strings.Contains(string(b), "npm run db:seed") || m.Seeded == nil || !*m.Seeded {
 		t.Fatalf("manifest %+v log %s", m, b)
 	}
 }

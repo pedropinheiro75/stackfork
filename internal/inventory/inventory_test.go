@@ -390,7 +390,7 @@ func TestOptionalProfileServicesAreNotStopped(t *testing.T) {
 	}
 }
 
-func TestSeedControlsFollowTheDecision(t *testing.T) {
+func TestSeedWarningOnlyWhenASeedFailed(t *testing.T) {
 	installFakeDocker(t)
 	base := t.TempDir()
 	root := gitRepo(t, "main")
@@ -410,19 +410,19 @@ func TestSeedControlsFollowTheDecision(t *testing.T) {
 	}
 	f, tr := false, true
 	run := "stackfork --instance sf-seed-1 seed"
-	if i := set("", nil); i.SeedProposal != "npm run db:seed" || i.SeedCommand != "" {
-		t.Errorf("undecided: %+v", i)
+	if i := set("", nil); i.SeedCommand != "" || i.SeedForce != "" {
+		t.Errorf("an existing instance (no seed fields) must show nothing: %+v", i)
 	}
-	if i := set("", &tr); i.SeedProposal != "" {
-		t.Errorf("seeded by hand must not ask: %+v", i)
-	}
-	if i := set("bun run db:seed", &f); i.SeedCommand != run || i.SeedProposal != "" || i.Seeded {
-		t.Errorf("decided, not seeded: %+v", i)
-	}
-	if i := set("bun run db:seed", &tr); !i.Seeded || i.SeedForce != run+" --force" || i.SeedCommand != "" {
+	if i := set("", &tr); i.SeedCommand != "" {
 		t.Errorf("seeded: %+v", i)
 	}
-	if i := set("none", nil); i.SeedProposal != "" || i.SeedCommand != "" || i.Seeded {
-		t.Errorf("never: %+v", i)
+	if i := set("", &f); i.SeedCommand != run || i.SeedForce != run+" --force" {
+		t.Errorf("failed (auto): %+v", i)
+	}
+	if i := set("bun run db:seed", &f); i.SeedCommand != run {
+		t.Errorf("failed (recorded): %+v", i)
+	}
+	if i := set("none", &f); i.SeedCommand != "" {
+		t.Errorf("never seed must not warn: %+v", i)
 	}
 }

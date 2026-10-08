@@ -164,14 +164,11 @@ type Instance struct {
 	// qualifying service, in the same placeholder-safe form as
 	// Service.ConnectionURL. Empty when nothing in the stack qualifies.
 	EnvBlock string `json:"env_block,omitempty"`
-	// Seed* drive the dashboard's seed controls. SeedProposal: a seed script
-	// was found and nobody decided yet. SeedCommand: decided but not seeded
-	// yet (retry command). Seeded + SeedForce: done; the force command is
-	// copy-only.
-	SeedProposal string `json:"seed_proposal,omitempty"`
-	SeedCommand  string `json:"seed_command,omitempty"`
-	Seeded       bool   `json:"seeded,omitempty"`
-	SeedForce    string `json:"seed_force,omitempty"`
+	// SeedCommand/SeedForce are set only while a seed failed (seeded:false in
+	// the manifest and a seed to run): the dashboard shows a warning with the
+	// copyable retry commands. A successful or absent seed shows nothing.
+	SeedCommand string `json:"seed_command,omitempty"`
+	SeedForce   string `json:"seed_force,omitempty"`
 
 	// Recipe inputs recorded at prepare, kept out of the JSON: a sibling
 	// worktree's recipe is derived from them (add-repo-browser D6a).
@@ -763,24 +760,19 @@ type InstanceRef struct {
 	State   string `json:"state"`
 }
 
-// fillSeed derives the seed controls from the recorded decision, the
-// manifest's seeded marker and, for an undecided instance, a quick scan of
-// its checkout for a seed script.
+// fillSeed flags a failed seed: the manifest says not seeded yet, and
+// there is a seed to run (recorded, or detected in the checkout).
 func fillSeed(inst *Instance, info *state.Manifest) {
-	decided, cmd, _ := learn.SeedDecision([]string{info.Root}, info)
-	seeded := info.Seeded != nil && *info.Seeded
-	run := "stackfork --instance " + info.Project + " seed"
-	switch {
-	case !decided:
-		if !seeded && checkoutExists(info.Root) {
-			if _, seed := learn.DetectSeed(info.Root); seed != "" {
-				inst.SeedProposal = seed
-			}
-		}
-	case !learn.SeedActive(cmd):
-	case seeded:
-		inst.Seeded, inst.SeedForce = true, run+" --force"
-	default:
-		inst.SeedCommand = run
+	if info.Seeded == nil || *info.Seeded {
+		return
 	}
+	decided, cmd, _ := learn.SeedDecision([]string{info.Root}, info)
+	if !decided && checkoutExists(info.Root) {
+		_, cmd = learn.DetectSeed(info.Root)
+	}
+	if !learn.SeedActive(cmd) {
+		return
+	}
+	run := "stackfork --instance " + info.Project + " seed"
+	inst.SeedCommand, inst.SeedForce = run, run+" --force"
 }

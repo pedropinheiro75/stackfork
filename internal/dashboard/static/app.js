@@ -66,7 +66,6 @@
       var cmd = cliCommand(w);
       if (cmd && cmds.indexOf(cmd) === -1) cmds.push(cmd);
     });
-    if (inst.seed_force) cmds.push(inst.seed_force);
     var html = cmds.map(function (c) {
       return '<code class="copyable cli-command" data-copy="' + escapeHtml(c) + '" title="click to copy">' + escapeHtml(c) + "</code>";
     }).join("");
@@ -173,16 +172,11 @@
     var legacy = inst.legacy ? '<span class="legacy-tag">legacy</span>' : "";
     var knowledge = inst.knowledge ? '<span class="knowledge knowledge-' + escapeHtml(inst.knowledge.status) + '">' + escapeHtml(inst.knowledge.status) + "</span>" : "";
     var warnings = (inst.warnings || []).map(function (w) { return '<li class="warning">' + escapeHtml(w) + "</li>"; }).join("");
-    var seedBar = "";
-    var btn = function (act, label, cls) { return '<button type="button" class="repo-btn' + cls + '" data-action="' + act + '" data-project="' + p + '">' + label + "</button>"; };
-    if (inst.seed_proposal) {
-      seedBar = '<div class="seed-bar" data-seed="proposal">This project has <code>' + escapeHtml(inst.seed_proposal) + "</code>. Seed the new database? " +
-        btn("seed-now", "Seed now", " primary") + " " + btn("seed-never", "Never for this project", "") + "</div>";
-    } else if (inst.seed_command) {
-      seedBar = '<div class="seed-bar" data-seed="pending">database not seeded &mdash; ' + btn("seed-now", "Seed now", " primary") +
-        ' <code class="copyable cli-command" data-copy="' + escapeHtml(inst.seed_command) + '" title="click to copy">' + escapeHtml(inst.seed_command) + "</code></div>";
-    }
-    var seededBadge = inst.seeded ? '<span class="seed-badge" title="the database was seeded">seeded</span>' : "";
+    var seedBar = inst.seed_command
+      ? '<div class="seed-bar" data-seed="failed">The database seed failed &mdash; retry with <code class="copyable cli-command" data-copy="' + escapeHtml(inst.seed_command) +
+        '" title="click to copy">' + escapeHtml(inst.seed_command) + '</code> (or, to run it again on a populated database, <code class="copyable cli-command" data-copy="' +
+        escapeHtml(inst.seed_force) + '" title="click to copy">' + escapeHtml(inst.seed_force) + "</code>)</div>"
+      : "";
     var menuOpen = !!openMenus[inst.project];
     var colorIndex = stackColorIndex(inst.project);
     var appStrip = (inst.apps || []).map(appChipHtml).join("");
@@ -194,7 +188,6 @@
       '<span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.root) + "</span></div>" +
       '<span class="branch-tag" title="' + escapeHtml(inst.branch) + '">' + escapeHtml(inst.branch) + "</span>" +
       legacy + knowledge +
-      seededBadge +
       '<span class="state-badge state-' + escapeHtml(inst.state) + '">' + escapeHtml(inst.state) + "</span>" +
       '<div class="stack-actions">' +
       (inst.state !== "running" ? '<button class="icon-btn" data-action="up" data-project="' + p + '" title="Up">&#9654;</button>' : "") +
@@ -412,7 +405,7 @@
         openSettings[toggleSettings.dataset.key] = openNow;
         return;
       }
-      var btn = e.target.closest(".icon-btn[data-action], .repo-btn[data-action]");
+      var btn = e.target.closest(".icon-btn[data-action]");
       if (btn) {
         runAction(btn.dataset.action, btn.dataset.project, btn.dataset.service);
         return;
@@ -644,23 +637,6 @@
       .then(function () { btn.disabled = false; loadRepos(); poll(); });
   }
 
-  // setRecipeSeed records the repo's seed decision; it never runs anything.
-  function setRecipeSeed(btn) {
-    var sel = btn.parentNode.querySelector(".recipe-choice");
-    var name = btn.dataset.repo.split("/").pop();
-    btn.disabled = true;
-    fetch("/api/actions", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-Stackfork-Token": token },
-      body: JSON.stringify({ action: "recipe-seed", repo: btn.dataset.repo, choice: sel.value }),
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (b) { log(name + " recipe: " + b.message); })
-      .catch(function (e) { log(name + " recipe: " + e.message); })
-      .then(function () { btn.disabled = false; loadRepos(); poll(); });
-  }
-
   function wireRepos() {
     document.querySelectorAll(".tab").forEach(function (b) {
       b.addEventListener("click", function () { setTab(b.dataset.tab); });
@@ -684,8 +660,6 @@
       }
       var dis = e.target.closest("[data-dismiss-repo]");
       if (dis) { delete reposState.errors[dis.dataset.dismissRepo]; renderRepoErrors(); return; }
-      var rs = e.target.closest("[data-recipe-set]");
-      if (rs) { setRecipeSeed(rs); return; }
       var act = e.target.closest("[data-repo-action]");
       if (act) { runRepoAction(act); return; }
       var copy = e.target.closest(".copyable");

@@ -210,8 +210,11 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root string) error {
 		return errors.New("recipe is incomplete (prepare/up not recorded); run `learn record recipe` before verifying")
 	}
 
+	// No seed decision is fine: the default is to seed a new database with
+	// the detected script. Say so, so the agent confirms it with the user.
+	var warning string
 	if _, seed := learn.DetectSeed(root); seed != "" && (k.Recipe.SeedOnce == "" || k.Recipe.SeedPending) {
-		return fmt.Errorf("this project has a seed script (%s) and no decision on it: ask the user whether to run it once on every new database, then record it with `learn record recipe --seed-once CMD` or `--seed-once none`", seed)
+		warning = fmt.Sprintf("seed script %q has no recorded decision: new databases will be seeded with it automatically; record `learn record recipe --seed-once none` to disable", seed)
 	}
 
 	k.Status = knowledge.StatusVerified
@@ -221,5 +224,9 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root string) error {
 	if err := learn.WriteKnowledge(root, k); err != nil {
 		return err
 	}
-	return printJSON(stdout, map[string]interface{}{"status": k.Status, "verification": k.Verification})
+	out := map[string]interface{}{"status": k.Status, "verification": k.Verification}
+	if warning != "" {
+		out["warning"] = warning
+	}
+	return printJSON(stdout, out)
 }

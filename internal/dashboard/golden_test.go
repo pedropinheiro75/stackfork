@@ -29,6 +29,8 @@ func installFakeDocker(t *testing.T) {
 	}
 	dir := t.TempDir()
 	script := `#!/bin/sh
+[ -n "$DOCKER_FAKE_LOG" ] && echo "$*" >> "$DOCKER_FAKE_LOG"
+if [ "$1" = "volume" ] && [ "$2" = "inspect" ]; then exit "${DOCKER_FAKE_VOLUME_EXIT:-0}"; fi
 if [ "$1" = "compose" ]; then
   for a in "$@"; do
     if [ "$a" = "config" ]; then

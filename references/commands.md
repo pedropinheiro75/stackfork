@@ -131,7 +131,7 @@ stackfork clone-db --from-dump backup.sql --replace
 ```
 
 ### seed
-Run the recipe's `seed_once` command (`learn record recipe --seed-once CMD [--seed-service SVC]`) in its service. `up` and `start-env` already run it once, only when that `up` created the data volume; `seed` is the retry when that failed (the dashboard warns while an instance is not seeded). Already seeded: does nothing; `--force` reruns it (agents: ask first, the guard blocks it).
+Run the recipe's `seed_once` command (`learn record recipe --seed-once CMD [--seed-service SVC]`) in its service. `up` and `start-env` run it automatically, once, when that `up` creates the data volume (a script detected in the checkout counts when no decision is recorded; `--seed-once none` disables it). `seed` is the retry when that failed (the dashboard warns about a failed seed). Already seeded: does nothing; `--force` reruns it (agents: ask first, the guard blocks it).
 Flags: `--force`
 ```sh
 stackfork seed

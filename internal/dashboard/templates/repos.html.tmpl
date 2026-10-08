@@ -29,13 +29,8 @@
       <div class="recipe" data-recipe="{{.Recipe.State}}">
         <span class="muted">Startup recipe</span>
         {{if .Recipe.Migrate}}<span>migrate <code>{{.Recipe.Migrate}}</code></span>{{end}}
-        <span>seed: {{if eq .Recipe.State "seed"}}<code>{{.Recipe.Seed}}</code>{{else if eq .Recipe.State "never"}}never{{else}}not decided yet{{end}}</span>
-        <select class="recipe-choice" aria-label="Seed decision for {{$r.Name}}">
-          {{if .Recipe.Detected}}<option value="detected"{{if eq .Recipe.State "seed"}} selected{{end}}>Seed with {{.Recipe.Detected}}</option>{{end}}
-          <option value="never"{{if eq .Recipe.State "never"}} selected{{end}}>Never seed</option>
-          <option value="clear"{{if eq .Recipe.State "undecided"}} selected{{end}}>Not decided</option>
-        </select>
-        <button type="button" class="repo-btn" data-recipe-set data-repo="{{$r.Path}}" title="records the answer; runs nothing">Change</button>
+        <span>seed: {{if eq .Recipe.State "seed"}}<code>{{.Recipe.Seed}}</code>{{else if eq .Recipe.State "never"}}never{{else if eq .Recipe.State "auto"}}auto (detected <code>{{.Recipe.Detected}}</code>){{else}}no seed script found{{end}}</span>
+        <span class="muted">change with <code class="copyable" data-copy="stackfork learn record recipe --seed-once CMD" title="click to copy">stackfork learn record recipe --seed-once …</code> (or <code>none</code>)</span>
       </div>
       <h4>Worktrees</h4>
       <ul class="wt-list">
