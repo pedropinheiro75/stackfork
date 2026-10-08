@@ -50,3 +50,27 @@ func tempRoot(t *testing.T) string {
 	r, _ := filepath.EvalSymlinks(t.TempDir())
 	return r
 }
+
+// installGitLog puts a `git` wrapper first on PATH that logs every call
+// (one line, args space-joined) and then runs the real git.
+func installGitLog(t *testing.T) (logPath string) {
+	t.Helper()
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	logPath = filepath.Join(dir, "log.txt")
+	script := "#!/bin/sh\n{ for a in \"$@\"; do printf '%s ' \"$a\"; done; printf '\\n'; } >> \"" + logPath + "\"\nexec \"" + real + "\" \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return logPath
+}
+
+func readLog(t *testing.T, p string) string {
+	t.Helper()
+	b, _ := os.ReadFile(p)
+	return string(b)
+}

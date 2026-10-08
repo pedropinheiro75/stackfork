@@ -715,3 +715,10 @@ func toStatusRows(rows []containerRow) []compose.StatusRow {
 	}
 	return out
 }
+
+// InstanceRef points a repo checkout at its stackfork instance (the repo
+// browser's join with the inventory).
+type InstanceRef struct {
+	Project string `json:"project"`
+	State   string `json:"state"`
+}
