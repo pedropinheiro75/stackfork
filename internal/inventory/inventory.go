@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
@@ -157,6 +158,12 @@ type Instance struct {
 	// qualifying service, in the same placeholder-safe form as
 	// Service.ConnectionURL. Empty when nothing in the stack qualifies.
 	EnvBlock string `json:"env_block,omitempty"`
+
+	// Recipe inputs recorded at prepare, kept out of the JSON: a sibling
+	// worktree's recipe is derived from them (add-repo-browser D6a).
+	EnvFile string            `json:"-"`
+	Secrets map[string]string `json:"-"` // references only, never values
+	Used    time.Time         `json:"-"` // manifest mtime
 }
 
 // Inventory is the whole machine's state, task 1.1's D1 type.
@@ -258,6 +265,13 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 	inst := Instance{
 		Project: info.Project, Root: info.Root, Branch: info.Branch,
 		Hostname: hostname, Legacy: legacy, Files: info.Files,
+		Secrets: info.ResolvedSecrets(),
+	}
+	if info.EnvFile != nil {
+		inst.EnvFile = *info.EnvFile
+	}
+	if fi, err := os.Stat(manifestPath); err == nil {
+		inst.Used = fi.ModTime()
 	}
 
 	statusRows := toStatusRows(rows)

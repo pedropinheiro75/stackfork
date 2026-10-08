@@ -11,10 +11,12 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
-// ReadinessOf classifies a repo (design.md D3) from its checkouts (the main
-// checkout and every worktree), the known instances and the profiles.
-func ReadinessOf(name string, checkouts []string, insts []inventory.Instance, profileDirs []string) (level, reason string) {
-	draft := ""
+// ReadinessOf classifies a repo (design.md D3/D6a) from its checkouts (the
+// main checkout first, then every worktree), the known instances and the
+// profiles. ready means a new worktree can be started: ref is the default
+// branch its tracked compose files must exist on.
+func ReadinessOf(name string, checkouts []string, ref string, insts []inventory.Instance, profileDirs []string) (level, reason string) {
+	draft, sibling := "", ""
 	for _, c := range checkouts {
 		ks, ok := inventory.ReadKnowledgeStatus(c)
 		if !ok {
@@ -38,11 +40,13 @@ func ReadinessOf(name string, checkouts []string, insts []inventory.Instance, pr
 			}
 		}
 	}
-	for _, i := range insts {
-		for _, c := range checkouts {
-			if i.Root == c {
-				return Ready, "prepared instance " + i.Project
-			}
+	if len(checkouts) > 0 {
+		r, err := FindSiblingRecipe(checkouts[0], "", ref, insts)
+		if r != nil {
+			return Ready, "recipe from prepared instance " + r.Project + " (" + filepath.Base(r.Source) + "); tracked compose files exist on " + ref
+		}
+		if err != nil {
+			sibling = "a prepared instance exists but cannot seed a new worktree: " + err.Error()
 		}
 	}
 	if p := profileMention(name, profileDirs); p != "" {
@@ -50,6 +54,9 @@ func ReadinessOf(name string, checkouts []string, insts []inventory.Instance, pr
 	}
 	if draft != "" {
 		return Draft, draft
+	}
+	if sibling != "" {
+		return Unknown, sibling
 	}
 	return Unknown, "never learned: no knowledge, adapter, instance or profile reference"
 }

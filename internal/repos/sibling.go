@@ -1,0 +1,281 @@
+package repos
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/pedropinheiro75/stackfork/internal/inventory"
+)
+
+// SiblingRecipe is a prepare recipe borrowed from another worktree of the
+// same repo (add-repo-browser design.md D6a): the compose files and env file
+// its prepared instance used, as paths relative to its root, plus the secret
+// references (never values).
+type SiblingRecipe struct {
+	Source  string            // the sibling checkout
+	Project string            // its instance
+	Files   []string          // compose files, relative to the checkout root
+	EnvFile string            // relative; "" when the instance had none
+	Secrets map[string]string // name -> reference
+	// untracked lists the Files (and EnvFile) git does not track: Apply
+	// copies their folders from the sibling.
+	untracked []string
+}
+
+// SiblingReport lists exactly what Apply did. It names files and env keys,
+// never values.
+type SiblingReport struct {
+	Copied    []string
+	Rewritten []string // env keys whose value was changed to the new checkout
+	Skipped   []string
+}
+
+const maxAdapterFile = 1 << 20
+
+func sameDir(a, b string) bool {
+	ra, e1 := filepath.EvalSymlinks(a)
+	rb, e2 := filepath.EvalSymlinks(b)
+	return e1 == nil && e2 == nil && ra == rb
+}
+
+// DefaultBranchOf names the ref tracked compose files must exist on for a
+// brand-new worktree: origin/HEAD, else main or master, else HEAD.
+func DefaultBranchOf(main string) string {
+	if out, err := gitRun(main, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		if b := strings.TrimPrefix(out, "origin/"); b != "" && refExists(main, "refs/heads/"+b) {
+			return b
+		}
+	}
+	for _, n := range []string{"main", "master"} {
+		if refExists(main, "refs/heads/"+n) {
+			return n
+		}
+	}
+	return "HEAD"
+}
+
+// FindSiblingRecipe looks for a prepared instance whose root is another
+// checkout of the repo whose main checkout is main, most recently used
+// first, and returns the first one whose recipe can be rebuilt for a new
+// worktree. Tracked compose files must exist in target (or, when target is
+// "", on ref: the readiness check); untracked ones are copied from the
+// sibling by Apply. It returns (nil, nil) when there is no candidate and an
+// error saying why when candidates exist but none is usable.
+func FindSiblingRecipe(main, target, ref string, insts []inventory.Instance) (*SiblingRecipe, error) {
+	var cands []inventory.Instance
+	for _, i := range insts {
+		if i.Root == "" || len(i.Files) == 0 || (target != "" && sameDir(i.Root, target)) {
+			continue
+		}
+		if fi, err := os.Stat(i.Root); err != nil || !fi.IsDir() {
+			continue
+		}
+		if m := MainRepoOf(i.Root); m == "" || !sameDir(m, main) {
+			continue
+		}
+		cands = append(cands, i)
+	}
+	sort.SliceStable(cands, func(a, b int) bool { return cands[a].Used.After(cands[b].Used) })
+	var first error
+	for _, c := range cands {
+		r, err := recipeFrom(c, main, target, ref)
+		if err == nil {
+			return r, nil
+		}
+		if first == nil {
+			first = err
+		}
+	}
+	return nil, first
+}
+
+func recipeFrom(c inventory.Instance, main, target, ref string) (*SiblingRecipe, error) {
+	r := &SiblingRecipe{Source: c.Root, Project: c.Project, Secrets: c.Secrets}
+	where := "the new checkout"
+	if target == "" {
+		where = ref
+	}
+	rel := func(p string) (string, error) {
+		x, err := filepath.Rel(c.Root, p)
+		if err != nil || x == ".." || strings.HasPrefix(x, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("%s (used by %s) is outside %s, so it cannot be reused", p, c.Project, c.Root)
+		}
+		return filepath.ToSlash(x), nil
+	}
+	tracked := func(x string) (bool, error) {
+		if _, err := gitRun(c.Root, "ls-files", "--error-unmatch", "--", x); err != nil {
+			return false, nil
+		}
+		var ok bool
+		if target != "" {
+			_, err := os.Stat(filepath.Join(target, filepath.FromSlash(x)))
+			ok = err == nil
+		} else {
+			_, err := gitRun(main, "cat-file", "-e", ref+":"+x)
+			ok = err == nil
+		}
+		if !ok {
+			return true, fmt.Errorf("%s (used by %s) is tracked in %s but is not in %s", x, c.Project, filepath.Base(c.Root), where)
+		}
+		return true, nil
+	}
+	for _, f := range c.Files {
+		x, err := rel(f)
+		if err != nil {
+			return nil, err
+		}
+		t, err := tracked(x)
+		if err != nil {
+			return nil, err
+		}
+		if !t {
+			if _, err := os.Stat(f); err != nil {
+				return nil, fmt.Errorf("%s (used by %s) no longer exists", f, c.Project)
+			}
+			if why := Denied(x, f); why != "" {
+				return nil, fmt.Errorf("%s (used by %s) is a %s and is never copied", x, c.Project, why)
+			}
+			r.untracked = append(r.untracked, x)
+		}
+		r.Files = append(r.Files, x)
+	}
+	if c.EnvFile != "" {
+		x, err := rel(c.EnvFile)
+		if err != nil {
+			return nil, err
+		}
+		t, err := tracked(x)
+		if err != nil {
+			return nil, err
+		}
+		if !t {
+			d := filepath.Base(filepath.Dir(x))
+			if filepath.Base(x) != "runtime.env" || (d != ".agent-dev" && d != ".stackfork") {
+				return nil, fmt.Errorf("env file %s (used by %s) is not a stackfork runtime env, so it is never copied; create it in the new checkout", x, c.Project)
+			}
+			if _, err := os.Stat(c.EnvFile); err != nil {
+				return nil, fmt.Errorf("env file %s (used by %s) no longer exists", c.EnvFile, c.Project)
+			}
+			r.untracked = append(r.untracked, x)
+		}
+		r.EnvFile = x
+	}
+	return r, nil
+}
+
+// Apply copies the untracked adapter files into target (never over an
+// existing file, never anything the credential denylist matches, no logs,
+// no folders) and writes the runtime env with checkout-specific values
+// rewritten, mode 0600.
+func (r *SiblingRecipe) Apply(target string) (SiblingReport, error) {
+	var rep SiblingReport
+	dirs := map[string]bool{}
+	for _, x := range r.untracked {
+		dirs[filepath.Dir(x)] = true
+	}
+	names := make([]string, 0, len(dirs))
+	for d := range dirs {
+		names = append(names, d)
+	}
+	sort.Strings(names)
+	for _, d := range names {
+		entries, err := os.ReadDir(filepath.Join(r.Source, d))
+		if err != nil {
+			return rep, err
+		}
+		for _, e := range entries {
+			x := filepath.ToSlash(filepath.Join(d, e.Name()))
+			dst := filepath.Join(target, filepath.FromSlash(x))
+			if !e.Type().IsRegular() || x == r.EnvFile || strings.HasSuffix(e.Name(), ".log") {
+				continue
+			}
+			if _, err := os.Lstat(dst); err == nil {
+				continue // already there (tracked, copied earlier or edited)
+			}
+			if fi, err := e.Info(); err == nil && fi.Size() > maxAdapterFile {
+				rep.Skipped = append(rep.Skipped, x+" (larger than 1 MiB)")
+				continue
+			}
+			c, s := copyTree(filepath.Join(r.Source, filepath.FromSlash(x)), dst, x)
+			rep.Copied, rep.Skipped = append(rep.Copied, c...), append(rep.Skipped, s...)
+		}
+	}
+	if r.EnvFile == "" || !r.isUntracked(r.EnvFile) {
+		return rep, nil
+	}
+	dst := filepath.Join(target, filepath.FromSlash(r.EnvFile))
+	if _, err := os.Lstat(dst); err == nil {
+		return rep, nil
+	}
+	b, err := os.ReadFile(filepath.Join(r.Source, filepath.FromSlash(r.EnvFile)))
+	if err != nil {
+		return rep, err
+	}
+	froms := []string{r.Source}
+	if alt := strings.TrimPrefix(r.Source, "/private"); alt != r.Source {
+		froms = append(froms, alt) // macOS spells /var, /tmp without the /private prefix
+	}
+	out, keys := rewriteEnv(b, froms, target, dst)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return rep, err
+	}
+	if err := os.WriteFile(dst, out, 0o600); err != nil {
+		return rep, err
+	}
+	rep.Copied = append(rep.Copied, r.EnvFile)
+	rep.Rewritten = keys
+	return rep, nil
+}
+
+func (r *SiblingRecipe) isUntracked(x string) bool {
+	for _, u := range r.untracked {
+		if u == x {
+			return true
+		}
+	}
+	return false
+}
+
+// rewriteEnv points checkout-specific values of a KEY=VALUE env file at the
+// new checkout: DEV_CHECKOUT, DEV_RUNTIME_ENV, and any value that is the old
+// root or a path under it. It returns the keys it changed.
+func rewriteEnv(src []byte, froms []string, to, toEnv string) ([]byte, []string) {
+	var keys []string
+	lines := strings.Split(string(src), "\n")
+	for n, line := range lines {
+		i := strings.IndexByte(line, '=')
+		if i < 0 || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		key := strings.TrimPrefix(strings.TrimSpace(line[:i]), "export ")
+		val := line[i+1:]
+		bare := strings.Trim(strings.TrimSpace(val), `"'`)
+		var nv string
+		switch {
+		case key == "DEV_CHECKOUT":
+			nv = to
+		case key == "DEV_RUNTIME_ENV":
+			nv = toEnv
+		default:
+			for _, from := range froms {
+				if bare == from || strings.HasPrefix(bare, from+"/") {
+					nv = to + strings.TrimPrefix(bare, from)
+				}
+			}
+			if nv == "" {
+				continue
+			}
+		}
+		if q := strings.TrimSpace(val); q != "" && (q[0] == '"' || q[0] == '\'') {
+			nv = q[:1] + nv + q[:1]
+		}
+		if nv != val {
+			lines[n] = line[:i+1] + nv
+			keys = append(keys, key)
+		}
+	}
+	return []byte(strings.Join(lines, "\n")), keys
+}

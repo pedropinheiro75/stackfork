@@ -120,7 +120,7 @@ func build(path string, roots []string, d gitData, o Options) *Repo {
 			r.Running++
 		}
 	}
-	r.Readiness, r.ReadinessReason = ReadinessOf(r.Name, checkouts, o.Instances, o.ProfileDirs)
+	r.Readiness, r.ReadinessReason = ReadinessOf(r.Name, checkouts, r.DefaultBranch, o.Instances, o.ProfileDirs)
 	return r
 }
 

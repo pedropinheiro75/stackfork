@@ -48,7 +48,7 @@ func TestReadiness(t *testing.T) {
 	mentioned := mk("mentioned-app")
 	profiled := mk("profiled-app")
 
-	insts := []inventory.Instance{{Project: "sf-prepared-1", Root: prepared, Branch: "main"}}
+	insts := []inventory.Instance{{Project: "sf-prepared-1", Root: prepared, Branch: "main", Files: []string{filepath.Join(prepared, "f")}}}
 	cases := []struct {
 		name, path, want, reasonHas string
 	}{
@@ -62,7 +62,7 @@ func TestReadiness(t *testing.T) {
 		{"mystery", unknown, Unknown, "never learned"},
 	}
 	for _, c := range cases {
-		got, reason := ReadinessOf(c.name, []string{c.path}, insts, []string{filepath.Join(profiles, "p")})
+		got, reason := ReadinessOf(c.name, []string{c.path}, "main", insts, []string{filepath.Join(profiles, "p")})
 		if got != c.want || !strings.Contains(reason, c.reasonHas) {
 			t.Errorf("%s: got %s %q, want %s containing %q", c.name, got, reason, c.want, c.reasonHas)
 		}
@@ -143,5 +143,23 @@ func TestSecondScanOfUnchangedRepoRunsNoGit(t *testing.T) {
 	}
 	if fi, err := os.Stat(cacheFile); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Fatalf("cache file: %v %v", fi, err)
+	}
+}
+
+// The real failure: a repo showed ready because a sibling worktree had an
+// instance, though a new worktree could not be started from it.
+func TestReadinessMeansAWorktreeIsStartable(t *testing.T) {
+	main, sib, inst := siblingFixture(t)
+	level, reason := ReadinessOf("proj", []string{main}, "main", []inventory.Instance{inst}, nil)
+	if level != Ready || !strings.Contains(reason, "sf-proj-feat-a") || !strings.Contains(reason, "main") {
+		t.Fatalf("got %s %q", level, reason)
+	}
+	write(t, filepath.Join(sib, "only-here.yml"), "services: {}\n", 0o644)
+	git(t, sib, "add", "only-here.yml")
+	git(t, sib, "commit", "-q", "-m", "x")
+	inst.Files = append(inst.Files, filepath.Join(sib, "only-here.yml"))
+	level, reason = ReadinessOf("proj", []string{main}, "main", []inventory.Instance{inst}, nil)
+	if level != Unknown || !strings.Contains(reason, "only-here.yml") || !strings.Contains(reason, "cannot seed") {
+		t.Fatalf("got %s %q", level, reason)
 	}
 }
