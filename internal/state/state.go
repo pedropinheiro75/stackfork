@@ -52,9 +52,12 @@ type Manifest struct {
 	// sibling worktree's manifest when no knowledge file has one), run in
 	// SeedService after the first up that created the data volume. Seeded is
 	// nil until that decision is made, false until the seed succeeded.
+	// SeedPending means the seed is due but has not run yet (the up that
+	// created the volume failed), so the next up runs it.
 	SeedOnce    string `json:"seed_once,omitempty"`
 	SeedService string `json:"seed_service,omitempty"`
 	Seeded      *bool  `json:"seeded,omitempty"`
+	SeedPending bool   `json:"seed_pending,omitempty"`
 }
 
 // PortAlloc is one (service, target port) -> stable host port allocation

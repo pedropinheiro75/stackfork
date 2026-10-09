@@ -13,13 +13,15 @@ import (
 )
 
 // SetSeeded records the seeded marker in the instance manifest (nil clears it).
-func SetSeeded(instanceDir string, v *bool) {
+func SetSeeded(instanceDir string, v *bool) { setSeed(instanceDir, v, false) }
+
+func setSeed(instanceDir string, v *bool, pending bool) {
 	path := filepath.Join(instanceDir, "manifest.json")
 	m, err := state.ReadManifest(path)
 	if err != nil || m == nil {
 		return
 	}
-	m.Seeded = v
+	m.Seeded, m.SeedPending = v, pending
 	_ = state.WritePrivate(path, m)
 }
 
@@ -40,6 +42,8 @@ func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBa
 			}
 		}
 	}
+	f := false
+	SetSeeded(instanceDir, &f) // it ran (or cannot): no longer pending, a failure is retried by hand
 	if service == "" {
 		fmt.Fprintf(stderr, "not seeded: no service to run %q in; record one with `stackfork learn record recipe --seed-service SVC`, then run `%s`\n", cmd, retry)
 		return false
@@ -109,9 +113,14 @@ func dataVolumesExist(instanceDir string) bool {
 // PlanSeed decides, before an `up`, whether this up is the one that creates
 // the data and so should seed it. It records seeded:false (this up will
 // seed) or seeded:true (data already there). Once decided it never runs
-// again: restarts and later ups of a decided instance are left alone.
+// again, except a seed still pending because the up that created the
+// volume failed: the volume exists by then, so it is not read as old data.
 func PlanSeed(root, main, instanceDir string) bool {
 	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+	if m != nil && m.SeedPending {
+		cmd, _ := SeedRecipe(root, main, instanceDir)
+		return cmd != ""
+	}
 	if m == nil || m.Seeded != nil {
 		return false
 	}
@@ -122,6 +131,6 @@ func PlanSeed(root, main, instanceDir string) bool {
 		SetSeeded(instanceDir, boolPtr(true))
 		return false
 	}
-	SetSeeded(instanceDir, boolPtr(false))
+	setSeed(instanceDir, boolPtr(false), true)
 	return true
 }

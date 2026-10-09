@@ -82,6 +82,28 @@ func TestSeedNotRunWhenDataAlreadyThere(t *testing.T) {
 	}
 }
 
+// The up that creates the volume fails (e.g. app not healthy in time): the
+// volume exists on the next up, which must still seed it.
+func TestFailedUpLeavesSeedPendingForNextUp(t *testing.T) {
+	root, stateDir, log := seedFixture(t)
+	args := []string{"--root", root, "--state-dir", stateDir}
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	t.Setenv("DOCKER_FAKE_EXIT", "1")
+	runCLI(t, append(args, "up")...)
+	if n := seedExecs(t, log); n != 0 || seededMarker(t, stateDir) != "false" {
+		t.Fatalf("failed up: %d seeds, marker %s", n, seededMarker(t, stateDir))
+	}
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "0") // the failed up created it
+	t.Setenv("DOCKER_FAKE_EXIT", "0")
+	if _, stderr, code := runCLI(t, append(args, "up")...); code != 0 {
+		t.Fatalf("up: %s", stderr)
+	}
+	runCLI(t, append(args, "up")...)
+	if n := seedExecs(t, log); n != 1 || seededMarker(t, stateDir) != "true" {
+		t.Fatalf("next ups: %d seeds, marker %s", n, seededMarker(t, stateDir))
+	}
+}
+
 func TestSeedFailureLeavesFalseAndSeedCommandRetries(t *testing.T) {
 	root, stateDir, log := seedFixture(t)
 	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")

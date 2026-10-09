@@ -701,7 +701,7 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	}
 
 	if previous != nil {
-		info.SeedOnce, info.SeedService, info.Seeded = previous.SeedOnce, previous.SeedService, previous.Seeded
+		info.SeedOnce, info.SeedService, info.Seeded, info.SeedPending = previous.SeedOnce, previous.SeedService, previous.Seeded, previous.SeedPending
 	}
 	if err := state.WritePrivate(configPath, model); err != nil {
 		return err
@@ -928,9 +928,8 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 	seedNow := action == "up" && planSeed(root, instanceDir)
 	code, err := lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
 	if seedNow {
-		if err != nil || code != 0 {
-			setSeeded(instanceDir, nil) // up failed: decide again next time
-		} else {
+		// up failed: seeded stays false, so the next up seeds
+		if err == nil && code == 0 {
 			runSeed(stdout, stderr, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 		}
 	}

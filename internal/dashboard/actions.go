@@ -125,13 +125,9 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 		seedNow := lifecycleAction == "up" && lifecycle.PlanSeed(root, main, instanceDir)
 		code, err := lifecycle.Execute(&out, &out, lifecycleAction, root, branch, req.Project, instanceDir,
 			s.NewStateBase, s.LegacyStateBase, opts)
-		if seedNow {
-			if err != nil || code != 0 {
-				lifecycle.SetSeeded(instanceDir, nil)
-			} else {
-				cmd, svc := lifecycle.SeedRecipe(root, main, instanceDir)
-				lifecycle.RunSeed(&out, &out, root, branch, req.Project, instanceDir, s.NewStateBase, s.LegacyStateBase, cmd, svc)
-			}
+		if seedNow && err == nil && code == 0 { // a failed up leaves seeded:false for the next up
+			cmd, svc := lifecycle.SeedRecipe(root, main, instanceDir)
+			lifecycle.RunSeed(&out, &out, root, branch, req.Project, instanceDir, s.NewStateBase, s.LegacyStateBase, cmd, svc)
 		}
 		return execResult(lifecycleAction, code, err, out.String())
 	case "proxy-up":
