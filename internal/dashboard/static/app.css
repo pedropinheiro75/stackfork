@@ -541,3 +541,6 @@ code.setting-value { display: inline-block; }
 .recipe code { overflow-wrap: anywhere; }
 .oneoff-bar { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 14px 10px; padding: 6px 12px; font-size: 13px; color: var(--muted); }
 .oneoff-bar code { overflow-wrap: anywhere; }
+
+.copyable.just-copied { outline: 1px solid var(--ok); outline-offset: 2px; }
+.copyable.copy-failed { outline: 1px solid var(--bad); outline-offset: 2px; }

@@ -400,10 +400,7 @@
     });
     panel.addEventListener("click", function (e) {
       var copy = e.target.closest(".copyable");
-      if (copy && navigator.clipboard) {
-        navigator.clipboard.writeText(copy.dataset.copy);
-        log("copied " + copy.textContent.trim());
-      }
+      if (copy) copyText(copy.dataset.copy, copy.textContent.trim(), copy);
     });
   }
 
@@ -453,15 +450,13 @@
         if (copy.dataset.copyKind && copy.dataset.copy.indexOf("<password>") !== -1) {
           fetchCopyValue(copy.dataset.copyKind, copy.dataset.copyProject, copy.dataset.copyService)
             .then(function (value) {
-              if (navigator.clipboard) navigator.clipboard.writeText(value);
-              log("copied " + copy.textContent.trim());
+              copyText(value, copy.textContent.trim(), copy);
             })
             .catch(function (err) {
               log("copy failed: " + err.message);
             });
-        } else if (navigator.clipboard) {
-          navigator.clipboard.writeText(copy.dataset.copy);
-          log("copied " + copy.textContent.trim());
+        } else {
+          copyText(copy.dataset.copy, copy.textContent.trim(), copy);
         }
       }
     });
@@ -480,9 +475,37 @@
 
   var reposState = { tab: "instances", filter: "", readyOnly: false, autoShownSettings: false, errors: {} };
 
-  function copyText(text, label) {
-    if (navigator.clipboard) navigator.clipboard.writeText(text);
-    log("copied " + label);
+  // copyText writes to the clipboard and says so on the clicked element
+  // itself (a button shows "Copied", anything else flashes), since the
+  // activity log is not visible on every tab.
+  function copyText(text, label, el) {
+    var done = function (ok) {
+      log((ok ? "copied " : "copy failed: ") + label);
+      if (!el) return;
+      if (el.tagName === "BUTTON") {
+        if (!el.dataset.label) el.dataset.label = el.textContent;
+        el.textContent = ok ? "Copied \u2713 paste it into your agent" : "Copy failed";
+        clearTimeout(el._copyTimer);
+        el._copyTimer = setTimeout(function () { el.textContent = el.dataset.label; }, 2500);
+      } else {
+        el.classList.add(ok ? "just-copied" : "copy-failed");
+        setTimeout(function () { el.classList.remove("just-copied", "copy-failed"); }, 1200);
+      }
+    };
+    // Fallbacks when the async clipboard is refused (no permission, not
+    // focused): the legacy copy command, then a dialog with the text selected.
+    var fallback = function () {
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      if (!ok) window.prompt("Copy this (Cmd+C), then paste it into your agent:", text);
+      done(ok);
+    };
+    if (!navigator.clipboard) { fallback(); return; }
+    navigator.clipboard.writeText(text).then(function () { done(true); }, fallback);
   }
 
   function setTab(tab) {
@@ -693,14 +716,14 @@
       var act = e.target.closest("[data-repo-action]");
       if (act) { runRepoAction(act); return; }
       var copy = e.target.closest(".copyable");
-      if (copy) { e.preventDefault(); copyText(copy.dataset.copy, copy.textContent.trim()); }
+      if (copy) { e.preventDefault(); copyText(copy.dataset.copy, copy.dataset.label || copy.textContent.trim(), copy); }
     });
     var panel = document.getElementById("settings-panel");
     panel.addEventListener("click", function (e) {
       var rm = e.target.closest("button[data-config-op]");
       if (rm) { postConfig(rm.dataset.configOp, rm.dataset.value); return; }
       var copy = e.target.closest(".copyable");
-      if (copy) copyText(copy.dataset.copy, copy.textContent.trim());
+      if (copy) copyText(copy.dataset.copy, copy.textContent.trim(), copy);
     });
     panel.addEventListener("submit", function (e) {
       e.preventDefault();
