@@ -498,7 +498,7 @@ code.setting-value { display: inline-block; }
 .repo-running { color: var(--ok); font-size: 12px; font-weight: 600; }
 .readiness { font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); }
 .readiness-ready { color: var(--ok); border-color: var(--ok); }
-.readiness-draft { color: var(--warn); border-color: var(--warn); }
+.readiness-draft, .readiness-needs-learn { color: var(--warn); border-color: var(--warn); }
 .readiness-unknown { color: var(--muted); }
 .repo-body { padding: 0 16px 14px; border-top: 1px solid var(--border); }
 .repo-meta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding-top: 10px; }

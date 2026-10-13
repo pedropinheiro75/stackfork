@@ -55,9 +55,9 @@ func TestReadiness(t *testing.T) {
 		{"verified", verified, Ready, "verified knowledge"},
 		{"stale", stale, Ready, "stale"},
 		{"draft", draft, Draft, "draft"},
-		{"adapter", adapter, Ready, "adapter"},
-		{"prepared", prepared, Ready, "sf-prepared-1"},
-		{"profiled-app", profiled, Ready, "profile"},
+		{"adapter", adapter, NeedsLearn, "adapter"},
+		{"prepared", prepared, NeedsLearn, "sf-prepared-1"},
+		{"profiled-app", profiled, NeedsLearn, "profile"},
 		{"mentioned-app", mentioned, Unknown, "never learned"},
 		{"mystery", unknown, Unknown, "never learned"},
 	}
@@ -151,7 +151,7 @@ func TestSecondScanOfUnchangedRepoRunsNoGit(t *testing.T) {
 func TestReadinessMeansAWorktreeIsStartable(t *testing.T) {
 	main, sib, inst := siblingFixture(t)
 	level, reason := ReadinessOf("proj", []string{main}, "main", []inventory.Instance{inst}, nil)
-	if level != Ready || !strings.Contains(reason, "sf-proj-feat-a") || !strings.Contains(reason, "main") {
+	if level != NeedsLearn || !strings.Contains(reason, "sf-proj-feat-a") {
 		t.Fatalf("got %s %q", level, reason)
 	}
 	write(t, filepath.Join(sib, "only-here.yml"), "services: {}\n", 0o644)

@@ -13,8 +13,10 @@ import (
 
 // ReadinessOf classifies a repo (design.md D3/D6a) from its checkouts (the
 // main checkout first, then every worktree), the known instances and the
-// profiles. ready means a new worktree can be started: ref is the default
-// branch its tracked compose files must exist on.
+// profiles. Only verified learned knowledge makes a repo ready to start: an
+// adapter, a prepared sibling instance or a profile row means it could run
+// but nobody confirmed how (migrations, seed, login), so it needs learn.
+// ref is the default branch a sibling's tracked compose files must exist on.
 func ReadinessOf(name string, checkouts []string, ref string, insts []inventory.Instance, profileDirs []string) (level, reason string) {
 	draft, sibling := "", ""
 	for _, c := range checkouts {
@@ -29,31 +31,32 @@ func ReadinessOf(name string, checkouts []string, ref string, insts []inventory.
 			return Ready, "knowledge in " + filepath.Base(c) + " is stale (" + strings.Join(ks.ChangedFiles, ", ") + "); run stackfork learn"
 		case knowledge.StatusDraft:
 			if draft == "" {
-				draft = "knowledge in " + filepath.Base(c) + " is a draft, not verified yet"
+				draft = "knowledge in " + filepath.Base(c) + " is a draft, not verified yet; finish stackfork learn"
 			}
 		}
 	}
+	if draft != "" {
+		return Draft, draft
+	}
+	const learnIt = "; run stackfork learn to verify how it starts"
 	for _, c := range checkouts {
 		for _, dir := range []string{".stackfork", ".agent-dev"} {
 			if m, _ := filepath.Glob(filepath.Join(c, dir, "*.compose.yaml")); len(m) > 0 {
-				return Ready, "adapter " + filepath.Join(dir, filepath.Base(m[0])) + " in " + filepath.Base(c)
+				return NeedsLearn, "adapter " + filepath.Join(dir, filepath.Base(m[0])) + " in " + filepath.Base(c) + " but no verified knowledge" + learnIt
 			}
 		}
 	}
 	if len(checkouts) > 0 {
 		r, err := FindSiblingRecipe(checkouts[0], "", ref, insts)
 		if r != nil {
-			return Ready, "recipe from prepared instance " + r.Project + " (" + filepath.Base(r.Source) + "); tracked compose files exist on " + ref
+			return NeedsLearn, "prepared instance " + r.Project + " (" + filepath.Base(r.Source) + ") but no verified knowledge" + learnIt
 		}
 		if err != nil {
 			sibling = "a prepared instance exists but cannot seed a new worktree: " + err.Error()
 		}
 	}
 	if p := profileMention(name, profileDirs); p != "" {
-		return Ready, "named by a profile reference (" + p + ")"
-	}
-	if draft != "" {
-		return Draft, draft
+		return NeedsLearn, "named by a profile reference (" + p + ") but no verified knowledge" + learnIt
 	}
 	if sibling != "" {
 		return Unknown, sibling
@@ -87,8 +90,9 @@ func profileMention(name string, profileDirs []string) string {
 	return ""
 }
 
-// Prompt is the text "Set up with your agent" copies (design.md D7).
+// Prompt is the text "Learn with your agent" copies (design.md D7).
 func Prompt(name, path, branch string) string {
-	return fmt.Sprintf("Using stackfork, learn and prepare `%s` (`%s`) on branch `%s` in a new worktree created with `stackfork worktree add`. "+
-		"Verify it runs and report `stackfork urls`. Ask before building anything beyond the running instance.", name, path, branch)
+	return fmt.Sprintf("Using stackfork, run `stackfork learn` for `%s` (`%s`) on branch `%s` in a worktree created with `stackfork worktree add`, then prepare and start it. "+
+		"Check migrations, seed data and login, report `stackfork urls`, and once I confirm it works record it with `stackfork learn verify`. "+
+		"Ask before building anything beyond the running instance.", name, path, branch)
 }

@@ -51,6 +51,22 @@ func gitRun(repo string, args ...string) (string, error) {
 	return strings.TrimSpace(out.String()), err
 }
 
+// Checkouts returns the main checkout followed by every worktree of repo
+// (local git only), so knowledge learned in any of them counts.
+func Checkouts(repo string) []string {
+	out := []string{repo}
+	list, err := gitRun(repo, "worktree", "list", "--porcelain")
+	if err != nil {
+		return out
+	}
+	for _, line := range strings.Split(list, "\n") {
+		if p, ok := strings.CutPrefix(line, "worktree "); ok && !sameDir(p, repo) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func refExists(repo, ref string) bool {
 	_, err := gitRun(repo, "show-ref", "--verify", "--quiet", ref)
 	return err == nil

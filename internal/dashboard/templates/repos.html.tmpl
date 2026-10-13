@@ -14,7 +14,7 @@
   <details class="repo" data-key="{{$r.Path}}" data-search="{{.Search}}" data-ready="{{if eq $r.Readiness "ready"}}1{{else}}0{{end}}">
     <summary class="repo-summary">
       <span class="repo-name">{{$r.Name}}</span>
-      <span class="readiness readiness-{{$r.Readiness}}" title="{{$r.ReadinessReason}}">{{$r.Readiness}}</span>
+      <span class="readiness readiness-{{$r.Readiness}}" title="{{$r.ReadinessReason}}">{{if eq $r.Readiness "needs-learn"}}needs learn{{else}}{{$r.Readiness}}{{end}}</span>
       {{if $r.Running}}<span class="repo-running">{{$r.Running}} running</span>{{end}}
       <span class="repo-counts">{{len $r.Worktrees}} worktree(s) &middot; {{len $r.Branches}} branch(es)</span>
       <span class="repo-last" title="last commit">{{date $r.LastCommit}}</span>
@@ -45,7 +45,7 @@
             {{if eq $r.Readiness "ready"}}
               {{if not (and .Instance (isRunning .Instance.State))}}<button type="button" class="repo-btn primary" data-repo-action="start" data-repo="{{$r.Path}}" data-path="{{.Path}}">Start</button>{{end}}
             {{else}}
-              <button type="button" class="repo-btn copyable" data-copy="{{prompt $r.Name $r.Path .Branch}}" title="copy a prompt for Claude Code, Codex or Copilot CLI">Set up with your agent</button>
+              <button type="button" class="repo-btn copyable" data-copy="{{prompt $r.Name $r.Path .Branch}}" title="copy a prompt for Claude Code, Codex or Copilot CLI to learn and verify how this project starts">Learn with your agent</button>
             {{end}}
             {{if not .Main}}<code class="copyable cli-command" data-copy="git -C {{shq $r.Path}} worktree remove {{shq .Path}}" title="click to copy; the page never removes a worktree">remove</code>{{end}}
           </span>
@@ -64,7 +64,7 @@
             {{if eq $r.Readiness "ready"}}
               <button type="button" class="repo-btn primary" data-repo-action="start" data-repo="{{$r.Path}}" data-branch="{{.Name}}" data-confirm="Create the worktree {{worktreeAt $r.Path .Name}} and start its environment?">Start</button>
             {{else}}
-              <button type="button" class="repo-btn copyable" data-copy="{{prompt $r.Name $r.Path .Name}}" title="copy a prompt for Claude Code, Codex or Copilot CLI">Set up with your agent</button>
+              <button type="button" class="repo-btn copyable" data-copy="{{prompt $r.Name $r.Path .Name}}" title="copy a prompt for Claude Code, Codex or Copilot CLI to learn and verify how this project starts">Learn with your agent</button>
             {{end}}
           </span>
         </li>

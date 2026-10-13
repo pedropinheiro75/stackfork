@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
 // scratchRepo makes a one-commit repo on main at dir.
@@ -105,12 +107,23 @@ func TestWorktreeAddByNameAndPath(t *testing.T) {
 
 const readyCompose = "services:\n  db:\n    image: postgres:17\n"
 
-// readyRepo is a scratch repo with an adapter compose file, so it is ready.
-func readyRepo(t *testing.T, root string) string {
+// adaptedRepo is a scratch repo with an adapter compose file: it could run,
+// but nothing verified how, so it needs learn.
+func adaptedRepo(t *testing.T, root string) string {
 	t.Helper()
 	repo := scratchRepo(t, filepath.Join(root, "ready"))
 	os.MkdirAll(filepath.Join(repo, ".agent-dev"), 0o755)
 	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(readyCompose), 0o644)
+	return repo
+}
+
+// readyRepo is an adapted repo whose startup was learned and verified.
+func readyRepo(t *testing.T, root string) string {
+	t.Helper()
+	repo := adaptedRepo(t, root)
+	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
 	return repo
 }
 
@@ -161,6 +174,24 @@ func TestStartEnvRefusesUnknownWithoutStartingAnything(t *testing.T) {
 	b, _ := os.ReadFile(log)
 	if strings.Contains(string(b), " up ") || strings.Contains(string(b), " config ") {
 		t.Fatalf("docker was used for an unknown repo:\n%s", b)
+	}
+}
+
+func TestStartEnvRefusesNeedsLearnUnlessForced(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := adaptedRepo(t, root)
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	_, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if code == 0 || !strings.Contains(e, "needs-learn") || !strings.Contains(e, "repos --prompt") {
+		t.Fatalf("%d %s", code, e)
+	}
+	if b, _ := os.ReadFile(log); strings.Contains(string(b), " up ") {
+		t.Fatalf("started a needs-learn repo:\n%s", b)
+	}
+	out, e, code := runCLI(t, append(base, "start-env", "--force", repo)...)
+	if code != 0 || !strings.Contains(e, "warning") || !strings.Contains(out, "started") {
+		t.Fatalf("--force: %d %s %s", code, out, e)
 	}
 }
 

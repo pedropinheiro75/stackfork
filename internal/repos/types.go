@@ -12,7 +12,7 @@ type Repo struct {
 	Path            string     `json:"path"`
 	Group           string     `json:"group"` // path relative to its root, minus the repo name
 	DefaultBranch   string     `json:"default_branch"`
-	Readiness       string     `json:"readiness"` // ready, draft, unknown
+	Readiness       string     `json:"readiness"` // ready, needs-learn, draft, unknown
 	ReadinessReason string     `json:"readiness_reason"`
 	Worktrees       []Worktree `json:"worktrees"` // includes the main checkout, first
 	Branches        []Branch   `json:"branches"`  // local branches with no worktree
@@ -41,9 +41,10 @@ type Branch struct {
 
 // Readiness levels.
 const (
-	Ready   = "ready"
-	Draft   = "draft"
-	Unknown = "unknown"
+	Ready      = "ready"
+	NeedsLearn = "needs-learn" // it could run (adapter, sibling, profile) but nothing verified how
+	Draft      = "draft"
+	Unknown    = "unknown"
 )
 
 // gitData is everything read with git for one repo; it is what the cache

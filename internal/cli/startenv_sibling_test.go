@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
 const (
@@ -44,6 +46,10 @@ func siblingRepo(t *testing.T) (repo, sib string, base []string) {
 		"prepare", "-f", "docker-compose.yml", "-f", ".agent-dev/compose.yml", "--env-file", ".agent-dev/runtime.env")...)
 	if code != 0 {
 		t.Fatalf("prepare sibling: %s", e)
+	}
+	// learn was verified in that worktree (the usual place an agent learns)
+	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(sib, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
 	}
 	return
 }
@@ -125,7 +131,7 @@ func TestStartEnvExplainsWhySiblingRecipeCannotBeReused(t *testing.T) {
 		t.Fatal(e)
 	}
 	_, e, code := runCLI(t, append(base, "start-env", filepath.Join(repo, ".worktrees", "feat-b"))...)
-	if code == 0 || !strings.Contains(e, "extra.yml") || !strings.Contains(e, "cannot seed") {
+	if code == 0 || !strings.Contains(e, "extra.yml") || !strings.Contains(e, "cannot be reused") {
 		t.Fatalf("%d %s", code, e)
 	}
 }

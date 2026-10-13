@@ -14,6 +14,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/cli"
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
 const reposPort = 55301
@@ -92,6 +93,17 @@ func newBrowserEnv(t *testing.T) *browserEnv {
 }
 
 func (e *browserEnv) readyRepo(name string) string {
+	repo := scratchRepoAt(e.t, filepath.Join(e.root, name))
+	os.MkdirAll(filepath.Join(repo, ".agent-dev"), 0o755)
+	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(fixtureCompose), 0o644)
+	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+		e.t.Fatal(err)
+	}
+	return repo
+}
+
+// needsLearnRepo could run (it has an adapter) but nothing verified how.
+func (e *browserEnv) needsLearnRepo(name string) string {
 	repo := scratchRepoAt(e.t, filepath.Join(e.root, name))
 	os.MkdirAll(filepath.Join(repo, ".agent-dev"), 0o755)
 	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(fixtureCompose), 0o644)
@@ -279,6 +291,7 @@ func TestRepoFragmentEscapesHostileNamesAndOffersNoDestructiveButton(t *testing.
 	gitIn(t, hostile, "branch", `<b>bold</b>`)
 	ready := e.readyRepo("ready")
 	gitIn(t, ready, "worktree", "add", "-q", "-b", "wt", filepath.Join(ready, ".worktrees", "wt"))
+	e.needsLearnRepo("adapted")
 
 	body := e.get("/fragments/repos").Body.String()
 	for _, raw := range []string{"<img src=x", `x"onmouseover=`, "<b>bold</b>", "onerror=alert(1)>"} {
@@ -286,12 +299,12 @@ func TestRepoFragmentEscapesHostileNamesAndOffersNoDestructiveButton(t *testing.
 			t.Errorf("unescaped hostile text %q in:\n%s", raw, body)
 		}
 	}
-	for _, want := range []string{"&lt;img src=x", "&lt;b&gt;bold&lt;/b&gt;", "Set up with your agent", `data-repo-action="start"`, "readiness-unknown", "readiness-ready"} {
+	for _, want := range []string{"&lt;img src=x", "&lt;b&gt;bold&lt;/b&gt;", "Learn with your agent", `data-repo-action="start"`, "readiness-unknown", "readiness-ready", "readiness-needs-learn", ">needs learn<"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	// unknown repos get no Start button; ready ones do
+	// unknown and needs-learn repos get no Start button; ready ones do
 	if strings.Count(body, `data-repo-action="start"`) != 2 { // ready: main checkout + wt
 		t.Errorf("expected Start only for the ready repo's two worktrees:\n%s", body)
 	}

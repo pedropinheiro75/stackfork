@@ -354,6 +354,8 @@ func Destructive(command, cwd string) bool {
 				return true
 			case action == "seed" && name == "force":
 				return true
+			case action == "start-env" && name == "force": // agents learn the project instead
+				return true
 			}
 		}
 	}

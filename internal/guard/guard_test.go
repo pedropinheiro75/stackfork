@@ -254,4 +254,7 @@ func TestSeedForceIsDestructiveButSeedIsNot(t *testing.T) {
 	if !Destructive("stackfork seed --force", "/tmp") {
 		t.Error("seed --force must be blocked")
 	}
+	if Destructive("stackfork start-env .worktrees/x", "/tmp") || !Destructive("stackfork start-env --force .worktrees/x", "/tmp") {
+		t.Error("start-env --force must be blocked, plain start-env allowed")
+	}
 }

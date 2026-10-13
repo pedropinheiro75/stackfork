@@ -307,7 +307,7 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, req actionRequest) {
 			branch = req.Branch
 		}
 		if req.Action == "start" && repo.Readiness != repos.Ready {
-			writeActionResult(w, http.StatusConflict, actionResponse{Message: fmt.Sprintf("%s is %s: %s. Use \"Set up with your agent\" instead", repo.Name, repo.Readiness, repo.ReadinessReason)})
+			writeActionResult(w, http.StatusConflict, actionResponse{Message: fmt.Sprintf("%s is %s: %s. Use \"Learn with your agent\" instead", repo.Name, repo.Readiness, repo.ReadinessReason)})
 			return
 		}
 		if req.Action == "start" && s.StartEnv == nil {

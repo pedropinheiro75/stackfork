@@ -27,6 +27,7 @@ type StartOptions struct {
 	LegacyStateBase string
 	Global          []string // extra global flags (--npmrc, --secret) to forward
 	ProfileDirs     []string
+	Force           bool // start a project without verified knowledge (CLI only)
 }
 
 // StartEnv prepares (only when needed) and starts the instance of one
@@ -57,10 +58,13 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 	base := append([]string{"--state-dir", o.NewStateBase, "--legacy-state-dir", o.LegacyStateBase, "--root", root}, o.Global...)
 
 	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err != nil {
-		level, reason := repos.ReadinessOf(filepath.Base(main), []string{main, root}, repos.DefaultBranchOf(main), insts, o.ProfileDirs)
+		level, reason := repos.ReadinessOf(filepath.Base(main), append(repos.Checkouts(main), root), repos.DefaultBranchOf(main), insts, o.ProfileDirs)
 		if level != repos.Ready {
-			return fmt.Errorf("%s is %s (%s); stackfork only starts projects it already knows how to run. Ask your agent to learn it: `stackfork repos --prompt %s %s`",
-				filepath.Base(main), level, reason, filepath.Base(main), branch)
+			if !o.Force || level != repos.NeedsLearn {
+				return fmt.Errorf("%s is %s (%s); stackfork only starts projects whose startup was learned and verified. Ask your agent to learn it: `stackfork repos --prompt %s %s`",
+					filepath.Base(main), level, reason, filepath.Base(main), branch)
+			}
+			fmt.Fprintf(errOut, "warning: %s is not verified (%s); starting anyway because of --force\n", filepath.Base(main), reason)
 		}
 	}
 
@@ -279,15 +283,24 @@ func recipePrepareArgs(cmd string) []string {
 // cmdStartEnv is `stackfork start-env [CHECKOUT]`.
 func cmdStartEnv(stdout, stderr io.Writer, subArgs []string, rootArg, newStateBase, legacyStateBase string, global []string) (int, error) {
 	if isHelpRequest(subArgs) {
-		printFlaglessUsage(stdout, "start-env", "start-env [CHECKOUT]")
+		printFlaglessUsage(stdout, "start-env", "start-env [--force] [CHECKOUT]")
 		return 0, nil
 	}
-	if len(subArgs) > 1 {
-		return 2, errors.New("usage: stackfork start-env [CHECKOUT]")
+	force := false
+	var rest []string
+	for _, a := range subArgs {
+		if a == "--force" {
+			force = true
+		} else {
+			rest = append(rest, a)
+		}
+	}
+	if len(rest) > 1 {
+		return 2, errors.New("usage: stackfork start-env [--force] [CHECKOUT]")
 	}
 	checkout := rootArg
-	if len(subArgs) == 1 {
-		checkout = subArgs[0]
+	if len(rest) == 1 {
+		checkout = rest[0]
 	}
 	profiles, err := resolveProfileDirs(nil)
 	if err != nil {
@@ -295,7 +308,7 @@ func cmdStartEnv(stdout, stderr io.Writer, subArgs []string, rootArg, newStateBa
 	}
 	return 0, StartEnv(stdout, stderr, StartOptions{
 		Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase,
-		Global: global, ProfileDirs: profiles,
+		Global: global, ProfileDirs: profiles, Force: force,
 	})
 }
 
