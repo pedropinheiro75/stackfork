@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
 // TestLiveStartEnv starts a scratch "ready" repo through `start-env`, then a
@@ -43,6 +45,10 @@ func TestLiveStartEnv(t *testing.T) {
 	mustRun(t, "git", "-C", repo, "add", "-A")
 	mustRun(t, "git", "-C", repo, "-c", "user.email=t@e.x", "-c", "user.name=t", "commit", "-q", "-m", "init")
 	mustRun(t, "git", "-C", repo, "branch", "other")
+	// only verified learned knowledge makes it startable
+	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
 
 	var projects []string
 	defer func() {

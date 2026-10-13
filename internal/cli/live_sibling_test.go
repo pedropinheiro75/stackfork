@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
 // TestLiveStartEnvFromSiblingRecipe brings up a new worktree whose recipe
@@ -73,6 +75,10 @@ func TestLiveStartEnvFromSiblingRecipe(t *testing.T) {
 	pa, pb := project(sib), project(nw)
 	if out, code := sf("--root", sib, "prepare", "-f", "docker-compose.yml", "-f", ".agent-dev/compose.yml", "--env-file", ".agent-dev/runtime.env"); code != 0 {
 		t.Fatalf("prepare sibling: %s", out)
+	}
+	// learn was verified in the sibling worktree
+	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(sib, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
 	}
 	out, code := sf("start-env", nw)
 	if code != 0 || !strings.Contains(out, "reusing the recipe of "+pa) || !strings.Contains(out, "started "+pb) {
