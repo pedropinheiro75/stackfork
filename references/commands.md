@@ -182,7 +182,7 @@ stackfork config add-root ~/code
 ```
 
 ### repos
-List the git repos under the configured roots: group, readiness (`ready` = verified knowledge, an adapter, a prepared instance or a profile reference; `draft`; `unknown`), running count, worktrees, branches without a worktree, last commit. Local git only, never a network call; results are cached per repo while its git metadata is unchanged. With no roots it says how to add one. `--prompt REPO BRANCH` prints the text to give an agent for a project stackfork does not know yet.
+List the git repos under the configured roots: group, readiness (`ready` = verified learned knowledge in any checkout; `needs-learn` = it could run from an adapter, a prepared instance or a profile reference, but nobody verified how; `draft`; `unknown`), running count, worktrees, branches without a worktree, last commit. Local git only, never a network call; results are cached per repo while its git metadata is unchanged. With no roots it says how to add one. `--prompt REPO BRANCH` prints the text to give an agent to learn and verify a project that is not `ready`.
 Flags: `--json`, `--rescan`, `--prompt`
 ```sh
 stackfork repos --json
@@ -197,7 +197,7 @@ stackfork worktree add storefront fix/login
 ```
 
 ### start-env
-`start-env [CHECKOUT]`: for a project stackfork already knows how to run (readiness `ready`), `prepare` only when needed (no prepared instance, or its inputs changed) with the recorded recipe/adapter, then `up`; progress lines are printed. The dashboard's Start button runs this same code. Refuses `draft`/`unknown` projects. Not the per-service `start`.
+`start-env [--force] [CHECKOUT]`: for a project whose startup was learned and verified (readiness `ready`), `prepare` only when needed (no prepared instance, or its inputs changed) with the recorded recipe/adapter, then `up`; progress lines are printed. The dashboard's Start button runs this same code. Refuses `needs-learn`, `draft` and `unknown` projects and prints the `repos --prompt` command; `--force` starts a `needs-learn` one anyway with a warning (people only: the guard blocks it for agents, who should learn the project instead). Not the per-service `start`.
 ```sh
 stackfork start-env .worktrees/fix-login
 ```
