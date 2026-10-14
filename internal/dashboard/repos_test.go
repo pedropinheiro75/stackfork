@@ -304,6 +304,10 @@ func TestRepoFragmentEscapesHostileNamesAndOffersNoDestructiveButton(t *testing.
 			t.Errorf("missing %q", want)
 		}
 	}
+	// one learn button per repo that is not ready (hostile + adapted), not per row
+	if n := strings.Count(body, ">Learn with your agent<"); n != 2 {
+		t.Errorf("want one learn button per non-ready repo, got %d", n)
+	}
 	// unknown and needs-learn repos get no Start button; ready ones do
 	if strings.Count(body, `data-repo-action="start"`) != 2 { // ready: main checkout + wt
 		t.Errorf("expected Start only for the ready repo's two worktrees:\n%s", body)
