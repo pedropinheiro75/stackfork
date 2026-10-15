@@ -78,6 +78,19 @@
 
 <div id="activity-log"></div>
 
+<dialog id="learn-modal" aria-labelledby="learn-title">
+  <h2 id="learn-title">Learn</h2>
+  <p class="muted">Opens a new terminal window in the repo with your agent already running this prompt. It learns how the project starts, checks migrations, seed and login with you, and records it as verified.</p>
+  <div id="learn-agents"></div>
+  <p id="learn-status" role="status"></p>
+  <details>
+    <summary>Prompt</summary>
+    <pre id="learn-prompt"></pre>
+    <button type="button" id="learn-copy" class="repo-btn">Copy prompt</button>
+  </details>
+  <form method="dialog"><button class="repo-btn">Close</button></form>
+</dialog>
+
 <div id="logs-panel" hidden>
   <div id="logs-header">
     <span id="logs-title"></span>

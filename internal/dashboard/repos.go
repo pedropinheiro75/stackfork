@@ -31,7 +31,7 @@ var reposFuncs = template.FuncMap{
 		return t.Format("2006-01-02")
 	},
 	// shq single-quotes a value for the copyable shell commands.
-	"shq":        func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" },
+	"shq":        shq,
 	"prompt":     repos.Prompt,
 	"worktreeAt": repos.WorktreeDir,
 	"isRunning":  func(state string) bool { return isRunningState(state) },

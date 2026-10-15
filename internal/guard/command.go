@@ -369,8 +369,21 @@ func Destructive(command, cwd string) bool {
 // confirmation: posting to its run/action endpoints directly, or clicking
 // (or typing into) a dialog through System Events.
 func bypassesConfirmation(command string) bool {
-	if strings.Contains(command, "/api/run") || strings.Contains(command, "/api/actions") {
-		return true
+	// Only an HTTP client calling the endpoints counts: editing source that
+	// mentions them (sed, grep, an editor) must stay allowed.
+	httpClients := map[string]bool{"curl": true, "wget": true, "http": true, "https": true, "xh": true,
+		"python": true, "python3": true, "node": true, "bun": true, "deno": true, "ruby": true, "perl": true}
+	for _, seg := range Segments(command, "") {
+		if !httpClients[filepath.Base(seg.Words[0])] {
+			continue
+		}
+		for _, w := range seg.Words[1:] {
+			for _, ep := range []string{"/api/run", "/api/actions", "/api/learn"} {
+				if strings.Contains(w, ep) {
+					return true
+				}
+			}
+		}
 	}
 	return strings.Contains(command, "osascript") && strings.Contains(command, "System Events") &&
 		(strings.Contains(command, "click") || strings.Contains(command, "keystroke") || strings.Contains(command, "key code"))

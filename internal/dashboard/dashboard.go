@@ -131,6 +131,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/cleanup", s.handleCleanup)
 	mux.HandleFunc("GET /api/disk", s.handleDisk)
 	mux.HandleFunc("POST /api/run", s.handleRun)
+	mux.HandleFunc("GET /api/agents", s.handleAgents)
+	mux.HandleFunc("POST /api/learn", s.handleLearn)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("POST /api/actions", s.handleActions)
 	mux.HandleFunc("POST /api/copy", s.handleCopy)

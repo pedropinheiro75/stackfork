@@ -563,3 +563,14 @@ code.setting-value { display: inline-block; }
 .row-progress::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--accent); animation: sf-pulse 1s ease-in-out infinite; }
 @keyframes sf-pulse { 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .row-progress::before { animation: none; } }
+
+#learn-modal { max-width: 560px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); color: var(--fg); padding: 20px; }
+#learn-modal::backdrop { background: rgba(0, 0, 0, 0.5); }
+#learn-modal h2 { margin: 0 0 8px; font-size: 17px; }
+#learn-agents { display: grid; gap: 8px; margin: 14px 0; }
+.agent-btn { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; cursor: pointer; text-align: left; }
+.agent-btn:hover:not(:disabled) { border-color: var(--accent); }
+.agent-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.agent-btn .muted { font-size: 12px; }
+#learn-prompt { white-space: pre-wrap; font-size: 12px; background: var(--bg); padding: 10px; border-radius: 6px; }
+#learn-modal form { margin-top: 12px; text-align: right; }

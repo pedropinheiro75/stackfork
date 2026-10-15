@@ -852,7 +852,50 @@
       });
   }
 
+  // Learn modal: pick an installed agent the folder allows (config
+  // agentRules), and stackfork opens it in a terminal with the prompt.
+  function openLearn(btn) {
+    var modal = document.getElementById("learn-modal");
+    var agents = document.getElementById("learn-agents");
+    var status = document.getElementById("learn-status");
+    document.getElementById("learn-title").textContent = "Learn " + btn.dataset.name + " with your agent";
+    document.getElementById("learn-prompt").textContent = btn.dataset.copy;
+    agents.innerHTML = "loading\u2026";
+    status.textContent = "";
+    modal.showModal();
+    fetch("/api/agents?repo=" + encodeURIComponent(btn.dataset.repo), { credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw new Error("status " + r.status); return r.json(); })
+      .then(function (d) {
+        agents.innerHTML = d.agents.map(function (a) {
+          return '<button type="button" class="agent-btn" data-agent="' + escapeHtml(a.id) + '"' + (a.available && d.canOpen ? "" : " disabled") + ">" +
+            '<strong>' + escapeHtml(a.name) + "</strong>" +
+            '<span class="muted">' + escapeHtml(a.available ? (d.canOpen ? "opens in " + ({ warp: "Warp", iterm: "iTerm", terminal: "Terminal" }[d.terminal] || d.terminal) : "copy the prompt instead") : a.reason) + "</span></button>";
+        }).join("");
+        agents.querySelectorAll(".agent-btn").forEach(function (b) {
+          b.addEventListener("click", function () {
+            status.textContent = "opening\u2026";
+            post("/api/learn", { repo: btn.dataset.repo, agent: b.dataset.agent })
+              .then(function (r) { return r.json(); })
+              .then(function (res) {
+                status.textContent = res.message;
+                log("learn: " + res.message);
+                if (res.ok) setTimeout(function () { modal.close(); }, 1200);
+              })
+              .catch(function (e) { status.textContent = e.message; });
+          });
+        });
+      })
+      .catch(function (e) { agents.textContent = "could not list agents: " + e.message; });
+  }
+
   function wireRun() {
+    document.addEventListener("click", function (e) {
+      var lb = e.target.closest(".learn-btn");
+      if (lb) openLearn(lb);
+    });
+    document.getElementById("learn-copy").addEventListener("click", function (e) {
+      copyText(document.getElementById("learn-prompt").textContent, "learn prompt", e.target);
+    });
     document.addEventListener("click", function (e) {
       var btn = e.target.closest(".run-btn");
       if (btn && !btn.disabled) runCommand(btn);

@@ -26,7 +26,7 @@
         <button type="button" class="repo-btn" data-repo-action="fetch" data-repo="{{$r.Path}}" title="git fetch --prune in this repo only">Fetch</button>
       </div>
       <p class="muted reason">{{$r.ReadinessReason}}{{if ne $r.Readiness "ready"}}
-        <button type="button" class="repo-btn copyable learn-btn" data-copy="{{prompt $r.Name $r.Path $r.DefaultBranch}}" title="copy a prompt for Claude Code, Codex or Copilot CLI to learn and verify how this project starts (once per project)">Learn with your agent</button>{{end}}</p>
+        <button type="button" class="repo-btn learn-btn" data-repo="{{$r.Path}}" data-name="{{$r.Name}}" data-copy="{{prompt $r.Name $r.Path $r.DefaultBranch}}" title="open Claude Code, Codex or Copilot CLI in a terminal to learn and verify how this project starts (once per project)">Learn with your agent</button>{{end}}</p>
       <div class="recipe" data-recipe="{{.Recipe.State}}">
         <span class="muted">Startup recipe</span>
         {{if .Recipe.Migrate}}<span>migrate <code>{{.Recipe.Migrate}}</code></span>{{end}}

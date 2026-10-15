@@ -235,3 +235,45 @@ func (c *Config) SetMaxDepth(n int) error {
 	c.MaxDepth = n
 	return nil
 }
+
+// AgentRule keeps an agent away from a folder, e.g. a client whose policy
+// forbids it: {"path": "~/code/client", "deny": ["claude"], "reason": "..."}.
+type AgentRule struct {
+	Path   string   `json:"path"`
+	Deny   []string `json:"deny"`
+	Reason string   `json:"reason,omitempty"`
+}
+
+// AgentDenied reports whether a rule in "agentRules" forbids agent in dir,
+// and the rule's reason.
+func (c *Config) AgentDenied(agent, dir string) (bool, string) {
+	var rules []AgentRule
+	if raw, ok := c.extra["agentRules"]; ok {
+		_ = json.Unmarshal(raw, &rules)
+	}
+	for _, r := range rules {
+		p, err := resolve(r.Path)
+		if err != nil || !Inside(p, dir) {
+			continue
+		}
+		for _, d := range r.Deny {
+			if d == agent {
+				reason := r.Reason
+				if reason == "" {
+					reason = "not allowed under " + r.Path
+				}
+				return true, reason
+			}
+		}
+	}
+	return false, ""
+}
+
+// Terminal is the "terminal" key: warp, iterm or terminal ("" = detect).
+func (c *Config) Terminal() string {
+	var t string
+	if raw, ok := c.extra["terminal"]; ok {
+		_ = json.Unmarshal(raw, &t)
+	}
+	return t
+}

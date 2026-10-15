@@ -25,7 +25,7 @@ func TestPlanRunAllowlist(t *testing.T) {
 	}
 	cases := []struct {
 		cmd, root, args string
-		confirm bool
+		confirm         bool
 	}{
 		{"stackfork --instance sf-a-1 seed", "", "--instance sf-a-1 seed", false},
 		{"stackfork up", "/w", "--root /w up", false},
