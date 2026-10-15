@@ -528,3 +528,36 @@ func TestPrimaryLine(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// Anonymous dependency volumes become named per-instance volumes, so a
+// down/up keeps node_modules; data and bind mounts are left alone.
+func TestIsolateKeepsAnonymousCacheVolumes(t *testing.T) {
+	root := t.TempDir()
+	src := map[string]interface{}{
+		"services": map[string]interface{}{
+			"app": map[string]interface{}{
+				"image": "x",
+				"volumes": []interface{}{
+					map[string]interface{}{"type": "volume", "target": "/app/node_modules"},
+					map[string]interface{}{"type": "volume", "target": "/app/.nuxt"},
+					map[string]interface{}{"type": "volume", "target": "/data"},
+					map[string]interface{}{"type": "bind", "source": root, "target": "/app"},
+				},
+			},
+		},
+	}
+	out, err := Isolate(src, root, "sf-x-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := out.(map[string]interface{})
+	vols := m["volumes"].(map[string]interface{})
+	nm, ok := vols["app_app_node_modules"].(map[string]interface{})
+	if !ok || nm["name"] != "sf-x-1_app_app_node_modules" || vols["app_app_nuxt"] == nil || len(vols) != 2 {
+		t.Fatalf("volumes %v", vols)
+	}
+	mounts := m["services"].(map[string]interface{})["app"].(map[string]interface{})["volumes"].([]interface{})
+	if mounts[0].(map[string]interface{})["source"] != "app_app_node_modules" || mounts[2].(map[string]interface{})["source"] != nil {
+		t.Fatalf("mounts %v", mounts)
+	}
+}

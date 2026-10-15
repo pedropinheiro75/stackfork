@@ -671,6 +671,16 @@
 
   // runRepoAction posts start / fetch / worktree-add. A start answers with
   // newline-delimited JSON so progress lines reach the activity log live.
+  // progressText turns a compose line ("Container sf-x-1-web-1 Waiting")
+  // into "waiting for web to be healthy"; other lines pass through.
+  function progressText(line) {
+    var m = line.match(/^\s*Container\s+\S+-([A-Za-z0-9_.]+)-\d+\s+(\w+)/);
+    if (!m) return line.trim();
+    var verbs = { Waiting: "waiting for " + m[1] + " to be healthy", Healthy: m[1] + " is healthy", Starting: "starting " + m[1],
+      Started: m[1] + " started", Created: m[1] + " created", Creating: "creating " + m[1], Running: m[1] + " running" };
+    return verbs[m[2]] || m[1] + " " + m[2].toLowerCase();
+  }
+
   function runRepoAction(btn) {
     var d = btn.dataset;
     if (d.confirm && !window.confirm(d.confirm)) return;
@@ -683,6 +693,16 @@
       reposState.errors[d.repo] = { label: label, message: msg, command: retryCommand(d, created) };
     }
     btn.disabled = true;
+    var btnText = btn.textContent;
+    btn.textContent = d.repoAction === "start" ? "Starting\u2026" : btnText + "\u2026";
+    // The latest progress line shows next to the button: a start can take
+    // minutes (installs, health checks) and the log is at the page bottom.
+    var progress = document.createElement("span");
+    progress.className = "row-progress";
+    progress.setAttribute("aria-live", "polite");
+    progress.textContent = "starting\u2026";
+    btn.insertAdjacentElement("beforebegin", progress);
+    reposState.busy = (reposState.busy || 0) + 1;
     delete reposState.errors[d.repo];
     log(label + ": started");
     post("/api/actions", body)
@@ -701,6 +721,7 @@
           var o = JSON.parse(line);
           if (o.line !== undefined) {
             log(label + ": " + o.line);
+            progress.textContent = progressText(o.line);
             if (o.line.indexOf("created ") === 0) created = o.line.slice(8).split(" (copied")[0];
           } else {
             log(label + ": " + (o.ok ? "done - " : "failed - ") + o.message);
@@ -719,7 +740,14 @@
         return pump();
       })
       .catch(function (e) { log(label + ": " + e.message); fail(e.message); })
-      .then(function () { btn.disabled = false; loadRepos(); poll(); });
+      .then(function () {
+        btn.disabled = false;
+        btn.textContent = btnText;
+        progress.remove();
+        reposState.busy--;
+        loadRepos();
+        poll();
+      });
   }
 
   function wireRepos() {
@@ -766,7 +794,7 @@
     try { saved = localStorage.getItem("stackfork:tab") || "instances"; } catch (e) { /* ignore */ }
     setTab(saved === "repos" ? "repos" : "instances");
     setInterval(function () {
-      if (document.visibilityState === "visible" && reposState.tab === "repos" && document.getElementById("settings-panel").hidden) loadRepos();
+      if (document.visibilityState === "visible" && reposState.tab === "repos" && !reposState.busy && document.getElementById("settings-panel").hidden) loadRepos();
     }, 3000);
   }
 

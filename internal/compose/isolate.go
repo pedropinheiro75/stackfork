@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -230,6 +231,22 @@ func isolate(source interface{}, root, project, envFile string, findings *[]Find
 				if !ok {
 					continue
 				}
+				if vol := cacheVolumeName(name, mount); vol != "" {
+					// An anonymous dependency volume (node_modules, .nuxt...)
+					// is new and empty after every down, so each start
+					// reinstalled everything. A named one per instance keeps
+					// it; down --volumes and prune still remove it.
+					top, ok := asMap(model["volumes"])
+					if !ok {
+						top = map[string]interface{}{}
+						model["volumes"] = top
+					}
+					top[vol] = map[string]interface{}{"name": fmt.Sprintf("%s_%s", project, vol)}
+					mount["source"] = vol
+					rewrite("cache_volume", fmt.Sprintf("services.%s.volumes[%d]", name, i),
+						fmt.Sprintf("services.%s: anonymous %v kept across restarts as volume %s", name, mount["target"], vol))
+					continue
+				}
 				if t, _ := mount["type"].(string); t != "bind" {
 					continue
 				}
@@ -268,6 +285,30 @@ func isolate(source interface{}, root, project, envFile string, findings *[]Find
 	}
 
 	return model, nil
+}
+
+// cacheDirs are dependency and build-cache folders: safe to keep between
+// restarts of one instance, slow to rebuild from nothing.
+var cacheDirs = map[string]bool{
+	"node_modules": true, ".nuxt": true, ".next": true, ".output": true, ".svelte-kit": true,
+	".pnpm-store": true, ".yarn": true, ".cache": true, "vendor": true, ".venv": true,
+	"venv": true, "__pycache__": true, "target": true, ".gradle": true, "deps": true, "_build": true,
+}
+
+// cacheVolumeName returns the named volume an anonymous cache mount
+// becomes ("" for anything else): <service>_<path with _ for />.
+func cacheVolumeName(service string, mount map[string]interface{}) string {
+	if t, _ := mount["type"].(string); t != "volume" || truthy(mount["source"]) {
+		return ""
+	}
+	target, _ := mount["target"].(string)
+	if !cacheDirs[path.Base(target)] {
+		return ""
+	}
+	slug := strings.Join(strings.FieldsFunc(strings.ToLower(target), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-')
+	}), "_")
+	return service + "_" + slug
 }
 
 // WireSecrets adds a top-level `secrets: { NAME: { environment: NAME } }`

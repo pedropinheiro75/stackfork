@@ -165,9 +165,25 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	}
 
 	unregister()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Shutdown closes the listener at once (a new dashboard can take the
+	// port) but lets a running start/up/run finish: killing it leaves a
+	// half-started stack and a "network error" on the page. A second
+	// signal forces it.
+	wait := 5 * time.Second
+	if n := srv.Running(); n > 0 {
+		fmt.Fprintf(stdout, "waiting for %d running action(s) to finish (signal again to stop now)\n", n)
+		wait = 15 * time.Minute
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+	go func() {
+		select {
+		case <-sigCh:
+			cancel()
+		case <-shutdownCtx.Done():
+		}
+	}()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
 		return 0, err
 	}
 	return 0, nil

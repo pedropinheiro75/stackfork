@@ -203,6 +203,14 @@ func (s *Server) tryLockProject(key string) bool {
 	return true
 }
 
+// Running counts the actions in flight (start, up, run...), so a shutdown
+// can wait for them instead of killing a start halfway.
+func (s *Server) Running() int {
+	s.actionMu.Lock()
+	defer s.actionMu.Unlock()
+	return len(s.actionsRun)
+}
+
 func (s *Server) unlockProject(key string) {
 	s.actionMu.Lock()
 	defer s.actionMu.Unlock()

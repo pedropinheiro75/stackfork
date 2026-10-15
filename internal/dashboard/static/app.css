@@ -558,3 +558,8 @@ code.setting-value { display: inline-block; }
 .run-btn:disabled { opacity: 0.5; cursor: progress; }
 .repo-btn.danger { color: var(--bad); }
 .repo-btn.danger:hover { border-color: var(--bad); }
+
+.row-progress { font-size: 12px; color: var(--muted); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-progress::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--accent); animation: sf-pulse 1s ease-in-out infinite; }
+@keyframes sf-pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .row-progress::before { animation: none; } }
