@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -66,6 +68,8 @@ func boolPtr(b bool) *bool { return &b }
 // SeedRecipe returns the seed_once command to run and its service. A
 // recorded decision wins ("none" disables seeding); with no decision the
 // default is automatic: the script the checkout's scan detects.
+// The recorded or detected migrate runs first: a brand-new database has no
+// tables, and an app image's entrypoint may not migrate on its own.
 func SeedRecipe(root, main, instanceDir string) (cmd, service string) {
 	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
 	decided, c, svc := learn.SeedDecision([]string{root, main}, m)
@@ -73,10 +77,30 @@ func SeedRecipe(root, main, instanceDir string) (cmd, service string) {
 		if !learn.SeedActive(c) {
 			return "", ""
 		}
-		return c, svc
+		return withMigrate(root, main, c), svc
 	}
 	_, detected := learn.DetectSeed(root)
-	return detected, ""
+	if detected == "" {
+		return "", ""
+	}
+	return withMigrate(root, main, detected), ""
+}
+
+func withMigrate(root, main, seed string) string {
+	migrate := ""
+	for _, d := range []string{root, main} {
+		if k, err := knowledge.Load(filepath.Join(d, ".stackfork", "knowledge.json")); err == nil && k.Recipe.Migrate != "" {
+			migrate = k.Recipe.Migrate
+			break
+		}
+	}
+	if migrate == "" {
+		migrate, _ = learn.DetectSeed(root)
+	}
+	if migrate == "" || strings.Contains(seed, migrate) {
+		return seed
+	}
+	return migrate + " && " + seed
 }
 
 // dataVolumesExist reports whether any named volume of the instance's

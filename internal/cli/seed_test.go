@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -192,7 +193,7 @@ func TestNewVolumeIsSeededAutomaticallyOnceWithNoQuestion(t *testing.T) {
 	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
 	args := []string{"--root", root, "--state-dir", stateDir}
 	out, stderr, code := runCLI(t, append(args, "up")...)
-	if code != 0 || !strings.Contains(out, "seeded new database with npm run db:seed") {
+	if code != 0 || !strings.Contains(out, "seeded new database with npm run db:migrate && npm run db:seed") {
 		t.Fatalf("up: %d %s %s", code, out, stderr)
 	}
 	for _, a := range []string{"down", "up", "restart"} {
@@ -263,5 +264,17 @@ func TestSeedCommandOnUndecidedRunsTheDetectedScript(t *testing.T) {
 	m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json"))
 	if !strings.Contains(string(b), "npm run db:seed") || m.Seeded == nil || !*m.Seeded {
 		t.Fatalf("manifest %+v log %s", m, b)
+	}
+}
+
+// The dashboard's retry hint is `stackfork --instance NAME seed`.
+func TestSeedAcceptsInstanceFlag(t *testing.T) {
+	root, stateDir, _, _ := autoSeedFixture(t)
+	out, _, _ := runCLI(t, "--root", root, "--state-dir", stateDir, "where")
+	var w struct{ Project string }
+	json.Unmarshal([]byte(out), &w)
+	_, stderr, _ := runCLI(t, "--state-dir", stateDir, "--instance", w.Project, "seed")
+	if strings.Contains(stderr, "not supported") {
+		t.Fatal(stderr)
 	}
 }
