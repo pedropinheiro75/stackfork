@@ -328,6 +328,9 @@ var globalValueFlags = map[string]bool{
 // --all, or `stackfork gc --apply`: the deleting forms. A dry run is not.
 // Unlike Decide this applies in any directory.
 func Destructive(command, cwd string) bool {
+	if bypassesConfirmation(command) {
+		return true
+	}
 	for _, seg := range Segments(command, cwd) {
 		w := seg.Words
 		if filepath.Base(w[0]) != "stackfork" {
@@ -360,4 +363,15 @@ func Destructive(command, cwd string) bool {
 		}
 	}
 	return false
+}
+
+// bypassesConfirmation catches the ways around the dashboard's native
+// confirmation: posting to its run/action endpoints directly, or clicking
+// (or typing into) a dialog through System Events.
+func bypassesConfirmation(command string) bool {
+	if strings.Contains(command, "/api/run") || strings.Contains(command, "/api/actions") {
+		return true
+	}
+	return strings.Contains(command, "osascript") && strings.Contains(command, "System Events") &&
+		(strings.Contains(command, "click") || strings.Contains(command, "keystroke") || strings.Contains(command, "key code"))
 }

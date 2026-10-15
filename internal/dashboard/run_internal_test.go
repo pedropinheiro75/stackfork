@@ -7,6 +7,9 @@ import (
 )
 
 func TestPlanRunAllowlist(t *testing.T) {
+	old := worktreeClean
+	defer func() { worktreeClean = old }()
+	worktreeClean = func(string) bool { return true }
 	s := &Server{}
 	wt := func(repo, path string) (bool, string) { return repo == "/r" && path == "/r/.worktrees/a", "sf-a-1" }
 	refused := []string{
@@ -28,7 +31,7 @@ func TestPlanRunAllowlist(t *testing.T) {
 		{"stackfork up", "/w", "--root /w up", false},
 		{"stackfork prepare --reassign-ports", "/w", "--root /w prepare --reassign-ports", false},
 		{"stackfork --instance sf-a-1 seed --force", "", "--instance sf-a-1 seed --force", true},
-		{"stackfork down --instance sf-a-1 --volumes", "", "down --instance sf-a-1 --volumes", true},
+		{"stackfork down --instance sf-a-1 --volumes", "/w", "down --instance sf-a-1 --volumes", true},
 		{"stackfork prune --stopped", "", "prune --stopped --yes", true},
 		{"stackfork gc", "/w", "gc --apply", true},
 		{"git -C '/r' worktree remove '/r/.worktrees/a'", "", "-C /r worktree remove /r/.worktrees/a", true},
@@ -71,4 +74,14 @@ func doRun(srv *Server, body *strings.Reader) string {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, r)
 	return w.Body.String()
+}
+
+func TestPlanRunRefusesDirtyWorktreeBeforeAsking(t *testing.T) {
+	old := worktreeClean
+	defer func() { worktreeClean = old }()
+	worktreeClean = func(string) bool { return false }
+	wt := func(repo, path string) (bool, string) { return true, "" }
+	if _, err := (&Server{}).planRun("git -C /r worktree remove /r/.worktrees/a", "", wt); err == nil || !strings.Contains(err.Error(), "uncommitted") {
+		t.Fatalf("got %v", err)
+	}
 }

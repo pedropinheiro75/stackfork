@@ -258,3 +258,20 @@ func TestSeedForceIsDestructiveButSeedIsNot(t *testing.T) {
 		t.Error("start-env --force must be blocked, plain start-env allowed")
 	}
 }
+
+// An agent cannot get around the dashboard's native confirmation.
+func TestConfirmationBypassIsDestructive(t *testing.T) {
+	for _, c := range []string{
+		`curl -s -X POST -H "X-Stackfork-Token: x" http://127.0.0.1:26607/api/run -d '{}'`,
+		`curl -X POST http://stackfork.localhost/api/actions`,
+		`osascript -e 'tell application "System Events" to click button "Run" of window 1'`,
+		`osascript -e 'tell application "System Events" to keystroke return'`,
+	} {
+		if !Destructive(c, "/tmp") {
+			t.Errorf("%s must be blocked", c)
+		}
+	}
+	if Destructive(`osascript -e 'display notification "hi"'`, "/tmp") || Destructive("curl http://127.0.0.1:26607/api/instances", "/tmp") {
+		t.Error("harmless osascript/curl must stay allowed")
+	}
+}

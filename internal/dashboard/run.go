@@ -15,6 +15,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/guard"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/prune"
 )
 
 // runRequest is POST /api/run's body: a command the page shows (the same
@@ -60,6 +61,14 @@ end run`
 	return strings.TrimSpace(string(out)) == "Run", nil
 }
 
+// worktreeClean reports a worktree with no uncommitted or untracked
+// changes, checked before the dialog so the person is not asked for
+// something git will refuse. A var so tests need no real worktree.
+var worktreeClean = func(path string) bool {
+	out, err := exec.Command("git", "-C", path, "status", "--porcelain").Output()
+	return err == nil && len(bytes.TrimSpace(out)) == 0
+}
+
 // planRun allowlists cmd. root is the card's instance root ("" off a card);
 // worktree reports whether REPO/PATH is a scanned, non-main worktree and its
 // instance.
@@ -81,6 +90,9 @@ func (s *Server) planRun(cmd, root string, worktree func(repo, path string) (ok 
 		ok, project := worktree(w[2], w[5])
 		if !ok {
 			return nil, errors.New("not a worktree (other than the main checkout) of a scanned repo")
+		}
+		if !worktreeClean(w[5]) {
+			return nil, errors.New("the worktree has uncommitted or untracked changes; commit or discard them first (nothing was removed)")
 		}
 		p := &runPlan{Name: "git", Args: w[1:], Down: project,
 			Confirm: "Remove the worktree " + w[5] + "?\n\ngit refuses if it has uncommitted changes."}
@@ -149,7 +161,7 @@ func (s *Server) planStackfork(args []string, root string) (*runPlan, error) {
 		}
 	}
 	machineWide := action == "gc" || action == "prune" || action == "proxy"
-	if len(global) == 0 && root != "" && !machineWide {
+	if len(global) == 0 && root != "" && !machineWide && !has("--instance") {
 		global = []string{"--root", root}
 	}
 	p := &runPlan{Name: "stackfork"}
@@ -252,13 +264,44 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := s.execPlan(ctx, plan.Name, plan.Args)
 	if err == nil && plan.Down != "" {
-		more, derr := s.execPlan(ctx, "stackfork", []string{"--instance", plan.Down, "down", "--volumes"})
-		out, err = strings.TrimSpace(out+"\n"+more), derr
+		var more string
+		more, err = s.removeInstance(plan.Down)
+		out = strings.TrimSpace(out + "\n" + more)
 	}
 	if out == "" {
 		out = "done"
 	}
 	writeActionResult(w, http.StatusOK, actionResponse{OK: err == nil, Message: out})
+}
+
+// removeInstance removes one instance completely (containers, volumes,
+// images it built, state, proxy route) through prune's own code, so a
+// removed worktree leaves no orphaned instance behind.
+func (s *Server) removeInstance(project string) (string, error) {
+	inv, err := s.collect()
+	if err != nil {
+		return "", err
+	}
+	l, err := prune.List(false)
+	if err != nil {
+		return "", err
+	}
+	plan := prune.BuildPlan(inv, s.NewStateBase, s.LegacyStateBase, l, time.Now())
+	var sel []prune.Candidate
+	for _, c := range plan.Candidates {
+		if c.Project == project {
+			sel = append(sel, c)
+		}
+	}
+	if len(sel) == 0 {
+		return "no stack to remove for " + project, nil
+	}
+	var errOut bytes.Buffer
+	prune.Execute(sel, plan, prune.Options{NewBase: s.NewStateBase, LegacyBase: s.LegacyStateBase}, &errOut)
+	if e := strings.TrimSpace(errOut.String()); e != "" {
+		return e, errors.New(e)
+	}
+	return "removed stack " + project + " and its volumes", nil
 }
 
 // scannedWorktree reports whether path is a non-main worktree of the
