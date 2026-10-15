@@ -48,6 +48,22 @@ no-store`. The page itself only calls it for a pill whose displayed text
 already contains the `<password>` placeholder, and writes the response
 straight to the clipboard without logging or rendering it.
 
+## Commands run from the dashboard
+
+`POST /api/run` runs a command the page shows, behind the same token,
+`Origin` and `Host` checks. The token is in the page, so any local process
+that can reach `127.0.0.1` can send the request. The endpoint therefore does
+not trust the caller:
+
+- It runs only an allowlist (stackfork lifecycle commands, `git -C REPO
+  worktree remove PATH` for a scanned worktree, `docker rm` of stackfork's
+  own containers), as an argument vector with no shell. Shell syntax and
+  any other command are refused.
+- Anything that deletes data (`down --volumes`, `seed --force`, `prune`,
+  `gc`, worktree removal) runs only after a person clicks Run in a native
+  macOS dialog. An agent can forge the HTTP request but cannot answer the
+  dialog. On other systems these commands are refused.
+
 ## Reporting a vulnerability
 
 Please report security issues privately through
