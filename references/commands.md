@@ -11,6 +11,8 @@ Flags: `-f`/`--file`, `--env-file`, `--hostname`, `--reassign-ports`, `--random-
 stackfork --root .worktrees/pr630 prepare -f .agent-dev/nuxt.compose.yaml --env-file .agent-dev/runtime.env
 ```
 
+Dependency caches across restarts: `prepare` turns an anonymous volume on a dependency or build-cache folder (`node_modules`, `.nuxt`, `.next`, `.output`, `vendor`, `.venv`, `target`, ...) into a named volume of that instance (`<project>_<service>_<path>`). A `down` then `up` reuses it, so an install inside the container only fetches what changed instead of everything. `down --volumes` and `prune` remove it like any other volume. Run `prepare` again for an existing instance to pick this up.
+
 ### up
 Start the prepared stack.
 Flags: `--build`, `--profile`, `--service`, `--wait-timeout`
@@ -208,9 +210,6 @@ stackfork worktree add storefront fix/login
 ```sh
 stackfork start-env .worktrees/fix-login
 ```
-
-### Dependency caches across restarts
-`prepare` turns an anonymous volume on a dependency or build-cache folder (`node_modules`, `.nuxt`, `.next`, `.output`, `vendor`, `.venv`, `target`, ...) into a named volume of that instance (`<project>_<service>_<path>`). A `down` then `up` reuses it, so an install inside the container only fetches what changed instead of everything. `down --volumes` and `prune` remove it like any other volume. Run `prepare` again for an existing instance to pick this up.
 
 ### doctor
 Check the local environment the proxy/tool depend on (Docker context, Compose version, `*.localhost` resolution, proxy port, `host.docker.internal`, Docker disk usage). The disk check warns at 85% used, because a full Docker disk makes installs fail later with `no space left on device`.
