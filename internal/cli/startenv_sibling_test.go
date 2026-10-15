@@ -135,3 +135,34 @@ func TestStartEnvExplainsWhySiblingRecipeCannotBeReused(t *testing.T) {
 		t.Fatalf("%d %s", code, e)
 	}
 }
+
+// A worktree that has its own adapter is prepared from it, not from the
+// sibling, but it still needs the registry token the sibling runs with:
+// without the reference, up fails late on "NPM_TOKEN ... is not set".
+func TestStartEnvWithOwnAdapterReusesSiblingSecretReferences(t *testing.T) {
+	repo, _, base := siblingRepo(t)
+	installFakeDocker(t)
+	nw := filepath.Join(repo, ".worktrees", "feat-b")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "feat-b", nw).CombinedOutput(); err != nil {
+		t.Fatalf("%s", out)
+	}
+	ad := filepath.Join(nw, ".stackfork")
+	os.MkdirAll(ad, 0o755)
+	os.WriteFile(filepath.Join(ad, "app.compose.yaml"), []byte("services:\n  app:\n    image: alpine:3.20\n    secrets: [tok]\nsecrets:\n  tok:\n    environment: tok\n"), 0o644)
+	out, e, code := runCLI(t, append(base, "start-env", nw)...)
+	if code != 0 {
+		t.Fatalf("%d\n%s\n%s", code, out, e)
+	}
+	if !strings.Contains(out, "reusing secret references tok from another worktree") || strings.Contains(out, "reusing the recipe") {
+		t.Errorf("output:\n%s", out)
+	}
+	whereOut, _, _ := runCLI(t, append(base, "--root", nw, "where")...)
+	var w struct{ State string }
+	json.Unmarshal([]byte(whereOut), &w)
+	m, _ := os.ReadFile(filepath.Join(w.State, "manifest.json"))
+	var man struct{ Secrets map[string]string }
+	json.Unmarshal(m, &man)
+	if man.Secrets["tok"] != "env:"+sibTokenName {
+		t.Errorf("secrets %v", man.Secrets)
+	}
+}

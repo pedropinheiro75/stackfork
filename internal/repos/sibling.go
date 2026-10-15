@@ -373,3 +373,27 @@ func (r *SiblingRecipe) copyRegistryConfig(target string) []string {
 	}
 	return copied
 }
+
+// SiblingSecrets returns the secret references (never values) of the most
+// recently used instance of another checkout of the same repo that has
+// any, so a checkout prepared from knowledge or an adapter gets the same
+// registry token the other worktrees run with.
+func SiblingSecrets(main, target string, insts []inventory.Instance) map[string]string {
+	var best *inventory.Instance
+	for i := range insts {
+		c := &insts[i]
+		if len(c.Secrets) == 0 || c.Root == "" || sameDir(c.Root, target) {
+			continue
+		}
+		if m := MainRepoOf(c.Root); m == "" || !sameDir(m, main) {
+			continue
+		}
+		if best == nil || c.Used.After(best.Used) {
+			best = c
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	return best.Secrets
+}

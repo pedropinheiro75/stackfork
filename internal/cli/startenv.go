@@ -72,7 +72,8 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 		args, err := prepareArgs(root, main, instanceDir)
 		pbase := base
 		var seedCmd, seedSvc string
-		if errors.Is(err, errNoRecipe) {
+		fromSibling := errors.Is(err, errNoRecipe)
+		if fromSibling {
 			var secrets []string
 			args, secrets, seedCmd, seedSvc, err = seedFromSibling(out, root, main, insts, err)
 			for _, sec := range secrets {
@@ -81,6 +82,22 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 		}
 		if err != nil {
 			return err
+		}
+		if !fromSibling && args != nil && !hasSecretFlag(o.Global) {
+			// A recipe from knowledge or an adapter names files, not secrets:
+			// take the registry token references a sibling instance runs with.
+			sec := repos.SiblingSecrets(main, root, insts)
+			names := make([]string, 0, len(sec))
+			for n := range sec {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			for _, n := range names {
+				pbase = append(append([]string{}, pbase...), "--secret", n+"="+sec[n])
+			}
+			if len(names) > 0 {
+				fmt.Fprintf(out, "reusing secret references %s from another worktree (values stay where they are)\n", strings.Join(names, ", "))
+			}
 		}
 		fmt.Fprintf(out, "preparing %s (%s)\n", project, branch)
 		var pOut, pErr bytes.Buffer
@@ -111,6 +128,15 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 	}
 	fmt.Fprintf(out, "started %s; see `stackfork --root %s urls`\n", project, root)
 	return nil
+}
+
+func hasSecretFlag(global []string) bool {
+	for _, g := range global {
+		if g == "--secret" || strings.HasPrefix(g, "--secret=") {
+			return true
+		}
+	}
+	return false
 }
 
 // needsPrepare is true when the checkout has no usable prepared instance:
