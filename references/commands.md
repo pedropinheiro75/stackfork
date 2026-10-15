@@ -203,9 +203,12 @@ stackfork start-env .worktrees/fix-login
 ```
 
 ### doctor
-Check the local environment the proxy/tool depend on (Docker context, Compose version, `*.localhost` resolution, proxy port, `host.docker.internal`).
+Check the local environment the proxy/tool depend on (Docker context, Compose version, `*.localhost` resolution, proxy port, `host.docker.internal`, Docker disk usage). The disk check warns at 85% used, because a full Docker disk makes installs fail later with `no space left on device`.
+
+`--free-space` removes the Docker build cache, dangling images and anonymous volumes that no container uses, then runs the checks. It never removes a named volume, so databases are kept. The dashboard's "Free Docker space" button (in the disk banner and the "…" panel) runs the same steps.
 ```sh
 stackfork doctor
+stackfork doctor --free-space
 ```
 
 ### version

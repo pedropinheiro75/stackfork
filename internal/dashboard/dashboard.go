@@ -64,6 +64,7 @@ type Server struct {
 
 	mux      http.Handler
 	cache    *inventoryCache
+	disk     diskState
 	repos    reposState
 	configMu sync.Mutex
 
@@ -102,6 +103,7 @@ func New(newStateBase, legacyStateBase, version string, port int) (*Server, erro
 func (s *Server) Warm() {
 	s.collect() //nolint:errcheck // a failure just leaves the cache cold
 	s.currentRepos()
+	s.disk.get()
 }
 
 // Handler returns the full stack: security headers and the Host allowlist
@@ -127,6 +129,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /fragments/settings", s.handleSettingsFragment)
 	mux.HandleFunc("POST /api/config", s.handleConfig)
 	mux.HandleFunc("GET /api/cleanup", s.handleCleanup)
+	mux.HandleFunc("GET /api/disk", s.handleDisk)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
 	mux.HandleFunc("POST /api/actions", s.handleActions)
 	mux.HandleFunc("POST /api/copy", s.handleCopy)

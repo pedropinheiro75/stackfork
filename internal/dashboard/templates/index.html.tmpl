@@ -40,10 +40,13 @@
 
 <div id="cleanup-panel" hidden>
   <h2>Clean up</h2>
-  <p>Read-only: run these in a terminal. Each starts as a dry run that deletes nothing; add <code>--yes</code> there to delete.</p>
+  <p><button type="button" class="repo-btn free-space-btn">Free Docker space</button> <span id="cleanup-disk" class="muted"></span><br>
+  <span class="muted">Removes build cache, dangling images and anonymous volumes no container uses. Named volumes (your databases) are kept.</span></p>
+  <p>Instances: run these in a terminal. Each starts as a dry run that deletes nothing; add <code>--yes</code> there to delete.</p>
   <ul id="cleanup-list"><li>loading...</li></ul>
 </div>
 
+<div id="disk-banner" class="banner" role="alert" hidden><span id="disk-text"></span>. Builds and installs fail with "no space left on device" when it fills up. <button type="button" class="repo-btn free-space-btn">Free Docker space</button></div>
 <div id="docker-banner" class="banner" hidden>Docker is unreachable; showing the last known data.</div>
 <div id="proxy-banner" class="banner"{{if not .Proxy.Hint}} hidden{{end}}>{{.Proxy.Hint}}</div>
 

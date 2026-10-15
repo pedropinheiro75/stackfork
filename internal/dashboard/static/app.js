@@ -390,13 +390,40 @@
       .catch(function () { list.innerHTML = "<li>Docker is unreachable; run <code>stackfork prune</code> in a terminal.</li>"; });
   }
 
+  // Docker disk: the banner shows from 85% used; the cleanup panel always
+  // shows the figure. Measured server-side at most every 5 minutes.
+  function loadDisk() {
+    fetch("/api/disk", { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        document.getElementById("disk-banner").hidden = !d.full;
+        document.getElementById("disk-text").textContent = d.text || "";
+        document.getElementById("cleanup-disk").textContent = d.text || "";
+      })
+      .catch(function () { /* keep the last state */ });
+  }
+
+  function freeSpace(btn) {
+    var buttons = document.querySelectorAll(".free-space-btn");
+    buttons.forEach(function (b) { b.disabled = true; });
+    btn.textContent = "Freeing...";
+    runAction("free-space", "docker").then(function () {
+      buttons.forEach(function (b) { b.disabled = false; b.textContent = "Free Docker space"; });
+      loadDisk();
+    });
+  }
+
   function wireCleanup() {
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest(".free-space-btn");
+      if (btn && !btn.disabled) freeSpace(btn);
+    });
     var panel = document.getElementById("cleanup-panel");
     var toggle = document.getElementById("cleanup-toggle");
     toggle.addEventListener("click", function () {
       panel.hidden = !panel.hidden;
       toggle.setAttribute("aria-expanded", String(!panel.hidden));
-      if (!panel.hidden) loadCleanup();
+      if (!panel.hidden) { loadCleanup(); loadDisk(); }
     });
     panel.addEventListener("click", function (e) {
       var copy = e.target.closest(".copyable");
@@ -744,10 +771,14 @@
     wireCleanup();
     wireLogsPanel();
     wireRepos();
+    loadDisk();
     poll();
     setInterval(function () {
       if (document.visibilityState === "visible") poll();
     }, 3000);
+    setInterval(function () {
+      if (document.visibilityState === "visible") loadDisk();
+    }, 60000);
   }
 
   if (document.readyState === "loading") {

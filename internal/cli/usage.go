@@ -51,7 +51,7 @@ var commandSummaries = []struct{ name, summary string }{
 	{"worktree", "worktree add REPO BRANCH: create <repo>/.worktrees/<branch>"},
 	{"start-env", "prepare (if needed) and start a checkout's isolated environment"},
 	{"config", "show or edit the folders the repo browser scans"},
-	{"doctor", "check the local environment the proxy/tool depend on"},
+	{"doctor", "check the local environment (Docker disk too); --free-space frees Docker space no data needs"},
 	{"version", "print the version"},
 }
 

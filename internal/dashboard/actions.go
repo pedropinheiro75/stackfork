@@ -44,6 +44,7 @@ var validActions = map[string]bool{
 	"up": true, "down": true, "restart": true,
 	"service-start": true, "service-stop": true,
 	"proxy-up": true, "proxy-down": true, "proxy-reload": true,
+	"free-space": true,
 }
 
 // proxyLockKey is the mutex key for the three proxy-* actions, which are
@@ -78,7 +79,7 @@ func (s *Server) handleActions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown action", http.StatusBadRequest)
 		return
 	}
-	isProxyAction := strings.HasPrefix(req.Action, "proxy-")
+	isProxyAction := strings.HasPrefix(req.Action, "proxy-") || req.Action == "free-space"
 	if !isProxyAction && req.Project == "" {
 		writeActionResult(w, http.StatusBadRequest, actionResponse{Message: "project is required"})
 		return
@@ -150,6 +151,8 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 			return actionResponse{Message: err.Error()}
 		}
 		return actionResponse{OK: true, Message: "proxy reloaded"}
+	case "free-space":
+		return s.freeSpace()
 	default:
 		return actionResponse{Message: "unknown action"}
 	}

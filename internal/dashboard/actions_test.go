@@ -251,3 +251,21 @@ func TestActionMutexRejectsOverlap(t *testing.T) {
 		t.Fatalf("expected the first action to succeed, got %d", firstCode)
 	}
 }
+
+// The disk endpoint answers {} before the first reading, and free-space
+// is a known action that needs no project.
+func TestDiskEndpointAndFreeSpaceAction(t *testing.T) {
+	installFakeDocker(t)
+	srv, err := dashboard.New(t.TempDir(), t.TempDir(), "test", 55126)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := "127.0.0.1:55126"
+	if body := doRequest(srv, "GET", "/api/disk", host, nil).Body.String(); !strings.HasPrefix(body, "{") {
+		t.Fatalf("disk: %s", body)
+	}
+	code, resp := postAction(t, srv, host, actionRequestFixture{Action: "free-space"})
+	if code != http.StatusOK || !strings.Contains(resp.Message, "named volumes kept") {
+		t.Fatalf("free-space: %d %+v", code, resp)
+	}
+}

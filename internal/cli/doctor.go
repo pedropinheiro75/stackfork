@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pedropinheiro75/stackfork/internal/dockerdisk"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 )
@@ -24,6 +25,19 @@ type doctorCheck struct {
 }
 
 func cmdDoctor(stdout io.Writer, subArgs []string, newStateBase string) (int, error) {
+	if len(subArgs) == 1 && subArgs[0] == "--free-space" {
+		report, err := dockerdisk.Free(context.Background())
+		for _, l := range report {
+			fmt.Fprintln(stdout, l)
+		}
+		if err != nil {
+			return 1, err
+		}
+		subArgs = nil
+	}
+	if len(subArgs) > 0 {
+		return 2, fmt.Errorf("usage: stackfork doctor [--free-space]")
+	}
 	var checks []doctorCheck
 	add := func(name string, status, message, hint string) {
 		checks = append(checks, doctorCheck{name, status, message, hint})
@@ -48,6 +62,10 @@ func cmdDoctor(stdout io.Writer, subArgs []string, newStateBase string) (int, er
 	{
 		status, message, hint := checkProxyRunning(newStateBase)
 		add("proxy running", status, message, hint)
+	}
+	if dockerAvailable() {
+		status, message, hint := checkDockerDisk()
+		add("docker disk", status, message, hint)
 	}
 	mode := ""
 	if dockerAvailable() {
@@ -91,6 +109,19 @@ func dockerAvailable() bool {
 		return false
 	}
 	return exec.Command("docker", "info").Run() == nil
+}
+
+// checkDockerDisk warns before Docker's disk (the VM's, on macOS) fills up:
+// a full disk shows up later as an unrelated ENOSPC in a bun/npm install.
+func checkDockerDisk() (status, message, hint string) {
+	u, err := dockerdisk.Measure(context.Background())
+	if err != nil {
+		return "warn", "could not measure: " + err.Error(), ""
+	}
+	if u.Full() {
+		return "warn", u.String(), "run `stackfork doctor --free-space` (build cache, dangling images, unused anonymous volumes), then `stackfork prune --stopped` to see what old instances hold"
+	}
+	return "ok", u.String(), ""
 }
 
 func checkDockerContext() (status, message, hint string) {
