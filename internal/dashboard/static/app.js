@@ -8,6 +8,31 @@
   "use strict";
 
   var token = document.querySelector('meta[name="stackfork-token"]').content;
+
+  // post sends a token-bearing POST. The token changes when the dashboard
+  // restarts, so on a 403 it reads the current one from the page and
+  // retries once: an open tab keeps working across restarts.
+  function post(url, body) {
+    function send() {
+      return fetch(url, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-Stackfork-Token": token },
+        body: JSON.stringify(body),
+      });
+    }
+    return send().then(function (r) {
+      if (r.status !== 403) return r;
+      return fetch("/", { credentials: "same-origin" })
+        .then(function (p) { return p.text(); })
+        .then(function (html) {
+          var m = html.match(/name="stackfork-token" content="([0-9a-f]+)"/);
+          if (!m || m[1] === token) return r;
+          token = m[1];
+          return send();
+        });
+    });
+  }
   var state = { inventory: null, filter: "", runningOnly: false, stale: false };
   // Ephemeral, session-only UI state that must survive a poll's full
   // re-render (design.md D3a: collapse state also persists across reloads,
@@ -313,12 +338,7 @@
   }
 
   function runAction(action, project, service) {
-    return fetch("/api/actions", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-Stackfork-Token": token },
-      body: JSON.stringify({ action: action, project: project, service: service || "" }),
-    })
+    return post("/api/actions", { action: action, project: project, service: service || "" })
       .then(function (r) { return r.json().then(function (body) { return { ok: r.ok, body: body }; }); })
       .then(function (result) {
         log(project + " " + action + ": " + (result.body.message || (result.ok ? "ok" : "failed")));
@@ -330,12 +350,7 @@
   // real value, resolved server-side and never logged or rendered - only
   // ever handed straight to the clipboard.
   function fetchCopyValue(kind, project, service) {
-    return fetch("/api/copy", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-Stackfork-Token": token },
-      body: JSON.stringify({ project: project, service: service || "", kind: kind }),
-    }).then(function (r) {
+    return post("/api/copy", { project: project, service: service || "", kind: kind }).then(function (r) {
       if (!r.ok) throw new Error("copy failed");
       return r.json().then(function (body) { return body.value; });
     });
@@ -596,12 +611,7 @@
   function postConfig(op, value) {
     var err = document.getElementById("settings-error");
     err.textContent = "";
-    return fetch("/api/config", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-Stackfork-Token": token },
-      body: JSON.stringify({ op: op, value: value }),
-    })
+    return post("/api/config", { op: op, value: value })
       .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
       .then(function (res) {
         if (!res.ok) { err.textContent = res.body.message || "refused"; return; }
@@ -675,12 +685,7 @@
     btn.disabled = true;
     delete reposState.errors[d.repo];
     log(label + ": started");
-    fetch("/api/actions", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-Stackfork-Token": token },
-      body: JSON.stringify(body),
-    })
+    post("/api/actions", body)
       .then(function (r) {
         if ((r.headers.get("Content-Type") || "").indexOf("ndjson") === -1) {
           return r.json().then(function (b) {
