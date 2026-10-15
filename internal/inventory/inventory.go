@@ -838,9 +838,10 @@ type InstanceRef struct {
 }
 
 // fillSeed flags a failed seed: the manifest says not seeded yet, and
-// there is a seed to run (recorded, or detected in the checkout).
+// there is a seed to run (recorded, or detected in the checkout). A seed
+// that is only pending (the up that should run it failed) did not fail.
 func fillSeed(inst *Instance, info *state.Manifest) {
-	if info.Seeded == nil || *info.Seeded {
+	if info.Seeded == nil || *info.Seeded || info.SeedPending {
 		return
 	}
 	decided, cmd, _ := learn.SeedDecision([]string{info.Root}, info)
