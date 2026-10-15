@@ -44,7 +44,7 @@
           {{if .Instance}}<a href="#" class="instance-link state-badge state-{{.Instance.State}}" data-project="{{.Instance.Project}}" title="{{.Instance.Project}}">{{.Instance.State}}</a>{{end}}
           <span class="row-actions">
             {{if and (eq $r.Readiness "ready") (not (and .Instance (isRunning .Instance.State)))}}<button type="button" class="repo-btn primary" data-repo-action="start" data-repo="{{$r.Path}}" data-path="{{.Path}}">Start</button>{{end}}
-            {{if not .Main}}<code class="copyable cli-command" data-copy="git -C {{shq $r.Path}} worktree remove {{shq .Path}}" title="click to copy; the page never removes a worktree">remove</code>{{end}}
+            {{if not .Main}}<button type="button" class="repo-btn run-btn danger" data-run="git -C {{shq $r.Path}} worktree remove {{shq .Path}}" title="remove this worktree{{if .Instance}} and its stack{{end}}; asks for confirmation, refuses uncommitted changes">Remove</button>{{end}}
           </span>
         </li>
         {{end}}

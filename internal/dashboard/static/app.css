@@ -545,3 +545,16 @@ code.setting-value { display: inline-block; }
 .copyable.just-copied { outline: 1px solid var(--ok); outline-offset: 2px; }
 .copyable.copy-failed { outline: 1px solid var(--bad); outline-offset: 2px; }
 .reason .learn-btn { margin-left: 8px; }
+
+/* a command chip with its Run button (app.js decorateRunnables) */
+.cmd-row { display: inline-flex; gap: 6px; align-items: center; max-width: 100%; vertical-align: middle; }
+.cmd-row.block { display: flex; margin-bottom: 6px; }
+.cmd-row > .cli-command { min-width: 0; flex: 1 1 auto; margin: 0; }
+.run-btn {
+  flex: none; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--card-bg); color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.run-btn:hover { border-color: var(--accent); }
+.run-btn:disabled { opacity: 0.5; cursor: progress; }
+.repo-btn.danger { color: var(--bad); }
+.repo-btn.danger:hover { border-color: var(--bad); }

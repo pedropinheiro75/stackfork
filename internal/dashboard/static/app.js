@@ -770,7 +770,71 @@
     }, 3000);
   }
 
+  // Every command chip the page shows can also run from here (POST
+  // /api/run). The server allowlists it and asks for a native macOS
+  // confirmation before anything that deletes data. Chips with a
+  // placeholder (PATH, CMD, <name>) stay copy-only.
+  function runnable(cmd) {
+    return /^(stackfork|git|docker) /.test(cmd) && !/[<>…]|\b[A-Z]{3,}\b/.test(cmd);
+  }
+
+  function decorateRunnables() {
+    document.querySelectorAll("code.cli-command").forEach(function (el) {
+      if (el.parentElement.classList.contains("cmd-row") || !runnable(el.dataset.copy || "")) return;
+      var row = document.createElement("span");
+      row.className = getComputedStyle(el).display === "block" ? "cmd-row block" : "cmd-row";
+      el.insertAdjacentElement("beforebegin", row);
+      row.appendChild(el);
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "run-btn";
+      btn.dataset.run = el.dataset.copy;
+      btn.title = "run " + el.dataset.copy;
+      btn.textContent = "\u25B6 Run";
+      row.appendChild(btn);
+    });
+  }
+
+  function runCommand(btn) {
+    var card = btn.closest("[data-project]");
+    var project = card ? card.dataset.project : "";
+    var label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Running\u2026";
+    log("run: " + btn.dataset.run);
+    post("/api/run", { command: btn.dataset.run, project: project })
+      .then(function (r) { return r.text().then(function (t) { try { return JSON.parse(t); } catch (e) { return { message: t }; } }); })
+      .then(function (res) {
+        var msg = res.message || "";
+        if (msg.indexOf("\n") >= 0) {
+          document.getElementById("logs-title").textContent = btn.dataset.run;
+          document.getElementById("logs-body").textContent = msg;
+          document.getElementById("logs-panel").hidden = false;
+          log("run: " + (res.ok ? "done" : "failed") + " (output in the logs panel)");
+        } else {
+          log("run: " + msg);
+        }
+      })
+      .catch(function (err) { log("run: " + err.message); })
+      .then(function () {
+        btn.disabled = false;
+        btn.textContent = label;
+        poll();
+        if (typeof loadRepos === "function" && reposState.tab === "repos") loadRepos();
+      });
+  }
+
+  function wireRun() {
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest(".run-btn");
+      if (btn && !btn.disabled) runCommand(btn);
+    });
+    decorateRunnables();
+    new MutationObserver(decorateRunnables).observe(document.body, { childList: true, subtree: true });
+  }
+
   function start() {
+    wireRun();
     wireControls();
     wireActions();
     wireCleanup();
