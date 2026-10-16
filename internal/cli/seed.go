@@ -34,6 +34,7 @@ func runSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBa
 func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, instanceDir, newBase, legacyBase string) (int, error) {
 	fs := newFlagSet(stdout, "seed")
 	force := fs.Bool("force", false, "")
+	markDone := fs.Bool("mark-done", false, "")
 	if err := fs.Parse(subArgs); err != nil {
 		return parseFailure(fs, err)
 	}
@@ -44,6 +45,13 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
 	if m == nil {
 		return 0, errors.New("No prepared stack for this checkout/branch. Run prepare first.")
+	}
+	if *markDone {
+		// The data is already there (seeded by hand, or an earlier run that
+		// half-failed): record it so nothing warns or reruns it.
+		setSeeded(instanceDir, boolPtr(true))
+		fmt.Fprintf(stdout, "%s recorded as seeded; nothing ran\n", project)
+		return 0, nil
 	}
 	if m.Seeded != nil && *m.Seeded && !*force {
 		fmt.Fprintf(stdout, "%s is already seeded; --force runs it again\n", project)

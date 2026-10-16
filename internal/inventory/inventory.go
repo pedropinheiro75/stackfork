@@ -186,6 +186,10 @@ type Instance struct {
 	OneOffLeftover int    `json:"oneoff_leftover,omitempty"`
 	OneOffCleanup  string `json:"oneoff_cleanup,omitempty"`
 	SeedForce      string `json:"seed_force,omitempty"`
+	// SeedDone records the seed as done without running it; SeedError is
+	// the end of the failed run's output.
+	SeedDone  string `json:"seed_done,omitempty"`
+	SeedError string `json:"seed_error,omitempty"`
 
 	// Recipe inputs recorded at prepare, kept out of the JSON: a sibling
 	// worktree's recipe is derived from them (add-repo-browser D6a).
@@ -302,7 +306,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		inst.EnvFile = *info.EnvFile
 	}
 	inst.SeedOnce, inst.SeedService = info.SeedOnce, info.SeedService
-	fillSeed(&inst, info)
+	fillSeed(&inst, info, filepath.Dir(manifestPath))
 	if fi, err := os.Stat(manifestPath); err == nil {
 		inst.Used = fi.ModTime()
 	}
@@ -840,7 +844,7 @@ type InstanceRef struct {
 // fillSeed flags a failed seed: the manifest says not seeded yet, and
 // there is a seed to run (recorded, or detected in the checkout). A seed
 // that is only pending (the up that should run it failed) did not fail.
-func fillSeed(inst *Instance, info *state.Manifest) {
+func fillSeed(inst *Instance, info *state.Manifest, instanceDir string) {
 	if info.Seeded == nil || *info.Seeded || info.SeedPending {
 		return
 	}
@@ -852,7 +856,30 @@ func fillSeed(inst *Instance, info *state.Manifest) {
 		return
 	}
 	run := "stackfork --instance " + info.Project + " seed"
-	inst.SeedCommand, inst.SeedForce = run, run+" --force"
+	inst.SeedCommand, inst.SeedForce, inst.SeedDone = run, run+" --force", run+" --mark-done"
+	inst.SeedError = seedError(filepath.Join(instanceDir, state.SeedLog))
+}
+
+// seedError is the last few lines of the failed seed's output.
+func seedError(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var lines []string
+	for _, l := range strings.Split(string(data), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "at ") {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) > 4 {
+		lines = lines[len(lines)-4:]
+	}
+	out := strings.Join(lines, "\n")
+	if len(out) > 600 {
+		out = "..." + out[len(out)-600:]
+	}
+	return out
 }
 
 // serviceWarnings turns the services' states into one warning per kind

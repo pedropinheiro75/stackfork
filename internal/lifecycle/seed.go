@@ -51,10 +51,16 @@ func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBa
 		return false
 	}
 	fmt.Fprintf(stdout, "seeding the new database in %s: %s\n", service, cmd)
+	// The last run's output is kept so the dashboard can say why it failed.
+	if f, err := os.OpenFile(filepath.Join(instanceDir, state.SeedLog), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600); err == nil {
+		defer f.Close()
+		fmt.Fprintf(f, "$ %s\n", cmd)
+		stdout, stderr = io.MultiWriter(stdout, f), io.MultiWriter(stderr, f)
+	}
 	code, err := Execute(stdout, stderr, "exec", root, branch, project, instanceDir, newBase, legacyBase,
 		Options{Service: service, Command: []string{"sh", "-c", cmd}})
 	if err != nil || code != 0 {
-		fmt.Fprintf(stderr, "not seeded: the seed command failed (%v, status %d); retry with `%s`\n", err, code, retry)
+		fmt.Fprintf(stderr, "not seeded: the seed command failed (%v, status %d); retry with `%s`, or, if the data is already there, `%s --mark-done`\n", err, code, retry, retry)
 		return false
 	}
 	t := true

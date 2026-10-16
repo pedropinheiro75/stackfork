@@ -422,6 +422,10 @@ func TestSeedWarningOnlyWhenASeedFailed(t *testing.T) {
 	if i := set("", &f); i.SeedCommand != run || i.SeedForce != run+" --force" {
 		t.Errorf("failed (auto): %+v", i)
 	}
+	os.WriteFile(filepath.Join(base, "sf-seed-1", state.SeedLog), []byte("$ seed\nerror: duplicate key\n    at x (y.js:1)\n"), 0o600)
+	if i := set("", &f); i.SeedDone != run+" --mark-done" || i.SeedError != "$ seed\nerror: duplicate key" {
+		t.Errorf("failed with log: %+v", i)
+	}
 	if i := set("bun run db:seed", &f); i.SeedCommand != run {
 		t.Errorf("failed (recorded): %+v", i)
 	}

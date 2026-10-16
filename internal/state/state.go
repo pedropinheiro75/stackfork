@@ -86,6 +86,9 @@ func (m *Manifest) ResolvedSecrets() map[string]string {
 	return out
 }
 
+// SeedLog is the file in an instance dir holding the last seed's output.
+const SeedLog = "seed.log"
+
 // Dir returns the per-instance state directory and ensures it exists with
 // 0700 permissions, mirroring Python's `state.mkdir(parents=True,
 // exist_ok=True, mode=0o700)`.

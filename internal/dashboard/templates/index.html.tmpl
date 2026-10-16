@@ -151,8 +151,10 @@
   </div>
   {{end}}
   {{if .SeedCommand}}
-  <div class="seed-bar" data-seed="failed">The database seed failed &mdash; retry with
-    <code class="copyable cli-command" data-copy="{{.SeedCommand}}" title="click to copy">{{.SeedCommand}}</code>
+  <div class="seed-bar" data-seed="failed">The last database seed failed{{if .SeedError}}:<pre class="seed-error">{{.SeedError}}</pre>{{else}}.{{end}}
+    If the app already has its data, record it as seeded (nothing runs):
+    <code class="copyable cli-command" data-copy="{{.SeedDone}}" title="click to copy">{{.SeedDone}}</code>
+    Otherwise retry with <code class="copyable cli-command" data-copy="{{.SeedCommand}}" title="click to copy">{{.SeedCommand}}</code>
     (or, to run it again on a populated database, <code class="copyable cli-command" data-copy="{{.SeedForce}}" title="click to copy">{{.SeedForce}}</code>)</div>
   {{end}}
   <div class="stack-body">
