@@ -231,7 +231,7 @@ type cardData struct {
 // computed, so the two can't drift apart.
 func cliCommands(inst inventory.Instance) []string {
 	cmds := []string{fmt.Sprintf("stackfork down --instance %s --volumes", inst.Project)}
-	seen := map[string]bool{}
+	seen := map[string]bool{cmds[0]: true} // a warning repeating `down` adds nothing (app.js commandsOf)
 	for _, w := range inst.Warnings {
 		start := strings.IndexByte(w, '`')
 		if start < 0 {
