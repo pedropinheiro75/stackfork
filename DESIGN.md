@@ -262,13 +262,13 @@ Five states, each with a text colour, a `-bg` tint (18 % dark / 10 % light) and 
 
 | Token | Dark | Light | Meaning in stackfork | Glyph |
 |---|---|---|---|---|
-| `ok` | `#34C286` | `#147A4C` | running, healthy, ready, Docker ok, proxy up | filled circle / check |
-| `attention` | `#F0BF4A` | `#8A5D00` | partial, unhealthy, restarting, stale knowledge, uncommitted changes, disk ≥85 %, leftover one-off | triangle |
-| `failed` | `#FF6B83` | `#C4213F` | exited/dead unexpectedly, missing checkout or branch, seed failed, Docker unreachable, destructive actions | cross in circle |
-| `busy` | `#5CCBEE` | `#0B6F86` | starting, waiting for a dependency, health check starting, scanning, fetching, action in flight | pulsing ring (static ring under reduced motion) |
-| `off` | `#8E8D9E` | `#6B6A7F` | stopped, not started, optional service, no instance, never set up | hollow circle |
+| `ok` | `#34C286` | `#116A42` | running, healthy, ready, Docker ok, proxy up | filled circle / check |
+| `attention` | `#F0BF4A` | `#7A5200` | partial, unhealthy, restarting, stale knowledge, uncommitted changes, disk ≥85 %, leftover one-off | triangle |
+| `failed` | `#FF6B83` | `#B01B38` | exited/dead unexpectedly, missing checkout or branch, seed failed, Docker unreachable, destructive actions | cross in circle |
+| `busy` | `#5CCBEE` | `#0A6276` | starting, waiting for a dependency, health check starting, scanning, fetching, action in flight | pulsing ring (static ring under reduced motion) |
+| `off` | `#8E8D9E` | `#5F5E73` | stopped, not started, optional service, no instance, never set up | hollow circle |
 
-Text contrast on `surface-1` / `surface-2` (dark): ok 8.1 / 7.6, attention 10.8 / 10.1, failed 6.8 / 6.3, busy 9.9 / 9.3, off 5.7 / 5.3. Light: ok 5.4 / 4.7, attention 5.8 / 5.1, failed 5.8 / 5.1, busy 5.8 / 5.1, off 5.3 / 4.6. On their own tints: ok 5.5, attention 7.6, failed 5.3, busy 6.9 (dark); failed 4.7, attention 4.9 (light). All pass 4.5:1; all dots pass 3:1 as non-text.
+Text contrast on `surface-1` / `surface-2` (dark): ok 8.1 / 7.6, attention 10.8 / 10.1, failed 6.8 / 6.3, busy 9.9 / 9.3, off 5.7 / 5.3. Light: ok 6.6 / 5.9, attention 6.9 / 6.1, failed 6.9 / 6.1, busy 6.9 / 6.1, off 6.3 / 5.6. On their own tints: ok 5.5, attention 7.6, failed 5.3, busy 6.9 (dark); over `surface-1` / `surface-2` with the 10 % tint (light): ok 5.7 / 5.1, attention 6.0 / 5.3, failed 5.8 / 5.1, busy 6.0 / 5.3, off 5.7 / 5.0. All pass 4.5:1; all dots pass 3:1 as non-text.
 
 Lightness ladder (dark, relative luminance): off 0.27 → failed 0.33 → ok 0.41 → busy 0.51 → attention 0.56, so the five are separable by lightness alone in dark. In light, AA text contrast forces all five to similar luminance (0.13–0.15); the glyph and the word carry the difference there, which is why rule 1 is absolute.
 
@@ -569,10 +569,10 @@ For Figma (desktop 1440 × 900 and 400 × 860, dark and light each):
   --fg:#15151C; --fg-muted:#56556B; --fg-subtle:#6B6A7F;
   --accent:#614DFF; --accent-strong:#4F3AEF; --accent-text:#4B36F0; --on-accent:#fff;
   --focus:#4B36F0; --accent-soft:#614DFF40;
-  --ok:#147A4C; --attention:#8A5D00; --failed:#C4213F; --busy:#0B6F86; --off:#6B6A7F;
-  --ok-bg:#147A4C1A; --ok-line:#147A4C52; --attention-bg:#8A5D001A; --attention-line:#8A5D0052;
-  --failed-bg:#C4213F1A; --failed-line:#C4213F52; --busy-bg:#0B6F861A; --busy-line:#0B6F8652;
-  --off-bg:#6B6A7F14; --off-line:#6B6A7F40;
+  --ok:#116A42; --attention:#7A5200; --failed:#B01B38; --busy:#0A6276; --off:#5F5E73;
+  --ok-bg:#116A421A; --ok-line:#116A4252; --attention-bg:#7A52001A; --attention-line:#7A520052;
+  --failed-bg:#B01B381A; --failed-line:#B01B3852; --busy-bg:#0A62761A; --busy-line:#0A627652;
+  --off-bg:#5F5E7314; --off-line:#5F5E7340;
   --shadow-popover:0 8px 24px rgba(21,21,28,.12); --shadow-modal:0 20px 48px rgba(21,21,28,.18);
   --backdrop:rgba(21,21,28,.45);
 }
