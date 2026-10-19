@@ -8,7 +8,9 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +37,213 @@ var reposFuncs = template.FuncMap{
 	"prompt":     repos.Prompt,
 	"worktreeAt": repos.WorktreeDir,
 	"isRunning":  func(state string) bool { return isRunningState(state) },
+
+	"relPath":         relPath,
+	"tilde":           tildePath,
+	"ago":             ago,
+	"stamp":           stamp,
+	"repoChip":        repoChip,
+	"stateChip":       stateChip,
+	"aheadBehindText": aheadBehindText,
+	"bar":             bar,
+	"laneOf":          laneOf,
+	"detached":        func(branch string) bool { return strings.HasPrefix(branch, "detached-") },
+	"shortSha":        shortSha,
+	"isLast":          func(i, n int) bool { return i == n-1 },
+	"unixSec":         func(t time.Time) int64 { return t.Unix() },
+	"folder":          func(r repos.Repo) string { return r.Group },
+	"firstSetup":      firstSetup,
+}
+
+// relPath is a worktree's path as the Repos table shows it: the main checkout
+// says so, a path inside the repo is relative to it (.worktrees/x), anything
+// else is absolute with the home folder written as ~.
+func relPath(repo, path string) string {
+	if path == repo {
+		return "main checkout"
+	}
+	if rel, err := filepath.Rel(repo, path); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+		return filepath.ToSlash(rel)
+	}
+	return tildePath(path)
+}
+
+func tildePath(p string) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		if p == home {
+			return "~"
+		}
+		if strings.HasPrefix(p, home+string(filepath.Separator)) {
+			return "~" + filepath.ToSlash(p[len(home):])
+		}
+	}
+	return p
+}
+
+// ago is the relative LAST ACTIVITY text ("5 min ago", "3 w ago"); the zero
+// time is an em dash.
+func ago(t time.Time) string {
+	if t.IsZero() {
+		return "\u2014"
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%d min ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%d h ago", int(d.Hours()))
+	case d < 7*24*time.Hour:
+		return fmt.Sprintf("%d d ago", int(d.Hours()/24))
+	case d < 60*24*time.Hour:
+		return fmt.Sprintf("%d w ago", int(d.Hours()/(24*7)))
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf("%d mo ago", int(d.Hours()/(24*30)))
+	}
+	return fmt.Sprintf("%d y ago", int(d.Hours()/(24*365)))
+}
+
+// stamp is the full timestamp for a title attribute.
+func stamp(t time.Time) string {
+	if t.IsZero() {
+		return "no commits"
+	}
+	return t.Local().Format("2006-01-02 15:04")
+}
+
+// repoStatus is the STATUS column: a state tone (ok, attention, off) and the
+// word. Running beats everything; a repo that is not set up says so before
+// it says Stopped, because Start is refused for it.
+func repoStatus(r repos.Repo) (state, label string) {
+	running, partial, any := 0, 0, false
+	for _, w := range r.Worktrees {
+		if w.Instance == nil {
+			continue
+		}
+		any = true
+		switch w.Instance.State {
+		case inventory.StateRunning:
+			running++
+		case inventory.StatePartial:
+			partial++
+		}
+	}
+	switch {
+	case running > 0:
+		return "ok", fmt.Sprintf("%d running", running)
+	case partial > 0:
+		return "attention", fmt.Sprintf("%d partial", partial)
+	case r.Readiness == repos.NeedsLearn || r.Readiness == repos.Unknown:
+		return "off", "Not set up"
+	case r.Readiness == repos.Draft:
+		return "attention", "Setup unverified"
+	case any:
+		return "off", "Stopped"
+	}
+	return "ok", "Ready"
+}
+
+// repoChip is repoStatus as a StatusChip for the template.
+func repoChip(r repos.Repo) chipView {
+	state, label := repoStatus(r)
+	return chipView{Class: state, Glyph: statusGlyph(state, label), Label: label}
+}
+
+func statusGlyph(state, label string) string {
+	switch {
+	case strings.HasSuffix(label, "partial"):
+		return glyphPartial
+	case state == "ok" && label == "Ready":
+		return "\u2713"
+	case state == "ok":
+		return glyphOK
+	case label == "Setup unverified":
+		return glyphBusy
+	}
+	return glyphOff
+}
+
+// aheadBehindText is the screen-reader / title text of the AheadBehindBar.
+// The counts are against the branch's upstream, never against main.
+func aheadBehindText(ahead, behind int, upstream string) string {
+	switch {
+	case upstream == "":
+		return "no upstream"
+	case ahead == 0 && behind == 0:
+		return "up to date"
+	}
+	return fmt.Sprintf("%d ahead, %d behind upstream", ahead, behind)
+}
+
+// barView is the two segment widths (px) of the 56 px AheadBehindBar.
+type barView struct{ Ahead, Behind int }
+
+// bar splits 56 px in proportion to ahead / (ahead + behind), with a 4 px
+// minimum for a non-zero side.
+func bar(ahead, behind int) barView {
+	const total, min = 56, 4
+	switch {
+	case ahead <= 0 && behind <= 0:
+		return barView{}
+	case behind <= 0:
+		return barView{Ahead: total}
+	case ahead <= 0:
+		return barView{Behind: total}
+	}
+	a := total * ahead / (ahead + behind)
+	if a < min {
+		a = min
+	}
+	if a > total-min {
+		a = total - min
+	}
+	return barView{Ahead: a, Behind: total - a}
+}
+
+// laneOf is the 1-based lane colour of a worktree (its instance's colour),
+// 0 when it has no instance.
+func laneOf(w repos.Worktree) int {
+	if w.Instance == nil {
+		return 0
+	}
+	return stackColorIndex(w.Instance.Project) + 1
+}
+
+func shortSha(branch string) string {
+	sha := strings.TrimPrefix(branch, "detached-")
+	if len(sha) > 7 {
+		sha = sha[:7]
+	}
+	return sha
+}
+
+// sortRepos orders the table: repos with a running or partial instance first,
+// then most recent activity, then name. The input is left as it is.
+func sortRepos(in []repos.Repo) []repos.Repo {
+	out := append([]repos.Repo(nil), in...)
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if (a.Running > 0) != (b.Running > 0) {
+			return a.Running > 0
+		}
+		if !a.LastCommit.Equal(b.LastCommit) {
+			return a.LastCommit.After(b.LastCommit)
+		}
+		return a.Name < b.Name
+	})
+	return out
+}
+
+// firstSetup is the path of the first repo (in table order) that is not set
+// up: the one row that gets the view's filled "Set up" button.
+func firstSetup(rs []repoView) string {
+	for _, r := range rs {
+		if r.Readiness != repos.Ready {
+			return r.Path
+		}
+	}
+	return ""
 }
 
 var reposTemplate = template.Must(
@@ -127,11 +336,6 @@ func (s *Server) handleRepos(w http.ResponseWriter, r *http.Request) {
 	w.Write(repos.Marshal(res)) //nolint:errcheck // client gone
 }
 
-type repoGroup struct {
-	Name  string
-	Repos []repoView
-}
-
 type repoView struct {
 	repos.Repo
 	Search string
@@ -140,20 +344,26 @@ type repoView struct {
 
 type reposPage struct {
 	repos.Result
-	Groups   []repoGroup
-	Scanning bool
+	Rows       []repoView
+	FirstSetup string
+	Scanning   bool
 }
 
 func (s *Server) handleReposFragment(w http.ResponseWriter, r *http.Request) {
 	res, scanning := s.currentRepos()
 	page := reposPage{Result: res, Scanning: scanning}
-	for _, repo := range res.Repos {
-		if n := len(page.Groups); n == 0 || page.Groups[n-1].Name != repo.Group {
-			page.Groups = append(page.Groups, repoGroup{Name: repo.Group})
+	for _, repo := range sortRepos(res.Repos) {
+		var b strings.Builder
+		b.WriteString(repo.Group + " " + repo.Name)
+		for _, br := range repo.Branches {
+			b.WriteString(" " + br.Name)
 		}
-		g := &page.Groups[len(page.Groups)-1]
-		g.Repos = append(g.Repos, repoView{Repo: repo, Search: strings.ToLower(repo.Group + " " + repo.Name), Recipe: s.repoRecipe(repo)})
+		for _, w := range repo.Worktrees {
+			b.WriteString(" " + w.Branch)
+		}
+		page.Rows = append(page.Rows, repoView{Repo: repo, Search: strings.ToLower(b.String()), Recipe: s.repoRecipe(repo)})
 	}
+	page.FirstSetup = firstSetup(page.Rows)
 	s.renderFragment(w, "repos", page)
 }
 
