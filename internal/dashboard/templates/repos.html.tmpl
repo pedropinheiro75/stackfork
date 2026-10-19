@@ -34,7 +34,7 @@
         <span class="chevron-glyph" aria-hidden="true"></span>
         <span class="repo-id"><span class="repo-name">{{$r.Name}}</span>{{if $r.Group}}<span class="repo-folder">{{$r.Group}}</span>{{end}}</span>
       </button>
-      <span class="repo-status"><span class="chip chip-{{$c.Class}}" title="{{$r.ReadinessReason}}"><span class="chip-glyph" aria-hidden="true">{{$c.Glyph}}</span>{{$c.Label}}</span></span>
+      <span class="repo-status"><span class="chip chip-{{$c.Class}}" title="{{if $c.Title}}{{$c.Title}}{{else}}{{$r.ReadinessReason}}{{end}}"><span class="chip-glyph" aria-hidden="true">{{$c.Glyph}}</span>{{$c.Label}}</span></span>
       <span class="repo-counts">
         <span class="repo-num"><span class="num">{{len $r.Worktrees}}</span><span class="unit">{{if eq (len $r.Worktrees) 1}} worktree{{else}} worktrees{{end}}</span></span><span class="sep" aria-hidden="true">&middot;</span>
         <span class="repo-num"><span class="num">{{len $r.Branches}}</span><span class="unit">{{if eq (len $r.Branches) 1}} branch{{else}} branches{{end}}</span></span><span class="sep" aria-hidden="true">&middot;</span>
@@ -138,37 +138,52 @@
 {{else}}{{$b := bar .Ahead .Behind}}<span class="ab" title="{{$t}} ({{.Upstream}})"><svg class="ab-bar" width="56" height="4" viewBox="0 0 56 4" aria-hidden="true" focusable="false"><rect class="ab-track" width="56" height="4" rx="2"/>{{if $b.Ahead}}<rect class="ab-ahead" width="{{$b.Ahead}}" height="4" rx="2"/>{{end}}{{if $b.Behind}}<rect class="ab-behind" x="{{$b.Ahead}}" width="{{$b.Behind}}" height="4" rx="2"/>{{end}}</svg><span class="mono ab-count" aria-hidden="true">{{.Ahead}} &middot; {{.Behind}}</span><span class="sr-only">{{$t}}</span></span>{{end}}{{end}}
 
 {{define "settings"}}
-<h2>Settings</h2>
-<p class="muted">Config file: <code>{{.ConfigPath}}</code>. Removing a folder only stops scanning it; nothing on disk is changed.</p>
-<h3>Folders to scan</h3>
-<ul class="settings-list">
-  {{range .Roots}}
-  <li><code>{{.Path}}</code> <span class="muted">{{.Repos}} repo(s)</span>
-    <button type="button" class="repo-btn" data-config-op="remove-root" data-value="{{.Path}}">Remove</button></li>
-  {{else}}
-  <li class="muted">None yet.</li>
-  {{end}}
-</ul>
-<form class="settings-form" data-config-op="add-root">
-  <input type="text" name="value" placeholder="/path/to/folder or ~/folder" aria-label="Folder to scan" autocomplete="off">
-  <button type="submit" class="repo-btn primary">Add folder</button>
-</form>
-<p class="muted">Or in a terminal: <code class="copyable" data-copy="stackfork config add-root PATH" title="click to copy">stackfork config add-root PATH</code></p>
-<h3>Skip folders named</h3>
-<ul class="settings-list">
-  {{range .Exclude}}
-  <li><code>{{.}}</code> <button type="button" class="repo-btn" data-config-op="remove-exclude" data-value="{{.}}">Remove</button></li>
-  {{else}}
-  <li class="muted">None (node_modules, vendor, .worktrees and hidden folders are always skipped).</li>
-  {{end}}
-</ul>
-<form class="settings-form" data-config-op="add-exclude">
-  <input type="text" name="value" placeholder="folder name, e.g. Backup" aria-label="Folder name to skip" autocomplete="off">
-  <button type="submit" class="repo-btn">Add</button>
-</form>
-<h3>Max depth</h3>
-<form class="settings-form" data-config-op="set-max-depth">
-  <input type="number" name="value" min="1" max="12" value="{{.MaxDepth}}" aria-label="Maximum folder depth">
-  <button type="submit" class="repo-btn">Save</button>
-</form>
+<h2 class="sr-only">Settings</h2>
+<div class="set-card">
+<section class="set-row" aria-labelledby="set-folders">
+  <div class="set-label"><h3 id="set-folders">Folders</h3><p class="muted">stackfork scans these for git repositories. Removing a folder only stops scanning it; nothing on disk is changed.</p></div>
+  <div class="set-control">
+    <ul class="folder-list">
+      {{range .Roots}}
+      <li class="folder-row"><svg class="folder-icon" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg><code class="folder-path mono" title="{{.Path}}">{{.Path}}</code><span class="muted folder-count">{{.Repos}} {{if eq .Repos 1}}repo{{else}}repos{{end}}</span>
+        <button type="button" class="btn btn-ghost" data-config-op="remove-root" data-value="{{.Path}}" aria-label="Remove {{.Path}}">Remove</button></li>
+      {{else}}
+      <li class="muted">None yet.</li>
+      {{end}}
+    </ul>
+    <form class="settings-form" data-config-op="add-root">
+      <input type="text" name="value" placeholder="/path/to/folder or ~/folder" aria-label="Folder to scan" autocomplete="off">
+      <button type="submit" class="btn btn-primary">Add folder</button>
+    </form>
+    <p class="muted">Or in a terminal: <code class="copyable" data-copy="stackfork config add-root PATH" title="click to copy">stackfork config add-root PATH</code></p>
+  </div>
+</section>
+<section class="set-row" aria-labelledby="set-exclude">
+  <div class="set-label"><h3 id="set-exclude">Skip folders named</h3><p class="muted">node_modules, vendor, .worktrees and hidden folders are always skipped.</p></div>
+  <div class="set-control">
+    <ul class="folder-list">
+      {{range .Exclude}}
+      <li class="folder-row"><code class="folder-path mono">{{.}}</code>
+        <button type="button" class="btn btn-ghost" data-config-op="remove-exclude" data-value="{{.}}" aria-label="Remove {{.}}">Remove</button></li>
+      {{else}}
+      <li class="muted">None.</li>
+      {{end}}
+    </ul>
+    <form class="settings-form" data-config-op="add-exclude">
+      <input type="text" name="value" placeholder="folder name, e.g. Backup" aria-label="Folder name to skip" autocomplete="off">
+      <button type="submit" class="btn">Add</button>
+    </form>
+  </div>
+</section>
+<section class="set-row" aria-labelledby="set-depth">
+  <div class="set-label"><h3 id="set-depth">Max depth</h3><p class="muted">How many folder levels down the scan looks.</p></div>
+  <div class="set-control">
+    <form class="settings-form" data-config-op="set-max-depth">
+      <input type="number" name="value" min="1" max="12" value="{{.MaxDepth}}" aria-label="Maximum folder depth">
+      <button type="submit" class="btn">Save</button>
+    </form>
+  </div>
+</section>
+</div>
+<p class="muted set-config">Config file: <code class="mono">{{.ConfigPath}}</code></p>
 {{end}}

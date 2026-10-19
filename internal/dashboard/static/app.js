@@ -533,13 +533,49 @@
     });
   }
 
-  function showLogs(project, service) {
+  // LogDrawer: a right-side, non-modal dialog. Focus moves in on open and
+  // returns to the opener on close; Escape closes it. The opener is found
+  // again by data-key because a poll can replace the button meanwhile.
+  var drawerOpener = null;
+
+  function openerOf(el) {
+    el = el || document.activeElement;
+    return el && el !== document.body ? { node: el, key: el.dataset.key || "" } : null;
+  }
+
+  function focusBack(o) {
+    if (!o) return;
+    var el = o.node.isConnected ? o.node : o.key && (keyed(o.key) || keyedIn("#view-repos", o.key));
+    // an item inside a closed menu cannot take focus: use the menu's button
+    if ((!el || !el.offsetParent) && o.key) {
+      var menuKey = o.key.replace(/\/menu\/[^/]+$/, "/menu");
+      el = keyed(menuKey) || keyedIn("#view-repos", menuKey) || el;
+    }
+    if (el) el.focus();
+  }
+
+  function openDrawer(title, project, bodyText) {
     var panel = document.getElementById("logs-panel");
-    var title = document.getElementById("logs-title");
-    var body = document.getElementById("logs-body");
-    title.textContent = project + (service ? " / " + service : "") + " (last 200 lines)";
-    body.textContent = "loading...";
+    if (panel.hidden) drawerOpener = openerOf();
+    panel.className = "log-drawer" + (project ? " lane-" + (stackColorIndex(project) + 1) : "");
+    document.getElementById("logs-title").textContent = title;
+    document.getElementById("logs-body").textContent = bodyText;
     panel.hidden = false;
+    // after the click finishes: a closing menu would otherwise take focus back
+    setTimeout(function () { if (!panel.hidden) panel.focus(); }, 0);
+  }
+
+  function closeDrawer() {
+    var panel = document.getElementById("logs-panel");
+    if (panel.hidden) return;
+    panel.hidden = true;
+    focusBack(drawerOpener);
+    drawerOpener = null;
+  }
+
+  function showLogs(project, service) {
+    openDrawer(project + (service ? " / " + service : ""), project, "loading...");
+    var body = document.getElementById("logs-body");
     var url = "/api/logs?project=" + encodeURIComponent(project) + "&tail=200";
     if (service) url += "&service=" + encodeURIComponent(service);
     fetch(url, { credentials: "same-origin" })
@@ -570,7 +606,11 @@
 
   // Header "..." menu: "Clean up" shows the prune commands with dry-run
   // counts. Read-only by design: nothing here deletes, it only copies text.
-  var cleanupLabels = [["stopped", "Stopped instances"], ["orphaned", "Orphaned (checkout or branch gone)"], ["all", "Everything, running included"]];
+  var cleanupLabels = [
+    ["stopped", "Stopped instances", "Nothing running in them"],
+    ["orphaned", "Orphaned instances", "Checkout or branch is gone"],
+    ["all", "Everything", "Running instances included"]
+  ];
 
   function loadCleanup() {
     var list = document.getElementById("cleanup-list");
@@ -578,16 +618,19 @@
       .then(function (r) { if (!r.ok) throw new Error("unavailable"); return r.json(); })
       .then(function (data) {
         list.innerHTML = cleanupLabels.map(function (l) {
-          var g = data[l[0]];
-          return "<li><code class=\"copyable cli-command\" data-copy=\"" + escapeHtml(g.command) + "\" title=\"click to copy\">" +
-            escapeHtml(g.command) + "</code> <span class=\"cleanup-count\">" + g.count + " instance(s)</span> " + escapeHtml(l[1]) + "</li>";
+          var g = data[l[0]], cmd = escapeHtml(g.command), key = "cleanup/" + l[0];
+          return '<tr class="prune-row"><td class="prune-target"><span class="prune-name">' + l[1] + '</span><span class="muted">' + l[2] + "</span></td>" +
+            '<td class="num prune-count" data-label="Instances">' + g.count + "</td>" +
+            '<td class="prune-cmd"><span class="command-row"><code class="mono cmd-text" title="' + cmd + '">' + cmd + "</code>" +
+            '<button type="button" class="btn btn-ghost copyable" data-key="' + key + '/copy" data-copy="' + cmd + '" aria-label="Copy ' + cmd + '">Copy</button></span></td>' +
+            '<td class="prune-act"><button type="button" class="btn" data-key="' + key + '/run" data-run="' + cmd + '" title="Shows what would be removed first">Run</button></td></tr>';
         }).join("");
       })
-      .catch(function () { list.innerHTML = "<li>Docker is unreachable; run <code>stackfork prune</code> in a terminal.</li>"; });
+      .catch(function () { list.innerHTML = '<tr><td colspan="4">Docker is unreachable; run <code>stackfork prune</code> in a terminal.</td></tr>'; });
   }
 
-  // Docker disk: the banner shows from 85% used; the cleanup panel always
-  // shows the figure. Measured server-side at most every 5 minutes.
+  // Docker disk: the banner shows from 85% used; the cleanup view always
+  // shows the gauge. Measured server-side at most every 5 minutes.
   function loadDisk() {
     fetch("/api/disk", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
@@ -597,7 +640,14 @@
         // attention from 85 %, failed only from 95 % (DESIGN.md Banner strip).
         banner.className = "banner " + (d.percent >= 95 ? "banner-failed" : "banner-attention");
         document.getElementById("disk-text").textContent = d.text || "";
-        document.getElementById("cleanup-disk").textContent = d.text || "";
+        var text = (d.text || "").replace(/^Docker disk:\s*/, "");
+        document.getElementById("cleanup-disk").textContent = text || "Not measured yet";
+        var meter = document.getElementById("disk-meter");
+        var pct = d.percent || 0;
+        meter.setAttribute("aria-valuenow", String(pct));
+        meter.setAttribute("aria-valuetext", text || "not measured yet");
+        meter.dataset.tone = pct >= 95 ? "failed" : pct >= 85 ? "attention" : "ok";
+        meter.firstElementChild.style.width = pct + "%";
         var count = document.getElementById("rail-count-cleanup");
         count.textContent = d.percent ? d.percent + "%" : "";
         count.dataset.tone = d.full ? "attention" : "";
@@ -754,8 +804,11 @@
   }
 
   function wireLogsPanel() {
-    document.getElementById("logs-close").addEventListener("click", function () {
-      document.getElementById("logs-panel").hidden = true;
+    document.getElementById("logs-close").addEventListener("click", closeDrawer);
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector('[aria-haspopup="menu"][aria-expanded="true"]') || document.querySelector("dialog[open]")) return;
+      closeDrawer();
     });
   }
 
@@ -934,7 +987,13 @@
   function loadSettings() {
     fetch("/fragments/settings", { credentials: "same-origin" })
       .then(function (r) { return r.text(); })
-      .then(function (html) { document.getElementById("settings-body").innerHTML = html; });
+      .then(function (html) {
+        var body = document.getElementById("settings-body");
+        var hadFocus = body.contains(document.activeElement);
+        body.innerHTML = html;
+        // the form was replaced: put focus on the field to add the next folder
+        if (hadFocus) { var f = body.querySelector('form[data-config-op="add-root"] input'); if (f) f.focus(); }
+      });
   }
 
   function postConfig(op, value) {
@@ -1124,7 +1183,7 @@
     document.getElementById("ready-only").addEventListener("change", function (e) {
       reposState.readyOnly = e.target.checked; applyRepoFilters();
     });
-    function rescan() { reposState.rescanning = true; postConfig("rescan", "").then(function () { setTimeout(loadRepos, 800); }); }
+    function rescan() { postConfig("rescan", "").then(function () { setTimeout(loadRepos, 800); }); }
     document.getElementById("rescan").addEventListener("click", rescan);
     document.getElementById("repos-list").addEventListener("click", function (e) {
       var inst = e.target.closest(".instance-link");
@@ -1237,9 +1296,7 @@
       .then(function (res) {
         var msg = res.message || "";
         if (msg.indexOf("\n") >= 0) {
-          document.getElementById("logs-title").textContent = cmd;
-          document.getElementById("logs-body").textContent = msg;
-          document.getElementById("logs-panel").hidden = false;
+          openDrawer(cmd, project, msg);
           log("run: " + (res.ok ? "done" : "failed") + " (output in the logs panel)");
         } else {
           log("run: " + msg);
@@ -1261,39 +1318,64 @@
   }
 
   // Learn modal: pick an installed agent the folder allows (config
-  // agentRules), and stackfork opens it in a terminal with the prompt.
+  // agentRules), then Start setup: stackfork opens it in a terminal with
+  // the prompt. A disabled agent keeps its reason on screen.
+  var learn = { repo: "", opener: null };
+
   function openLearn(btn) {
     var modal = document.getElementById("learn-modal");
     var agents = document.getElementById("learn-agents");
     var status = document.getElementById("learn-status");
-    document.getElementById("learn-title").textContent = "Learn " + btn.dataset.name + " with your agent";
+    var start = document.getElementById("learn-start");
+    learn.repo = btn.dataset.repo;
+    learn.opener = openerOf(btn);
+    document.getElementById("learn-title").textContent = "Set up " + btn.dataset.name + " with your agent";
     document.getElementById("learn-prompt").textContent = btn.dataset.prompt || btn.dataset.copy;
-    agents.innerHTML = "loading\u2026";
+    agents.textContent = "Looking for agents\u2026";
     status.textContent = "";
+    start.disabled = true;
     modal.showModal();
     fetch("/api/agents?repo=" + encodeURIComponent(btn.dataset.repo), { credentials: "same-origin" })
       .then(function (r) { if (!r.ok) throw new Error("status " + r.status); return r.json(); })
       .then(function (d) {
         agents.innerHTML = d.agents.map(function (a) {
-          return '<button type="button" class="agent-btn" data-agent="' + escapeHtml(a.id) + '"' + (a.available && d.canOpen ? "" : " disabled") + ">" +
-            '<strong>' + escapeHtml(a.name) + "</strong>" +
-            '<span class="muted">' + escapeHtml(a.available ? (d.canOpen ? "opens in " + ({ warp: "Warp", iterm: "iTerm", terminal: "Terminal" }[d.terminal] || d.terminal) : "copy the prompt instead") : a.reason) + "</span></button>";
+          var usable = a.available && d.canOpen;
+          var sub = a.available ? (d.canOpen ? "Opens in " + ({ warp: "Warp", iterm: "iTerm", terminal: "Terminal" }[d.terminal] || d.terminal) : "Copy the prompt instead") : a.reason;
+          return '<label class="agent-opt"><input type="radio" name="learn-agent" value="' + escapeHtml(a.id) + '"' + (usable ? "" : " disabled") + ">" +
+            '<span class="agent-text"><span class="agent-name">' + escapeHtml(a.name) + '</span><span class="agent-sub">' + escapeHtml(sub) + "</span></span></label>";
         }).join("");
-        agents.querySelectorAll(".agent-btn").forEach(function (b) {
-          b.addEventListener("click", function () {
-            status.textContent = "opening\u2026";
-            post("/api/learn", { repo: btn.dataset.repo, agent: b.dataset.agent })
-              .then(function (r) { return r.json(); })
-              .then(function (res) {
-                status.textContent = res.message;
-                log("learn: " + res.message);
-                if (res.ok) setTimeout(function () { modal.close(); }, 1200);
-              })
-              .catch(function (e) { status.textContent = e.message; });
-          });
-        });
+        var first = agents.querySelector("input:not(:disabled)");
+        if (first) {
+          first.checked = true;
+          start.disabled = false;
+          if (document.activeElement === document.getElementById("learn-close")) first.focus();
+        }
       })
-      .catch(function (e) { agents.textContent = "could not list agents: " + e.message; });
+      .catch(function (e) { agents.textContent = "Could not list agents: " + e.message; });
+  }
+
+  function wireLearn() {
+    var modal = document.getElementById("learn-modal");
+    var status = document.getElementById("learn-status");
+    var start = document.getElementById("learn-start");
+    document.getElementById("learn-close").addEventListener("click", function () { modal.close(); });
+    document.getElementById("learn-cancel").addEventListener("click", function () { modal.close(); });
+    modal.addEventListener("close", function () { focusBack(learn.opener); learn.opener = null; });
+    start.addEventListener("click", function () {
+      var pick = document.querySelector('#learn-agents input[name="learn-agent"]:checked');
+      if (!pick) return;
+      status.textContent = "Opening\u2026";
+      start.disabled = true;
+      post("/api/learn", { repo: learn.repo, agent: pick.value })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          status.textContent = res.message;
+          log("learn: " + res.message);
+          if (res.ok) setTimeout(function () { if (modal.open) modal.close(); }, 1200);
+          else start.disabled = false;
+        })
+        .catch(function (e) { status.textContent = e.message; start.disabled = false; });
+    });
   }
 
   function wireRun() {
@@ -1301,6 +1383,7 @@
       var lb = e.target.closest(".learn-btn");
       if (lb) openLearn(lb);
     });
+    wireLearn();
     document.getElementById("learn-copy").addEventListener("click", function (e) {
       copyText(document.getElementById("learn-prompt").textContent, "learn prompt", e.target);
     });

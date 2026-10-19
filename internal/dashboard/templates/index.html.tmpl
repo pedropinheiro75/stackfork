@@ -89,15 +89,26 @@
   <div id="repos-list" aria-live="polite"></div>
 </main>
 
-<main id="view-cleanup" class="view view-narrow" hidden>
-  <h2>Clean up</h2>
-  <p><button type="button" class="btn free-space-btn">Free Docker space</button> <span id="cleanup-disk" class="muted"></span><br>
-  <span class="muted">Removes build cache, dangling images and anonymous volumes no container uses. Named volumes (your databases) are kept.</span></p>
-  <p>Instances: <strong>Run</strong> first shows what would be removed in a confirmation dialog; nothing is deleted until you confirm. In a terminal, each is a dry run until you add <code>--yes</code>.</p>
-  <ul id="cleanup-list"><li>loading...</li></ul>
+<main id="view-cleanup" class="view" hidden>
+  <h2 class="sr-only">Clean up</h2>
+  <section class="card disk-card" aria-labelledby="disk-title">
+    <div class="disk-head">
+      <div class="disk-id"><h3 id="disk-title">Docker disk</h3><p class="muted">Images, containers, volumes and build cache.</p></div>
+      <div class="disk-gauge"><div id="disk-meter" class="disk-bar" role="meter" aria-labelledby="disk-title" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="not measured yet"><span class="disk-fill"></span></div><span id="cleanup-disk" class="mono disk-text">Measuring&hellip;</span></div>
+      <button type="button" class="btn btn-primary free-space-btn">Free Docker space</button>
+    </div>
+    <p class="muted">Removes build cache, dangling images and anonymous volumes no container uses. Named volumes (your databases) are kept.</p>
+  </section>
+  <h3 class="micro section-title">Prune instances</h3>
+  <p class="muted prune-note"><strong>Run</strong> first shows what would be removed in a confirmation dialog; nothing is deleted until you confirm. In a terminal, each is a dry run until you add <code>--yes</code>.</p>
+  <table class="prune-table">
+    <caption class="sr-only">Prune targets</caption>
+    <thead><tr><th scope="col" class="micro">Target</th><th scope="col" class="micro num">Instances</th><th scope="col" class="micro">Command</th><th scope="col" class="micro"><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody id="cleanup-list"><tr><td colspan="4" class="muted">loading...</td></tr></tbody>
+  </table>
 </main>
 
-<main id="view-settings" class="view view-narrow" hidden>
+<main id="view-settings" class="view" hidden>
   <div id="settings-body"></div>
   <p id="settings-error" class="form-error" role="alert"></p>
 </main>
@@ -107,25 +118,28 @@
 <div id="activity-log"></div>
 
 <dialog id="learn-modal" aria-labelledby="learn-title">
-  <h2 id="learn-title">Learn</h2>
-  <p class="muted">Opens a new terminal window in the repo with your agent already running this prompt. It learns how the project starts, checks migrations, seed and login with you, and records it as verified.</p>
-  <div id="learn-agents"></div>
-  <p id="learn-status" role="status"></p>
-  <details>
-    <summary>Prompt</summary>
-    <pre id="learn-prompt"></pre>
-    <button type="button" id="learn-copy" class="repo-btn">Copy prompt</button>
+  <div class="modal-head"><h2 id="learn-title">Set up with your agent</h2><button type="button" id="learn-close" class="btn btn-ghost btn-icon" aria-label="Close"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></div>
+  <p class="muted modal-lede">Opens a new terminal window in the repo with your agent already running this prompt. It learns how the project starts, checks migrations, seed and login with you, and records it as verified.</p>
+  <p class="micro modal-label" id="learn-agent-label">Agent</p>
+  <div id="learn-agents" role="radiogroup" aria-labelledby="learn-agent-label"></div>
+  <p class="micro modal-label">What the agent will check</p>
+  <ul class="setup-steps"><li>Starts the stack</li><li>Runs migrations</li><li>Seeds data once</li><li>Signs in to the app</li></ul>
+  <details class="learn-prompt-box">
+    <summary class="micro">Prompt</summary>
+    <pre id="learn-prompt" class="mono-log" tabindex="0"></pre>
+    <button type="button" id="learn-copy" class="btn">Copy prompt</button>
   </details>
-  <form method="dialog"><button class="repo-btn">Close</button></form>
+  <p id="learn-status" class="muted" role="status"></p>
+  <div class="modal-foot"><button type="button" id="learn-cancel" class="btn btn-ghost">Cancel</button><button type="button" id="learn-start" class="btn btn-primary" disabled>Start setup</button></div>
 </dialog>
 
-<div id="logs-panel" hidden>
+<aside id="logs-panel" class="log-drawer" role="dialog" aria-modal="false" aria-labelledby="logs-title" tabindex="-1" hidden>
   <div id="logs-header">
-    <span id="logs-title"></span>
-    <button id="logs-close" type="button" class="icon-btn" title="Close">&#10005;</button>
+    <h2 id="logs-title" class="mono"></h2>
+    <button id="logs-close" type="button" class="btn btn-ghost btn-icon" aria-label="Close logs" title="Close (Escape)"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
   </div>
-  <pre id="logs-body"></pre>
-</div>
+  <pre id="logs-body" class="mono-log" tabindex="0" aria-label="Log output"></pre>
+</aside>
 
 <script src="/static/app.js"></script>
 </body>
