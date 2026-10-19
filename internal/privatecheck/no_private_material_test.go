@@ -56,6 +56,14 @@ func allowedPath(rel string) bool {
 	return strings.HasPrefix(rel, allowedDirPrefix)
 }
 
+// skippedDir reports repo-relative directories the walk ignores. A top-level
+// .worktrees/ holds linked worktrees of this same repo (other branches'
+// copies), which are not part of this checkout. .superpowers/ is local,
+// git-excluded agent scratch (plans, reports).
+func skippedDir(rel string) bool {
+	return rel == ".git" || rel == "dist" || rel == ".worktrees" || rel == ".superpowers"
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -115,7 +123,7 @@ func TestNoPrivateMaterial(t *testing.T) {
 			// .git is VCS internals; dist/ is GoReleaser's gitignored build
 			// output (task 4.2), never committed, so neither belongs to
 			// "the repo" this test scrubs.
-			if d.Name() == ".git" || rel == "dist" {
+			if skippedDir(rel) {
 				return filepath.SkipDir
 			}
 			return nil
