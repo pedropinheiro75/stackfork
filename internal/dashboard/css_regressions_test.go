@@ -96,7 +96,7 @@ func TestAppCSSHasNoHardCodedColours(t *testing.T) {
 func TestThemeToggleWired(t *testing.T) {
 	srv := newTestServer(t)
 	html := doRequest(srv, "GET", "/", "127.0.0.1:55123", nil).Body.String()
-	for _, want := range []string{`/static/tokens.css`, `stackfork-theme`, `id="theme-toggle"`} {
+	for _, want := range []string{`/static/tokens.css`, `id="theme-toggle"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("index missing %q", want)
 		}
@@ -107,5 +107,27 @@ func TestThemeToggleWired(t *testing.T) {
 	js := doRequest(srv, "GET", "/static/app.js", "127.0.0.1:55123", nil).Body.String()
 	if !strings.Contains(js, "function setTheme(") {
 		t.Error("app.js missing setTheme")
+	}
+}
+
+func TestThemeInitIsExternalScript(t *testing.T) {
+	srv := newTestServer(t)
+	html := doRequest(srv, "GET", "/", "127.0.0.1:55123", nil).Body.String()
+	if !strings.Contains(html, `src="/static/theme-init.js"`) {
+		t.Error("index must load /static/theme-init.js")
+	}
+	if strings.Index(html, "theme-init.js") > strings.Index(html, "tokens.css") {
+		t.Error("theme-init.js must load before the stylesheets")
+	}
+	if regexp.MustCompile(`<script(\s[^>]*)?>`).FindAllString(html, -1) == nil {
+		t.Fatal("no scripts found")
+	}
+	for _, m := range regexp.MustCompile(`<script[^>]*>`).FindAllString(html, -1) {
+		if !strings.Contains(m, "src=") {
+			t.Errorf("inline script blocked by CSP: %s", m)
+		}
+	}
+	if rec := doRequest(srv, "GET", "/static/theme-init.js", "127.0.0.1:55123", nil); rec.Code != 200 {
+		t.Errorf("theme-init.js status %d", rec.Code)
 	}
 }

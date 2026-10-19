@@ -104,6 +104,13 @@ func TestNoPrivateMaterial(t *testing.T) {
 		if rel == "." {
 			return nil
 		}
+		if d.Name() == ".git" {
+			// a linked worktree has a .git FILE, not a directory
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() {
 			// .git is VCS internals; dist/ is GoReleaser's gitignored build
 			// output (task 4.2), never committed, so neither belongs to
