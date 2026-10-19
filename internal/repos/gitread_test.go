@@ -71,3 +71,58 @@ func TestReadGitNeverContactsARemote(t *testing.T) {
 		}
 	}
 }
+
+func TestWorktreeAheadBehindFromUpstream(t *testing.T) {
+	root := tempRoot(t)
+	origin := filepath.Join(root, "origin.git")
+	git(t, root, "init", "-q", "--bare", "-b", "main", origin)
+	repo := mkRepo(t, filepath.Join(root, "proj"))
+	git(t, repo, "remote", "add", "origin", origin)
+	git(t, repo, "push", "-q", "-u", "origin", "main")
+
+	wt := filepath.Join(repo, ".worktrees", "feat")
+	git(t, repo, "worktree", "add", "-q", "-b", "feat", wt)
+	git(t, wt, "push", "-q", "-u", "origin", "feat")
+	// 1 commit only upstream (pushed from a clone), 2 commits only local
+	clone := filepath.Join(root, "clone")
+	git(t, root, "clone", "-q", "-b", "feat", origin, clone)
+	os.WriteFile(filepath.Join(clone, "up"), []byte("u"), 0o644)
+	git(t, clone, "add", "up")
+	git(t, clone, "commit", "-q", "-m", "upstream only")
+	git(t, clone, "push", "-q", "origin", "feat")
+	git(t, wt, "fetch", "-q", "origin")
+	for _, n := range []string{"l1", "l2"} {
+		os.WriteFile(filepath.Join(wt, n), []byte(n), 0o644)
+		git(t, wt, "add", n)
+		git(t, wt, "commit", "-q", "-m", n)
+	}
+
+	d, err := readGit(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var feat, main Worktree
+	for _, w := range d.Worktrees {
+		if w.Branch == "feat" {
+			feat = w
+		} else if w.Main {
+			main = w
+		}
+	}
+	if feat.Ahead != 2 || feat.Behind != 1 || feat.Upstream != "origin/feat" || feat.LastCommit.IsZero() {
+		t.Fatalf("feat worktree %+v", feat)
+	}
+	if main.Ahead != 0 || main.Behind != 0 || main.Upstream != "origin/main" {
+		t.Fatalf("main worktree %+v", main)
+	}
+
+	// no upstream: 0/0 and an empty upstream
+	wt2 := filepath.Join(repo, ".worktrees", "local")
+	git(t, repo, "worktree", "add", "-q", "-b", "local", wt2)
+	d, _ = readGit(repo)
+	for _, w := range d.Worktrees {
+		if w.Branch == "local" && (w.Ahead != 0 || w.Behind != 0 || w.Upstream != "") {
+			t.Fatalf("local worktree %+v", w)
+		}
+	}
+}

@@ -83,6 +83,9 @@ func readGit(path string) (gitData, error) {
 			continue // the folder is gone
 		}
 		w.Path, w.Main = real, i == 0
+		if b, ok := all[w.Branch]; ok { // same for-each-ref read, no extra git process
+			w.Ahead, w.Behind, w.Upstream, w.LastCommit = b.Ahead, b.Behind, b.Upstream, b.LastCommit
+		}
 		if ctx.Err() == nil {
 			st, _ := runGit(ctx, w.Path, "status", "--porcelain=v1", "-uno")
 			w.Dirty = strings.TrimSpace(st) != ""

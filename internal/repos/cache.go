@@ -15,7 +15,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
-const cacheVersion = 1
+const cacheVersion = 2 // 2: worktrees carry ahead/behind/upstream/last_commit
 
 type cacheEntry struct {
 	Sig  string  `json:"sig"`

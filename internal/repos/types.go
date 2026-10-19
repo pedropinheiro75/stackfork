@@ -23,11 +23,17 @@ type Repo struct {
 // Worktree is a checkout of the repo. Instance is the stackfork instance
 // prepared for it, if any.
 type Worktree struct {
-	Path     string                 `json:"path"`
-	Branch   string                 `json:"branch"`
-	Main     bool                   `json:"main,omitempty"`
-	Dirty    bool                   `json:"dirty"`
-	Instance *inventory.InstanceRef `json:"instance,omitempty"`
+	Path   string `json:"path"`
+	Branch string `json:"branch"`
+	Main   bool   `json:"main,omitempty"`
+	Dirty  bool   `json:"dirty"`
+	// Ahead and Behind count commits against Upstream (what git tracks for
+	// the branch), not against the default branch; both are 0 without one.
+	Ahead      int                    `json:"ahead"`
+	Behind     int                    `json:"behind"`
+	Upstream   string                 `json:"upstream,omitempty"`
+	LastCommit time.Time              `json:"last_commit"`
+	Instance   *inventory.InstanceRef `json:"instance,omitempty"`
 }
 
 // Branch is a local branch with no worktree.
