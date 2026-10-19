@@ -51,10 +51,10 @@ func TestStackIconUsesSlugAfterPrefix(t *testing.T) {
 	}
 	body := rec.Body.String()
 
-	if !strings.Contains(body, `stack-icon stack-color-`) {
-		t.Fatalf("expected a stack-icon element:\n%s", body)
+	if !strings.Contains(body, `class="avatar"`) || !strings.Contains(body, `class="stack lane-`) {
+		t.Fatalf("expected a lane avatar element:\n%s", body)
 	}
-	start := strings.Index(body, `class="stack-icon `)
+	start := strings.Index(body, `class="avatar"`)
 	end := strings.Index(body[start:], "</span>") + start
 	iconElement := body[start:end]
 	if !strings.HasSuffix(iconElement, ">C") {

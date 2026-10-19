@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -101,20 +102,51 @@ func TestInstancesViewHasNoSeedUI(t *testing.T) {
 
 func boolp(b bool) *bool { return &b }
 
-func TestFailedSeedShowsRetryAndCopyOnlyForce(t *testing.T) {
+func TestSeedCalloutOffersRetryMarkDoneAndForce(t *testing.T) {
 	srv, newBase, project, _ := seedStack(t)
 	m := manifestOf(t, newBase, project)
 	m.Seeded = boolp(false)
 	state.WritePrivate(filepath.Join(newBase, project, "manifest.json"), m)
+	os.WriteFile(filepath.Join(newBase, project, state.SeedLog), []byte("npm: not found\n"), 0o600)
 	body := indexBody(srv)
 	run := "stackfork --instance " + project + " seed"
-	for _, want := range []string{`data-seed="failed"`, `data-copy="` + run + `"`, `data-copy="` + run + ` --force"`} {
+	for _, want := range []string{
+		`data-seed="failed"`, "Database seed failed", `<pre class="mono-log"`, "npm: not found",
+		`data-run="` + run + `"`, `>Retry seed</button>`,
+		`data-run="` + run + ` --mark-done"`, "Mark as seeded",
+		`data-run="` + run + ` --force"`, "Re-seed, overwriting data",
+	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
+	// the overwriting item is the danger one and comes last; Retry is not in the menu
+	force := strings.Index(body, `data-run="`+run+` --force"`)
+	if tag := body[strings.LastIndex(body[:force], "<button"):force]; !strings.Contains(tag, "menu-item-danger") {
+		t.Errorf("the force item must be danger: %s", tag)
+	}
+	if done := strings.Index(body, `--mark-done"`); done > force {
+		t.Error("Mark as seeded must come before the danger item")
+	}
 	if strings.Contains(body, `data-action="seed`) {
-		t.Error("the failure warning must not offer a button")
+		t.Error("seed goes through /api/run, not an action")
+	}
+	if js, _ := os.ReadFile("static/app.js"); !strings.Contains(string(js), "inst.seed_done") || !strings.Contains(string(js), "inst.seed_error") {
+		t.Error("app.js must render seed_done and seed_error like the template")
+	}
+}
+
+func TestStoppedStateIsOffNotFailed(t *testing.T) {
+	srv, _, _, _ := seedStack(t)
+	body := indexBody(srv)
+	chip := regexp.MustCompile(`(?s)<header class="stack-header">.*?<span class="chip chip-(\w+)"[^>]*><span class="chip-glyph"[^>]*>[^<]*</span>Stopped</span>`).FindStringSubmatch(body)
+	if chip == nil || chip[1] != "off" {
+		t.Fatalf("a stopped instance reads Stopped in the off tone, got %v", chip)
+	}
+	card := body[strings.Index(body, `<article class="stack`):]
+	card = card[:strings.Index(card, `<div class="stack-body">`)]
+	if strings.Contains(card, "chip-failed") {
+		t.Errorf("a stopped card shows no failed chip:\n%s", card)
 	}
 }
 
@@ -181,22 +213,22 @@ func TestStatusDotsFollowHealthAndOneOffsShowApart(t *testing.T) {
 		ps("db", project+"-db-run-2", "running", "Up 2 minutes", true),
 	}, "\n")+"\n")
 	body := indexBody(srv)
-	for _, want := range []string{`status-dot unhealthy`, "1 one-off task(s) running", "1 leftover one-off container(s)", `data-copy="docker rm ` + project + `-db-run-1"`, "db unhealthy"} {
+	for _, want := range []string{`chip chip-attention" title="running, unhealthy"`, "Unhealthy", "1 one-off task running", "1 leftover one-off container", `data-run="docker rm ` + project + `-db-run-1"`, "db unhealthy"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	if strings.Contains(body, `status-dot running`) {
+	if strings.Contains(body, `chip-ok" title="running`) {
 		t.Error("an unhealthy service must not be green")
 	}
 	js, _ := os.ReadFile("static/app.js")
 	css, _ := os.ReadFile("static/app.css")
-	for _, want := range []string{"function dotClass", "oneOffHtml(inst)"} {
+	for _, want := range []string{"function serviceChip", "oneOffHtml(inst)"} {
 		if !strings.Contains(string(js), want) {
 			t.Errorf("app.js lacks %s", want)
 		}
 	}
-	for _, want := range []string{".status-dot.not-started", ".status-dot.waiting", ".status-dot.unhealthy", ".status-dot.optional"} {
+	for _, want := range []string{".chip-attention", ".chip-busy", ".chip-off", ".callout-attention"} {
 		if !strings.Contains(string(css), want) {
 			t.Errorf("css lacks %s", want)
 		}

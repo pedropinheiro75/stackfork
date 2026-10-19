@@ -131,3 +131,17 @@ func TestThemeInitIsExternalScript(t *testing.T) {
 		t.Errorf("theme-init.js status %d", rec.Code)
 	}
 }
+
+// The filter input must not inherit the system cluster's flex/margin rule,
+// and an unconfigured user lands on Settings whatever view is open.
+func TestTask2Regressions(t *testing.T) {
+	srv := newTestServer(t)
+	css := doRequest(srv, "GET", "/static/app.css", "127.0.0.1:55123", nil).Body.String()
+	if strings.Contains(css, "#filter,") {
+		t.Error("#filter must not share the .system-cluster rule")
+	}
+	js := doRequest(srv, "GET", "/static/app.js", "127.0.0.1:55123", nil).Body.String()
+	if !strings.Contains(js, "autoShownSettings = true;\n          setView(\"settings\");") {
+		t.Error("loadRepos must show Settings once, whatever view is open")
+	}
+}

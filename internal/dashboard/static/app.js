@@ -67,7 +67,6 @@
   // re-render (design.md D3a: collapse state also persists across reloads,
   // via localStorage; these two don't need to).
   var openSettings = {};
-  var openMenus = {};
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -108,52 +107,120 @@
   }
 
   // --- rendering ---------------------------------------------------------
+  // Instance cards are rendered twice: by the Go template (first paint) and
+  // here (every poll). Both emit the same markup, so a change to one is a
+  // change to the other. Every focusable element carries a stable data-key
+  // so a re-render can hand focus back (see render()).
+
+  var GLYPH = { ok: "●", partial: "◐", attention: "▲", failed: "⊘", busy: "◔", off: "○" };
+
+  function chipHtml(c) {
+    return '<span class="chip chip-' + c.cls + '"' + (c.title ? ' title="' + escapeHtml(c.title) + '"' : "") +
+      '><span class="chip-glyph" aria-hidden="true">' + c.glyph + "</span>" + escapeHtml(c.label) + "</span>";
+  }
+
+  // stateChip/serviceChip must match dashboard/dot.go. Stopped is off (grey):
+  // failed is only for something broken.
+  function stateChip(state) {
+    var c = {
+      running: ["ok", GLYPH.ok, "Running"], partial: ["attention", GLYPH.partial, "Partial"],
+      stopped: ["off", GLYPH.off, "Stopped"], "missing-checkout": ["failed", GLYPH.failed, "Checkout missing"],
+      "missing-branch": ["failed", GLYPH.failed, "Branch missing"],
+    }[state] || ["attention", "?", "Unknown"];
+    return { cls: c[0], glyph: c[1], label: c[2] };
+  }
+
+  function serviceChip(svc) {
+    var r = { cls: "off", glyph: GLYPH.off, label: "", title: dotTitle(svc) };
+    var health = svc.health;
+    if (svc.state === "running" && health === "unhealthy") { r.cls = "attention"; r.glyph = GLYPH.attention; r.label = "Unhealthy"; }
+    else if (svc.state === "running" && health === "health: starting") { r.cls = "busy"; r.glyph = GLYPH.busy; r.label = "Starting…"; }
+    else if (svc.state === "running") { r.cls = "ok"; r.glyph = GLYPH.ok; r.label = "Running"; }
+    else if (svc.state === "dead") { r.cls = "failed"; r.glyph = GLYPH.failed; r.label = "Dead"; }
+    else if (svc.state === "restarting") { r.cls = "attention"; r.glyph = GLYPH.attention; r.label = "Restarting"; }
+    else if (svc.state === "waiting") { r.cls = "busy"; r.glyph = GLYPH.busy; r.label = "Waiting"; }
+    else if (svc.state === "not-started") r.label = "Not started";
+    else if (svc.state === "optional") r.label = "Optional";
+    else if (svc.state === "exited" || svc.state === "stopped") r.label = "Stopped";
+    else if (!svc.state) r.label = "Unknown";
+    else r.label = svc.state.charAt(0).toUpperCase() + svc.state.slice(1);
+    return r;
+  }
+
+  function dotTitle(svc) {
+    if (svc.state === "optional") return "not started (optional)";
+    if (svc.state === "not-started") return "not started";
+    if (svc.state === "waiting") return "waiting for " + (svc.waiting_for || []).join(", ") + " to become healthy";
+    if (svc.state === "running" && svc.health === "unhealthy") return "running, unhealthy";
+    if (svc.state === "running" && svc.health === "health: starting") return "running, health check starting";
+    return svc.state || "";
+  }
+
+  function plural(n, one) { return n + " " + one + (n === 1 ? "" : "s"); }
+
+  // displayName must match dot.go's displayName: the slug without its hash.
+  function displayName(project) {
+    return projectSlug(project).replace(/-[0-9a-f]{12}$/, "") || project;
+  }
 
   function cliCommand(warning) {
     var m = /`([^`]+)`/.exec(warning);
     return m ? m[1] : null;
   }
 
-  function commandsHtml(inst) {
+  // commands: the down command first, then whatever the warnings name.
+  function commandsOf(inst) {
     var cmds = ["stackfork down --instance " + inst.project + " --volumes"];
     (inst.warnings || []).forEach(function (w) {
       var cmd = cliCommand(w);
       if (cmd && cmds.indexOf(cmd) === -1) cmds.push(cmd);
     });
-    var html = cmds.map(function (c) {
-      return '<code class="copyable cli-command" data-copy="' + escapeHtml(c) + '" title="click to copy">' + escapeHtml(c) + "</code>";
-    }).join("");
-    if (inst.env_block) {
-      html += '<code class="copyable cli-command env-block" data-copy="' + escapeHtml(inst.env_block) +
-        '" data-copy-kind="env_block" data-copy-project="' + escapeHtml(inst.project) + '" title="click to copy">Copy .env for host app</code>';
-    }
-    return html;
+    return cmds;
+  }
+
+  // OverflowMenu markup. attrs is the item's own attribute string.
+  function menuItem(key, label, cmd, attrs, cls) {
+    return '<button type="button" role="menuitem" class="menu-item' + (cls ? " " + cls : "") + '" tabindex="-1" data-key="' + escapeHtml(key) + '"' +
+      (attrs || "") + '><span class="menu-label">' + escapeHtml(label) + "</span>" +
+      (cmd ? '<span class="menu-cmd mono">' + escapeHtml(cmd) + "</span>" : "") + "</button>";
+  }
+
+  function menuHtml(key, label, title, items) {
+    return '<div class="menu-anchor"><button type="button" class="btn btn-ghost btn-icon" data-key="' + escapeHtml(key) +
+      '" aria-haspopup="menu" aria-expanded="false" aria-label="' + escapeHtml(label) + '" title="' + escapeHtml(title) +
+      '"><span aria-hidden="true">⋯</span></button><div class="menu" role="menu" hidden>' + items + "</div></div>";
   }
 
   function appChipHtml(app) {
-    if (app.url) {
-      var stoppedClass = app.running ? "" : " stopped";
+    if (app.url && app.running) {
       var title = app.url + (app.direct ? " (direct: " + app.direct + ")" : "");
-      return '<a class="app-chip' + stoppedClass + '" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(title) + '">' +
-        escapeHtml(app.label) + "</a>";
+      return '<a class="app-chip" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(title) + '">' + escapeHtml(app.label) + "</a>";
     }
-    var hint = app.hint ? ": " + escapeHtml(app.hint) : "";
-    return '<span class="app-chip stopped">' + escapeHtml(app.label) + hint + "</span>";
+    var hint = !app.url && app.hint ? ": " + escapeHtml(app.hint) : "";
+    return '<span class="app-chip stopped" title="Starts with the stack">' + escapeHtml(app.label) + hint + "</span>";
   }
 
-  function endpointHtml(ep, running, optional) {
+  // endpointNote must match dot.go's endpointNote.
+  function endpointNote(state, proxied) {
+    var parts = [];
+    if (state !== "running") parts.push(state === "optional" || state === "not-started" || state === "waiting" ? "(not started)" : "(stopped)");
+    if (proxied) parts.push("(proxy)");
+    return parts.join(" ");
+  }
+
+  function endpointHtml(ep, svcState) {
     if (!ep.known) {
-      return '<span class="endpoint-pending">container ' + ep.container + ' &mdash; assigned on start</span>';
+      return '<span class="endpoint-pending" title="container port ' + escapeHtml(ep.container) + '">port assigned on start</span>';
     }
-    var stoppedClass = running ? "" : " stopped";
-    var stoppedNote = running ? "" : (optional ? " (not started)" : " (stopped)");
-    var proxiedNote = ep.proxied ? " (proxy)" : "";
+    var stopped = svcState === "running" ? "" : " stopped";
     if (ep.scheme === "http" || ep.scheme === "https") {
-      return '<a class="endpoint-link' + stoppedClass + '" href="' + escapeHtml(ep.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(ep.url) + '">' +
-        escapeHtml(ep.url) + stoppedNote + proxiedNote + "</a>";
+      var note = endpointNote(svcState, ep.proxied);
+      return '<a class="endpoint-link' + stopped + '" href="' + escapeHtml(ep.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(ep.url) + '">' +
+        '<span class="endpoint-url">' + escapeHtml(ep.url) + "</span>" + (note ? '<span class="endpoint-note">' + note + "</span>" : "") + "</a>";
     }
-    return '<span class="endpoint-copy copyable' + stoppedClass + '" data-copy="' + escapeHtml(ep.url) + '" title="click to copy">' +
-      escapeHtml(ep.url) + stoppedNote + "</span>";
+    var n = endpointNote(svcState, false);
+    return '<button type="button" class="endpoint-copy copyable' + stopped + '" data-copy="' + escapeHtml(ep.url) + '" title="click to copy">' +
+      escapeHtml(ep.url) + (n ? " " + n : "") + "</button>";
   }
 
   function settingRow(label, values) {
@@ -182,106 +249,144 @@
     return out;
   }
 
-  // dotClass must match dashboard/dot.go's dotClass.
-  function dotClass(svc) {
-    if (svc.state === "running") {
-      if (svc.health === "unhealthy") return "unhealthy";
-      if (svc.health === "health: starting") return "starting";
-    }
-    return svc.state;
-  }
-
-  function dotTitle(svc) {
-    if (svc.state === "optional") return "not started (optional)";
-    if (svc.state === "not-started") return "not started";
-    if (svc.state === "waiting") return "waiting for " + (svc.waiting_for || []).join(", ") + " to become healthy";
-    if (svc.state === "running" && svc.health === "unhealthy") return "running, unhealthy";
-    if (svc.state === "running" && svc.health === "health: starting") return "running, health check starting";
-    return svc.state;
-  }
-
   function oneOffHtml(inst) {
     if (!inst.oneoff_running && !inst.oneoff_leftover) return "";
-    var h = '<div class="oneoff-bar" data-oneoff="1">';
-    if (inst.oneoff_running) h += "<span>" + inst.oneoff_running + " one-off task(s) running</span>";
+    var h = '<div class="callout callout-attention" data-oneoff="1"><span class="callout-glyph" aria-hidden="true">' + GLYPH.attention + '</span><div class="callout-body">';
+    if (inst.oneoff_running) h += '<p class="callout-detail">' + plural(inst.oneoff_running, "one-off task") + " running</p>";
     if (inst.oneoff_leftover) {
-      h += "<span>" + inst.oneoff_leftover + " leftover one-off container(s)";
-      if (inst.oneoff_cleanup) h += ': <code class="copyable cli-command" data-copy="' + escapeHtml(inst.oneoff_cleanup) + '" title="click to copy">' + escapeHtml(inst.oneoff_cleanup) + "</code>";
-      h += "</span>";
+      h += '<p class="callout-detail">' + plural(inst.oneoff_leftover, "leftover one-off container") +
+        (inst.oneoff_cleanup ? ' <span class="mono">' + escapeHtml(inst.oneoff_cleanup) + "</span>" : "") + "</p>";
+    }
+    h += "</div>";
+    if (inst.oneoff_leftover && inst.oneoff_cleanup) {
+      h += '<div class="callout-actions"><button type="button" class="btn" data-run="' + escapeHtml(inst.oneoff_cleanup) + '" data-key="' +
+        escapeHtml(inst.project) + '/oneoff/clean" title="' + escapeHtml(inst.oneoff_cleanup) + '">Clean up</button></div>';
     }
     return h + "</div>";
   }
 
+  // The seed callout: Retry seed is the button; Mark as seeded and the
+  // overwriting Re-seed live in the menu, each with its command in mono.
+  function seedHtml(inst) {
+    if (!inst.seed_command) return "";
+    var k = inst.project;
+    return '<div class="callout callout-failed" data-seed="failed"><span class="callout-glyph" aria-hidden="true">' + GLYPH.failed + "</span>" +
+      '<div class="callout-body"><p class="callout-title">Database seed failed</p>' +
+      '<p class="callout-detail">Retry runs it again. If the app already has its data, mark it as seeded instead.</p>' +
+      (inst.seed_error ? '<pre class="mono-log" tabindex="0" aria-label="Seed output">' + escapeHtml(inst.seed_error) + "</pre>" : "") + "</div>" +
+      '<div class="callout-actions"><button type="button" class="btn" data-run="' + escapeHtml(inst.seed_command) + '" data-key="' + escapeHtml(k) +
+      '/seed/retry" title="' + escapeHtml(inst.seed_command) + '">Retry seed</button>' +
+      menuHtml(k + "/seed/menu", "More seed actions for " + displayName(k), "More seed actions",
+        menuItem(k + "/seed/done", "Mark as seeded", inst.seed_done, ' data-run="' + escapeHtml(inst.seed_done) + '"') +
+        '<hr class="menu-sep" role="separator">' +
+        menuItem(k + "/seed/force", "Re-seed, overwriting data", inst.seed_force, ' data-run="' + escapeHtml(inst.seed_force) + '"', "menu-item-danger")) +
+      "</div></div>";
+  }
+
   function serviceHtml(inst, svc) {
-    var key = inst.project + "/" + svc.name;
+    var p = inst.project;
+    var key = p + "/" + svc.name;
     var running = svc.state === "running";
-    var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, running, svc.state === "optional" || svc.state === "not-started" || svc.state === "waiting"); }).join("");
+    var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, svc.state); }).join("");
     if (svc.connection_url) {
-      endpoints += '<span class="endpoint-copy copyable connection-url" data-copy="' + escapeHtml(svc.connection_url) +
-        '" data-copy-kind="database_url" data-copy-project="' + escapeHtml(inst.project) + '" data-copy-service="' + escapeHtml(svc.name) +
-        '" title="click to copy the connection URL (' + escapeHtml(svc.connection_url) + ')">connection URL</span>';
+      endpoints += '<button type="button" class="endpoint-copy copyable connection-url" data-copy="' + escapeHtml(svc.connection_url) +
+        '" data-copy-kind="database_url" data-copy-project="' + escapeHtml(p) + '" data-copy-service="' + escapeHtml(svc.name) +
+        '" title="click to copy the connection URL (' + escapeHtml(svc.connection_url) + ')">connection URL</button>';
     }
     (svc.use_commands || []).forEach(function (c) {
-      endpoints += '<span class="endpoint-copy copyable use-command" data-copy="' + escapeHtml(c.value) +
-        '" data-copy-kind="cli" data-copy-project="' + escapeHtml(inst.project) + '" data-copy-service="' + escapeHtml(svc.name) +
-        '" title="click to copy: ' + escapeHtml(c.value) + '">' + escapeHtml(c.label) + "</span>";
+      endpoints += '<button type="button" class="endpoint-copy copyable use-command" data-copy="' + escapeHtml(c.value) +
+        '" data-copy-kind="cli" data-copy-project="' + escapeHtml(p) + '" data-copy-service="' + escapeHtml(svc.name) +
+        '" title="click to copy: ' + escapeHtml(c.value) + '">' + escapeHtml(c.label) + "</button>";
     });
-    var image = svc.state === "optional" ? '<span class="service-image">not started (optional)</span>'
-      : svc.image ? '<span class="service-image">' + escapeHtml(svc.image) + "</span>" : "";
+    endpoints = endpoints ? '<div class="endpoints">' + endpoints + "</div>" : '<span class="endpoint-none">—</span>';
+    var image = svc.state === "optional" ? '<span class="service-image mono">not started (optional)</span>'
+      : svc.image ? '<span class="service-image mono" title="' + escapeHtml(svc.image) + '">' + escapeHtml(svc.image) + "</span>" : "";
     var settingsOpen = !!openSettings[key];
+    var pa = ' data-project="' + escapeHtml(p) + '" data-service="' + escapeHtml(svc.name) + '"';
     return (
-      '<div class="service-row" data-service="' + escapeHtml(svc.name) + '">' +
-      '<div class="service-summary" data-toggle-settings data-key="' + escapeHtml(key) + '">' +
-      '<span class="service-logo" data-kind="' + escapeHtml(svc.kind || "") + '"></span>' +
-      '<span class="status-dot ' + escapeHtml(dotClass(svc)) + '" title="' + escapeHtml(dotTitle(svc)) + '"></span>' +
-      '<div class="service-text"><span class="service-name">' + escapeHtml(svc.name) + "</span>" + image + "</div>" +
-      '<div class="service-endpoints">' + endpoints + "</div>" +
-      '<div class="service-icons">' +
-      (svc.state === "running"
-        ? '<button class="icon-btn" data-action="service-stop" data-project="' + escapeHtml(inst.project) + '" data-service="' + escapeHtml(svc.name) + '" title="Stop">&#9632;</button>'
-        : '<button class="icon-btn" data-action="service-start" data-project="' + escapeHtml(inst.project) + '" data-service="' + escapeHtml(svc.name) + '" title="Start">&#9654;</button>') +
-      '<button class="icon-btn" data-action="restart" data-project="' + escapeHtml(inst.project) + '" data-service="' + escapeHtml(svc.name) + '" title="Restart">&#8635;</button>' +
-      '<button class="icon-btn logs-button" data-project="' + escapeHtml(inst.project) + '" data-service="' + escapeHtml(svc.name) + '" title="Logs">&#9776;</button>' +
-      "</div></div>" +
-      '<div class="service-settings"' + (settingsOpen ? "" : " hidden") + ">" + settingsHtml(svc, inst.files) + "</div>" +
-      "</div>"
+      '<tbody class="service-group"><tr class="service-row" data-service="' + escapeHtml(svc.name) + '">' +
+      '<td class="cell-service"><span class="service-logo" data-kind="' + escapeHtml(svc.kind || "") + '"></span>' +
+      '<div class="service-text"><button type="button" class="service-name" data-toggle-settings data-key="' + escapeHtml(key) +
+      '/settings" aria-expanded="' + settingsOpen + '">' + escapeHtml(svc.name) + "</button>" + image + "</div></td>" +
+      '<td class="cell-state">' + chipHtml(serviceChip(svc)) + "</td>" +
+      '<td class="cell-endpoints">' + endpoints + "</td>" +
+      '<td class="cell-actions"><div class="row-actions"><button type="button" class="btn btn-ghost logs-button mobile-hide"' + pa +
+      ' data-key="' + escapeHtml(key) + '/logs">Logs</button>' +
+      menuHtml(key + "/menu", "More actions for " + svc.name, "More actions",
+        (running
+          ? menuItem(key + "/menu/stop", "Stop", "", ' data-action="service-stop"' + pa)
+          : menuItem(key + "/menu/start", "Start", "", ' data-action="service-start"' + pa)) +
+        menuItem(key + "/menu/restart", "Restart", "", ' data-action="restart"' + pa) +
+        menuItem(key + "/menu/logs", "Logs", "", pa, "logs-button mobile-only")) +
+      "</div></td></tr>" +
+      '<tr class="service-settings"' + (settingsOpen ? "" : " hidden") + '><td colspan="4">' + settingsHtml(svc, inst.files) + "</td></tr></tbody>"
     );
   }
 
+  function isLive(inst) { return inst.state === "running" || inst.state === "partial"; }
+
   function stackHtml(inst) {
     var p = escapeHtml(inst.project);
-    var running = inst.state === "running" || inst.state === "partial";
-    var collapsed = isCollapsed(inst.project, !running);
-    var services = (inst.services || []).map(function (s) { return serviceHtml(inst, s); }).join("");
-    var legacy = inst.legacy ? '<span class="legacy-tag">legacy</span>' : "";
-    var knowledge = inst.knowledge ? '<span class="knowledge knowledge-' + escapeHtml(inst.knowledge.status) + '">' + escapeHtml(inst.knowledge.status) + "</span>" : "";
-    var warnings = (inst.warnings || []).map(function (w) { return '<li class="warning">' + escapeHtml(w) + "</li>"; }).join("");
-    var seedBar = inst.seed_command
-      ? '<div class="seed-bar" data-seed="failed">The database seed failed &mdash; retry with <code class="copyable cli-command" data-copy="' + escapeHtml(inst.seed_command) +
-        '" title="click to copy">' + escapeHtml(inst.seed_command) + '</code> (or, to run it again on a populated database, <code class="copyable cli-command" data-copy="' +
-        escapeHtml(inst.seed_force) + '" title="click to copy">' + escapeHtml(inst.seed_force) + "</code>)</div>"
+    var name = displayName(inst.project);
+    var live = isLive(inst);
+    var collapsed = isCollapsed(inst.project, !live);
+    var cmds = commandsOf(inst);
+    var down = cmds[0];
+    var app = null;
+    (inst.apps || []).forEach(function (a) { if (!app && a.url && a.running) app = a; });
+
+    var items = "";
+    if (inst.state === "partial") items += menuItem(inst.project + "/menu/up", "Start stopped services", "", ' data-action="up" data-project="' + p + '"');
+    if (live) {
+      items += menuItem(inst.project + "/menu/restart", "Restart", "", ' data-action="restart" data-project="' + p + '"');
+      items += menuItem(inst.project + "/menu/down", "Stop", "", ' data-action="down" data-project="' + p + '"', "mobile-only");
+    }
+    items += menuItem(inst.project + "/menu/path", "Copy path", "", ' data-copy="' + escapeHtml(inst.root) + '"');
+    if (inst.env_block) {
+      items += menuItem(inst.project + "/menu/env", "Copy .env for host app", "",
+        ' data-copy="' + escapeHtml(inst.env_block) + '" data-copy-kind="env_block" data-copy-project="' + p + '"');
+    }
+    cmds.slice(1).forEach(function (c, i) {
+      var run = runnable(c);
+      items += menuItem(inst.project + "/menu/cmd" + i, run ? "Run command" : "Copy command", c, (run ? " data-run" : " data-copy") + '="' + escapeHtml(c) + '"');
+    });
+    items += menuItem(inst.project + "/menu/copydown", "Copy down command", down, ' data-copy="' + escapeHtml(down) + '"');
+    items += '<hr class="menu-sep" role="separator">';
+    items += menuItem(inst.project + "/menu/remove", "Remove instance and data", down, ' data-run="' + escapeHtml(down) + '"', "menu-item-danger");
+
+    var chips = chipHtml(stateChip(inst.state)) + (inst.legacy ? '<span class="chip chip-off">legacy</span>' : "") +
+      (inst.knowledge ? '<span class="chip chip-' + (inst.knowledge.status === "draft" || inst.knowledge.status === "stale" ? "attention" : "off") +
+        '" title="Setup knowledge">' + escapeHtml(inst.knowledge.status) + "</span>" : "");
+    var meta = '<div class="stack-meta mono"><span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.rel_root || inst.root) + "</span>" +
+      (inst.hostname ? '<span class="stack-sep" aria-hidden="true"> · </span><span class="stack-host" title="' + escapeHtml(inst.hostname) + '">' + escapeHtml(inst.hostname) + "</span>" : "") + "</div>";
+    var actions =
+      (!live ? '<button type="button" class="btn" data-action="up" data-project="' + p + '" data-key="' + p + '/up">Start</button>' : "") +
+      (live && app ? '<a class="btn mobile-hide" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" data-key="' + p + '/open" title="' + escapeHtml(app.url) + '">Open App</a>' : "") +
+      (live ? '<button type="button" class="btn btn-ghost mobile-hide" data-action="down" data-project="' + p + '" data-key="' + p + '/down" title="Stop (keeps volumes)">Stop</button>' : "") +
+      menuHtml(inst.project + "/menu", "More actions for " + name, "More actions", items);
+
+    var warnings = (inst.warnings || []).length
+      ? '<div class="callout callout-attention" data-callout="warnings"><span class="callout-glyph" aria-hidden="true">' + GLYPH.attention + '</span><div class="callout-body"><ul class="warnings">' +
+        inst.warnings.map(function (w) { return '<li class="warning">' + escapeHtml(w) + "</li>"; }).join("") + "</ul></div></div>"
       : "";
-    var menuOpen = !!openMenus[inst.project];
-    var colorIndex = stackColorIndex(inst.project);
+    var services = (inst.services || []).map(function (s) { return serviceHtml(inst, s); }).join("");
+    var table = services
+      ? '<table class="service-table"><caption class="sr-only">Services of ' + escapeHtml(name) + '</caption><colgroup><col class="col-service"><col class="col-state"><col class="col-endpoints"><col class="col-actions"></colgroup>' +
+        '<thead><tr><th scope="col" class="micro">Service</th><th scope="col" class="micro">State</th><th scope="col" class="micro">Endpoints</th><th scope="col" class="micro">Actions</th></tr></thead>' + services + "</table>"
+      : "";
     var appStrip = (inst.apps || []).map(appChipHtml).join("");
     return (
-      '<article class="stack" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '" data-collapsed="' + (collapsed ? "1" : "0") + '">' +
-      '<header class="stack-header" data-toggle-stack data-project="' + p + '">' +
-      '<span class="stack-icon stack-color-' + colorIndex + '">' + escapeHtml((projectSlug(inst.project || "?").charAt(0) || "?").toUpperCase()) + "</span>" +
-      '<div class="stack-title"><span class="stack-name" title="' + escapeHtml(inst.hostname) + '">' + escapeHtml(inst.hostname) + "</span>" +
-      '<span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.root) + "</span></div>" +
-      '<span class="branch-tag" title="' + escapeHtml(inst.branch) + '">' + escapeHtml(inst.branch) + "</span>" +
-      legacy + knowledge +
-      '<span class="state-badge state-' + escapeHtml(inst.state) + '">' + escapeHtml(inst.state) + "</span>" +
-      '<div class="stack-actions">' +
-      (inst.state !== "running" ? '<button class="icon-btn" data-action="up" data-project="' + p + '" title="Up">&#9654;</button>' : "") +
-      (inst.state === "running" || inst.state === "partial" ? '<button class="icon-btn" data-action="down" data-project="' + p + '" title="Down (keeps volumes)">&#9632;</button>' : "") +
-      '<button class="icon-btn stack-menu-toggle" data-project="' + p + '" title="More">&#8942;</button>' +
-      "</div></header>" +
+      '<article class="stack lane-' + (stackColorIndex(inst.project) + 1) + '" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '" data-collapsed="' + (collapsed ? "1" : "0") + '">' +
+      '<header class="stack-header">' +
+      '<button type="button" class="btn btn-ghost btn-icon chevron" data-toggle-stack data-project="' + p + '" data-key="' + p + '/toggle" aria-expanded="' + !collapsed +
+      '" aria-label="Details for ' + escapeHtml(name) + '"><span class="chevron-glyph" aria-hidden="true"></span></button>' +
+      '<span class="avatar" aria-hidden="true">' + escapeHtml((projectSlug(inst.project || "?").charAt(0) || "?").toUpperCase()) + "</span>" +
+      '<div class="stack-id"><h3 class="stack-name" title="' + p + '">' + escapeHtml(name) + "</h3>" +
+      '<span class="branch-pill" title="' + escapeHtml(inst.branch) + '">⌥ ' + escapeHtml(inst.branch) + "</span>" + chips +
+      '<div class="stack-actions">' + actions + "</div>" + meta + "</div></header>" +
       (appStrip ? '<div class="app-strip">' + appStrip + "</div>" : "") +
-      '<div class="stack-menu"' + (menuOpen ? "" : " hidden") + ">" + commandsHtml(inst) + "</div>" +
-      (warnings ? '<ul class="warnings">' + warnings + "</ul>" : "") + oneOffHtml(inst) + seedBar +
-      '<div class="stack-body">' + services + "</div></article>"
+      seedHtml(inst) + warnings + oneOffHtml(inst) +
+      '<div class="stack-body">' + table + "</div></article>"
     );
   }
 
@@ -311,27 +416,59 @@
     return haystack.indexOf(needle) !== -1;
   }
 
+  // lastCards is the HTML last written to the lists. A poll that brings the
+  // same data changes nothing in the DOM; one that differs remembers the
+  // focused element, the open menu and the scroll position, writes, and
+  // puts them back (the cards are replaced wholesale).
+  var lastCards = null;
+
+  function keyed(key) {
+    var els = document.querySelectorAll("#view-instances [data-key]");
+    for (var i = 0; i < els.length; i++) if (els[i].dataset.key === key) return els[i];
+    return null;
+  }
+
+  function writeCards(running, stopped) {
+    var runHtml = running.map(stackHtml).join(""), stopHtml = stopped.map(stackHtml).join("");
+    var html = runHtml + "\u0000" + stopHtml;
+    if (html === lastCards) return;
+    lastCards = html;
+    var active = document.activeElement;
+    var focusKey = active && active.closest && active.closest("#view-instances") && active.dataset ? active.dataset.key : "";
+    var menu = document.querySelector('#view-instances [aria-haspopup="menu"][aria-expanded="true"]');
+    var menuKey = menu ? menu.dataset.key : "";
+    var scrollY = window.scrollY;
+    document.querySelector('[data-section="running"] .stack-list').innerHTML = runHtml;
+    document.querySelector('[data-section="stopped"] .stack-list').innerHTML = stopHtml;
+    if (menuKey) {
+      var trigger = keyed(menuKey);
+      if (trigger) openMenu(trigger, false);
+    }
+    if (focusKey) {
+      var again = keyed(focusKey);
+      if (again && again !== document.activeElement) again.focus({ preventScroll: true });
+    }
+    if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
+  }
+
   function render() {
     var inv = state.inventory;
     if (!inv) return;
-    var instances = (inv.instances || []).filter(matchesFilter);
-    var running = instances.filter(function (i) { return i.state === "running" || i.state === "partial"; });
-    var stopped = instances.filter(function (i) { return i.state !== "running" && i.state !== "partial"; });
+    var all = inv.instances || [];
+    var instances = all.filter(matchesFilter);
+    var running = instances.filter(isLive);
+    var stopped = instances.filter(function (i) { return !isLive(i); });
 
-    var runningSection = document.querySelector('[data-section="running"]');
+    writeCards(running, stopped);
+    document.querySelector('[data-section="running"] .section-count').textContent = running.length;
     var stoppedSection = document.querySelector('[data-section="stopped"]');
-    runningSection.querySelector(".stack-list").innerHTML = running.map(stackHtml).join("");
-    runningSection.querySelector(".section-count").textContent = running.length;
-    stoppedSection.querySelector(".stack-list").innerHTML = stopped.map(stackHtml).join("");
     stoppedSection.querySelector(".section-count").textContent = stopped.length;
     stoppedSection.hidden = state.runningOnly;
+    document.getElementById("instances-empty").hidden = all.length > 0;
 
     document.getElementById("view-instances").classList.toggle("stale", state.stale);
 
-    var runningCount = (inv.instances || []).filter(function (i) {
-      return i.state === "running" || i.state === "partial";
-    }).length;
-    document.getElementById("rail-count-instances").textContent = runningCount + "/" + (inv.instances || []).length;
+    document.getElementById("rail-count-instances").textContent = all.filter(isLive).length + "/" + all.length;
 
     setStatus("docker-status", inv.docker.reachable ? "ok" : "failed", "Docker", inv.docker.reachable ? "ok" : "unreachable");
     setStatus("proxy-status", inv.proxy.running ? "ok" : "off", "Proxy", inv.proxy.running ? ":" + inv.proxy.port : "stopped");
@@ -488,32 +625,25 @@
   function wireActions() {
     document.getElementById("view-instances").addEventListener("click", function (e) {
       var toggleStack = e.target.closest("[data-toggle-stack]");
-      if (toggleStack && !e.target.closest(".stack-actions")) {
+      if (toggleStack) {
         var article = toggleStack.closest(".stack");
         var collapsed = article.dataset.collapsed !== "1";
         article.dataset.collapsed = collapsed ? "1" : "0";
+        toggleStack.setAttribute("aria-expanded", String(!collapsed));
         setCollapsed(toggleStack.dataset.project, collapsed);
         return;
       }
-      var menuToggle = e.target.closest(".stack-menu-toggle");
-      if (menuToggle) {
-        var menu = menuToggle.closest(".stack").querySelector(".stack-menu");
-        var open = menu.hasAttribute("hidden");
-        if (open) menu.removeAttribute("hidden");
-        else menu.setAttribute("hidden", "");
-        openMenus[menuToggle.dataset.project] = open;
-        return;
-      }
       var toggleSettings = e.target.closest("[data-toggle-settings]");
-      if (toggleSettings && !e.target.closest(".service-icons") && !e.target.closest(".endpoint-link") && !e.target.closest(".endpoint-copy")) {
-        var settings = toggleSettings.closest(".service-row").querySelector(".service-settings");
+      if (toggleSettings) {
+        var settings = toggleSettings.closest("tbody").querySelector(".service-settings");
         var openNow = settings.hasAttribute("hidden");
         if (openNow) settings.removeAttribute("hidden");
         else settings.setAttribute("hidden", "");
-        openSettings[toggleSettings.dataset.key] = openNow;
+        toggleSettings.setAttribute("aria-expanded", String(openNow));
+        openSettings[toggleSettings.dataset.key.replace(/\/settings$/, "")] = openNow;
         return;
       }
-      var btn = e.target.closest(".icon-btn[data-action]");
+      var btn = e.target.closest("button[data-action]");
       if (btn) {
         runAction(btn.dataset.action, btn.dataset.project, btn.dataset.service);
         return;
@@ -523,23 +653,98 @@
         showLogs(logsBtn.dataset.project, logsBtn.dataset.service);
         return;
       }
-      var copy = e.target.closest(".copyable");
+      var copy = e.target.closest("[data-copy]");
       if (copy) {
         // Anything actually carrying the placeholder routes through
         // /api/copy for the real value (design.md D3b); the value never
         // gets logged or rendered, only written to the clipboard.
+        var label = (copy.querySelector(".menu-label") || copy).textContent.trim();
         if (copy.dataset.copyKind && copy.dataset.copy.indexOf("<password>") !== -1) {
           fetchCopyValue(copy.dataset.copyKind, copy.dataset.copyProject, copy.dataset.copyService)
             .then(function (value) {
-              copyText(value, copy.textContent.trim(), copy);
+              copyText(value, label, copy);
             })
             .catch(function (err) {
               log("copy failed: " + err.message);
             });
         } else {
-          copyText(copy.dataset.copy, copy.textContent.trim(), copy);
+          copyText(copy.dataset.copy, label, copy);
         }
       }
+    });
+  }
+
+  // --- OverflowMenu (DESIGN.md Components) ------------------------------
+  // Any button[aria-haspopup="menu"] opens the role="menu" that follows it
+  // (or the one named by aria-controls). Wired once, on document, so cards
+  // and Repos rows both get it however often their HTML is replaced.
+
+  function menuOf(trigger) {
+    var id = trigger.getAttribute("aria-controls");
+    return (id && document.getElementById(id)) || trigger.nextElementSibling;
+  }
+
+  function menuItems(menu) {
+    return Array.prototype.filter.call(menu.querySelectorAll('[role="menuitem"]'), function (el) {
+      return !el.disabled && el.offsetParent !== null; // mobile-only items are display:none on desktop
+    });
+  }
+
+  function openMenu(trigger, focusFirst) {
+    closeMenus(false, trigger);
+    var menu = menuOf(trigger);
+    if (!menu) return;
+    menu.classList.remove("menu-up");
+    menu.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    // Flip above the trigger when the menu would run off the bottom.
+    var r = menu.getBoundingClientRect();
+    var t = trigger.getBoundingClientRect();
+    if (r.bottom > window.innerHeight && t.top > r.height) menu.classList.add("menu-up");
+    if (focusFirst !== false) {
+      var first = menuItems(menu)[0];
+      if (first) first.focus();
+    }
+  }
+
+  function closeMenus(returnFocus, except) {
+    document.querySelectorAll('[aria-haspopup="menu"][aria-expanded="true"]').forEach(function (t) {
+      if (t === except) return;
+      var m = menuOf(t);
+      if (m) m.hidden = true;
+      t.setAttribute("aria-expanded", "false");
+      if (returnFocus) t.focus();
+    });
+  }
+
+  function wireMenus() {
+    document.addEventListener("click", function (e) {
+      var trigger = e.target.closest('[aria-haspopup="menu"]');
+      if (trigger) {
+        if (trigger.getAttribute("aria-expanded") === "true") closeMenus(true);
+        else openMenu(trigger);
+        return;
+      }
+      var item = e.target.closest('[role="menu"] [role="menuitem"]');
+      // A copy item stays open so its "Copied" feedback can be read.
+      if (item) { if (!item.hasAttribute("data-copy")) closeMenus(true); return; }
+      if (!e.target.closest('[role="menu"]')) closeMenus(false);
+    });
+    document.addEventListener("keydown", function (e) {
+      var open = document.querySelector('[aria-haspopup="menu"][aria-expanded="true"]');
+      var onTrigger = e.target.closest && e.target.closest('[aria-haspopup="menu"]');
+      if (!open) {
+        if (onTrigger && e.key === "ArrowDown") { e.preventDefault(); openMenu(onTrigger); }
+        return;
+      }
+      if (e.key === "Escape") { e.preventDefault(); closeMenus(true); return; }
+      if (e.key === "Tab") { closeMenus(false); return; }
+      var items = menuItems(menuOf(open));
+      var i = items.indexOf(document.activeElement);
+      var to = { ArrowDown: i + 1, ArrowUp: i < 0 ? items.length - 1 : i - 1, Home: 0, End: items.length - 1 }[e.key];
+      if (to === undefined || !items.length) return;
+      e.preventDefault();
+      items[(to + items.length) % items.length].focus();
     });
   }
 
@@ -563,7 +768,13 @@
     var done = function (ok) {
       log((ok ? "copied " : "copy failed: ") + label);
       if (!el) return;
-      if (el.tagName === "BUTTON") {
+      var label = el.classList.contains("menu-item") && el.querySelector(".menu-label");
+      if (label) {
+        if (!el.dataset.label) el.dataset.label = label.textContent;
+        label.textContent = ok ? "Copied \u2713" : "Copy failed";
+        clearTimeout(el._copyTimer);
+        el._copyTimer = setTimeout(function () { label.textContent = el.dataset.label; }, 1500);
+      } else if (el.tagName === "BUTTON" && !el.classList.contains("copyable")) {
         if (!el.dataset.label) el.dataset.label = el.textContent;
         el.textContent = ok ? "Copied \u2713 paste it into your agent" : "Copy failed";
         clearTimeout(el._copyTimer);
@@ -601,6 +812,7 @@
   function setView(view) {
     if (views.indexOf(view) < 0) view = "instances";
     reposState.tab = view;
+    closeMenus(false);
     if (viewFromHash() !== view || !location.hash) {
       try { history.replaceState(null, "", "#" + view); } catch (e) { /* ignore */ }
     }
@@ -644,7 +856,7 @@
         document.getElementById("scan-state").textContent = meta && meta.dataset.scanning === "true" ? "scanning..." : "";
         if (meta && meta.dataset.configured === "false" && !reposState.autoShownSettings) {
           reposState.autoShownSettings = true;
-          if (reposState.tab === "repos") setView("settings");
+          setView("settings");
         }
       })
       .catch(function () { /* keep what is shown */ });
@@ -886,8 +1098,9 @@
     var card = btn.closest("[data-project]");
     var project = card ? card.dataset.project : "";
     var label = btn.textContent;
+    var inMenu = btn.classList.contains("menu-item");
     btn.disabled = true;
-    btn.textContent = "Running\u2026";
+    if (!inMenu) btn.textContent = "Running\u2026";
     log("run: " + btn.dataset.run);
     post("/api/run", { command: btn.dataset.run, project: project })
       .then(function (r) { return r.text().then(function (t) { try { return JSON.parse(t); } catch (e) { return { message: t }; } }); })
@@ -905,7 +1118,7 @@
       .catch(function (err) { log("run: " + err.message); })
       .then(function () {
         btn.disabled = false;
-        btn.textContent = label;
+        if (!inMenu) btn.textContent = label;
         poll();
         if (typeof loadRepos === "function" && reposState.tab === "repos") loadRepos();
       });
@@ -956,7 +1169,7 @@
       copyText(document.getElementById("learn-prompt").textContent, "learn prompt", e.target);
     });
     document.addEventListener("click", function (e) {
-      var btn = e.target.closest(".run-btn");
+      var btn = e.target.closest("[data-run]");
       if (btn && !btn.disabled) runCommand(btn);
     });
     decorateRunnables();
@@ -967,6 +1180,7 @@
     wireRun();
     wireControls();
     wireActions();
+    wireMenus();
     wireCleanup();
     wireLogsPanel();
     wireRepos();

@@ -1,11 +1,13 @@
 package dashboard_test
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -70,22 +72,32 @@ func TestAppStripVisibleWhenCollapsedAndProxyShortcut(t *testing.T) {
 	if stripStart > bodyStart {
 		t.Fatalf("expected the app-strip before .stack-body (so it survives collapse), got strip at %d, body at %d", stripStart, bodyStart)
 	}
-	// The chip's label is just "App" (maintainer feedback: the address
-	// already shows in full below, in the expanded service row) - the
-	// full URL still has to reach href/title so the click and hover both
-	// carry it.
+	// A stopped stack's chip is off, has no href and says why.
 	strip := body[stackStart:bodyStart]
-	if !strings.Contains(strip, `href="http://`+project+`.localhost:20060"`) {
-		t.Fatalf("expected the App chip's href to carry the full URL:\n%s", strip)
+	if strings.Contains(strip, `href="http://`+project) {
+		t.Fatalf("a stopped app's chip must not link:\n%s", strip)
 	}
-	if !strings.Contains(strip, `title="http://`+project+`.localhost:20060"`) {
-		t.Fatalf("expected the App chip's title to carry the full URL:\n%s", strip)
+	if !strings.Contains(strip, `<span class="app-chip stopped" title="Starts with the stack">App</span>`) {
+		t.Fatalf("expected an off App chip with the tooltip:\n%s", strip)
 	}
-	if !strings.Contains(strip, `class="app-chip">App</a>`) && !strings.Contains(strip, `>App</a>`) {
-		t.Fatalf("expected the App chip's visible text to be just the label:\n%s", strip)
+
+	// Running: the chip links to the full URL, label only.
+	t.Setenv("DOCKER_FAKE_PS", func() string {
+		labels := "com.docker.compose.project=" + project + ",com.docker.compose.service=web,io.stackfork.root=/x"
+		b, _ := json.Marshal(map[string]string{"Labels": labels, "State": "running", "Status": "Up", "Ports": ""})
+		return string(b) + "\n"
+	}())
+	time.Sleep(2100 * time.Millisecond) // the inventory cache TTL
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	live := rec.Body.String()
+	for _, want := range []string{`href="http://` + project + `.localhost:20060"`, `title="http://` + project + `.localhost:20060"`, `>App</a>`} {
+		if !strings.Contains(live, want) {
+			t.Fatalf("running stack: missing %q:\n%s", want, live)
+		}
 	}
-	if strings.Contains(strip, `>App: http://`) {
-		t.Fatalf("expected the App chip to no longer show the URL as visible text:\n%s", strip)
+	if strings.Contains(live, `>App: http://`) {
+		t.Fatalf("the App chip must not show the URL as text")
 	}
 
 	if !strings.Contains(body, `id="proxy-start"`) {

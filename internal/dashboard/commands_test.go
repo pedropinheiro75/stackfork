@@ -81,17 +81,14 @@ func TestIndexShowsCopyableCommandsAndActionWiring(t *testing.T) {
 	if !strings.Contains(body, "stackfork down --instance "+project+" --volumes") {
 		t.Fatalf("expected the copyable down --volumes command:\n%s", body)
 	}
-	if !strings.Contains(body, "cli-command") {
-		t.Fatalf("expected the commands to be rendered with the copyable cli-command class:\n%s", body)
-	}
-	if !strings.Contains(body, `class="stack-menu"`) {
-		t.Fatalf("expected the destructive commands inside the per-stack \"...\" menu:\n%s", body)
+	if !strings.Contains(body, `class="menu-cmd mono"`) || !strings.Contains(body, `role="menu"`) {
+		t.Fatalf("expected the commands inside the per-stack overflow menu:\n%s", body)
 	}
 	// The orphaned instance has nothing running (state missing-checkout),
 	// so per fix 4 it gets only the Up button, never Down - but wherever a
 	// Down button does appear (running/partial stacks), it must carry no
 	// --volumes anywhere in its own markup.
-	if !strings.Contains(body, `<button class="icon-btn" data-action="up" data-project="`+project+`" title="Up">`) {
+	if !strings.Contains(body, `data-action="up" data-project="`+project+`"`) {
 		t.Fatalf("expected a plain Up icon button for the orphaned instance:\n%s", body)
 	}
 	if strings.Contains(body, `data-action="down" data-project="`+project+`"`) {
@@ -106,7 +103,7 @@ func TestIndexShowsCopyableCommandsAndActionWiring(t *testing.T) {
 	if !strings.Contains(body, `data-action="restart"`) {
 		t.Fatalf("expected a restart button for the web service:\n%s", body)
 	}
-	if !strings.Contains(body, `class="icon-btn logs-button"`) {
+	if !strings.Contains(body, `logs-button`) {
 		t.Fatalf("expected a logs button:\n%s", body)
 	}
 	if !strings.Contains(body, `id="logs-panel"`) {
@@ -122,7 +119,8 @@ func TestIndexShowsCopyableCommandsAndActionWiring(t *testing.T) {
 	// The destructive command must appear once, inside the menu, and
 	// nowhere else on the card body (maintainer feedback: "the destructive
 	// command lives in the '...' menu, not printed on the card").
-	menuStart := strings.Index(body, `class="stack-menu"`)
+	card := strings.Index(body, `data-project="`+project+`" data-state=`)
+	menuStart := card + strings.Index(body[card:], `role="menu"`)
 	menuEnd := strings.Index(body[menuStart:], "</div>") + menuStart
 	before := body[:menuStart]
 	after := body[menuEnd:]

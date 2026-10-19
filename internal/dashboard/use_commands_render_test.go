@@ -73,8 +73,8 @@ func TestUseCommandsAndEnvBlockRendered(t *testing.T) {
 	if !strings.Contains(body, `psql &#34;postgres://appuser:&lt;password&gt;@127.0.0.1:20090/appdb&#34;`) {
 		t.Fatalf("expected the placeholder-safe psql command:\n%s", body)
 	}
-	if !strings.Contains(body, `class="copyable cli-command env-block"`) {
-		t.Fatalf("expected the env-block copy element:\n%s", body)
+	if !strings.Contains(body, `data-copy-kind="env_block"`) || !strings.Contains(body, "Copy .env for host app") {
+		t.Fatalf("expected the env-block copy item in the overflow menu:\n%s", body)
 	}
 	if !strings.Contains(body, "DATABASE_URL=postgres://appuser:") {
 		t.Fatalf("expected the env block's DATABASE_URL line:\n%s", body)

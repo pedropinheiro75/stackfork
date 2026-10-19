@@ -56,15 +56,21 @@
 </div>
 
 <main id="view-instances" class="view">
+  <div id="instances-empty" class="empty-state"{{if or .Loading (ne .Total 0)}} hidden{{end}}>
+    <h2>No instances yet</h2>
+    <p class="muted">Start one from <a href="#repos">Repos &rarr; Start</a>, or run this in a project folder:</p>
+    <p class="command-row"><span class="mono">stackfork prepare &amp;&amp; stackfork up</span> <button type="button" class="btn btn-ghost" data-copy="stackfork prepare &amp;&amp; stackfork up">Copy</button></p>
+  </div>
   <section class="section" data-section="running">
-    <h2 class="section-title">Running <span class="section-count">{{len .Running}}</span></h2>
+    <h2 class="section-title micro">Running <span class="section-count">{{len .Running}}</span></h2>
     <div class="stack-list">
-      {{if .Loading}}<p class="muted" id="loading-note" role="status">loading...</p>{{end}}
+      {{if .Loading}}<p class="muted" id="loading-note" role="status">loading...</p>
+      <div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div>{{end}}
       {{range .Running}}{{template "stack" .}}{{end}}
     </div>
   </section>
   <section class="section" data-section="stopped">
-    <h2 class="section-title">Stopped <span class="section-count">{{len .Stopped}}</span></h2>
+    <h2 class="section-title micro">Stopped <span class="section-count">{{len .Stopped}}</span></h2>
     <div class="stack-list">
       {{range .Stopped}}{{template "stack" .}}{{end}}
     </div>
@@ -117,111 +123,73 @@
 </body>
 </html>
 
+{{define "chip"}}<span class="chip chip-{{.Class}}"{{if .Title}} title="{{.Title}}"{{end}}><span class="chip-glyph" aria-hidden="true">{{.Glyph}}</span>{{.Label}}</span>{{end}}
+
 {{define "stack"}}
-{{$inst := .}}
-<article class="stack" data-project="{{.Project}}" data-state="{{.State}}" data-collapsed="{{if or (eq .State "running") (eq .State "partial")}}0{{else}}1{{end}}">
-  <header class="stack-header" data-toggle-stack data-project="{{.Project}}">
-    <span class="stack-icon stack-color-{{.ColorIndex}}">{{initial .Project}}</span>
-    <div class="stack-title">
-      <span class="stack-name" title="{{.Hostname}}">{{.Hostname}}</span>
-      <span class="stack-path" title="{{.Root}}">{{.Root}}</span>
-    </div>
-    <span class="branch-tag" title="{{.Branch}}">{{.Branch}}</span>
-    {{if .Legacy}}<span class="legacy-tag">legacy</span>{{end}}
-    {{if .Knowledge}}<span class="knowledge knowledge-{{.Knowledge.Status}}">{{.Knowledge.Status}}</span>{{end}}
-    <span class="state-badge state-{{.State}}">{{.State}}</span>
-    <div class="stack-actions">
-      {{if ne .State "running"}}<button class="icon-btn" data-action="up" data-project="{{.Project}}" title="Up">&#9654;</button>{{end}}
-      {{if or (eq .State "running") (eq .State "partial")}}<button class="icon-btn" data-action="down" data-project="{{.Project}}" title="Down (keeps volumes)">&#9632;</button>{{end}}
-      <button class="icon-btn stack-menu-toggle" data-project="{{.Project}}" title="More">&#8942;</button>
-    </div>
-  </header>
-  {{if .Apps}}
-  <div class="app-strip">
-    {{range .Apps}}
-    {{if .URL}}
-    <a class="app-chip{{if not .Running}} stopped{{end}}" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}{{if .Direct}} (direct: {{.Direct}}){{end}}">{{.Label}}</a>
-    {{else}}
-    <span class="app-chip stopped">{{.Label}}{{if .Hint}}: {{.Hint}}{{end}}</span>
-    {{end}}
-    {{end}}
-  </div>
-  {{end}}
-  <div class="stack-menu" hidden>
-    {{range .Commands}}<code class="copyable cli-command" data-copy="{{.}}" title="click to copy">{{.}}</code>{{end}}
-    {{if .EnvBlock}}
-    <code class="copyable cli-command env-block" data-copy="{{.EnvBlock}}" data-copy-kind="env_block" data-copy-project="{{.Project}}" title="click to copy">Copy .env for host app</code>
-    {{end}}
-  </div>
-  {{if .Warnings}}
-  <ul class="warnings">
-    {{range .Warnings}}<li class="warning">{{.}}</li>{{end}}
-  </ul>
-  {{end}}
-  {{if or .OneOffRunning .OneOffLeftover}}
-  <div class="oneoff-bar" data-oneoff="1">
-    {{if .OneOffRunning}}<span>{{.OneOffRunning}} one-off task(s) running</span>{{end}}
-    {{if .OneOffLeftover}}<span>{{.OneOffLeftover}} leftover one-off container(s){{if .OneOffCleanup}}: <code class="copyable cli-command" data-copy="{{.OneOffCleanup}}" title="click to copy">{{.OneOffCleanup}}</code>{{end}}</span>{{end}}
-  </div>
-  {{end}}
-  {{if .SeedCommand}}
-  <div class="seed-bar" data-seed="failed">The last database seed failed{{if .SeedError}}:<pre class="seed-error">{{.SeedError}}</pre>{{else}}.{{end}}
-    If the app already has its data, record it as seeded (nothing runs):
-    <code class="copyable cli-command" data-copy="{{.SeedDone}}" title="click to copy">{{.SeedDone}}</code>
-    Otherwise retry with <code class="copyable cli-command" data-copy="{{.SeedCommand}}" title="click to copy">{{.SeedCommand}}</code>
-    (or, to run it again on a populated database, <code class="copyable cli-command" data-copy="{{.SeedForce}}" title="click to copy">{{.SeedForce}}</code>)</div>
-  {{end}}
-  <div class="stack-body">
-    {{range .Services}}
-    {{$svc := .}}
-    <div class="service-row" data-service="{{.Name}}">
-      <div class="service-summary" data-toggle-settings data-key="{{$inst.Project}}/{{.Name}}">
-        <span class="service-logo" data-kind="{{.Kind}}"></span>
-        <span class="status-dot {{dotClass .}}" title="{{dotTitle .}}"></span>
-        <div class="service-text">
-          <span class="service-name">{{.Name}}</span>
-          {{if eq .State "optional"}}<span class="service-image">not started (optional)</span>{{else}}          {{if .Image}}<span class="service-image">{{.Image}}</span>{{end}}{{end}}
-        </div>
-        <div class="service-endpoints">
-          {{range .Endpoints}}
-          {{if .Known}}
-            {{if or (eq .Scheme "http") (eq .Scheme "https")}}
-            <a class="endpoint-link{{if ne $svc.State "running"}} stopped{{end}}" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}">{{.URL}}{{if ne $svc.State "running"}} {{if or (eq $svc.State "optional") (eq $svc.State "not-started") (eq $svc.State "waiting") (eq $svc.State "waiting")}}(not started){{else}}(stopped){{end}}{{end}}{{if .Proxied}} (proxy){{end}}</a>
-            {{else}}
-            <span class="endpoint-copy copyable{{if ne $svc.State "running"}} stopped{{end}}" data-copy="{{.URL}}" title="click to copy">{{.URL}}{{if ne $svc.State "running"}} {{if or (eq $svc.State "optional") (eq $svc.State "not-started") (eq $svc.State "waiting") (eq $svc.State "waiting")}}(not started){{else}}(stopped){{end}}{{end}}</span>
-            {{end}}
-          {{else}}
-            <span class="endpoint-pending">container {{.Container}} &mdash; assigned on start</span>
-          {{end}}
-          {{end}}
-          {{if .ConnectionURL}}
-          <span class="endpoint-copy copyable connection-url" data-copy="{{.ConnectionURL}}" data-copy-kind="database_url" data-copy-project="{{$inst.Project}}" data-copy-service="{{$svc.Name}}" title="click to copy the connection URL ({{.ConnectionURL}})">connection URL</span>
-          {{end}}
-          {{range .UseCommands}}
-          <span class="endpoint-copy copyable use-command" data-copy="{{.Value}}" data-copy-kind="cli" data-copy-project="{{$inst.Project}}" data-copy-service="{{$svc.Name}}" title="click to copy: {{.Value}}">{{.Label}}</span>
-          {{end}}
-        </div>
-        <div class="service-icons">
-          {{if eq .State "running"}}
-          <button class="icon-btn" data-action="service-stop" data-project="{{$inst.Project}}" data-service="{{.Name}}" title="Stop">&#9632;</button>
-          {{else}}
-          <button class="icon-btn" data-action="service-start" data-project="{{$inst.Project}}" data-service="{{.Name}}" title="Start">&#9654;</button>
-          {{end}}
-          <button class="icon-btn" data-action="restart" data-project="{{$inst.Project}}" data-service="{{.Name}}" title="Restart">&#8635;</button>
-          <button class="icon-btn logs-button" data-project="{{$inst.Project}}" data-service="{{.Name}}" title="Logs">&#9776;</button>
-        </div>
-      </div>
-      <div class="service-settings" hidden>
-        {{if .Ports}}<div class="setting-row"><span class="setting-label">Ports</span><span class="setting-values">{{range .Ports}}<span class="setting-value">{{.Container}}{{if .Host}} &rarr; {{.Host}}{{end}}/{{.Protocol}}</span>{{end}}</span></div>{{end}}
-        {{if .Volumes}}<div class="setting-row"><span class="setting-label">Volumes</span><span class="setting-values">{{range .Volumes}}<span class="setting-value">{{.Name}} &rarr; {{.Path}}{{if .ReadOnly}} (ro){{end}}</span>{{end}}</span></div>{{end}}
-        {{if .Healthcheck}}<div class="setting-row"><span class="setting-label">Healthcheck</span><code class="setting-value">{{.Healthcheck}}</code></div>{{end}}
-        {{if .DependsOn}}<div class="setting-row"><span class="setting-label">Depends on</span><span class="setting-values">{{range .DependsOn}}<span class="setting-value">{{.}}</span>{{end}}</span></div>{{end}}
-        {{if .Replicas}}<div class="setting-row"><span class="setting-label">Replicas</span><span class="setting-value">{{.Replicas}}</span></div>{{end}}
-        {{if .EnvKeys}}<div class="setting-row"><span class="setting-label">Environment</span><span class="setting-values">{{range .EnvKeys}}<span class="setting-value">{{.}}</span>{{end}}</span></div>{{end}}
-        {{if $inst.Files}}<div class="setting-row"><span class="setting-label">Source files</span><span class="setting-values">{{range $inst.Files}}<span class="setting-value">{{.}}</span>{{end}}</span></div>{{end}}
-      </div>
-    </div>
-    {{end}}
-  </div>
+{{$inst := .}}{{$p := .Project}}{{$name := displayName .Project}}{{$live := isLive .State}}{{$app := openApp .Apps}}
+<article class="stack lane-{{lane .ColorIndex}}" data-project="{{.Project}}" data-state="{{.State}}" data-collapsed="{{if $live}}0{{else}}1{{end}}">
+<header class="stack-header">
+<button type="button" class="btn btn-ghost btn-icon chevron" data-toggle-stack data-project="{{.Project}}" data-key="{{.Project}}/toggle" aria-expanded="{{if $live}}true{{else}}false{{end}}" aria-label="Details for {{$name}}"><span class="chevron-glyph" aria-hidden="true"></span></button>
+<span class="avatar" aria-hidden="true">{{initial .Project}}</span>
+<div class="stack-id">
+<h3 class="stack-name" title="{{.Project}}">{{$name}}</h3>
+<span class="branch-pill" title="{{.Branch}}">&#8997; {{.Branch}}</span>
+{{template "chip" stateChip .State}}{{if .Legacy}}<span class="chip chip-off">legacy</span>{{end}}{{if .Knowledge}}<span class="chip chip-{{knowledgeTone .Knowledge.Status}}" title="Setup knowledge">{{.Knowledge.Status}}</span>{{end}}
+<div class="stack-actions">
+{{if not $live}}<button type="button" class="btn" data-action="up" data-project="{{.Project}}" data-key="{{.Project}}/up">Start</button>{{end}}
+{{if and $live $app}}<a class="btn mobile-hide" href="{{$app.URL}}" target="_blank" rel="noopener" data-key="{{.Project}}/open" title="{{$app.URL}}">Open App</a>{{end}}
+{{if $live}}<button type="button" class="btn btn-ghost mobile-hide" data-action="down" data-project="{{.Project}}" data-key="{{.Project}}/down" title="Stop (keeps volumes)">Stop</button>{{end}}
+<div class="menu-anchor"><button type="button" class="btn btn-ghost btn-icon" data-key="{{.Project}}/menu" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for {{$name}}" title="More actions"><span aria-hidden="true">&#8943;</span></button><div class="menu" role="menu" hidden>
+{{if eq .State "partial"}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Project}}/menu/up" data-action="up" data-project="{{.Project}}"><span class="menu-label">Start stopped services</span></button>{{end}}
+{{if $live}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Project}}/menu/restart" data-action="restart" data-project="{{.Project}}"><span class="menu-label">Restart</span></button>
+<button type="button" role="menuitem" class="menu-item mobile-only" tabindex="-1" data-key="{{.Project}}/menu/down" data-action="down" data-project="{{.Project}}"><span class="menu-label">Stop</span></button>{{end}}
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Project}}/menu/path" data-copy="{{.Root}}"><span class="menu-label">Copy path</span></button>
+{{if .EnvBlock}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Project}}/menu/env" data-copy="{{.EnvBlock}}" data-copy-kind="env_block" data-copy-project="{{.Project}}"><span class="menu-label">Copy .env for host app</span></button>{{end}}
+{{range $i, $c := warningCommands .Commands}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$p}}/menu/cmd{{$i}}" {{if runnable $c}}data-run{{else}}data-copy{{end}}="{{$c}}"><span class="menu-label">{{if runnable $c}}Run command{{else}}Copy command{{end}}</span><span class="menu-cmd mono">{{$c}}</span></button>{{end}}
+{{$down := index .Commands 0}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Project}}/menu/copydown" data-copy="{{$down}}"><span class="menu-label">Copy down command</span><span class="menu-cmd mono">{{$down}}</span></button>
+<hr class="menu-sep" role="separator">
+<button type="button" role="menuitem" class="menu-item menu-item-danger" tabindex="-1" data-key="{{.Project}}/menu/remove" data-run="{{$down}}"><span class="menu-label">Remove instance and data</span><span class="menu-cmd mono">{{$down}}</span></button>
+</div></div>
+</div>
+<div class="stack-meta mono"><span class="stack-path" title="{{.Root}}">{{or .RelRoot .Root}}</span>{{if .Hostname}}<span class="stack-sep" aria-hidden="true"> &middot; </span><span class="stack-host" title="{{.Hostname}}">{{.Hostname}}</span>{{end}}</div>
+</div>
+</header>
+{{if .Apps}}<div class="app-strip">{{range .Apps}}{{if and .URL .Running}}<a class="app-chip" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}{{if .Direct}} (direct: {{.Direct}}){{end}}">{{.Label}}</a>{{else if .URL}}<span class="app-chip stopped" title="Starts with the stack">{{.Label}}</span>{{else}}<span class="app-chip stopped" title="Starts with the stack">{{.Label}}{{if .Hint}}: {{.Hint}}{{end}}</span>{{end}}{{end}}</div>{{end}}
+{{if .SeedCommand}}<div class="callout callout-failed" data-seed="failed"><span class="callout-glyph" aria-hidden="true">&#8856;</span><div class="callout-body"><p class="callout-title">Database seed failed</p><p class="callout-detail">Retry runs it again. If the app already has its data, mark it as seeded instead.</p>{{if .SeedError}}<pre class="mono-log" tabindex="0" aria-label="Seed output">{{.SeedError}}</pre>{{end}}</div><div class="callout-actions"><button type="button" class="btn" data-run="{{.SeedCommand}}" data-key="{{.Project}}/seed/retry" title="{{.SeedCommand}}">Retry seed</button><div class="menu-anchor"><button type="button" class="btn btn-ghost btn-icon" data-key="{{.Project}}/seed/menu" aria-haspopup="menu" aria-expanded="false" aria-label="More seed actions for {{$name}}" title="More seed actions"><span aria-hidden="true">&#8943;</span></button><div class="menu" role="menu" hidden>
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Project}}/seed/done" data-run="{{.SeedDone}}"><span class="menu-label">Mark as seeded</span><span class="menu-cmd mono">{{.SeedDone}}</span></button>
+<hr class="menu-sep" role="separator">
+<button type="button" role="menuitem" class="menu-item menu-item-danger" tabindex="-1" data-key="{{.Project}}/seed/force" data-run="{{.SeedForce}}"><span class="menu-label">Re-seed, overwriting data</span><span class="menu-cmd mono">{{.SeedForce}}</span></button>
+</div></div></div></div>{{end}}
+{{if .Warnings}}<div class="callout callout-attention" data-callout="warnings"><span class="callout-glyph" aria-hidden="true">&#9650;</span><div class="callout-body"><ul class="warnings">{{range .Warnings}}<li class="warning">{{.}}</li>{{end}}</ul></div></div>{{end}}
+{{if or .OneOffRunning .OneOffLeftover}}<div class="callout callout-attention" data-oneoff="1"><span class="callout-glyph" aria-hidden="true">&#9650;</span><div class="callout-body">{{if .OneOffRunning}}<p class="callout-detail">{{plural .OneOffRunning "one-off task"}} running</p>{{end}}{{if .OneOffLeftover}}<p class="callout-detail">{{plural .OneOffLeftover "leftover one-off container"}}{{if .OneOffCleanup}} <span class="mono">{{.OneOffCleanup}}</span>{{end}}</p>{{end}}</div>{{if and .OneOffLeftover .OneOffCleanup}}<div class="callout-actions"><button type="button" class="btn" data-run="{{.OneOffCleanup}}" data-key="{{.Project}}/oneoff/clean" title="{{.OneOffCleanup}}">Clean up</button></div>{{end}}</div>{{end}}
+<div class="stack-body">
+{{if .Services}}<table class="service-table"><caption class="sr-only">Services of {{$name}}</caption><colgroup><col class="col-service"><col class="col-state"><col class="col-endpoints"><col class="col-actions"></colgroup><thead><tr><th scope="col" class="micro">Service</th><th scope="col" class="micro">State</th><th scope="col" class="micro">Endpoints</th><th scope="col" class="micro">Actions</th></tr></thead>
+{{range .Services}}{{$svc := .}}<tbody class="service-group">
+<tr class="service-row" data-service="{{.Name}}">
+<td class="cell-service"><span class="service-logo" data-kind="{{.Kind}}"></span><div class="service-text"><button type="button" class="service-name" data-toggle-settings data-key="{{$p}}/{{.Name}}/settings" aria-expanded="false">{{.Name}}</button>{{if eq .State "optional"}}<span class="service-image mono">not started (optional)</span>{{else if .Image}}<span class="service-image mono" title="{{.Image}}">{{.Image}}</span>{{end}}</div></td>
+<td class="cell-state">{{template "chip" serviceChip .}}</td>
+<td class="cell-endpoints">{{if or .Endpoints .ConnectionURL .UseCommands}}<div class="endpoints">
+{{range .Endpoints}}{{if .Known}}{{if or (eq .Scheme "http") (eq .Scheme "https")}}<a class="endpoint-link{{if ne $svc.State "running"}} stopped{{end}}" href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}"><span class="endpoint-url">{{.URL}}</span>{{$note := endpointNote $svc.State .Proxied}}{{if $note}}<span class="endpoint-note">{{$note}}</span>{{end}}</a>{{else}}<button type="button" class="endpoint-copy copyable{{if ne $svc.State "running"}} stopped{{end}}" data-copy="{{.URL}}" title="click to copy">{{.URL}}{{$note := endpointNote $svc.State false}}{{if $note}} {{$note}}{{end}}</button>{{end}}{{else}}<span class="endpoint-pending" title="container port {{.Container}}">port assigned on start</span>{{end}}{{end}}
+{{if .ConnectionURL}}<button type="button" class="endpoint-copy copyable connection-url" data-copy="{{.ConnectionURL}}" data-copy-kind="database_url" data-copy-project="{{$p}}" data-copy-service="{{$svc.Name}}" title="click to copy the connection URL ({{.ConnectionURL}})">connection URL</button>{{end}}
+{{range .UseCommands}}<button type="button" class="endpoint-copy copyable use-command" data-copy="{{.Value}}" data-copy-kind="cli" data-copy-project="{{$p}}" data-copy-service="{{$svc.Name}}" title="click to copy: {{.Value}}">{{.Label}}</button>{{end}}
+</div>{{else}}<span class="endpoint-none">&mdash;</span>{{end}}</td>
+<td class="cell-actions"><div class="row-actions"><button type="button" class="btn btn-ghost logs-button mobile-hide" data-project="{{$p}}" data-service="{{.Name}}" data-key="{{$p}}/{{.Name}}/logs">Logs</button><div class="menu-anchor"><button type="button" class="btn btn-ghost btn-icon" data-key="{{$p}}/{{.Name}}/menu" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for {{.Name}}" title="More actions"><span aria-hidden="true">&#8943;</span></button><div class="menu" role="menu" hidden>
+{{if eq .State "running"}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$p}}/{{.Name}}/menu/stop" data-action="service-stop" data-project="{{$p}}" data-service="{{.Name}}"><span class="menu-label">Stop</span></button>{{else}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$p}}/{{.Name}}/menu/start" data-action="service-start" data-project="{{$p}}" data-service="{{.Name}}"><span class="menu-label">Start</span></button>{{end}}
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$p}}/{{.Name}}/menu/restart" data-action="restart" data-project="{{$p}}" data-service="{{.Name}}"><span class="menu-label">Restart</span></button>
+<button type="button" role="menuitem" class="menu-item logs-button mobile-only" tabindex="-1" data-key="{{$p}}/{{.Name}}/menu/logs" data-project="{{$p}}" data-service="{{.Name}}"><span class="menu-label">Logs</span></button>
+</div></div></div></td>
+</tr>
+<tr class="service-settings" hidden><td colspan="4">
+{{if .Ports}}<div class="setting-row"><span class="setting-label">Ports</span><span class="setting-values">{{range .Ports}}<span class="setting-value">{{.Container}}{{if .Host}} &rarr; {{.Host}}{{end}}/{{.Protocol}}</span>{{end}}</span></div>{{end}}
+{{if .Volumes}}<div class="setting-row"><span class="setting-label">Volumes</span><span class="setting-values">{{range .Volumes}}<span class="setting-value">{{.Name}} &rarr; {{.Path}}{{if .ReadOnly}} (ro){{end}}</span>{{end}}</span></div>{{end}}
+{{if .Healthcheck}}<div class="setting-row"><span class="setting-label">Healthcheck</span><code class="setting-value">{{.Healthcheck}}</code></div>{{end}}
+{{if .DependsOn}}<div class="setting-row"><span class="setting-label">Depends on</span><span class="setting-values">{{range .DependsOn}}<span class="setting-value">{{.}}</span>{{end}}</span></div>{{end}}
+{{if .Replicas}}<div class="setting-row"><span class="setting-label">Replicas</span><span class="setting-value">{{.Replicas}}</span></div>{{end}}
+{{if .EnvKeys}}<div class="setting-row"><span class="setting-label">Environment</span><span class="setting-values">{{range .EnvKeys}}<span class="setting-value">{{.}}</span>{{end}}</span></div>{{end}}
+{{if $inst.Files}}<div class="setting-row"><span class="setting-label">Source files</span><span class="setting-values">{{range $inst.Files}}<span class="setting-value">{{.}}</span>{{end}}</span></div>{{end}}
+</td></tr>
+</tbody>{{end}}
+</table>{{end}}
+</div>
 </article>
 {{end}}
