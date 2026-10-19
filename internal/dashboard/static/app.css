@@ -19,9 +19,9 @@ body {
 
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-/* .icon-btn, .repo-btn and .run-btn are the legacy names app.js still emits;
+/* .icon-btn and .repo-btn are the legacy names app.js still emits;
    they share the .btn look until the later tasks rename them. */
-.btn, .icon-btn, .repo-btn, .run-btn {
+.btn, .icon-btn, .repo-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
   min-height: 32px; padding: 6px var(--space-3);
   border: 1px solid var(--line-control); border-radius: var(--radius-sm);
@@ -29,18 +29,17 @@ body {
   font: 600 13px/18px var(--font-sans); white-space: nowrap; cursor: pointer;
   transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-.btn:hover, .icon-btn:hover, .repo-btn:hover, .run-btn:hover { background: var(--surface-3); border-color: var(--fg-subtle); }
-.btn:disabled, .repo-btn:disabled, .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.repo-btn:disabled, .run-btn:disabled { cursor: progress; }
+.btn:hover, .icon-btn:hover, .repo-btn:hover { background: var(--surface-3); border-color: var(--fg-subtle); }
+.btn:disabled, .repo-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.repo-btn:disabled { cursor: progress; }
 @media (prefers-reduced-motion: reduce) {
-  .btn, .icon-btn, .repo-btn, .run-btn { transition: none; }
+  .btn, .icon-btn, .repo-btn { transition: none; }
 }
 .btn-primary, .repo-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn-primary:hover, .repo-btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 .btn-ghost { background: transparent; border-color: transparent; }
 .btn-ghost:hover { background: var(--surface-2); border-color: transparent; }
 .btn-icon, .icon-btn { min-width: 32px; padding: 0; }
-.run-btn { flex: none; }
 
 .chip {
   display: inline-flex; align-items: center; gap: var(--space-1);
@@ -216,6 +215,7 @@ a.app-chip:hover { background: var(--accent-soft); }
   border: 0; border-radius: var(--radius-sm); background: none; color: var(--fg); font: 400 13px/18px var(--font-sans);
   text-align: left; cursor: pointer;
 }
+.menu-item.mobile-only { display: none; } /* beats .menu-item's display:flex; the <720px block re-shows it */
 .menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); }
 .menu-item:focus-visible { outline-offset: -2px; }
 .menu-item:disabled { opacity: 0.5; cursor: progress; }
@@ -298,7 +298,7 @@ code.setting-value { display: inline-block; }
   .stack-meta { order: 4; display: flex; flex-direction: column; }
   .stack-sep { display: none; }
   .mobile-hide { display: none; }
-  .mobile-only { display: flex; }
+  .mobile-only, .menu-item.mobile-only { display: flex; }
   .app-strip { padding-left: 0; }
   .callout { flex-wrap: wrap; }
   .callout-actions { flex: 1 1 100%; justify-content: flex-end; }
@@ -319,7 +319,7 @@ code.setting-value { display: inline-block; }
   .chevron-glyph::before { transition: none; }
 }
 
-/* Every click-to-copy element (.cli-command, .endpoint-copy alike) shares
+/* Every click-to-copy element (.endpoint-copy and friends) shares
    this: a small leading copy icon and a hover color shift, so a copy
    action reads as clearly clickable instead of plain text (maintainer
    feedback). Shape (pill vs. full-width code block) stays per-class,
@@ -337,19 +337,6 @@ code.setting-value { display: inline-block; }
 }
 .copyable:hover::before { opacity: 1; }
 
-.cli-command {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--fg-muted);
-  white-space: pre-wrap;
-  word-break: break-all;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--bg);
-}
-.cli-command:hover { color: var(--accent-text); border-color: var(--accent); }
 
 .service-logo {
   flex: none;
@@ -405,10 +392,6 @@ code.setting-value { display: inline-block; }
 .copyable.just-copied { outline: 1px solid var(--ok); outline-offset: 2px; }
 .copyable.copy-failed { outline: 1px solid var(--failed); outline-offset: 2px; }
 
-/* a command chip with its Run button (app.js decorateRunnables) */
-.cmd-row { display: inline-flex; gap: 6px; align-items: center; max-width: 100%; vertical-align: middle; }
-.cmd-row.block { display: flex; margin-bottom: 6px; }
-.cmd-row > .cli-command { min-width: 0; flex: 1 1 auto; margin: 0; }
 .repo-btn.danger { color: var(--failed); }
 .repo-btn.danger:hover { border-color: var(--failed); }
 
