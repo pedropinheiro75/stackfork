@@ -78,6 +78,14 @@
 </main>
 
 <main id="view-repos" class="view" hidden>
+  <div class="repo-viewbar">
+    <fieldset class="segmented"><legend class="sr-only">Sort repos by</legend>
+      <label><input type="radio" name="repo-sort" value="activity" checked><span>Activity</span></label>
+      <label><input type="radio" name="repo-sort" value="name"><span>Name</span></label>
+      <label><input type="radio" name="repo-sort" value="folder"><span>Folder</span></label>
+    </fieldset>
+    <label><input type="checkbox" id="repo-group"> Group by folder</label>
+  </div>
   <div id="repos-list" aria-live="polite"></div>
 </main>
 

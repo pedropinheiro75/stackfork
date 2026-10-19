@@ -422,11 +422,12 @@
   // puts them back (the cards are replaced wholesale).
   var lastCards = null;
 
-  function keyed(key) {
-    var els = document.querySelectorAll("#view-instances [data-key]");
+  function keyedIn(scope, key) {
+    var els = document.querySelectorAll(scope + " [data-key]");
     for (var i = 0; i < els.length; i++) if (els[i].dataset.key === key) return els[i];
     return null;
   }
+  function keyed(key) { return keyedIn("#view-instances", key); }
 
   function writeCards(running, stopped) {
     var runHtml = running.map(stackHtml).join(""), stopHtml = stopped.map(stackHtml).join("");
@@ -763,7 +764,7 @@
   // repo and branch name); this code only swaps it in, filters it, and posts
   // the actions. Branch and path values travel in data-* attributes.
 
-  var reposState = { tab: "instances", filter: "", readyOnly: false, autoShownSettings: false, errors: {} };
+  var reposState = { tab: "instances", filter: "", readyOnly: false, autoShownSettings: false, errors: {}, open: {}, sort: "activity", group: false };
 
   // copyText writes to the clipboard and says so on the clicked element
   // itself (a button shows "Copied", anything else flashes), since the
@@ -839,25 +840,89 @@
       var hide = (needle && el.dataset.search.indexOf(needle) === -1) || (reposState.readyOnly && el.dataset.ready !== "1");
       el.hidden = !!hide;
     });
-    document.querySelectorAll("#repos-list .repo-group").forEach(function (g) {
-      g.hidden = !g.querySelector(".repo:not([hidden])");
+    document.querySelectorAll("#repos-list .repo-group-title").forEach(function (g) {
+      var n = g.nextElementSibling, any = false;
+      while (n && n.classList.contains("repo")) { if (!n.hidden) any = true; n = n.nextElementSibling; }
+      g.hidden = !any;
     });
   }
 
+  // Sort menu: Activity (the server's order: running first, then recent),
+  // Name or Folder, optionally grouped by folder. Done on the rows already
+  // in the page; the server's data-rank is the Activity order.
+  function applyRepoView() {
+    var rows = document.getElementById("repo-rows");
+    if (!rows) return;
+    rows.querySelectorAll(".repo-group-title").forEach(function (g) { g.remove(); });
+    var items = Array.prototype.slice.call(rows.querySelectorAll(".repo"));
+    var by = reposState.sort, group = reposState.group || by === "folder";
+    function str(a, b) { return a < b ? -1 : a > b ? 1 : 0; }
+    var want = items.slice().sort(function (x, y) {
+      var c = 0;
+      if (group) c = str(x.dataset.folder.toLowerCase(), y.dataset.folder.toLowerCase());
+      if (!c && by === "activity") c = x.dataset.rank - y.dataset.rank;
+      if (!c) c = str(x.dataset.name.toLowerCase(), y.dataset.name.toLowerCase()) || x.dataset.rank - y.dataset.rank;
+      return c;
+    });
+    var same = want.every(function (el, i) { return el === items[i]; });
+    if (!same) want.forEach(function (el) { rows.appendChild(el); });
+    if (reposState.group) {
+      var last = null;
+      want.forEach(function (el) {
+        if (el.dataset.folder === last) return;
+        last = el.dataset.folder;
+        var h = document.createElement("h3");
+        h.className = "repo-group-title micro";
+        h.textContent = last || "Scan root";
+        rows.insertBefore(h, el);
+      });
+    }
+  }
+
+  function setRepoOpen(repo, open) {
+    repo.dataset.open = open ? "1" : "0";
+    repo.querySelector(".repo-panel").hidden = !open;
+    repo.querySelector(".repo-toggle").setAttribute("aria-expanded", String(open));
+    if (open) reposState.open[repo.dataset.key] = true; else delete reposState.open[repo.dataset.key];
+  }
+
+  // lastRepos is the fragment last written. A poll that brings the same HTML
+  // changes nothing; one that differs remembers the focused element, the
+  // open menu and the scroll position, writes, and puts them back.
+  var lastRepos = null;
+
   function loadRepos() {
+    if (reposState.busy) return; // a Start is streaming progress into the rows
     fetch("/fragments/repos", { credentials: "same-origin" })
       .then(function (r) { if (!r.ok) throw new Error("status " + r.status); return r.text(); })
       .then(function (html) {
+        if (reposState.busy) return;
         var list = document.getElementById("repos-list");
-        var open = {};
-        list.querySelectorAll("details.repo[open]").forEach(function (d) { open[d.dataset.key] = true; });
-        list.innerHTML = html;
-        list.querySelectorAll("details.repo").forEach(function (d) { if (open[d.dataset.key]) d.open = true; });
-        applyRepoFilters();
-        renderRepoErrors();
-        document.getElementById("rail-count-repos").textContent = list.querySelectorAll(".repo").length || "";
         var meta = document.getElementById("repos-meta");
-        document.getElementById("scan-state").textContent = meta && meta.dataset.scanning === "true" ? "scanning..." : "";
+        if (html !== lastRepos) {
+          lastRepos = html;
+          var active = document.activeElement;
+          var focusKey = active && active.closest && active.closest("#repos-list") && active.dataset ? active.dataset.key : "";
+          var menu = document.querySelector('#repos-list [aria-haspopup="menu"][aria-expanded="true"]');
+          var menuKey = menu ? menu.dataset.key : "";
+          var scrollY = window.scrollY;
+          list.innerHTML = html;
+          list.querySelectorAll(".repo").forEach(function (d) { if (reposState.open[d.dataset.key]) setRepoOpen(d, true); });
+          applyRepoView();
+          applyRepoFilters();
+          renderRepoErrors();
+          if (menuKey) { var tr = keyedIn("#repos-list", menuKey); if (tr) openMenu(tr, false); }
+          if (focusKey) {
+            var again = keyedIn("#repos-list", focusKey);
+            if (again && again !== document.activeElement) again.focus({ preventScroll: true });
+          }
+          if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
+          meta = document.getElementById("repos-meta");
+        }
+        document.getElementById("rail-count-repos").textContent = list.querySelectorAll(".repo").length || "";
+        var scanning = meta && meta.dataset.scanning === "true";
+        var n = meta ? Number(meta.dataset.count) : 0;
+        document.getElementById("scan-state").textContent = scanning ? "◔ Scanning folders…" : n ? n + (n === 1 ? " repo" : " repos") : "";
         if (meta && meta.dataset.configured === "false" && !reposState.autoShownSettings) {
           reposState.autoShownSettings = true;
           setView("settings");
@@ -894,35 +959,53 @@
   function renderRepoErrors() {
     var list = document.getElementById("repos-list");
     list.querySelectorAll(".repo-error").forEach(function (e) { e.remove(); });
-    list.querySelectorAll("details.repo").forEach(function (d) {
+    list.querySelectorAll(".repo").forEach(function (d) {
       var err = reposState.errors[d.dataset.key];
       if (!err) return;
       var box = document.createElement("div");
-      box.className = "repo-error";
+      box.className = "repo-error callout callout-failed";
       box.setAttribute("role", "alert");
       box.dataset.repo = d.dataset.key;
-      var head = document.createElement("strong");
-      head.textContent = err.label + " failed";
+      var glyph = document.createElement("span");
+      glyph.className = "callout-glyph";
+      glyph.setAttribute("aria-hidden", "true");
+      glyph.textContent = "⊘";
+      var body = document.createElement("div");
+      body.className = "callout-body";
+      var head = document.createElement("p");
+      head.className = "callout-title";
+      head.textContent = err.title || err.label + " failed";
+      var detail = document.createElement("p");
+      detail.className = "callout-detail";
+      detail.textContent = err.label;
       var msg = document.createElement("pre");
-      msg.className = "repo-error-msg";
+      msg.className = "repo-error-msg mono-log";
+      msg.tabIndex = 0;
+      msg.setAttribute("aria-label", "Error output");
+      msg.dataset.key = d.dataset.key + "/error/log";
       msg.textContent = err.message;
       var retry = document.createElement("div");
+      retry.className = "command-row";
       retry.appendChild(document.createTextNode("Retry in a terminal: "));
       var code = document.createElement("code");
-      code.className = "copyable";
+      code.className = "copyable mono";
       code.dataset.copy = err.command;
       code.title = "click to copy";
       code.textContent = err.command;
       retry.appendChild(code);
+      body.appendChild(head); body.appendChild(detail); body.appendChild(msg); body.appendChild(retry);
+      var actions = document.createElement("div");
+      actions.className = "callout-actions";
       var dismiss = document.createElement("button");
       dismiss.type = "button";
-      dismiss.className = "repo-btn";
+      dismiss.className = "btn btn-ghost";
       dismiss.dataset.dismissRepo = d.dataset.key;
+      dismiss.dataset.key = d.dataset.key + "/error/dismiss";
       dismiss.textContent = "Dismiss";
-      box.appendChild(head); box.appendChild(msg); box.appendChild(retry); box.appendChild(dismiss);
-      var summary = d.querySelector("summary");
-      summary.parentNode.insertBefore(box, summary.nextSibling);
-      d.open = true;
+      actions.appendChild(dismiss);
+      box.appendChild(glyph); box.appendChild(body); box.appendChild(actions);
+      d.querySelector("[data-repo-errors]").appendChild(box);
+      setRepoOpen(d, true);
     });
   }
 
@@ -954,18 +1037,22 @@
     var label = name + (what ? ":" + what : "") + " " + d.repoAction;
     var created = "";
     function fail(msg) {
-      reposState.errors[d.repo] = { label: label, message: msg, command: retryCommand(d, created) };
+      reposState.errors[d.repo] = { label: label, title: ({ start: "Start", "worktree-add": "Create worktree", fetch: "Fetch" }[d.repoAction] || "Action") + " failed", message: msg, command: retryCommand(d, created) };
     }
+    // A menu item keeps its label (it is hidden once the menu closes); the
+    // progress text goes next to the row's overflow button instead.
+    var inMenu = btn.classList.contains("menu-item");
+    var anchor = inMenu ? btn.closest(".menu-anchor") : btn;
     btn.disabled = true;
     var btnText = btn.textContent;
-    btn.textContent = d.repoAction === "start" ? "Starting\u2026" : btnText + "\u2026";
+    if (!inMenu) btn.textContent = d.repoAction === "start" ? "Starting\u2026" : btnText + "\u2026";
     // The latest progress line shows next to the button: a start can take
     // minutes (installs, health checks) and the log is at the page bottom.
     var progress = document.createElement("span");
     progress.className = "row-progress";
     progress.setAttribute("aria-live", "polite");
     progress.textContent = "starting\u2026";
-    btn.insertAdjacentElement("beforebegin", progress);
+    anchor.insertAdjacentElement("beforebegin", progress);
     reposState.busy = (reposState.busy || 0) + 1;
     delete reposState.errors[d.repo];
     log(label + ": started");
@@ -1006,7 +1093,7 @@
       .catch(function (e) { log(label + ": " + e.message); fail(e.message); })
       .then(function () {
         btn.disabled = false;
-        btn.textContent = btnText;
+        if (!inMenu) btn.textContent = btnText;
         progress.remove();
         reposState.busy--;
         loadRepos();
@@ -1037,7 +1124,8 @@
     document.getElementById("ready-only").addEventListener("change", function (e) {
       reposState.readyOnly = e.target.checked; applyRepoFilters();
     });
-    document.getElementById("rescan").addEventListener("click", function () { postConfig("rescan", "").then(function () { setTimeout(loadRepos, 800); }); });
+    function rescan() { reposState.rescanning = true; postConfig("rescan", "").then(function () { setTimeout(loadRepos, 800); }); }
+    document.getElementById("rescan").addEventListener("click", rescan);
     document.getElementById("repos-list").addEventListener("click", function (e) {
       var inst = e.target.closest(".instance-link");
       if (inst) {
@@ -1047,12 +1135,38 @@
         if (art) { art.dataset.collapsed = "0"; art.scrollIntoView({ block: "center" }); }
         return;
       }
+      var tog = e.target.closest("[data-toggle-repo]");
+      if (tog) {
+        var repo = tog.closest(".repo");
+        var open = tog.hasAttribute("data-open-only") ? true : repo.dataset.open !== "1";
+        setRepoOpen(repo, open);
+        if (open && tog.hasAttribute("data-open-only")) {
+          var first = repo.querySelector('.repo-panel [data-repo-action="start"]');
+          if (first) { first.scrollIntoView({ block: "nearest" }); first.focus({ preventScroll: true }); }
+        }
+        return;
+      }
+      var goto = e.target.closest("[data-goto]");
+      if (goto) { setView(goto.dataset.goto); return; }
+      if (e.target.closest("[data-rescan]")) { rescan(); return; }
+      var row = e.target.closest(".repo-row");
+      if (row && !e.target.closest("button, a, .menu-anchor, .copyable")) { var rt = row.querySelector(".repo-toggle"); if (rt) rt.click(); return; }
       var dis = e.target.closest("[data-dismiss-repo]");
       if (dis) { delete reposState.errors[dis.dataset.dismissRepo]; renderRepoErrors(); return; }
       var act = e.target.closest("[data-repo-action]");
       if (act) { runRepoAction(act); return; }
-      var copy = e.target.closest(".copyable");
-      if (copy) { e.preventDefault(); copyText(copy.dataset.copy, copy.dataset.label || copy.textContent.trim(), copy); }
+      var copy = e.target.closest(".copyable, .menu-item[data-copy]");
+      if (copy) {
+        e.preventDefault();
+        var lbl = copy.querySelector(".menu-label");
+        copyText(copy.dataset.copy, copy.dataset.label || (lbl || copy).textContent.trim(), copy);
+      }
+    });
+    document.querySelectorAll('input[name="repo-sort"]').forEach(function (r) {
+      r.addEventListener("change", function () { reposState.sort = r.value; applyRepoView(); applyRepoFilters(); });
+    });
+    document.getElementById("repo-group").addEventListener("change", function (e) {
+      reposState.group = e.target.checked; applyRepoView(); applyRepoFilters();
     });
     var panel = document.getElementById("view-settings");
     panel.addEventListener("click", function (e) {
@@ -1153,7 +1267,7 @@
     var agents = document.getElementById("learn-agents");
     var status = document.getElementById("learn-status");
     document.getElementById("learn-title").textContent = "Learn " + btn.dataset.name + " with your agent";
-    document.getElementById("learn-prompt").textContent = btn.dataset.copy;
+    document.getElementById("learn-prompt").textContent = btn.dataset.prompt || btn.dataset.copy;
     agents.innerHTML = "loading\u2026";
     status.textContent = "";
     modal.showModal();

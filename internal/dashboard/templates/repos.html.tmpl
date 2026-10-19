@@ -1,77 +1,141 @@
 {{define "repos"}}
-<div id="repos-meta" data-configured="{{.Configured}}" data-scanning="{{.Scanning}}" hidden></div>
+<div id="repos-meta" data-configured="{{.Configured}}" data-scanning="{{.Scanning}}" data-count="{{len .Repos}}" hidden></div>
 {{if not .Configured}}
 <div class="empty-state">
-  <p><strong>No folders to scan yet.</strong> Add the folder that holds your repositories in <em>Settings</em>, or run <code class="copyable" data-copy="stackfork config add-root PATH" title="click to copy">stackfork config add-root PATH</code>.</p>
+  <h2>Pick the folder that holds your repos</h2>
+  <p class="muted">stackfork scans it for git repositories and shows their worktrees and branches here.</p>
+  <p class="empty-actions"><button type="button" class="btn btn-primary" data-goto="settings" data-key="empty/add-folder">Add folder</button></p>
+  <p class="command-row"><code class="mono copyable" data-copy="stackfork config add-root PATH" title="click to copy">stackfork config add-root PATH</code></p>
 </div>
 {{else if not .Repos}}
-<div class="empty-state"><p>No git repositories found under the configured folders{{if .Scanning}} (scanning...){{end}}.</p></div>
+{{if .Scanning}}
+<div class="repo-table" aria-busy="true">
+  <div class="repo-head micro" aria-hidden="true"><span>Repo</span><span>Status</span><span class="num">Worktrees</span><span class="num">Branches</span><span class="num">Last activity</span><span></span></div>
+  <div class="skeleton-row" aria-hidden="true"></div><div class="skeleton-row" aria-hidden="true"></div><div class="skeleton-row" aria-hidden="true"></div><div class="skeleton-row" aria-hidden="true"></div><div class="skeleton-row" aria-hidden="true"></div>
+</div>
+<p class="muted" role="status">Scanning folders&hellip;</p>
+{{else}}
+<div class="empty-state">
+  <h2>No git repositories found</h2>
+  <p class="muted">Nothing under the configured folders is a git repository.</p>
+  <p class="empty-actions"><button type="button" class="btn" data-rescan data-key="empty/rescan">Rescan</button> <button type="button" class="btn btn-ghost" data-goto="settings" data-key="empty/change-folders">Change folders</button></p>
+</div>
 {{end}}
-{{range .Groups}}
-<section class="repo-group">
-  <h3 class="group-title">{{if .Name}}{{.Name}}{{else}}(top level){{end}}</h3>
-  {{range .Repos}}{{$r := .Repo}}
-  <details class="repo" data-key="{{$r.Path}}" data-search="{{.Search}}" data-ready="{{if eq $r.Readiness "ready"}}1{{else}}0{{end}}">
-    <summary class="repo-summary">
-      <span class="repo-name">{{$r.Name}}</span>
-      <span class="readiness readiness-{{$r.Readiness}}" title="{{$r.ReadinessReason}}">{{if eq $r.Readiness "needs-learn"}}needs learn{{else}}{{$r.Readiness}}{{end}}</span>
-      {{if $r.Running}}<span class="repo-running">{{$r.Running}} running</span>{{end}}
-      <span class="repo-counts">{{len $r.Worktrees}} worktree(s) &middot; {{len $r.Branches}} branch(es)</span>
-      <span class="repo-last" title="last commit">{{date $r.LastCommit}}</span>
-    </summary>
-    <div class="repo-body">
-      <div class="repo-meta">
-        <span class="stack-path" title="{{$r.Path}}">{{$r.Path}}</span>
-        <span class="muted">default branch <code>{{$r.DefaultBranch}}</code></span>
-        <button type="button" class="repo-btn" data-repo-action="fetch" data-repo="{{$r.Path}}" title="git fetch --prune in this repo only">Fetch</button>
+{{else}}
+{{$first := .FirstSetup}}
+<div class="repo-table">
+  <div class="repo-head micro" aria-hidden="true"><span>Repo</span><span>Status</span><span class="num">Worktrees</span><span class="num">Branches</span><span class="num">Last activity</span><span></span></div>
+  <div id="repo-rows">
+  {{range $i, $row := .Rows}}{{$r := $row.Repo}}{{$c := repoChip $r}}
+  {{$ready := eq $r.Readiness "ready"}}
+  <div class="repo" data-key="{{$r.Path}}" data-search="{{$row.Search}}" data-ready="{{if $ready}}1{{else}}0{{end}}" data-name="{{$r.Name}}" data-folder="{{$r.Group}}" data-rank="{{$i}}" data-open="0">
+    <div class="repo-row">
+      <button type="button" class="repo-toggle" data-key="{{$r.Path}}/toggle" data-toggle-repo aria-expanded="false" aria-controls="repo-panel-{{$i}}" title="{{$r.Path}}">
+        <span class="chevron-glyph" aria-hidden="true"></span>
+        <span class="repo-id"><span class="repo-name">{{$r.Name}}</span>{{if $r.Group}}<span class="repo-folder">{{$r.Group}}</span>{{end}}</span>
+      </button>
+      <span class="repo-status"><span class="chip chip-{{$c.Class}}" title="{{$r.ReadinessReason}}"><span class="chip-glyph" aria-hidden="true">{{$c.Glyph}}</span>{{$c.Label}}</span></span>
+      <span class="repo-counts">
+        <span class="repo-num"><span class="num">{{len $r.Worktrees}}</span><span class="unit">{{if eq (len $r.Worktrees) 1}} worktree{{else}} worktrees{{end}}</span></span><span class="sep" aria-hidden="true">&middot;</span>
+        <span class="repo-num"><span class="num">{{len $r.Branches}}</span><span class="unit">{{if eq (len $r.Branches) 1}} branch{{else}} branches{{end}}</span></span><span class="sep" aria-hidden="true">&middot;</span>
+        <span class="repo-last" title="{{stamp $r.LastCommit}}">{{ago $r.LastCommit}}</span>
+      </span>
+      <span class="repo-actions">
+        {{if $ready}}<button type="button" class="btn" data-key="{{$r.Path}}/start" data-toggle-repo data-open-only title="Pick a branch or worktree to start">Start&hellip;</button>
+        {{else}}<button type="button" class="btn{{if eq $first $r.Path}} btn-primary{{end}} learn-btn" data-key="{{$r.Path}}/setup" data-repo="{{$r.Path}}" data-name="{{$r.Name}}" data-prompt="{{prompt $r.Name $r.Path $r.DefaultBranch}}" title="{{$r.ReadinessReason}}">Set up</button>{{end}}
+        <div class="menu-anchor"><button type="button" class="btn btn-ghost btn-icon" data-key="{{$r.Path}}/menu" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for {{$r.Name}}" title="More actions"><span aria-hidden="true">&#8943;</span></button><div class="menu" role="menu" hidden>
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$r.Path}}/menu/fetch" data-repo-action="fetch" data-repo="{{$r.Path}}" title="git fetch --prune in this repo only"><span class="menu-label">Fetch</span></button>
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$r.Path}}/menu/path" data-copy="{{$r.Path}}"><span class="menu-label">Copy path</span><span class="menu-cmd mono">{{tilde $r.Path}}</span></button>
+{{if not $ready}}<button type="button" role="menuitem" class="menu-item learn-btn" tabindex="-1" data-key="{{$r.Path}}/menu/learn" data-repo="{{$r.Path}}" data-name="{{$r.Name}}" data-prompt="{{prompt $r.Name $r.Path $r.DefaultBranch}}" title="open Claude Code, Codex or Copilot CLI in a terminal to learn and verify how this project starts (once per project)"><span class="menu-label">Learn with your agent</span></button>
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$r.Path}}/menu/prompt" data-copy="{{prompt $r.Name $r.Path $r.DefaultBranch}}"><span class="menu-label">Copy prompt</span></button>{{end}}
+</div></div>
+      </span>
+    </div>
+    <div class="repo-panel" id="repo-panel-{{$i}}" hidden>
+      <div class="repo-errors" data-repo-errors></div>
+      <p class="repo-meta"><span class="mono" title="{{$r.Path}}">{{tilde $r.Path}}</span><span class="dot" aria-hidden="true">&middot;</span><span>default <code class="mono">{{$r.DefaultBranch}}</code></span></p>
+      {{if not $ready}}
+      <div class="callout" data-setup-callout>
+        <span class="callout-glyph" aria-hidden="true">&#9675;</span>
+        <div class="callout-body"><p class="callout-title">stackfork has not verified how this project starts. Set it up once with your agent.</p><p class="callout-detail">{{$r.ReadinessReason}}</p></div>
+        <div class="callout-actions"><button type="button" class="btn learn-btn" data-key="{{$r.Path}}/panel-setup" data-repo="{{$r.Path}}" data-name="{{$r.Name}}" data-prompt="{{prompt $r.Name $r.Path $r.DefaultBranch}}">Set up with your agent</button></div>
       </div>
-      <p class="muted reason">{{$r.ReadinessReason}}{{if ne $r.Readiness "ready"}}
-        <button type="button" class="repo-btn learn-btn" data-repo="{{$r.Path}}" data-name="{{$r.Name}}" data-copy="{{prompt $r.Name $r.Path $r.DefaultBranch}}" title="open Claude Code, Codex or Copilot CLI in a terminal to learn and verify how this project starts (once per project)">Learn with your agent</button>{{end}}</p>
-      <div class="recipe" data-recipe="{{.Recipe.State}}">
-        <span class="muted">Startup recipe</span>
-        {{if .Recipe.Migrate}}<span>migrate <code>{{.Recipe.Migrate}}</code></span>{{end}}
-        <span>seed: {{if eq .Recipe.State "seed"}}<code>{{.Recipe.Seed}}</code>{{else if eq .Recipe.State "never"}}never{{else if eq .Recipe.State "auto"}}auto (detected <code>{{.Recipe.Detected}}</code>){{else}}no seed script found{{end}}</span>
-        <span class="muted">change with <code class="copyable" data-copy="stackfork learn record recipe --seed-once CMD" title="click to copy">stackfork learn record recipe --seed-once …</code> (or <code>none</code>)</span>
+      {{end}}
+      <div class="recipe" data-recipe="{{$row.Recipe.State}}">
+        <span class="recipe-label small">Starts with</span>
+        {{if $row.Recipe.Migrate}}<code class="mono chip-code copyable" data-copy="{{$row.Recipe.Migrate}}" title="click to copy">migrate: {{$row.Recipe.Migrate}}</code>{{end}}
+        {{if eq $row.Recipe.State "seed"}}<code class="mono chip-code copyable" data-copy="{{$row.Recipe.Seed}}" title="click to copy">seed once: {{$row.Recipe.Seed}}</code>
+        {{else if eq $row.Recipe.State "auto"}}<code class="mono chip-code copyable" data-copy="{{$row.Recipe.Detected}}" title="click to copy">seed once: {{$row.Recipe.Detected}}</code><span class="small muted">(auto-detected)</span>
+        {{else if eq $row.Recipe.State "never"}}<span class="small muted">seed: never</span>
+        {{else}}<span class="small muted">no seed script found</span>{{end}}
+        <div class="menu-anchor"><button type="button" class="btn btn-ghost" data-key="{{$r.Path}}/recipe" aria-haspopup="menu" aria-expanded="false">Change&hellip;</button><div class="menu menu-left" role="menu" hidden>
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$r.Path}}/recipe/copy" data-copy="stackfork learn record recipe --seed-once CMD"><span class="menu-label">Copy command (CMD is your seed command, or none)</span><span class="menu-cmd mono">stackfork learn record recipe --seed-once CMD</span></button>
+</div></div>
       </div>
-      <h4>Worktrees</h4>
-      <ul class="wt-list">
-        {{range $r.Worktrees}}
-        <li class="wt-row">
-          <span class="branch-tag" title="{{.Branch}}">{{.Branch}}</span>
-          {{if .Main}}<span class="muted">main checkout</span>{{end}}
-          {{if .Dirty}}<span class="dirty" title="uncommitted changes">modified</span>{{end}}
-          <span class="stack-path" title="{{.Path}}">{{.Path}}</span>
-          {{if .Instance}}<a href="#" class="instance-link state-badge state-{{.Instance.State}}" data-project="{{.Instance.Project}}" title="{{.Instance.Project}}">{{.Instance.State}}</a>{{end}}
-          <span class="row-actions">
-            {{if and (eq $r.Readiness "ready") (not (and .Instance (isRunning .Instance.State)))}}<button type="button" class="repo-btn primary" data-repo-action="start" data-repo="{{$r.Path}}" data-path="{{.Path}}">Start</button>{{end}}
-            {{if not .Main}}<button type="button" class="repo-btn run-btn danger" data-run="git -C {{shq $r.Path}} worktree remove {{shq .Path}}" title="remove this worktree{{if .Instance}} and its stack{{end}}; asks for confirmation, refuses uncommitted changes">Remove</button>{{end}}
+
+      <div class="wt-table">
+        <div class="wt-head micro" aria-hidden="true"><span>Lane</span><span>Branch</span><span>Path</span><span>Ahead / behind upstream</span><span>State</span><span></span></div>
+        {{$nwt := len $r.Worktrees}}
+        {{range $j, $w := $r.Worktrees}}{{$lane := laneOf $w}}
+        <div class="wt-row{{if $lane}} lane-{{$lane}}{{end}}{{if $w.Main}} wt-main{{end}}{{if isLast $j $nwt}} wt-last{{end}}" data-key="{{$r.Path}}/wt/{{$w.Path}}">
+          <span class="wt-lane" aria-hidden="true"><svg width="24" height="100%" focusable="false"><rect class="lane-trunk" x="11" y="0" width="2" height="100%"/>{{if not $w.Main}}<rect class="lane-stub{{if not $lane}} lane-none{{end}}" x="11" y="50%" width="9" height="2"/>{{end}}<circle class="lane-dot{{if not $lane}} lane-none{{end}}" cx="{{if $w.Main}}12{{else}}20{{end}}" cy="50%" r="3"/></svg></span>
+          <span class="wt-branch">
+            {{if detached $w.Branch}}<span class="branch-pill{{if not $lane}} branch-pill-plain{{end}}" title="{{$w.Branch}}">detached @ <span class="mono">{{shortSha $w.Branch}}</span></span>
+            {{else}}<span class="branch-pill{{if not $lane}} branch-pill-plain{{end}}" title="{{$w.Branch}}">{{$w.Branch}}</span>{{end}}
+            {{if $w.Main}}<span class="chip chip-off">main checkout</span>{{end}}
+            {{if $w.Dirty}}<span class="chip chip-attention" title="uncommitted changes"><span class="chip-glyph" aria-hidden="true">&#9679;</span>changes</span>{{end}}
           </span>
-        </li>
+          <span class="wt-path mono" title="{{$w.Path}}">{{relPath $r.Path $w.Path}}</span>
+          <span class="wt-ab">{{template "aheadbehind" $w}}</span>
+          <span class="wt-state">{{if $w.Instance}}{{$c := stateChip $w.Instance.State}}<a href="#" class="instance-link" data-project="{{$w.Instance.Project}}" data-key="{{$r.Path}}/wt/{{$w.Path}}/state" title="Show {{$w.Instance.Project}} on Instances"><span class="chip chip-{{$c.Class}}"><span class="chip-glyph" aria-hidden="true">{{$c.Glyph}}</span>{{$c.Label}}</span></a>{{else}}<span class="chip chip-off"><span class="chip-glyph" aria-hidden="true">&#9675;</span>No stack</span>{{end}}</span>
+          <span class="wt-actions">
+            {{if and $w.Instance (isRunning $w.Instance.State)}}<a href="#" class="btn instance-link" data-project="{{$w.Instance.Project}}" data-key="{{$r.Path}}/wt/{{$w.Path}}/show">Show instance</a>
+            {{else if $ready}}<button type="button" class="btn" data-key="{{$r.Path}}/wt/{{$w.Path}}/start" data-repo-action="start" data-repo="{{$r.Path}}" data-path="{{$w.Path}}">Start</button>
+            {{else}}<button type="button" class="btn" disabled title="Set up this repo first">Start</button>{{end}}
+            <div class="menu-anchor"><button type="button" class="btn btn-ghost btn-icon" data-key="{{$r.Path}}/wt/{{$w.Path}}/menu" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for {{$w.Branch}}" title="More actions"><span aria-hidden="true">&#8943;</span></button><div class="menu" role="menu" hidden>
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$r.Path}}/wt/{{$w.Path}}/menu/path" data-copy="{{$w.Path}}"><span class="menu-label">Copy path</span><span class="menu-cmd mono">{{tilde $w.Path}}</span></button>
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$r.Path}}/wt/{{$w.Path}}/menu/cd" data-copy="cd {{shq $w.Path}}"><span class="menu-label">Copy terminal command</span><span class="menu-cmd mono">cd {{shq $w.Path}}</span></button>
+{{if not $w.Main}}<hr class="menu-sep" role="separator">
+<button type="button" role="menuitem" class="menu-item menu-item-danger" tabindex="-1" data-key="{{$r.Path}}/wt/{{$w.Path}}/menu/remove" data-run="git -C {{shq $r.Path}} worktree remove {{shq $w.Path}}" title="asks for confirmation; refuses uncommitted changes{{if $w.Instance}}; the stack goes too{{end}}"><span class="menu-label">Remove worktree</span><span class="menu-cmd mono">git worktree remove {{relPath $r.Path $w.Path}}</span></button>{{end}}
+</div></div>
+          </span>
+        </div>
         {{end}}
-      </ul>
+      </div>
+
       {{if $r.Branches}}
-      <h4>Branches without a worktree</h4>
-      <ul class="wt-list">
+      <div class="wt-table wt-branches">
+        <p class="wt-subhead micro">Branches not checked out</p>
         {{range $r.Branches}}
-        <li class="wt-row">
-          <span class="branch-tag" title="{{.Name}}">{{.Name}}</span>
-          <span class="muted">{{date .LastCommit}}</span>
-          {{if .Ahead}}<span class="muted">ahead {{.Ahead}}</span>{{end}}{{if .Behind}}<span class="muted">behind {{.Behind}}</span>{{end}}
-          <span class="row-actions">
-            {{if eq $r.Readiness "ready"}}
-              <button type="button" class="repo-btn primary" data-repo-action="start" data-repo="{{$r.Path}}" data-branch="{{.Name}}" data-confirm="Create the worktree {{worktreeAt $r.Path .Name}} and start its environment?">Start</button>
-            {{end}}
+        <div class="wt-row wt-branch-row" data-key="{{$r.Path}}/br/{{.Name}}">
+          <span class="wt-lane" aria-hidden="true"><svg width="24" height="100%" focusable="false"><rect class="lane-trunk lane-dashed" x="11" y="0" width="2" height="100%"/><rect class="lane-stub lane-none lane-dashed" x="11" y="50%" width="9" height="2"/><circle class="lane-dot lane-none lane-hollow" cx="20" cy="50%" r="3"/></svg></span>
+          <span class="wt-branch"><span class="branch-pill branch-pill-plain" title="{{.Name}}">{{.Name}}</span></span>
+          <span class="wt-path mono muted" title="last commit {{stamp .LastCommit}}">not checked out</span>
+          <span class="wt-ab">{{template "aheadbehind" .}}</span>
+          <span class="wt-state"><span class="chip chip-off"><span class="chip-glyph" aria-hidden="true">&#9675;</span>No stack</span></span>
+          <span class="wt-actions">
+            {{if $ready}}<button type="button" class="btn" data-key="{{$r.Path}}/br/{{.Name}}/start" data-repo-action="start" data-repo="{{$r.Path}}" data-branch="{{.Name}}" data-confirm="Create the worktree {{worktreeAt $r.Path .Name}} and start its environment?">Start</button>
+            {{else}}<button type="button" class="btn" disabled title="Set up this repo first">Start</button>{{end}}
+            <div class="menu-anchor"><button type="button" class="btn btn-ghost btn-icon" data-key="{{$r.Path}}/br/{{.Name}}/menu" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for {{.Name}}" title="More actions"><span aria-hidden="true">&#8943;</span></button><div class="menu" role="menu" hidden>
+{{if $ready}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$r.Path}}/br/{{.Name}}/menu/wt" data-repo-action="worktree-add" data-repo="{{$r.Path}}" data-branch="{{.Name}}" data-confirm="Create the worktree {{worktreeAt $r.Path .Name}} without starting it?"><span class="menu-label">Create worktree only</span><span class="menu-cmd mono">{{relPath $r.Path (worktreeAt $r.Path .Name)}}</span></button>{{end}}
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$r.Path}}/br/{{.Name}}/menu/copy" data-copy="{{.Name}}"><span class="menu-label">Copy branch name</span></button>
+</div></div>
           </span>
-        </li>
+        </div>
         {{end}}
-      </ul>
+      </div>
       {{end}}
     </div>
-  </details>
+  </div>
   {{end}}
-</section>
+  </div>
+</div>
 {{end}}
 {{end}}
+
+{{define "aheadbehind"}}{{$t := aheadBehindText .Ahead .Behind .Upstream}}{{if eq .Upstream ""}}<span class="ab-none" title="this branch tracks no upstream">no upstream</span>
+{{else if and (eq .Ahead 0) (eq .Behind 0)}}<span class="ab-none" title="matches {{.Upstream}}">up to date</span>
+{{else}}{{$b := bar .Ahead .Behind}}<span class="ab" title="{{$t}} ({{.Upstream}})"><svg class="ab-bar" width="56" height="4" viewBox="0 0 56 4" aria-hidden="true" focusable="false"><rect class="ab-track" width="56" height="4" rx="2"/>{{if $b.Ahead}}<rect class="ab-ahead" width="{{$b.Ahead}}" height="4" rx="2"/>{{end}}{{if $b.Behind}}<rect class="ab-behind" x="{{$b.Ahead}}" width="{{$b.Behind}}" height="4" rx="2"/>{{end}}</svg><span class="mono ab-count" aria-hidden="true">{{.Ahead}} &middot; {{.Behind}}</span><span class="sr-only">{{$t}}</span></span>{{end}}{{end}}
 
 {{define "settings"}}
 <h2>Settings</h2>

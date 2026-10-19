@@ -178,7 +178,7 @@ func TestReposTabShowsReadOnlyRecipe(t *testing.T) {
 	if strings.Contains(frag, "<img src=x") || !strings.Contains(frag, "&lt;img src=x") {
 		t.Fatalf("hostile script name not escaped:\n%s", frag)
 	}
-	for _, want := range []string{"Startup recipe", "npm run db:migrate", "auto (detected", "stackfork learn record recipe --seed-once"} {
+	for _, want := range []string{"Starts with", "npm run db:migrate", "auto-detected", "stackfork learn record recipe --seed-once"} {
 		if !strings.Contains(frag, want) {
 			t.Errorf("missing %q", want)
 		}
@@ -192,7 +192,7 @@ func TestReposTabShowsReadOnlyRecipe(t *testing.T) {
 	os.MkdirAll(filepath.Join(repo, ".stackfork"), 0o755)
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Recipe: knowledge.Recipe{SeedOnce: "none"}}
 	k.Save(filepath.Join(repo, ".stackfork", "knowledge.json"))
-	if frag := e.get("/fragments/repos").Body.String(); !strings.Contains(frag, "seed: never") {
+	if frag := e.get("/fragments/repos").Body.String(); !strings.Contains(frag, "never") {
 		t.Errorf("never not shown:\n%s", frag)
 	}
 	if rec := e.post("/api/actions", map[string]string{"action": "recipe-seed", "repo": repo}, reqOpts{}); rec.Code != 400 {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -299,7 +300,7 @@ func TestRepoFragmentEscapesHostileNamesAndOffersNoDestructiveButton(t *testing.
 			t.Errorf("unescaped hostile text %q in:\n%s", raw, body)
 		}
 	}
-	for _, want := range []string{"&lt;img src=x", "&lt;b&gt;bold&lt;/b&gt;", "Learn with your agent", `data-repo-action="start"`, "readiness-unknown", "readiness-ready", "readiness-needs-learn", ">needs learn<"} {
+	for _, want := range []string{"&lt;img src=x", "&lt;b&gt;bold&lt;/b&gt;", "Learn with your agent", `data-repo-action="start"`, "Not set up", "Ready"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}
@@ -312,9 +313,39 @@ func TestRepoFragmentEscapesHostileNamesAndOffersNoDestructiveButton(t *testing.
 	if strings.Count(body, `data-repo-action="start"`) != 2 { // ready: main checkout + wt
 		t.Errorf("expected Start only for the ready repo's two worktrees:\n%s", body)
 	}
-	// removing a worktree is a copyable command, never a button/action
+	// removing a worktree is a Run command (native confirmation), never a repo action
 	if !strings.Contains(body, "worktree remove") || strings.Contains(body, `data-repo-action="remove`) || strings.Contains(body, "worktree-remove") {
-		t.Errorf("remove must be copy-only")
+		t.Errorf("remove must go through the confirmed Run path")
+	}
+}
+
+// DESIGN.md Repos view: no red button is visible without opening an overflow
+// menu, and at most one filled primary on the whole view.
+func TestRepoRowHasOneVisibleActionAndRemoveOnlyInMenu(t *testing.T) {
+	e := newBrowserEnv(t)
+	ready := e.readyRepo("ready")
+	gitIn(t, ready, "worktree", "add", "-q", "-b", "wt", filepath.Join(ready, ".worktrees", "wt"))
+	e.needsLearnRepo("adapted-a")
+	e.needsLearnRepo("adapted-b")
+	body := e.get("/fragments/repos").Body.String()
+
+	// strip every role="menu" block; what is left is what a user sees
+	visible := regexp.MustCompile(`(?s)<div class="menu" role="menu"[^>]*>.*?</div>`).ReplaceAllString(body, "")
+	if strings.Contains(visible, "menu-item-danger") || strings.Contains(visible, "danger") {
+		t.Errorf("a danger control is visible outside an overflow menu:\n%s", visible)
+	}
+	if !strings.Contains(body, `menu-item menu-item-danger`) || !strings.Contains(body, "Remove worktree") {
+		t.Error("Remove worktree must exist as a danger menu item")
+	}
+	if n := strings.Count(body, "btn-primary"); n != 1 {
+		t.Errorf("want exactly one primary button on the Repos view, got %d", n)
+	}
+	// ahead/behind is relative to the upstream, never to main
+	if strings.Contains(body, "behind main") || strings.Contains(body, "ahead of main") {
+		t.Error("ahead/behind must say upstream, not main")
+	}
+	if !strings.Contains(body, "no upstream") {
+		t.Error("a branch without an upstream must say so")
 	}
 }
 
