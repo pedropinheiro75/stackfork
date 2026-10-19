@@ -542,7 +542,7 @@
       .then(function (result) {
         var msg = project + " " + action + ": " + (result.body.message || (result.ok ? "ok" : "failed"));
         log(msg);
-        toast(result.ok ? "ok" : "failed", msg);
+        toast(result.ok && result.body.ok !== false ? "ok" : "failed", msg);
       })
       .catch(function (err) { var msg = project + " " + action + ": " + err.message; log(msg); toast("failed", msg); });
   }

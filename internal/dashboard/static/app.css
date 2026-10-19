@@ -292,7 +292,9 @@ code.setting-value { display: inline-block; }
   .stack { padding: var(--space-3); }
   .stack-name { flex: 1 1 60px; min-width: 0; }
   .stack-actions { order: 1; }
-  .branch-pill { order: 3; flex-basis: 100%; }
+  /* line break after the actions so the pill starts line 2 at its own width */
+  .stack-id::after { content: ""; order: 2; flex: 0 0 100%; height: 0; margin-bottom: calc(-1 * var(--space-1)); }
+  .branch-pill { order: 3; }
   .stack-meta { order: 4; display: flex; flex-direction: column; }
   .stack-sep { display: none; }
   .mobile-hide { display: none; }
