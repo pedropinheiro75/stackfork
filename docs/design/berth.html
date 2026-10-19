@@ -1,0 +1,340 @@
+<title>Berth Design System</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a spec sheet laid out like the console it describes — rail-less, one column, real components as specimens. Dark-first, mirrors DESIGN.md tokens. */
+:root{
+  color-scheme:dark;
+  --bg:#0B0B0E;--surface-1:#131318;--surface-2:#1A1A21;--surface-3:#22222B;
+  --line:#272730;--line-strong:#3A3A46;--line-control:#5E5D70;
+  --fg:#F2F1F5;--fg-muted:#A9A8B8;--fg-subtle:#8E8D9E;
+  --accent:#614DFF;--accent-strong:#7462FF;--accent-text:#A295FF;--on-accent:#fff;--focus:#A295FF;--accent-soft:#614DFF29;
+  --ok:#34C286;--attention:#F0BF4A;--failed:#FF6B83;--busy:#5CCBEE;--off:#8E8D9E;
+  --ok-bg:#34C2862E;--ok-line:#34C28666;--attention-bg:#F0BF4A2E;--attention-line:#F0BF4A66;
+  --failed-bg:#FF6B832E;--failed-line:#FF6B8366;--busy-bg:#5CCBEE2E;--busy-line:#5CCBEE66;--off-bg:#8E8D9E24;--off-line:#8E8D9E52;
+  --shadow-popover:0 8px 24px rgba(0,0,0,.55);
+  --lane-1:#2F5BD8;--lane-2:#6D3FD6;--lane-3:#B8266A;--lane-4:#A85A00;--lane-5:#137A4B;--lane-6:#0B6F86;--lane-7:#B9231F;--lane-8:#4A4AD0;
+  --r-xs:4px;--r-sm:6px;--r-md:8px;--r-lg:12px;
+  --font-sans:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  --font-mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  color-scheme:light;
+  --bg:#F4F3F8;--surface-1:#FFFFFF;--surface-2:#F1F0F6;--surface-3:#FFFFFF;
+  --line:#E2E0EB;--line-strong:#C7C4D6;--line-control:#8A889C;
+  --fg:#15151C;--fg-muted:#56556B;--fg-subtle:#6B6A7F;
+  --accent-strong:#4F3AEF;--accent-text:#4B36F0;--focus:#4B36F0;--accent-soft:#614DFF40;
+  --ok:#147A4C;--attention:#8A5D00;--failed:#C4213F;--busy:#0B6F86;--off:#6B6A7F;
+  --ok-bg:#147A4C1A;--ok-line:#147A4C52;--attention-bg:#8A5D001A;--attention-line:#8A5D0052;
+  --failed-bg:#C4213F1A;--failed-line:#C4213F52;--busy-bg:#0B6F861A;--busy-line:#0B6F8652;--off-bg:#6B6A7F14;--off-line:#6B6A7F40;
+  --shadow-popover:0 8px 24px rgba(21,21,28,.12);
+}}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#F4F3F8;--surface-1:#FFFFFF;--surface-2:#F1F0F6;--surface-3:#FFFFFF;
+  --line:#E2E0EB;--line-strong:#C7C4D6;--line-control:#8A889C;
+  --fg:#15151C;--fg-muted:#56556B;--fg-subtle:#6B6A7F;
+  --accent-strong:#4F3AEF;--accent-text:#4B36F0;--focus:#4B36F0;--accent-soft:#614DFF40;
+  --ok:#147A4C;--attention:#8A5D00;--failed:#C4213F;--busy:#0B6F86;--off:#6B6A7F;
+  --ok-bg:#147A4C1A;--ok-line:#147A4C52;--attention-bg:#8A5D001A;--attention-line:#8A5D0052;
+  --failed-bg:#C4213F1A;--failed-line:#C4213F52;--busy-bg:#0B6F861A;--busy-line:#0B6F8652;--off-bg:#6B6A7F14;--off-line:#6B6A7F40;
+  --shadow-popover:0 8px 24px rgba(21,21,28,.12);
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:13px/18px var(--font-sans);font-variant-numeric:tabular-nums;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 64px}
+.wrap{max-width:1120px;margin:0 auto;display:grid;gap:40px}
+h1{font-size:20px;line-height:26px;font-weight:600;letter-spacing:-.01em;margin:0}
+h2{font-size:15px;line-height:20px;font-weight:600;margin:0 0 4px}
+p{margin:0;max-width:68ch;color:var(--fg-muted)}
+.mono{font-family:var(--font-mono);font-size:12px;line-height:18px}
+.micro{font-size:11px;line-height:14px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;color:var(--fg-subtle)}
+section{display:grid;gap:14px}
+.sec-head{display:grid;gap:4px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.panel{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r-md);padding:16px;min-width:0}
+.scroll{overflow-x:auto}
+
+/* header */
+.hero{display:flex;flex-wrap:wrap;gap:16px 32px;align-items:flex-end;justify-content:space-between}
+.mark{display:flex;gap:12px;align-items:center}
+.mark .berth{width:36px;height:36px;border-radius:var(--r-md);background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font:600 16px var(--font-mono)}
+.meta{display:flex;flex-wrap:wrap;gap:8px}
+
+/* swatches */
+.sw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.sw{border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden;background:var(--surface-1)}
+.sw i{display:block;height:44px;border-bottom:1px solid var(--line)}
+.sw div{padding:6px 8px;display:grid;gap:2px}
+.sw b{font:500 12px/16px var(--font-mono)}
+.sw span{font-size:12px;color:var(--fg-muted)}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:var(--r-xs);border:1px solid;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.chip svg{width:10px;height:10px}
+.ok{color:var(--ok);background:var(--ok-bg);border-color:var(--ok-line)}
+.attention{color:var(--attention);background:var(--attention-bg);border-color:var(--attention-line)}
+.failed{color:var(--failed);background:var(--failed-bg);border-color:var(--failed-line)}
+.busy{color:var(--busy);background:var(--busy-bg);border-color:var(--busy-line)}
+.off{color:var(--off);background:var(--off-bg);border-color:var(--off-line)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+/* buttons */
+.btn{font:600 13px/18px var(--font-sans);height:28px;padding:0 12px;border-radius:var(--r-sm);border:1px solid var(--line-control);background:var(--surface-2);color:var(--fg);cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--fg-subtle)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.primary:hover{background:var(--accent-strong)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--fg-muted)}
+.btn.ghost:hover{background:var(--surface-2);color:var(--fg)}
+.btn.icon{width:28px;padding:0;font-size:16px;line-height:1}
+.btn:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.danger-item{color:var(--failed)}
+
+/* type scale */
+.ts{display:grid;grid-template-columns:120px 1fr;gap:10px 16px;align-items:baseline}
+.ts dt{color:var(--fg-subtle);font:12px/16px var(--font-mono)}
+.ts dd{margin:0;min-width:0;overflow-wrap:anywhere}
+
+/* pills, bars */
+.pill{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:var(--r-xs);color:#fff;font:500 12px/18px var(--font-mono);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ab{display:inline-flex;align-items:center;gap:8px}
+.ab .bar{display:flex;width:56px;height:6px;border-radius:3px;overflow:hidden;background:var(--surface-3);gap:1px}
+.ab .a{background:var(--ok)}.ab .b{background:var(--attention)}
+.cmd{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:4px 4px 4px 10px;min-width:0}
+.cmd code{flex:1;min-width:0;font:500 12px/18px var(--font-mono);overflow-wrap:anywhere}
+
+/* mock shell */
+.shell{display:grid;grid-template-columns:56px 1fr;background:var(--bg);border:1px solid var(--line-strong);border-radius:var(--r-lg);overflow:hidden;min-width:760px}
+.rail{background:var(--surface-1);border-right:1px solid var(--line-strong);display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 0}
+.rail .r{display:grid;justify-items:center;gap:2px;width:100%;padding:6px 0;color:var(--fg-subtle);position:relative}
+.rail .r svg{width:18px;height:18px}
+.rail .r small{font-size:10px;line-height:12px;font-weight:600}
+.rail .r.on{color:var(--accent-text)}
+.rail .r.on::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;background:var(--accent);border-radius:0 2px 2px 0}
+.rail .logo{width:28px;height:28px;border-radius:var(--r-sm);background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font:600 13px var(--font-mono);margin-bottom:6px}
+.main{display:grid;align-content:start;min-width:0}
+.toolbar{height:48px;background:var(--surface-1);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 16px}
+.search{height:28px;width:260px;border:1px solid var(--line-control);background:var(--surface-2);border-radius:var(--r-sm);color:var(--fg-subtle);padding:0 10px;display:flex;align-items:center}
+.spacer{flex:1}
+.sp{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-muted)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.content{padding:16px 24px;display:grid;gap:10px}
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;color:var(--fg-subtle);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:0 10px;height:40px;border-bottom:1px solid var(--line);vertical-align:middle}
+td.n,th.n{text-align:right}
+.repo-t{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.name{font-weight:600;font-size:15px}
+.sub{display:block;font-size:12px;color:var(--fg-muted);font-weight:400}
+.chev{color:var(--fg-subtle);width:22px}
+.expanded td{background:var(--surface-2)}
+.nested{padding:12px 14px 14px;display:grid;gap:10px}
+.nested .info{display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--fg-muted);font-size:12px}
+.nested table td{height:38px;border-bottom-color:var(--line)}
+.lane svg{display:block}
+.act{display:flex;gap:6px;justify-content:flex-end}
+
+/* instance card */
+.card{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 16px;display:grid;gap:10px}
+.card-top{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.av{width:28px;height:28px;border-radius:var(--r-sm);color:#fff;display:grid;place-items:center;font:600 13px var(--font-mono)}
+.callout{border:1px solid var(--failed-line);background:var(--failed-bg);border-radius:var(--r-sm);padding:10px 12px;display:grid;gap:6px}
+.callout pre{margin:0;font:12px/17px var(--font-mono);color:var(--fg);white-space:pre-wrap;overflow-wrap:anywhere}
+.links a{color:var(--accent-text);text-decoration:none;font:12px/18px var(--font-mono)}
+.links a:hover{text-decoration:underline}
+
+/* compare */
+.cmp td,.cmp th{height:auto;padding:9px 10px;vertical-align:top}
+.cmp td:first-child{color:var(--fg-subtle);white-space:nowrap}
+.cmp td:last-child{color:var(--fg-muted)}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.rule{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r-md);padding:14px;display:grid;gap:6px;align-content:start}
+.rule b{font-size:13px}
+.rule p{font-size:12px;line-height:17px}
+@media (max-width:640px){.ts{grid-template-columns:1fr}.ts dt{margin-top:6px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="hero">
+    <div style="display:grid;gap:10px">
+      <div class="mark"><div class="berth" aria-hidden="true">B</div><div><h1>Berth</h1><span class="mono" style="color:var(--fg-muted)">stackfork dashboard design system · draft for approval</span></div></div>
+      <p>Derived from Company the earlier design system for a dense git + Docker ops console: the violet stays, the glow goes, mono carries the data, and every state reads as glyph + word before colour. This page follows your theme; switch your OS or Claude theme to see light.</p>
+    </div>
+    <div class="meta">
+      <span class="chip off">Not approved yet</span>
+      <span class="chip busy">Source: DESIGN.md</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head"><h2>Repos view, redesigned</h2><p>Full-width table, running and recent first, one action per row, branch over path, ahead/behind as a bar. Example data.</p></div>
+    <div class="scroll">
+      <div class="shell" role="img" aria-label="Mockup of the redesigned Repos view">
+        <nav class="rail">
+          <div class="logo">sf</div>
+          <div class="r"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="14" height="5" rx="1.5"/><rect x="2" y="10" width="14" height="5" rx="1.5"/></svg><small>2/3</small></div>
+          <div class="r on"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="4" r="2"/><circle cx="5" cy="14" r="2"/><circle cx="13" cy="8" r="2"/><path d="M5 6v6M5 10c0-2 2-2 6-2"/></svg><small>12</small></div>
+          <div class="r"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5h12M7 5V3h4v2M5 5l1 10h6l1-10"/></svg><small>8 GB</small></div>
+          <div class="r"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="2.5"/><path d="M9 2v2M9 14v2M2 9h2M14 9h2M4 4l1.4 1.4M12.6 12.6 14 14M4 14l1.4-1.4M12.6 5.4 14 4"/></svg><small></small></div>
+        </nav>
+        <div class="main">
+          <div class="toolbar">
+            <div class="search">Search repos and branches</div>
+            <button class="btn ghost" type="button">Ready only</button>
+            <button class="btn ghost" type="button">Rescan · 5 min ago</button>
+            <span class="spacer"></span>
+            <span class="sp"><span class="dot" style="background:var(--ok)"></span>Docker</span>
+            <span class="sp"><span class="dot" style="background:var(--ok)"></span>Proxy :80</span>
+            <span class="mono" style="color:var(--fg-subtle)">v0.9</span>
+          </div>
+          <div class="content">
+            <div class="repo-t">
+              <table>
+                <thead><tr><th></th><th>Repo</th><th>Status</th><th class="n">Worktrees</th><th class="n">Branches</th><th class="n">Last activity</th><th></th></tr></thead>
+                <tbody>
+                  <tr><td class="chev">▾</td><td><span class="name">acme-web</span><span class="sub">code</span></td><td><span class="chip ok"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="currentColor"/></svg>1 running</span></td><td class="n">3</td><td class="n">2</td><td class="n" style="color:var(--fg-muted)">2 h ago</td><td><div class="act"><button class="btn" type="button">Start…</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div></td></tr>
+                  <tr class="expanded"><td colspan="7" style="height:auto;padding:0">
+                    <div class="nested">
+                      <div class="info"><span class="mono">~/code/acme-web</span><span>default <b class="mono" style="color:var(--fg)">main</b></span><span>verified 3 d ago</span><span>Fetch · 2 h ago</span></div>
+                      <div class="info"><span>Starts with</span><span class="mono" style="color:var(--fg)">migrate: npm run db:migrate</span><span class="mono" style="color:var(--fg)">seed once: npm run db:seed</span><span>(auto-detected)</span></div>
+                      <table>
+                        <thead><tr><th style="width:34px"></th><th>Branch</th><th>Path</th><th>Ahead / behind upstream</th><th>State</th><th></th></tr></thead>
+                        <tbody>
+                          <tr><td class="lane"><svg width="24" height="38" viewBox="0 0 24 38"><path d="M6 0v38" stroke="var(--line-strong)" stroke-width="2" fill="none"/><circle cx="6" cy="19" r="4" fill="var(--lane-1)"/></svg></td><td><span class="pill" style="background:var(--lane-1)">main</span></td><td class="mono" style="color:var(--fg-muted)">main checkout</td><td style="color:var(--fg-subtle)">up to date</td><td><span class="chip ok"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="currentColor"/></svg>Running</span></td><td><div class="act"><button class="btn" type="button">Open App</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div></td></tr>
+                          <tr><td class="lane"><svg width="24" height="38" viewBox="0 0 24 38"><path d="M6 0v38M6 10c0 9 6 9 12 9" stroke="var(--line-strong)" stroke-width="2" fill="none"/><path d="M6 10c0 9 6 9 12 9" stroke="var(--lane-3)" stroke-width="2" fill="none"/><circle cx="18" cy="19" r="3.5" fill="var(--lane-3)"/></svg></td><td><span class="pill" style="background:var(--lane-3)">feature-login</span></td><td class="mono" style="color:var(--fg-muted)">.worktrees/feature-login</td><td><span class="ab"><span class="bar"><span class="a" style="width:20%"></span><span class="b" style="width:80%"></span></span><span class="mono">3 · 12</span></span></td><td><span class="chip off"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>Stopped</span></td><td><div class="act"><button class="btn" type="button">Start</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div></td></tr>
+                          <tr><td class="lane"><svg width="24" height="38" viewBox="0 0 24 38"><path d="M6 0v38" stroke="var(--line-strong)" stroke-width="2" fill="none"/><path d="M6 10c0 9 6 9 12 9" stroke="var(--fg-subtle)" stroke-width="2" stroke-dasharray="3 3" fill="none"/><circle cx="18" cy="19" r="3.5" fill="none" stroke="var(--fg-subtle)" stroke-width="1.5"/></svg></td><td><span class="pill" style="background:var(--surface-3);color:var(--fg)">fix-invoices</span></td><td style="color:var(--fg-subtle)">not checked out</td><td><span class="ab"><span class="bar"><span class="a" style="width:28%"></span><span class="b" style="width:72%"></span></span><span class="mono">14 · 36</span></span></td><td><span class="chip off"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>No stack</span></td><td><div class="act"><button class="btn" type="button">Start</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </td></tr>
+                  <tr><td class="chev">▸</td><td><span class="name">billing-api</span><span class="sub">code</span></td><td><span class="chip attention"><svg viewBox="0 0 10 10"><path d="M5 1 9.5 9h-9z" fill="currentColor"/></svg>1 partial</span></td><td class="n">1</td><td class="n">4</td><td class="n" style="color:var(--fg-muted)">5 h ago</td><td><div class="act"><button class="btn" type="button">Start…</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div></td></tr>
+                  <tr><td class="chev">▸</td><td><span class="name">notes-cli</span><span class="sub">code/tools</span></td><td><span class="chip off"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>Not set up</span></td><td class="n">1</td><td class="n">0</td><td class="n" style="color:var(--fg-muted)">3 w ago</td><td><div class="act"><button class="btn primary" type="button">Set up</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Instance card</h2><p>Project and branch are the identity; the hostname moves to line two; the seed callout gets one clear button and keeps the risky ones in the menu.</p></div>
+    <div class="card">
+      <div class="card-top">
+        <div class="av" style="background:var(--lane-3)">A</div>
+        <span class="name">acme-web</span><span class="pill" style="background:var(--lane-3)">feature-login</span>
+        <span class="chip ok"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="currentColor"/></svg>Running</span>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn primary" type="button">Open App</button><button class="btn ghost" type="button">Stop</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button>
+      </div>
+      <div class="mono" style="color:var(--fg-muted)">.worktrees/feature-login · acme-web-2ffa6841c75d.localhost</div>
+      <div class="links row"><a href="#repos">App ↗</a><a href="#repos">web :28928 ↗</a><a href="#repos">Mail inbox ↗</a></div>
+      <div class="callout">
+        <div class="row" style="justify-content:space-between"><b class="row" style="color:var(--failed);gap:6px"><svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m4 4 4 4M8 4 4 8" stroke="currentColor" stroke-width="1.5"/></svg>Database seed failed</b><span class="row"><button class="btn" type="button">Retry seed</button><button class="btn icon ghost" type="button" aria-label="More seed actions">⋯</button></span></div>
+        <pre>$ npm run db:migrate &amp;&amp; npm run db:seed
+error: duplicate key value violates unique constraint "users_email_key"</pre>
+        <span style="font-size:12px;color:var(--fg-muted)">In the menu: Mark as seeded · Re-seed, overwriting data</span>
+      </div>
+      <div class="scroll">
+        <table style="min-width:560px">
+          <thead><tr><th>Service</th><th>State</th><th>Endpoints</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><b>web</b><span class="sub mono">node:22-alpine</span></td><td><span class="chip ok"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="currentColor"/></svg>Running</span></td><td class="links"><a href="#repos">http://…:28928 ↗</a></td><td><div class="act"><button class="btn ghost" type="button">Logs</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div></td></tr>
+            <tr><td><b>db</b><span class="sub mono">postgres:17-alpine</span></td><td><span class="chip busy"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 2"/></svg>Starting</span></td><td class="mono" style="color:var(--fg-muted)">127.0.0.1:26518</td><td><div class="act"><button class="btn ghost" type="button">Logs</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div></td></tr>
+            <tr><td><b>worker</b><span class="sub mono">node:22-alpine</span></td><td><span class="chip off"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>Stopped</span></td><td style="color:var(--fg-subtle)">port assigned on start</td><td><div class="act"><button class="btn ghost" type="button">Start</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>State system</h2><p>Five states, always glyph + word. Red only for something broken or a button that deletes; a stopped stack is grey.</p></div>
+    <div class="row">
+      <span class="chip ok"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="currentColor"/></svg>ok · Running</span>
+      <span class="chip attention"><svg viewBox="0 0 10 10"><path d="M5 1 9.5 9h-9z" fill="currentColor"/></svg>attention · Partial</span>
+      <span class="chip failed"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m3.3 3.3 3.4 3.4M6.7 3.3 3.3 6.7" stroke="currentColor" stroke-width="1.5"/></svg>failed · Exited</span>
+      <span class="chip busy"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 2"/></svg>busy · Starting</span>
+      <span class="chip off"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>off · Stopped</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Colour</h2><p>Swatches show the values of the theme you are viewing.</p></div>
+    <div class="micro">Neutrals</div>
+    <div class="sw-grid">
+      <div class="sw"><i style="background:var(--bg)"></i><div><b>bg</b><span>Page behind everything</span></div></div>
+      <div class="sw"><i style="background:var(--surface-1)"></i><div><b>surface-1</b><span>Cards, tables, rail</span></div></div>
+      <div class="sw"><i style="background:var(--surface-2)"></i><div><b>surface-2</b><span>Hover, chips, inputs</span></div></div>
+      <div class="sw"><i style="background:var(--surface-3)"></i><div><b>surface-3</b><span>Menus, modal, drawer</span></div></div>
+      <div class="sw"><i style="background:var(--line-strong)"></i><div><b>line-strong</b><span>Region edges</span></div></div>
+      <div class="sw"><i style="background:var(--fg)"></i><div><b>fg</b><span>Primary text</span></div></div>
+      <div class="sw"><i style="background:var(--fg-muted)"></i><div><b>fg-muted</b><span>Paths, counts</span></div></div>
+      <div class="sw"><i style="background:var(--fg-subtle)"></i><div><b>fg-subtle</b><span>Headers, timestamps</span></div></div>
+    </div>
+    <div class="micro">Accent</div>
+    <div class="sw-grid">
+      <div class="sw"><i style="background:var(--accent)"></i><div><b>accent #614DFF</b><span>The one primary button</span></div></div>
+      <div class="sw"><i style="background:var(--accent-text)"></i><div><b>accent-text</b><span>Links, active rail</span></div></div>
+      <div class="sw"><i style="background:var(--accent-soft)"></i><div><b>accent-soft</b><span>Selected row wash</span></div></div>
+    </div>
+    <div class="micro">Lanes · one colour follows an instance everywhere</div>
+    <div class="row">
+      <span class="pill" style="background:var(--lane-1)">lane-1</span><span class="pill" style="background:var(--lane-2)">lane-2</span><span class="pill" style="background:var(--lane-3)">lane-3</span><span class="pill" style="background:var(--lane-4)">lane-4</span><span class="pill" style="background:var(--lane-5)">lane-5</span><span class="pill" style="background:var(--lane-6)">lane-6</span><span class="pill" style="background:var(--lane-7)">lane-7</span><span class="pill" style="background:var(--lane-8)">lane-8</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Type</h2><p>System sans for words, Geist Mono for anything you could paste into a terminal. Tabular numerals everywhere.</p></div>
+    <dl class="ts panel">
+      <dt>title 20/26</dt><dd style="font-size:20px;line-height:26px;font-weight:600;letter-spacing:-.01em">Learn with your agent</dd>
+      <dt>heading 15/20</dt><dd style="font-size:15px;line-height:20px;font-weight:600">acme-web</dd>
+      <dt>body 13/18</dt><dd>stackfork has not verified how this project starts.</dd>
+      <dt>body-strong 13/18</dt><dd style="font-weight:600">Retry seed</dd>
+      <dt>small 12/16</dt><dd style="font-size:12px;line-height:16px;color:var(--fg-muted)">2 h ago</dd>
+      <dt>micro 11/14</dt><dd class="micro">Ahead / behind upstream</dd>
+      <dt>mono 12/18</dt><dd class="mono">stackfork --instance sf-acme-web-2ffa seed --mark-done</dd>
+    </dl>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Controls</h2><p>One filled button per view. Destructive actions live in the overflow menu, never as a visible red button.</p></div>
+    <div class="panel" style="display:grid;gap:14px">
+      <div class="row"><button class="btn primary" type="button">Set up with your agent</button><button class="btn" type="button">Start</button><button class="btn ghost" type="button">Logs</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button><span class="danger-item" style="font-weight:600">Remove worktree (menu only)</span></div>
+      <div class="cmd"><code>stackfork learn record recipe --seed-once none</code><button class="btn ghost" type="button">Copy</button><button class="btn" type="button">Run</button></div>
+      <div class="row"><span class="micro">Radii</span><span class="mono" style="color:var(--fg-muted)">4 chips · 6 buttons, inputs · 8 cards · 12 modal</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>What changed from the earlier design system</h2></div>
+    <div class="scroll panel" style="padding:0">
+      <table class="cmp">
+        <thead><tr><th></th><th>the earlier design system</th><th>Berth</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Accent</td><td>Violet #614DFF with glow</td><td>Same violet, no glow</td><td>Calm console; violet never collides with state colours</td></tr>
+          <tr><td>Theme</td><td>Dark default</td><td>Follows the OS, with a toggle</td><td>Sits next to a terminal and IDE that follow the OS</td></tr>
+          <tr><td>Fonts</td><td>Sora + Geist Mono</td><td>System sans + Geist Mono embedded</td><td>Works offline from the binary; denser than Sora</td></tr>
+          <tr><td>Radii</td><td>6 / 10 / 16 / 22</td><td>4 / 6 / 8 / 12</td><td>32–40 px rows; big radii read as tiles</td></tr>
+          <tr><td>Type</td><td>32 → 11, metric 36</td><td>20 / 15 / 13 / 12 / 11, mono 12</td><td>Density</td></tr>
+          <tr><td>States</td><td>success, pending, failed, warning, info</td><td>ok, attention, failed, busy, off</td><td>Stopped is grey; red only for broken</td></tr>
+          <tr><td>Navigation</td><td>Side nav, tabs</td><td>Rail with counts + toolbar with status pills</td><td>Replaces tabs and loose status text</td></tr>
+          <tr><td>New</td><td>—</td><td>Lanes, AheadBehindBar, LaneGraph, CommandRow</td><td>Borrowed from GitLens and GitKraken patterns</td></tr>
+          <tr><td>Dropped</td><td>35 agent, brain, chat and billing components</td><td>—</td><td>Not in this product</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Rules</h2></div>
+    <div class="rules">
+      <div class="rule"><b>Mono means data</b><p>Branches, paths, URLs, ports, commands and SHAs are mono. Labels and buttons are sans.</p></div>
+      <div class="rule"><b>Red budget</b><p>Red appears only next to something broken or a control that deletes.</p></div>
+      <div class="rule"><b>One filled button</b><p>Each view has at most one primary. Everything else is secondary, ghost or in the menu.</p></div>
+      <div class="rule"><b>No horizontal scroll at 400 px</b><p>Rows become two lines, actions collapse to one button and the overflow, the lane graph hides.</p></div>
+    </div>
+  </section>
+</div>
