@@ -191,10 +191,10 @@
       '"><span aria-hidden="true">⋯</span></button><div class="menu" role="menu" hidden>' + items + "</div></div>";
   }
 
-  function appChipHtml(app) {
+  function appChipHtml(app, i, project) {
     if (app.url && app.running) {
       var title = app.url + (app.direct ? " (direct: " + app.direct + ")" : "");
-      return '<a class="app-chip" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(title) + '">' + escapeHtml(app.label) + "</a>";
+      return '<a class="app-chip" data-key="' + escapeHtml(project) + '/app' + i + '" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(title) + '">' + escapeHtml(app.label) + "</a>";
     }
     var hint = !app.url && app.hint ? ": " + escapeHtml(app.hint) : "";
     return '<span class="app-chip stopped" title="Starts with the stack">' + escapeHtml(app.label) + hint + "</span>";
@@ -208,18 +208,18 @@
     return parts.join(" ");
   }
 
-  function endpointHtml(ep, svcState) {
+  function endpointHtml(ep, svcState, key) {
     if (!ep.known) {
       return '<span class="endpoint-pending" title="container port ' + escapeHtml(ep.container) + '">port assigned on start</span>';
     }
     var stopped = svcState === "running" ? "" : " stopped";
     if (ep.scheme === "http" || ep.scheme === "https") {
       var note = endpointNote(svcState, ep.proxied);
-      return '<a class="endpoint-link' + stopped + '" href="' + escapeHtml(ep.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(ep.url) + '">' +
+      return '<a class="endpoint-link' + stopped + '" data-key="' + escapeHtml(key) + '" href="' + escapeHtml(ep.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(ep.url) + '">' +
         '<span class="endpoint-url">' + escapeHtml(ep.url) + "</span>" + (note ? '<span class="endpoint-note">' + note + "</span>" : "") + "</a>";
     }
     var n = endpointNote(svcState, false);
-    return '<button type="button" class="endpoint-copy copyable' + stopped + '" data-copy="' + escapeHtml(ep.url) + '" title="click to copy">' +
+    return '<button type="button" class="endpoint-copy copyable' + stopped + '" data-key="' + escapeHtml(key) + '" data-copy="' + escapeHtml(ep.url) + '" title="click to copy">' +
       escapeHtml(ep.url) + (n ? " " + n : "") + "</button>";
   }
 
@@ -273,7 +273,7 @@
     return '<div class="callout callout-failed" data-seed="failed"><span class="callout-glyph" aria-hidden="true">' + GLYPH.failed + "</span>" +
       '<div class="callout-body"><p class="callout-title">Database seed failed</p>' +
       '<p class="callout-detail">Retry runs it again. If the app already has its data, mark it as seeded instead.</p>' +
-      (inst.seed_error ? '<pre class="mono-log" tabindex="0" aria-label="Seed output">' + escapeHtml(inst.seed_error) + "</pre>" : "") + "</div>" +
+      (inst.seed_error ? '<pre class="mono-log" tabindex="0" data-key="' + escapeHtml(k) + '/seed/log" aria-label="Seed output">' + escapeHtml(inst.seed_error) + "</pre>" : "") + "</div>" +
       '<div class="callout-actions"><button type="button" class="btn" data-run="' + escapeHtml(inst.seed_command) + '" data-key="' + escapeHtml(k) +
       '/seed/retry" title="' + escapeHtml(inst.seed_command) + '">Retry seed</button>' +
       menuHtml(k + "/seed/menu", "More seed actions for " + displayName(k), "More seed actions",
@@ -287,14 +287,14 @@
     var p = inst.project;
     var key = p + "/" + svc.name;
     var running = svc.state === "running";
-    var endpoints = (svc.endpoints || []).map(function (e) { return endpointHtml(e, svc.state); }).join("");
+    var endpoints = (svc.endpoints || []).map(function (e, i) { return endpointHtml(e, svc.state, key + "/ep" + i); }).join("");
     if (svc.connection_url) {
-      endpoints += '<button type="button" class="endpoint-copy copyable connection-url" data-copy="' + escapeHtml(svc.connection_url) +
+      endpoints += '<button type="button" class="endpoint-copy copyable connection-url" data-key="' + escapeHtml(key) + '/conn" data-copy="' + escapeHtml(svc.connection_url) +
         '" data-copy-kind="database_url" data-copy-project="' + escapeHtml(p) + '" data-copy-service="' + escapeHtml(svc.name) +
         '" title="click to copy the connection URL (' + escapeHtml(svc.connection_url) + ')">connection URL</button>';
     }
-    (svc.use_commands || []).forEach(function (c) {
-      endpoints += '<button type="button" class="endpoint-copy copyable use-command" data-copy="' + escapeHtml(c.value) +
+    (svc.use_commands || []).forEach(function (c, i) {
+      endpoints += '<button type="button" class="endpoint-copy copyable use-command" data-key="' + escapeHtml(key) + '/use' + i + '" data-copy="' + escapeHtml(c.value) +
         '" data-copy-kind="cli" data-copy-project="' + escapeHtml(p) + '" data-copy-service="' + escapeHtml(svc.name) +
         '" title="click to copy: ' + escapeHtml(c.value) + '">' + escapeHtml(c.label) + "</button>";
     });
@@ -374,7 +374,7 @@
       ? '<table class="service-table"><caption class="sr-only">Services of ' + escapeHtml(name) + '</caption><colgroup><col class="col-service"><col class="col-state"><col class="col-endpoints"><col class="col-actions"></colgroup>' +
         '<thead><tr><th scope="col" class="micro">Service</th><th scope="col" class="micro">State</th><th scope="col" class="micro">Endpoints</th><th scope="col" class="micro">Actions</th></tr></thead>' + services + "</table>"
       : "";
-    var appStrip = (inst.apps || []).map(appChipHtml).join("");
+    var appStrip = (inst.apps || []).map(function (a, i) { return appChipHtml(a, i, inst.project); }).join("");
     return (
       '<article class="stack lane-' + (stackColorIndex(inst.project) + 1) + '" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '" data-collapsed="' + (collapsed ? "1" : "0") + '">' +
       '<header class="stack-header">' +
@@ -440,6 +440,10 @@
     var scrollY = window.scrollY;
     document.querySelector('[data-section="running"] .stack-list').innerHTML = runHtml;
     document.querySelector('[data-section="stopped"] .stack-list').innerHTML = stopHtml;
+    Object.keys(inFlight).forEach(function (k) {
+      var el = keyed(k);
+      if (el) markRunning(el);
+    });
     if (menuKey) {
       var trigger = keyed(menuKey);
       if (trigger) openMenu(trigger, false);
@@ -1094,20 +1098,32 @@
     });
   }
 
+  // Commands still running, by the button's data-key. A card re-render
+  // replaces the button, so writeCards re-applies this state to the new
+  // one: a second click cannot start the same command twice.
+  var inFlight = {};
+
+  function markRunning(btn) {
+    btn.disabled = true;
+    if (!btn.classList.contains("menu-item")) btn.textContent = "Running\u2026";
+  }
+
   function runCommand(btn) {
+    var key = btn.dataset.key || "";
+    if (key && inFlight[key]) return;
     var card = btn.closest("[data-project]");
     var project = card ? card.dataset.project : "";
+    var cmd = btn.dataset.run;
     var label = btn.textContent;
-    var inMenu = btn.classList.contains("menu-item");
-    btn.disabled = true;
-    if (!inMenu) btn.textContent = "Running\u2026";
-    log("run: " + btn.dataset.run);
-    post("/api/run", { command: btn.dataset.run, project: project })
+    if (key) inFlight[key] = { label: label };
+    markRunning(btn);
+    log("run: " + cmd);
+    post("/api/run", { command: cmd, project: project })
       .then(function (r) { return r.text().then(function (t) { try { return JSON.parse(t); } catch (e) { return { message: t }; } }); })
       .then(function (res) {
         var msg = res.message || "";
         if (msg.indexOf("\n") >= 0) {
-          document.getElementById("logs-title").textContent = btn.dataset.run;
+          document.getElementById("logs-title").textContent = cmd;
           document.getElementById("logs-body").textContent = msg;
           document.getElementById("logs-panel").hidden = false;
           log("run: " + (res.ok ? "done" : "failed") + " (output in the logs panel)");
@@ -1117,8 +1133,14 @@
       })
       .catch(function (err) { log("run: " + err.message); })
       .then(function () {
-        btn.disabled = false;
-        if (!inMenu) btn.textContent = label;
+        if (key) delete inFlight[key];
+        // the button may have been replaced by a re-render: find the live one
+        var live = key ? keyed(key) : btn;
+        [btn, live].forEach(function (el) {
+          if (!el) return;
+          el.disabled = false;
+          if (!el.classList.contains("menu-item")) el.textContent = label;
+        });
         poll();
         if (typeof loadRepos === "function" && reposState.tab === "repos") loadRepos();
       });

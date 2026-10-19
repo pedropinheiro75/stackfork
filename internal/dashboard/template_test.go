@@ -1,10 +1,12 @@
 package dashboard_test
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -93,5 +95,83 @@ func TestIndexRendersFixtureAndEscapesHostileNames(t *testing.T) {
 	}
 	if !strings.Contains(body, "sf-hostile-1.localhost") {
 		t.Fatalf("expected the instance hostname to appear:\n%s", body)
+	}
+}
+
+// Every focusable element in a card carries a data-key, so a poll's
+// re-render can hand keyboard focus back to it.
+func TestEveryFocusableInCardHasDataKey(t *testing.T) {
+	installFakeDocker(t)
+	newBase, legacyBase := t.TempDir(), t.TempDir()
+	root := fixtureGitRepo(t, "main")
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"scripts":{"db:migrate":"m","db:seed":"s"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	project := "sf-focuskeys-1"
+	dir := filepath.Join(newBase, project)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	no := false
+	m := &state.Manifest{
+		Project: project, Root: root, Branch: "main", Hostname: project + ".localhost",
+		Files: []string{"compose.yaml"}, Inputs: map[string]string{}, Seeded: &no,
+		HTTPPorts: []int{3000}, Ports: []state.PortAlloc{{Service: "web", Target: 3000, Host: 20111}},
+	}
+	if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, state.SeedLog), []byte("boom\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config := map[string]interface{}{"services": map[string]interface{}{
+		"web": map[string]interface{}{"image": "node:22", "ports": []interface{}{
+			map[string]interface{}{"target": 3000, "published": "20111", "protocol": "tcp"}}},
+		"db": map[string]interface{}{"image": "postgres:17",
+			"ports":       []interface{}{map[string]interface{}{"target": 5432, "published": "20112", "protocol": "tcp"}},
+			"environment": map[string]interface{}{"POSTGRES_USER": "u", "POSTGRES_DB": "d", "POSTGRES_PASSWORD": "x"}},
+	}}
+	if err := state.WritePrivate(filepath.Join(dir, "compose.json"), config); err != nil {
+		t.Fatal(err)
+	}
+	labels := func(s string) string {
+		return "com.docker.compose.project=" + project + ",com.docker.compose.service=" + s + ",io.stackfork.root=/x"
+	}
+	var ps []string
+	for _, s := range []string{"web", "db"} {
+		b, _ := json.Marshal(map[string]string{"Labels": labels(s), "State": "running", "Status": "Up", "Ports": ""})
+		ps = append(ps, string(b))
+	}
+	t.Setenv("DOCKER_FAKE_PS", strings.Join(ps, "\n")+"\n")
+
+	srv, err := dashboard.New(newBase, legacyBase, "test", 55971)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Host = "127.0.0.1:55971"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	body := rec.Body.String()
+	start := strings.Index(body, `<article class="stack`)
+	card := body[start : start+strings.Index(body[start:], "</article>")]
+	for _, want := range []string{"endpoint-link", "connection-url", "use-command", "app-chip", "mono-log"} {
+		if !strings.Contains(card, want) {
+			t.Fatalf("fixture lacks a %s to check", want)
+		}
+	}
+	focusable := regexp.MustCompile(`<(?:a|button)\b[^>]*>|<[a-z]+\b[^>]*\btabindex=[^>]*>`)
+	n := 0
+	for _, tag := range focusable.FindAllString(card, -1) {
+		if strings.HasPrefix(tag, "<a ") && !strings.Contains(tag, "href=") {
+			continue
+		}
+		n++
+		if !strings.Contains(tag, ` data-key="`) {
+			t.Errorf("focusable element without data-key: %s", tag)
+		}
+	}
+	if n < 10 {
+		t.Errorf("only %d focusable elements found; the regexp is wrong", n)
 	}
 }
