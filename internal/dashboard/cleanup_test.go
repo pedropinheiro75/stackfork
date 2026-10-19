@@ -69,8 +69,8 @@ func TestCleanupCountsAndReadOnly(t *testing.T) {
 	}
 	page := doRequest(srv, "GET", "/", "127.0.0.1:55123", nil).Body.String()
 	js := doRequest(srv, "GET", "/static/app.js", "127.0.0.1:55123", nil).Body.String()
-	if !strings.Contains(page, "Clean up") || !strings.Contains(page, `id="cleanup-toggle"`) {
-		t.Fatal("header menu item missing")
+	if !strings.Contains(page, "Clean up") || !strings.Contains(page, `data-view="cleanup"`) {
+		t.Fatal("rail item missing")
 	}
 	if strings.Contains(js, "prune-run") || strings.Contains(js, `"prune"`) {
 		t.Fatal("the dashboard must not offer an action that prunes")

@@ -326,26 +326,32 @@
     stoppedSection.querySelector(".section-count").textContent = stopped.length;
     stoppedSection.hidden = state.runningOnly;
 
-    document.getElementById("instances").classList.toggle("stale", state.stale);
+    document.getElementById("view-instances").classList.toggle("stale", state.stale);
 
     var runningCount = (inv.instances || []).filter(function (i) {
       return i.state === "running" || i.state === "partial";
     }).length;
-    document.getElementById("counts").textContent = runningCount + " / " + (inv.instances || []).length + " running";
+    document.getElementById("rail-count-instances").textContent = runningCount + "/" + (inv.instances || []).length;
 
-    var dockerStatus = document.getElementById("docker-status");
-    dockerStatus.textContent = "Docker: " + (inv.docker.reachable ? "ok" : "unreachable");
-    dockerStatus.className = inv.docker.reachable ? "ok" : "down";
-
-    var proxyStatus = document.getElementById("proxy-status");
-    proxyStatus.textContent = "Proxy: " + (inv.proxy.running ? "running on " + inv.proxy.port : "stopped");
-    proxyStatus.className = inv.proxy.running ? "ok" : "down";
+    setStatus("docker-status", inv.docker.reachable ? "ok" : "failed", "Docker", inv.docker.reachable ? "ok" : "unreachable");
+    setStatus("proxy-status", inv.proxy.running ? "ok" : "off", "Proxy", inv.proxy.running ? ":" + inv.proxy.port : "stopped");
     document.getElementById("proxy-start").hidden = inv.proxy.running;
 
     document.getElementById("docker-banner").hidden = inv.docker.reachable;
     var proxyBanner = document.getElementById("proxy-banner");
-    proxyBanner.textContent = inv.proxy.hint || "";
-    proxyBanner.hidden = !inv.proxy.hint;
+    document.getElementById("proxy-banner-text").textContent = inv.proxy.hint || "";
+    proxyBanner.hidden = !inv.proxy.hint || proxyHintDismissed === inv.proxy.hint;
+  }
+
+  // StatusPill: glyph + word, never colour alone. state is ok|busy|failed|off.
+  var statusGlyphs = { ok: "\u25CF", busy: "\u25D4", failed: "\u25B2", off: "\u25CB" };
+  var proxyHintDismissed = "";
+  function setStatus(id, st, name, word) {
+    var el = document.getElementById(id);
+    el.dataset.state = st;
+    el.className = "chip chip-" + st + " status-pill";
+    el.querySelector(".status-glyph").textContent = statusGlyphs[st];
+    el.querySelector(".status-text").textContent = name + " \u00B7 " + word;
   }
 
   function poll() {
@@ -409,10 +415,14 @@
       state.runningOnly = e.target.checked;
       render();
     });
-    // Outside #instances (header-level, design.md D3b §5), so it needs its
+    // Outside #view-instances (toolbar-level, design.md D3b §5), so it needs its
     // own listener rather than the delegated one in wireActions.
     document.getElementById("proxy-start").addEventListener("click", function () {
       runAction("proxy-up", "");
+    });
+    document.getElementById("proxy-banner-dismiss").addEventListener("click", function () {
+      proxyHintDismissed = document.getElementById("proxy-banner-text").textContent;
+      document.getElementById("proxy-banner").hidden = true;
     });
   }
 
@@ -440,9 +450,15 @@
     fetch("/api/disk", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        document.getElementById("disk-banner").hidden = !d.full;
+        var banner = document.getElementById("disk-banner");
+        banner.hidden = !d.full;
+        // attention from 85 %, failed only from 95 % (DESIGN.md Banner strip).
+        banner.className = "banner " + (d.percent >= 95 ? "banner-failed" : "banner-attention");
         document.getElementById("disk-text").textContent = d.text || "";
         document.getElementById("cleanup-disk").textContent = d.text || "";
+        var count = document.getElementById("rail-count-cleanup");
+        count.textContent = d.percent ? d.percent + "%" : "";
+        count.dataset.tone = d.full ? "attention" : "";
       })
       .catch(function () { /* keep the last state */ });
   }
@@ -462,13 +478,7 @@
       var btn = e.target.closest(".free-space-btn");
       if (btn && !btn.disabled) freeSpace(btn);
     });
-    var panel = document.getElementById("cleanup-panel");
-    var toggle = document.getElementById("cleanup-toggle");
-    toggle.addEventListener("click", function () {
-      panel.hidden = !panel.hidden;
-      toggle.setAttribute("aria-expanded", String(!panel.hidden));
-      if (!panel.hidden) { loadCleanup(); loadDisk(); }
-    });
+    var panel = document.getElementById("view-cleanup");
     panel.addEventListener("click", function (e) {
       var copy = e.target.closest(".copyable");
       if (copy) copyText(copy.dataset.copy, copy.textContent.trim(), copy);
@@ -476,7 +486,7 @@
   }
 
   function wireActions() {
-    document.getElementById("instances").addEventListener("click", function (e) {
+    document.getElementById("view-instances").addEventListener("click", function (e) {
       var toggleStack = e.target.closest("[data-toggle-stack]");
       if (toggleStack && !e.target.closest(".stack-actions")) {
         var article = toggleStack.closest(".stack");
@@ -579,16 +589,32 @@
     navigator.clipboard.writeText(text).then(function () { done(true); }, fallback);
   }
 
-  function setTab(tab) {
-    reposState.tab = tab;
-    try { localStorage.setItem("stackfork:tab", tab); } catch (e) { /* ignore */ }
-    document.querySelectorAll(".tab").forEach(function (b) {
-      b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+  // Views, switched by the rail and mirrored in the URL hash (#repos, ...).
+  var views = ["instances", "repos", "cleanup", "settings"];
+  var viewTitles = { instances: "Instances", repos: "Repos", cleanup: "Clean up", settings: "Settings" };
+
+  function viewFromHash() {
+    var h = location.hash.replace(/^#/, "");
+    return views.indexOf(h) >= 0 ? h : "instances";
+  }
+
+  function setView(view) {
+    if (views.indexOf(view) < 0) view = "instances";
+    reposState.tab = view;
+    if (viewFromHash() !== view || !location.hash) {
+      try { history.replaceState(null, "", "#" + view); } catch (e) { /* ignore */ }
+    }
+    document.querySelectorAll(".rail-item").forEach(function (b) {
+      var on = b.dataset.view === view;
+      if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+      b.tabIndex = on ? 0 : -1;
     });
-    document.getElementById("instances").hidden = tab !== "instances";
-    document.getElementById("controls").hidden = tab !== "instances";
-    document.getElementById("repos-view").hidden = tab !== "repos";
-    if (tab === "repos") loadRepos();
+    views.forEach(function (v) { document.getElementById("view-" + v).hidden = v !== view; });
+    document.querySelectorAll(".toolbar-tools").forEach(function (t) { t.hidden = t.dataset.for !== view; });
+    document.getElementById("view-title").textContent = viewTitles[view];
+    if (view === "repos") loadRepos();
+    if (view === "cleanup") { loadCleanup(); loadDisk(); }
+    if (view === "settings") loadSettings();
   }
 
   function applyRepoFilters() {
@@ -613,22 +639,15 @@
         list.querySelectorAll("details.repo").forEach(function (d) { if (open[d.dataset.key]) d.open = true; });
         applyRepoFilters();
         renderRepoErrors();
+        document.getElementById("rail-count-repos").textContent = list.querySelectorAll(".repo").length || "";
         var meta = document.getElementById("repos-meta");
         document.getElementById("scan-state").textContent = meta && meta.dataset.scanning === "true" ? "scanning..." : "";
         if (meta && meta.dataset.configured === "false" && !reposState.autoShownSettings) {
           reposState.autoShownSettings = true;
-          toggleSettings(true);
+          if (reposState.tab === "repos") setView("settings");
         }
       })
       .catch(function () { /* keep what is shown */ });
-  }
-
-  function toggleSettings(show) {
-    var panel = document.getElementById("settings-panel");
-    var btn = document.getElementById("settings-toggle");
-    panel.hidden = show === undefined ? !panel.hidden : !show;
-    btn.setAttribute("aria-expanded", String(!panel.hidden));
-    if (!panel.hidden) loadSettings();
   }
 
   function loadSettings() {
@@ -780,9 +799,22 @@
   }
 
   function wireRepos() {
-    document.querySelectorAll(".tab").forEach(function (b) {
-      b.addEventListener("click", function () { setTab(b.dataset.tab); });
+    var rail = document.querySelector("nav.rail");
+    rail.addEventListener("click", function (e) {
+      var b = e.target.closest(".rail-item");
+      if (b) setView(b.dataset.view);
     });
+    // Arrow keys move between items; Enter/Space select (native button click).
+    rail.addEventListener("keydown", function (e) {
+      var step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+      if (!step) return;
+      var items = Array.prototype.slice.call(rail.querySelectorAll(".rail-item"));
+      var i = items.indexOf(document.activeElement);
+      if (i < 0) return;
+      e.preventDefault();
+      items[(i + step + items.length) % items.length].focus();
+    });
+    window.addEventListener("hashchange", function () { setView(viewFromHash()); });
     document.getElementById("repo-filter").addEventListener("input", function (e) {
       reposState.filter = e.target.value; applyRepoFilters();
     });
@@ -790,12 +822,11 @@
       reposState.readyOnly = e.target.checked; applyRepoFilters();
     });
     document.getElementById("rescan").addEventListener("click", function () { postConfig("rescan", "").then(function () { setTimeout(loadRepos, 800); }); });
-    document.getElementById("settings-toggle").addEventListener("click", function () { toggleSettings(); });
     document.getElementById("repos-list").addEventListener("click", function (e) {
       var inst = e.target.closest(".instance-link");
       if (inst) {
         e.preventDefault();
-        setTab("instances");
+        setView("instances");
         var art = document.querySelector('.stack[data-project="' + inst.dataset.project.replace(/"/g, "") + '"]');
         if (art) { art.dataset.collapsed = "0"; art.scrollIntoView({ block: "center" }); }
         return;
@@ -807,7 +838,7 @@
       var copy = e.target.closest(".copyable");
       if (copy) { e.preventDefault(); copyText(copy.dataset.copy, copy.dataset.label || copy.textContent.trim(), copy); }
     });
-    var panel = document.getElementById("settings-panel");
+    var panel = document.getElementById("view-settings");
     panel.addEventListener("click", function (e) {
       var rm = e.target.closest("button[data-config-op]");
       if (rm) { postConfig(rm.dataset.configOp, rm.dataset.value); return; }
@@ -819,11 +850,10 @@
       var form = e.target.closest("form[data-config-op]");
       if (form) postConfig(form.dataset.configOp, form.elements.value.value);
     });
-    var saved = "instances";
-    try { saved = localStorage.getItem("stackfork:tab") || "instances"; } catch (e) { /* ignore */ }
-    setTab(saved === "repos" ? "repos" : "instances");
+    setView(viewFromHash());
+    loadRepos(); // fills the rail count even when another view is open
     setInterval(function () {
-      if (document.visibilityState === "visible" && reposState.tab === "repos" && !reposState.busy && document.getElementById("settings-panel").hidden) loadRepos();
+      if (document.visibilityState === "visible" && reposState.tab === "repos" && !reposState.busy) loadRepos();
     }, 3000);
   }
 

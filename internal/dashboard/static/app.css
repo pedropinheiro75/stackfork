@@ -72,54 +72,85 @@ input[type="checkbox"] { accent-color: var(--accent); }
   min-width: 0;
 }
 
-header#header {
-  position: sticky;
-  top: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 20px;
-  background: var(--surface-1);
-  border-bottom: 1px solid var(--line);
-  z-index: 10;
+/* --- Shell: rail, toolbar, banner strip, views (DESIGN.md "Shell") --- */
+.app { display: flex; min-height: 100vh; }
+.shell { flex: 1 1 auto; min-width: 0; }
+
+.rail {
+  position: sticky; top: 0; align-self: flex-start; height: 100vh; flex: none; width: 56px;
+  display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1);
+  padding: var(--space-3) 0; background: var(--surface-1); border-right: 1px solid var(--line-strong);
 }
-
-header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-header h1 span { color: var(--fg-muted); font-weight: 400; }
-
-#status-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13px; }
-#status-bar .ok { color: var(--ok); }
-#status-bar .down { color: var(--failed); }
-
-#controls { display: flex; gap: 12px; margin-left: auto; align-items: center; font-size: 13px; }
-#filter {
-  padding: 6px 10px;
-  border: 1px solid var(--line-control);
-  border-radius: 6px;
-  background: var(--surface-2);
-  color: var(--fg);
-  font-size: 13px;
-  width: 220px;
+.rail-mark {
+  align-self: center; margin-bottom: var(--space-3); width: 28px; height: 28px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 15px;
 }
+.rail-item {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: var(--space-2) 0; min-height: 52px; border: 0; background: none; color: var(--fg-muted);
+  font: inherit; cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
+}
+.rail-item:hover { color: var(--fg); background: var(--surface-2); }
+.rail-item[aria-current="page"] { color: var(--accent-text); }
+.rail-item[aria-current="page"]::before {
+  content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; background: var(--accent);
+}
+.rail-item:focus-visible { outline-offset: -2px; }
+.rail-count { font: 600 11px/14px var(--font-mono); min-height: 14px; }
+.rail-count[data-tone="attention"] { color: var(--attention); }
 
+.toolbar {
+  position: sticky; top: 0; z-index: 10; min-height: 48px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-4); background: var(--surface-1); border-bottom: 1px solid var(--line);
+}
+.toolbar-title { margin: 0; font-size: 14px; font-weight: 600; }
+.toolbar-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); font-size: 13px; min-width: 0; }
+.toolbar-tools[hidden] { display: none; }
+#filter, .system-cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-left: auto; }
+.status-pill { text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600; }
+.status-glyph { font-size: 10px; }
+#version { color: var(--fg-subtle); }
+
+.banners { display: flex; flex-direction: column; }
 .banner {
-  background: var(--failed);
-  color: var(--bg);
-  padding: 8px 20px;
-  font-size: 13px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4); font-size: 13px;
+  color: var(--fg); background: var(--off-bg); border-bottom: 1px solid var(--off-line);
 }
 .banner[hidden] { display: none; }
+.banner-text { flex: 1 1 240px; min-width: 0; }
+.banner-glyph { flex: none; }
+.banner-attention { background: var(--attention-bg); border-bottom-color: var(--attention-line); }
+.banner-attention .banner-glyph { color: var(--attention); }
+.banner-failed { background: var(--failed-bg); border-bottom-color: var(--failed-line); }
+.banner-failed .banner-glyph { color: var(--failed); }
+.banner-busy { background: var(--busy-bg); border-bottom-color: var(--busy-line); }
+.banner-busy .banner-glyph { color: var(--busy); }
 
-main#instances {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-}
+.view { max-width: 1600px; padding: var(--space-5) var(--space-6); }
+.view[hidden] { display: none; }
+.view-narrow { max-width: 760px; }
+.view h2 { font-size: 16px; margin: 0 0 var(--space-2); }
+#view-instances { display: flex; flex-direction: column; gap: 28px; }
+#view-instances[hidden] { display: none; }
 main.stale { opacity: 0.6; }
+
+@media (max-width: 719px) {
+  .app { flex-direction: column; }
+  .rail {
+    position: static; width: auto; height: 48px; flex-direction: row; align-items: center;
+    padding: 0; border-right: 0; border-bottom: 1px solid var(--line-strong);
+  }
+  .rail-mark { margin: 0 var(--space-2); }
+  .rail-item { flex: 1 1 0; min-height: 48px; padding: var(--space-1) 0; }
+  .rail-item[aria-current="page"]::before { left: 8px; right: 8px; top: auto; bottom: 0; width: auto; height: 2px; }
+  .toolbar { position: static; padding: var(--space-2) var(--space-4); }
+  .system-cluster { margin-left: 0; }
+  .view { padding: var(--space-4); }
+}
 
 .section-title {
   font-size: 13px;
@@ -217,10 +248,6 @@ main.stale { opacity: 0.6; }
 
 .stack-actions { flex: none; display: flex; gap: 6px; align-items: center; }
 
-#proxy-start, #settings-toggle, #cleanup-toggle, #theme-toggle {
-  width: auto;
-  padding: 0 var(--space-3);
-}
 /* .icon-btn's own `display: inline-flex` (an author-stylesheet rule) beats
    the UA stylesheet's default `[hidden] { display: none }` - without this,
    the button stays visible whenever the proxy is already running, right
@@ -472,28 +499,11 @@ code.setting-value { display: inline-block; }
   white-space: pre-wrap;
 }
 
-#cleanup-panel { margin: 8px 16px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; }
-#cleanup-panel h2 { font-size: 14px; margin: 0 0 4px; }
 #cleanup-list { list-style: none; margin: 6px 0 0; padding: 0; }
 #cleanup-list li { margin: 4px 0; }
 .cleanup-count { font-weight: 600; margin: 0 6px; }
 
 /* --- Repos tab and Settings (add-repo-browser) --- */
-#tabs { display: flex; gap: 4px; }
-.tab {
-  padding: 5px 12px; border: 1px solid transparent; border-radius: 6px;
-  background: none; color: var(--fg-muted); font: inherit; font-size: 13px; cursor: pointer;
-}
-.tab[aria-selected="true"] { color: var(--fg); background: var(--bg); border-color: var(--line); font-weight: 600; }
-#controls[hidden] { display: none; }
-
-#repos-view { max-width: 1100px; margin: 0 auto; padding: 20px; }
-#repos-view[hidden], main#instances[hidden] { display: none; }
-#repos-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; font-size: 13px; }
-#repo-filter {
-  padding: 6px 10px; border: 1px solid var(--line-control); border-radius: 6px;
-  background: var(--surface-2); color: var(--fg); font-size: 13px; width: 260px;
-}
 .muted { color: var(--fg-muted); font-size: 13px; }
 .group-title {
   font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
@@ -527,10 +537,7 @@ code.setting-value { display: inline-block; }
 .row-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
 .dirty { color: var(--attention); font-size: 12px; }
 .empty-state { padding: 28px; border: 1px dashed var(--line); border-radius: 10px; color: var(--fg-muted); text-align: center; }
-.panel { max-width: 760px; margin: 12px auto; padding: 4px 20px 16px; background: var(--surface-1); border: 1px solid var(--line); border-radius: 10px; }
-.panel[hidden] { display: none; }
-.panel h2 { font-size: 16px; margin: 14px 0 4px; }
-.panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); margin: 16px 0 6px; }
+#view-settings h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); margin: 16px 0 6px; }
 .settings-list { list-style: none; margin: 0; padding: 0; font-size: 13px; }
 .settings-list li { display: flex; gap: 10px; align-items: center; padding: 3px 0; }
 .settings-list .repo-btn { margin-left: auto; }

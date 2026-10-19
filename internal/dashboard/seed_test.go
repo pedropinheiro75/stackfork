@@ -216,12 +216,12 @@ func TestIndexRendersLoadingStateWhenDockerIsSlow(t *testing.T) {
 	if d := time.Since(start); d > 700*time.Millisecond {
 		t.Fatalf("page took %v", d)
 	}
-	for _, want := range []string{`id="loading-note"`, "loading...", "checking..."} {
+	for _, want := range []string{`id="loading-note"`, "loading...", "checking&hellip;"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	if strings.Contains(body, `<article class="stack"`) || strings.Contains(body, "Docker: unreachable") {
+	if strings.Contains(body, `<article class="stack"`) || strings.Contains(body, "Docker &middot; unreachable") {
 		t.Errorf("loading page must not show cards or a docker error:\n%s", body)
 	}
 	// the data arrives through the API the script polls
