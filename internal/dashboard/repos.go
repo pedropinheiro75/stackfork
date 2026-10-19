@@ -147,7 +147,24 @@ func repoStatus(r repos.Repo) (state, label string) {
 // repoChip is repoStatus as a StatusChip for the template.
 func repoChip(r repos.Repo) chipView {
 	state, label := repoStatus(r)
-	return chipView{Class: state, Glyph: statusGlyph(state, label), Label: label}
+	c := chipView{Class: state, Glyph: statusGlyph(state, label), Label: label}
+	// "2 running" hides instances that are only partly up; say so on hover.
+	running, partial := 0, 0
+	for _, w := range r.Worktrees {
+		if w.Instance == nil {
+			continue
+		}
+		switch w.Instance.State {
+		case inventory.StateRunning:
+			running++
+		case inventory.StatePartial:
+			partial++
+		}
+	}
+	if running > 0 && partial > 0 {
+		c.Title = fmt.Sprintf("%d running, %d partial", running, partial)
+	}
+	return c
 }
 
 func statusGlyph(state, label string) string {

@@ -117,3 +117,13 @@ func TestAheadBehindText(t *testing.T) {
 		}
 	}
 }
+
+func TestRepoChipTitleExplainsPartialInstances(t *testing.T) {
+	c := repoChip(repoWith(repos.Ready, inventory.StateRunning, inventory.StatePartial, inventory.StateRunning))
+	if c.Label != "2 running" || c.Title != "2 running, 1 partial" {
+		t.Errorf("got %q / %q", c.Label, c.Title)
+	}
+	if c := repoChip(repoWith(repos.Ready, inventory.StateRunning)); c.Title != "" {
+		t.Errorf("no partial, no title: %q", c.Title)
+	}
+}
