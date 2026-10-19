@@ -154,8 +154,12 @@ type Instance struct {
 	Root     string `json:"root"`
 	Branch   string `json:"branch"`
 	Hostname string `json:"hostname"`
-	Legacy   bool   `json:"legacy"`
-	State    string `json:"state"`
+	// RelRoot is Root as the dashboard shows it: ".worktrees/<name>" for a
+	// linked worktree, "main checkout" for a repo's own checkout, else the
+	// path with the home directory written "~".
+	RelRoot string `json:"rel_root,omitempty"`
+	Legacy  bool   `json:"legacy"`
+	State   string `json:"state"`
 
 	Services  []Service        `json:"services,omitempty"`
 	Knowledge *KnowledgeStatus `json:"knowledge,omitempty"`
@@ -298,7 +302,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 
 	hostname, _ := identity.BrowserHostname(info.Project, info.Hostname)
 	inst := Instance{
-		Project: info.Project, Root: info.Root, Branch: info.Branch,
+		Project: info.Project, Root: info.Root, RelRoot: relRoot(info.Root), Branch: info.Branch,
 		Hostname: hostname, Legacy: legacy, Files: info.Files,
 		Secrets: info.ResolvedSecrets(),
 	}
@@ -998,4 +1002,24 @@ func markWaiting(services []Service) {
 			}
 		}
 	}
+}
+
+// relRoot shortens a checkout path for display (Instance.RelRoot). A .git
+// directory marks a repo's own checkout; a linked worktree has a .git file.
+func relRoot(root string) string {
+	if i := strings.LastIndex(root, "/.worktrees/"); i >= 0 {
+		return root[i+1:]
+	}
+	if fi, err := os.Stat(filepath.Join(root, ".git")); err == nil && fi.IsDir() {
+		return "main checkout"
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" && home != "/" {
+		if root == home {
+			return "~"
+		}
+		if strings.HasPrefix(root, home+"/") {
+			return "~" + root[len(home):]
+		}
+	}
+	return root
 }

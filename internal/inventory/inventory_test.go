@@ -566,3 +566,22 @@ func TestCreatedServiceWaitingForAStartingDependencyIsNotAnAlarm(t *testing.T) {
 		t.Fatalf("states %v", st)
 	}
 }
+
+func TestRelRoot(t *testing.T) {
+	main := t.TempDir()
+	if err := os.Mkdir(filepath.Join(main, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loose := t.TempDir()
+	home, _ := os.UserHomeDir()
+	for root, want := range map[string]string{
+		main:                                  "main checkout",
+		main + "/.worktrees/feature-login":    ".worktrees/feature-login",
+		loose:                                 loose,
+		filepath.Join(home, "nowhere", "app"): "~/nowhere/app",
+	} {
+		if got := relRoot(root); got != want {
+			t.Errorf("relRoot(%q) = %q, want %q", root, got, want)
+		}
+	}
+}
