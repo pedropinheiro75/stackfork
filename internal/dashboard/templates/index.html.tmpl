@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>stackfork dashboard</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<script>try{var t=localStorage.getItem("stackfork-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="/static/tokens.css">
 <link rel="stylesheet" href="/static/app.css">
 <meta name="stackfork-token" content="{{.Token}}">
 </head>
@@ -23,6 +25,7 @@
       Proxy: {{if .Loading}}checking...{{else if .Proxy.Running}}running on {{.Proxy.Port}}{{else}}stopped{{end}}
     </span>
     <span id="counts">{{if .Loading}}loading...{{else}}{{.RunningCount}} / {{.Total}} running{{end}}</span>
+    <button id="theme-toggle" type="button" class="btn btn-ghost" data-theme-mode="system" aria-label="Theme: system. Switch to light">Theme: system</button>
     <button id="settings-toggle" class="icon-btn" title="Settings: folders to scan" aria-expanded="false">Settings</button>
     <button id="cleanup-toggle" class="icon-btn" title="More" aria-expanded="false">&hellip;</button>
     <button id="proxy-start" class="icon-btn" data-action="proxy-up" title="Start the proxy for portless URLs"{{if .Proxy.Running}} hidden{{end}}>Start proxy for portless URLs</button>

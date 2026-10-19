@@ -1,0 +1,57 @@
+/* Berth tokens (DESIGN.md). Dark is the default; light follows the OS unless
+   data-theme pins it. Only this file holds colour values. */
+:root, [data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#0B0B0E; --surface-1:#131318; --surface-2:#1A1A21; --surface-3:#22222B;
+  --line:#272730; --line-strong:#3A3A46; --line-control:#5E5D70;
+  --fg:#F2F1F5; --fg-muted:#A9A8B8; --fg-subtle:#8E8D9E;
+  --accent:#614DFF; --accent-strong:#7462FF; --accent-text:#A295FF; --on-accent:#fff;
+  --focus:#A295FF; --accent-soft:#614DFF29;
+  --ok:#34C286; --attention:#F0BF4A; --failed:#FF6B83; --busy:#5CCBEE; --off:#8E8D9E;
+  --ok-bg:#34C2862E; --ok-line:#34C28666; --attention-bg:#F0BF4A2E; --attention-line:#F0BF4A66;
+  --failed-bg:#FF6B832E; --failed-line:#FF6B8366; --busy-bg:#5CCBEE2E; --busy-line:#5CCBEE66;
+  --off-bg:#8E8D9E24; --off-line:#8E8D9E52;
+  --shadow-popover:0 8px 24px rgba(0,0,0,.55); --shadow-modal:0 20px 48px rgba(0,0,0,.65);
+  --backdrop:rgba(11,11,14,.6);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg:#F4F3F8; --surface-1:#FFFFFF; --surface-2:#F1F0F6; --surface-3:#FFFFFF;
+  --line:#E2E0EB; --line-strong:#C7C4D6; --line-control:#8A889C;
+  --fg:#15151C; --fg-muted:#56556B; --fg-subtle:#6B6A7F;
+  --accent:#614DFF; --accent-strong:#4F3AEF; --accent-text:#4B36F0; --on-accent:#fff;
+  --focus:#4B36F0; --accent-soft:#614DFF40;
+  --ok:#147A4C; --attention:#8A5D00; --failed:#C4213F; --busy:#0B6F86; --off:#6B6A7F;
+  --ok-bg:#147A4C1A; --ok-line:#147A4C52; --attention-bg:#8A5D001A; --attention-line:#8A5D0052;
+  --failed-bg:#C4213F1A; --failed-line:#C4213F52; --busy-bg:#0B6F861A; --busy-line:#0B6F8652;
+  --off-bg:#6B6A7F14; --off-line:#6B6A7F40;
+  --shadow-popover:0 8px 24px rgba(21,21,28,.12); --shadow-modal:0 20px 48px rgba(21,21,28,.18);
+  --backdrop:rgba(21,21,28,.45);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg:#F4F3F8; --surface-1:#FFFFFF; --surface-2:#F1F0F6; --surface-3:#FFFFFF;
+    --line:#E2E0EB; --line-strong:#C7C4D6; --line-control:#8A889C;
+    --fg:#15151C; --fg-muted:#56556B; --fg-subtle:#6B6A7F;
+    --accent:#614DFF; --accent-strong:#4F3AEF; --accent-text:#4B36F0; --on-accent:#fff;
+    --focus:#4B36F0; --accent-soft:#614DFF40;
+    --ok:#147A4C; --attention:#8A5D00; --failed:#C4213F; --busy:#0B6F86; --off:#6B6A7F;
+    --ok-bg:#147A4C1A; --ok-line:#147A4C52; --attention-bg:#8A5D001A; --attention-line:#8A5D0052;
+    --failed-bg:#C4213F1A; --failed-line:#C4213F52; --busy-bg:#0B6F861A; --busy-line:#0B6F8652;
+    --off-bg:#6B6A7F14; --off-line:#6B6A7F40;
+    --shadow-popover:0 8px 24px rgba(21,21,28,.12); --shadow-modal:0 20px 48px rgba(21,21,28,.18);
+    --backdrop:rgba(21,21,28,.45);
+  }
+}
+:root {
+  --lane-1:#2F5BD8; --lane-2:#6D3FD6; --lane-3:#B8266A; --lane-4:#A85A00;
+  --lane-5:#137A4B; --lane-6:#0B6F86; --lane-7:#B9231F; --lane-8:#4A4AD0;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px; --space-6:24px; --space-8:32px;
+  --radius-xs:4px; --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-full:9999px;
+  --duration-fast:120ms; --duration-base:180ms; --duration-slow:240ms;
+  --ease-out:cubic-bezier(.23,1,.32,1); --ease-in-out:cubic-bezier(.77,0,.175,1);
+  --font-sans:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  --font-mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@font-face { font-family:"Geist Mono"; src:url(/static/fonts/GeistMono-Variable.woff2) format("woff2"); font-weight:100 900; font-display:swap; }

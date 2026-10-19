@@ -9,6 +9,35 @@
 
   var token = document.querySelector('meta[name="stackfork-token"]').content;
 
+  // setTheme applies "light" | "dark" | "system" and remembers it. "system"
+  // removes the pin so prefers-color-scheme decides. localStorage can throw
+  // (private mode, blocked site data), so every access is guarded.
+  var THEME_KEY = "stackfork-theme";
+  var THEME_NEXT = { system: "light", light: "dark", dark: "system" };
+  function setTheme(theme) {
+    if (theme !== "light" && theme !== "dark") theme = "system";
+    if (theme === "system") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.dataset.theme = theme;
+    try {
+      if (theme === "system") localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, theme);
+    } catch (e) { /* storage unavailable: the choice lasts for this page only */ }
+    var btn = document.getElementById("theme-toggle");
+    if (btn) {
+      btn.dataset.themeMode = theme;
+      btn.textContent = "Theme: " + theme;
+      btn.setAttribute("aria-label", "Theme: " + theme + ". Switch to " + THEME_NEXT[theme]);
+    }
+  }
+  window.setTheme = setTheme;
+  (function initTheme() {
+    var stored = "system";
+    try { stored = localStorage.getItem(THEME_KEY) || "system"; } catch (e) { /* ignore */ }
+    setTheme(stored);
+    var btn = document.getElementById("theme-toggle");
+    if (btn) btn.addEventListener("click", function () { setTheme(THEME_NEXT[btn.dataset.themeMode] || "light"); });
+  })();
+
   // post sends a token-bearing POST. The token changes when the dashboard
   // restarts, so on a 403 it reads the current one from the page and
   // retries once: an open tab keeps working across restarts.

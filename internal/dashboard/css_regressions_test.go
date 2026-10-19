@@ -1,6 +1,7 @@
 package dashboard_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -43,10 +44,68 @@ func TestCopyActionsStyledAsClickable(t *testing.T) {
 	for _, want := range []string{
 		".copyable::before",
 		".copyable:hover::before",
-		"border-radius: 999px",
+		"border-radius: var(--radius-full)",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("expected app.css to contain %q (copy-action styling)", want)
 		}
+	}
+}
+
+func TestTokensServedAndComplete(t *testing.T) {
+	srv := newTestServer(t)
+	rec := doRequest(srv, "GET", "/static/tokens.css", "127.0.0.1:55123", nil)
+	if rec.Code != 200 {
+		t.Fatalf("GET /static/tokens.css: status %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/css") {
+		t.Errorf("Content-Type = %q, want text/css", ct)
+	}
+	css := rec.Body.String()
+	for _, want := range []string{"--surface-1:#131318", "--surface-1:#FFFFFF", "--lane-8:#4A4AD0", "prefers-color-scheme: light", `[data-theme="light"]`, `:root:not([data-theme="dark"])`, "GeistMono-Variable.woff2"} {
+		if !strings.Contains(css, want) {
+			t.Errorf("tokens.css missing %q", want)
+		}
+	}
+}
+
+func TestGeistMonoEmbedded(t *testing.T) {
+	srv := newTestServer(t)
+	rec := doRequest(srv, "GET", "/static/fonts/GeistMono-Variable.woff2", "127.0.0.1:55123", nil)
+	if rec.Code != 200 {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if !strings.HasPrefix(rec.Body.String(), "wOF2") {
+		t.Fatal("body is not a woff2 file")
+	}
+}
+
+// All colour lives in tokens.css; app.css only references variables.
+func TestAppCSSHasNoHardCodedColours(t *testing.T) {
+	srv := newTestServer(t)
+	rec := doRequest(srv, "GET", "/static/app.css", "127.0.0.1:55123", nil)
+	css := rec.Body.String()
+	if m := regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b`).FindAllString(css, -1); len(m) > 0 {
+		t.Errorf("app.css has hard-coded colours: %v", m)
+	}
+	if m := regexp.MustCompile(`rgba?\(`).FindAllString(css, -1); len(m) > 0 {
+		t.Errorf("app.css has rgb()/rgba() colours: %d", len(m))
+	}
+}
+
+func TestThemeToggleWired(t *testing.T) {
+	srv := newTestServer(t)
+	html := doRequest(srv, "GET", "/", "127.0.0.1:55123", nil).Body.String()
+	for _, want := range []string{`/static/tokens.css`, `stackfork-theme`, `id="theme-toggle"`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("index missing %q", want)
+		}
+	}
+	if strings.Index(html, "tokens.css") > strings.Index(html, "app.css") {
+		t.Error("tokens.css must load before app.css")
+	}
+	js := doRequest(srv, "GET", "/static/app.js", "127.0.0.1:55123", nil).Body.String()
+	if !strings.Contains(js, "function setTheme(") {
+		t.Error("app.js missing setTheme")
 	}
 }
