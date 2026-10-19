@@ -433,7 +433,7 @@ Mapped against the 51 the earlier design system components. "Adapted" keeps the 
 | EmptyState | **EmptyState** | Title + one sentence + one primary + an optional command row; left-aligned inside the content width, never a dashed box. |
 | KeyValueList | **KeyValueList** | Service details drawer: 120 px label column in `small fg-subtle`, mono chip values, wraps at <720 px. |
 | ProgressBar | **AheadBehindBar** / **DiskBar** | Two-segment proportional bar, 4 px tall, radius `full`, always followed by the numbers. |
-| Toast | **ActionToast** | Replaces the activity log as feedback: bottom-left stack, 4 s, state tint, one action ("Show logs"); the activity feed moves into the log drawer's second tab. |
+| Toast | **ActionToast** | Replaces the activity log as feedback: bottom-right stack of at most 3 on `surface-3` with `shadow-popover`, state glyph + text, dismiss button. Success dismisses itself after 5 s (polite `role="status"` region); an error stays until dismissed (`role="alert"` region). The activity feed stays in the page log and is also written there. |
 | TruncatedId | **ShortSha** | 7-char mono SHA with the full value in `title` and copy on click. |
 | ConfigPreview | **CommandRow** | A mono command on `surface-2`, radius `sm`, with a Copy icon button and, when the server allows it, a `Run` secondary button whose label names the verb (`Run`, `Seed`, `Prune`); placeholders (`PATH`, `CMD`) make it copy-only and the Run slot is empty, not disabled. |
 | DataTable | **RepoTable** / **ServiceTable** / **PruneTable** | Micro headers, 40 px rows, hairlines, right-aligned numbers, one visible action + overflow per row, keyboard row focus (`tabindex=0`, Enter expands). |

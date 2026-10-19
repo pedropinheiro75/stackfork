@@ -145,3 +145,21 @@ func TestTask2Regressions(t *testing.T) {
 		t.Error("loadRepos must show Settings once, whatever view is open")
 	}
 }
+
+// TestToastRegionsAndLightStateTokens pins the ActionToast live regions in
+// the page shell and the AA-safe light state colours (DESIGN.md Colors).
+func TestToastRegionsAndLightStateTokens(t *testing.T) {
+	srv := newTestServer(t)
+	page := doRequest(srv, "GET", "/", "127.0.0.1:55123", nil).Body.String()
+	for _, want := range []string{`id="toast-status" role="status" aria-live="polite"`, `id="toast-alert" role="alert"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page missing %s", want)
+		}
+	}
+	css := doRequest(srv, "GET", "/static/tokens.css", "127.0.0.1:55123", nil).Body.String()
+	for _, want := range []string{"--ok:#116A42", "--attention:#7A5200", "--failed:#B01B38", "--busy:#0A6276", "--off:#5F5E73"} {
+		if strings.Count(css, want) != 2 {
+			t.Errorf("tokens.css should hold %s in both light blocks", want)
+		}
+	}
+}

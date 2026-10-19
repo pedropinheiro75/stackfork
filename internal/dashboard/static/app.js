@@ -80,6 +80,28 @@
     el.textContent = line + "\n" + el.textContent;
   }
 
+  // ActionToast: success goes to the polite status region and dismisses
+  // itself; an error goes to the alert region and stays until dismissed.
+  // At most three are stacked. The text is also logged by the callers.
+  var TOAST_MS = 5000;
+  function toast(tone, text) {
+    var err = tone === "failed";
+    var region = document.getElementById(err ? "toast-alert" : "toast-status");
+    if (!region) return;
+    var el = document.createElement("div");
+    el.className = "toast toast-" + tone;
+    el.innerHTML = '<span class="toast-glyph" aria-hidden="true">' + (GLYPH[tone] || GLYPH.ok) + '</span><span class="toast-text"></span>' +
+      '<button type="button" class="btn btn-ghost btn-icon toast-close" aria-label="Dismiss"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>';
+    el.querySelector(".toast-text").textContent = text;
+    var timer = null;
+    function dismiss() { clearTimeout(timer); el.remove(); }
+    el.querySelector(".toast-close").addEventListener("click", dismiss);
+    region.appendChild(el);
+    var all = document.querySelectorAll("#toasts .toast");
+    for (var i = 0; i < all.length - 3; i++) all[i].remove();
+    if (!err) timer = setTimeout(dismiss, TOAST_MS);
+  }
+
   // --- collapse persistence (design.md D3a: "remembered per stack in
   // localStorage, wrapped in try/catch") -------------------------------
 
@@ -518,9 +540,11 @@
     return post("/api/actions", { action: action, project: project, service: service || "" })
       .then(function (r) { return r.json().then(function (body) { return { ok: r.ok, body: body }; }); })
       .then(function (result) {
-        log(project + " " + action + ": " + (result.body.message || (result.ok ? "ok" : "failed")));
+        var msg = project + " " + action + ": " + (result.body.message || (result.ok ? "ok" : "failed"));
+        log(msg);
+        toast(result.ok ? "ok" : "failed", msg);
       })
-      .catch(function (err) { log(project + " " + action + ": " + err.message); });
+      .catch(function (err) { var msg = project + " " + action + ": " + err.message; log(msg); toast("failed", msg); });
   }
 
   // fetchCopyValue is D3b's one exception: a placeholder-bearing pill's
@@ -554,9 +578,9 @@
     if (el) el.focus();
   }
 
-  function openDrawer(title, project, bodyText) {
+  function openDrawer(title, project, bodyText, opener) {
     var panel = document.getElementById("logs-panel");
-    if (panel.hidden) drawerOpener = openerOf();
+    if (panel.hidden) drawerOpener = openerOf(opener);
     panel.className = "log-drawer" + (project ? " lane-" + (stackColorIndex(project) + 1) : "");
     document.getElementById("logs-title").textContent = title;
     document.getElementById("logs-body").textContent = bodyText;
@@ -573,8 +597,8 @@
     drawerOpener = null;
   }
 
-  function showLogs(project, service) {
-    openDrawer(project + (service ? " / " + service : ""), project, "loading...");
+  function showLogs(project, service, opener) {
+    openDrawer(project + (service ? " / " + service : ""), project, "loading...", opener);
     var body = document.getElementById("logs-body");
     var url = "/api/logs?project=" + encodeURIComponent(project) + "&tail=200";
     if (service) url += "&service=" + encodeURIComponent(service);
@@ -705,7 +729,7 @@
       }
       var logsBtn = e.target.closest(".logs-button");
       if (logsBtn) {
-        showLogs(logsBtn.dataset.project, logsBtn.dataset.service);
+        showLogs(logsBtn.dataset.project, logsBtn.dataset.service, logsBtn);
         return;
       }
       var copy = e.target.closest("[data-copy]");
@@ -1120,7 +1144,8 @@
         if ((r.headers.get("Content-Type") || "").indexOf("ndjson") === -1) {
           return r.json().then(function (b) {
             log(label + ": " + (b.message || (r.ok ? "ok" : "failed")));
-            if (!r.ok || b.ok === false) fail(b.message || "refused (status " + r.status + ")");
+            if (!r.ok || b.ok === false) { fail(b.message || "refused (status " + r.status + ")"); toast("failed", label + ": " + (b.message || "refused")); }
+            else toast("ok", label + ": " + (b.message || "ok"));
           });
         }
         var reader = r.body.getReader();
@@ -1136,6 +1161,7 @@
           } else {
             log(label + ": " + (o.ok ? "done - " : "failed - ") + o.message);
             if (!o.ok) fail(o.message);
+            toast(o.ok ? "ok" : "failed", label + ": " + o.message);
           }
         }
         function pump() {
@@ -1149,7 +1175,7 @@
         }
         return pump();
       })
-      .catch(function (e) { log(label + ": " + e.message); fail(e.message); })
+      .catch(function (e) { log(label + ": " + e.message); fail(e.message); toast("failed", label + ": " + e.message); })
       .then(function () {
         btn.disabled = false;
         if (!inMenu) btn.textContent = btnText;
@@ -1296,13 +1322,15 @@
       .then(function (res) {
         var msg = res.message || "";
         if (msg.indexOf("\n") >= 0) {
-          openDrawer(cmd, project, msg);
+          openDrawer(cmd, project, msg, btn);
           log("run: " + (res.ok ? "done" : "failed") + " (output in the logs panel)");
+          toast(res.ok ? "ok" : "failed", cmd + ": " + (res.ok ? "done, output in the logs panel" : "failed, output in the logs panel"));
         } else {
           log("run: " + msg);
+          toast(res.ok === false ? "failed" : "ok", cmd + ": " + (msg || (res.ok === false ? "failed" : "done")));
         }
       })
-      .catch(function (err) { log("run: " + err.message); })
+      .catch(function (err) { log("run: " + err.message); toast("failed", cmd + ": " + err.message); })
       .then(function () {
         if (key) delete inFlight[key];
         // the button may have been replaced by a re-render: find the live one
