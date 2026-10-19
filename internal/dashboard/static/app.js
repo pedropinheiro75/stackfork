@@ -213,8 +213,11 @@
       '"><span aria-hidden="true">⋯</span></button><div class="menu" role="menu" hidden>' + items + "</div></div>";
   }
 
+  // Only http(s) URLs become links (html/template's guarantee on first paint).
+  function isWebUrl(u) { return /^https?:\/\//.test(u || ""); }
+
   function appChipHtml(app, i, project) {
-    if (app.url && app.running) {
+    if (isWebUrl(app.url) && app.running) {
       var title = app.url + (app.direct ? " (direct: " + app.direct + ")" : "");
       return '<a class="app-chip" data-key="' + escapeHtml(project) + '/app' + i + '" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(title) + '">' + escapeHtml(app.label) + "</a>";
     }
@@ -235,7 +238,7 @@
       return '<span class="endpoint-pending" title="container port ' + escapeHtml(ep.container) + '">port assigned on start</span>';
     }
     var stopped = svcState === "running" ? "" : " stopped";
-    if (ep.scheme === "http" || ep.scheme === "https") {
+    if ((ep.scheme === "http" || ep.scheme === "https") && isWebUrl(ep.url)) {
       var note = endpointNote(svcState, ep.proxied);
       return '<a class="endpoint-link' + stopped + '" data-key="' + escapeHtml(key) + '" href="' + escapeHtml(ep.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(ep.url) + '">' +
         '<span class="endpoint-url">' + escapeHtml(ep.url) + "</span>" + (note ? '<span class="endpoint-note">' + note + "</span>" : "") + "</a>";
@@ -355,7 +358,7 @@
     var cmds = commandsOf(inst);
     var down = cmds[0];
     var app = null;
-    (inst.apps || []).forEach(function (a) { if (!app && a.url && a.running) app = a; });
+    (inst.apps || []).forEach(function (a) { if (!app && isWebUrl(a.url) && a.running) app = a; });
 
     var items = "";
     if (inst.state === "partial") items += menuItem(inst.project + "/menu/up", "Start stopped services", "", ' data-action="up" data-project="' + p + '"');
@@ -383,7 +386,7 @@
       (inst.hostname ? '<span class="stack-sep" aria-hidden="true"> · </span><span class="stack-host" title="' + escapeHtml(inst.hostname) + '">' + escapeHtml(inst.hostname) + "</span>" : "") + "</div>";
     var actions =
       (!live ? '<button type="button" class="btn" data-action="up" data-project="' + p + '" data-key="' + p + '/up">Start</button>' : "") +
-      (live && app ? '<a class="btn mobile-hide" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" data-key="' + p + '/open" title="' + escapeHtml(app.url) + '">Open App</a>' : "") +
+      (live && app && isWebUrl(app.url) ? '<a class="btn mobile-hide" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" data-key="' + p + '/open" title="' + escapeHtml(app.url) + '">Open App</a>' : "") +
       (live ? '<button type="button" class="btn btn-ghost mobile-hide" data-action="down" data-project="' + p + '" data-key="' + p + '/down" title="Stop (keeps volumes)">Stop</button>' : "") +
       menuHtml(inst.project + "/menu", "More actions for " + name, "More actions", items);
 
@@ -987,7 +990,6 @@
           list.querySelectorAll(".repo").forEach(function (d) { if (reposState.open[d.dataset.key]) setRepoOpen(d, true); });
           applyRepoView();
           applyRepoFilters();
-          renderRepoErrors();
           if (menuKey) { var tr = keyedIn("#repos-list", menuKey); if (tr) openMenu(tr, false); }
           if (focusKey) {
             var again = keyedIn("#repos-list", focusKey);
@@ -996,6 +998,7 @@
           if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
           meta = document.getElementById("repos-meta");
         }
+        renderRepoErrors(); // errors change without the fragment changing (failed/dismissed action)
         document.getElementById("rail-count-repos").textContent = list.querySelectorAll(".repo").length || "";
         var scanning = meta && meta.dataset.scanning === "true";
         var n = meta ? Number(meta.dataset.count) : 0;
@@ -1217,7 +1220,13 @@
         e.preventDefault();
         setView("instances");
         var art = document.querySelector('.stack[data-project="' + inst.dataset.project.replace(/"/g, "") + '"]');
-        if (art) { art.dataset.collapsed = "0"; art.scrollIntoView({ block: "center" }); }
+        if (art) {
+          // same path as the chevron, so the next poll keeps it open
+          art.dataset.collapsed = "0";
+          var chev = art.querySelector("[data-toggle-stack]");
+          if (chev) { chev.setAttribute("aria-expanded", "true"); setCollapsed(chev.dataset.project, false); }
+          art.scrollIntoView({ block: "center" });
+        }
         return;
       }
       var tog = e.target.closest("[data-toggle-repo]");
@@ -1278,23 +1287,6 @@
   // placeholder (PATH, CMD, <name>) stay copy-only.
   function runnable(cmd) {
     return /^(stackfork|git|docker) /.test(cmd) && !/[<>…]|\b[A-Z]{3,}\b/.test(cmd);
-  }
-
-  function decorateRunnables() {
-    document.querySelectorAll("code.cli-command").forEach(function (el) {
-      if (el.parentElement.classList.contains("cmd-row") || !runnable(el.dataset.copy || "")) return;
-      var row = document.createElement("span");
-      row.className = getComputedStyle(el).display === "block" ? "cmd-row block" : "cmd-row";
-      el.insertAdjacentElement("beforebegin", row);
-      row.appendChild(el);
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "run-btn";
-      btn.dataset.run = el.dataset.copy;
-      btn.title = "run " + el.dataset.copy;
-      btn.textContent = "\u25B6 Run";
-      row.appendChild(btn);
-    });
   }
 
   // Commands still running, by the button's data-key. A card re-render
@@ -1419,8 +1411,6 @@
       var btn = e.target.closest("[data-run]");
       if (btn && !btn.disabled) runCommand(btn);
     });
-    decorateRunnables();
-    new MutationObserver(decorateRunnables).observe(document.body, { childList: true, subtree: true });
   }
 
   function start() {
