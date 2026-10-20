@@ -191,6 +191,8 @@ func (r *Run) Finish(err error) {
 		r.Outcome, r.EndedAt = out, now()
 		if err != nil {
 			r.Error = err.Error()
+		} else {
+			r.Retry = "" // a default set at Begin only serves interrupted and failed runs
 		}
 	})
 	if r.lock != nil {

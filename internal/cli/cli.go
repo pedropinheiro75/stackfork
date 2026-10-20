@@ -949,6 +949,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		if err != nil {
 			return 0, err
 		}
+		rec.SetRetry("stackfork --instance " + project + " up")
 		defer func() { rec.Finish(runErr) }()
 	}
 

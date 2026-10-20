@@ -113,3 +113,16 @@ func TestSeparatorInStepIDFallsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFinishClearsADefaultRetryOnSuccess(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Begin(dir, Meta{Command: "up", Trigger: "cli"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.SetRetry("stackfork up")
+	r.Finish(nil)
+	if got, _ := Get(dir, r.ID); got.Retry != "" {
+		t.Fatalf("retry on a succeeded run: %q", got.Retry)
+	}
+}

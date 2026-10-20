@@ -157,6 +157,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 			if berr != nil { // another run owns the instance: nothing runs
 				return actionResponse{Message: berr.Error()}
 			}
+			rec.SetRetry("stackfork --instance " + req.Project + " up")
 			res := lifecycle.UpAndSeed(&out, &out, lifecycle.UpSeed{
 				Run: rec, Root: root, Main: main, Branch: branch, Project: req.Project, InstanceDir: instanceDir,
 				NewBase: s.NewStateBase, LegacyBase: s.LegacyStateBase, Mode: mode,
