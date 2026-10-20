@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,7 +27,9 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
+	"github.com/pedropinheiro75/stackfork/internal/redact"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -879,7 +882,11 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		var wt string
 		fs.StringVar(&wt, "wait-timeout", "180", "")
 		fs.StringVar(&planMode, "mode", "", "")
-		fs.BoolVar(&inRun, "in-run", false, "")
+		// --in-run is for StartEnv only, so it is not a registered flag (not in help)
+		subArgs = slices.DeleteFunc(slices.Clone(subArgs), func(a string) bool {
+			inRun = inRun || a == "--in-run"
+			return a == "--in-run"
+		})
 		if err := fs.Parse(subArgs); err != nil {
 			return parseFailure(fs, err)
 		}
@@ -923,6 +930,26 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		opts.Command = subArgs[1:]
 	}
 
+	// An `up` of its own records a run; the run lock comes before the instance
+	// lock, so a Start waiting on this up's lock is never blocked by a wait here.
+	var rec *runs.Run
+	var runErr error
+	if action == "up" && !inRun {
+		if planMode == "" {
+			planMode = lifecycle.PlanMode(root, repos.MainRepoOf(root))
+		}
+		if _, err := lifecycle.LoadAndValidateManifest(instanceDir, root, branch, project, action); err != nil {
+			return 0, err // a refusal before the first step is not a run
+		}
+		var err error
+		rec, err = runs.Begin(instanceDir, runs.Meta{Command: "up", Trigger: envTrigger(), Mode: planMode, Project: project, Branch: branch,
+			Out: stdout, Secrets: func() []redact.Secret { return runSecrets(instanceDir, nil) }})
+		if err != nil {
+			return 0, err
+		}
+		defer func() { rec.Finish(runErr) }()
+	}
+
 	// up/down/restart/start/stop all mutate this instance's manifest/compose
 	// snapshot and its proxy registration; take the same per-instance flock
 	// prepare already does, so two of them racing (e.g. a script and a
@@ -948,15 +975,46 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 		// a failed up leaves seeded:false, so the next up seeds
 		res := lifecycle.UpAndSeed(stdout, stderr, lifecycle.UpSeed{
-			Root: root, Main: main, Branch: branch, Project: project, InstanceDir: instanceDir,
+			Run: rec, Root: root, Main: main, Branch: branch, Project: project, InstanceDir: instanceDir,
 			NewBase: newStateBase, LegacyBase: legacyStateBase, Mode: planMode, Plan: lifecycle.LoadPlan(root, main), Seed: !inRun,
 			Compose: func(so, se io.Writer) (int, error) {
 				return lifecycle.Execute(so, se, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
 			},
 		})
+		if rec != nil {
+			runErr = upRunError(res, rec, project)
+		}
 		return res.Code, res.Err
 	}
 	return lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
+}
+
+// envTrigger is who started this command: the dashboard sets
+// STACKFORK_TRIGGER=dashboard for the commands it runs. A label for people,
+// not a security boundary.
+func envTrigger() string {
+	if os.Getenv("STACKFORK_TRIGGER") == "dashboard" {
+		return "dashboard"
+	}
+	return "cli"
+}
+
+// upRunError is the run's error for an `up` and sets its retry command: a
+// failed seed is retried by `seed`, anything else by `up`.
+func upRunError(res lifecycle.UpOutcome, rec *runs.Run, project string) error {
+	cmd := "stackfork --instance " + project + " "
+	switch {
+	case res.Err != nil:
+		rec.SetRetry(cmd + "up")
+		return res.Err
+	case res.Code != 0:
+		rec.SetRetry(cmd + "up")
+		return fmt.Errorf("up exited with status %d", res.Code)
+	case res.SeedErr != nil:
+		rec.SetRetry(cmd + "seed")
+		return fmt.Errorf("seed failed: %v; retry with stackfork seed", res.SeedErr)
+	}
+	return nil
 }
 
 // --- output ------------------------------------------------------------

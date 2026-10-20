@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/redact"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -64,13 +66,30 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	if err := os.MkdirAll(instanceDir, 0o700); err != nil {
 		return 0, err
 	}
-	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
+	main := repos.MainRepoOf(root)
+	mode := lifecycle.PlanMode(root, main)
+	rec, err := runs.Begin(instanceDir, runs.Meta{Command: "seed", Trigger: envTrigger(), Mode: mode, Project: project, Branch: branch,
+		Out: stdout, Secrets: func() []redact.Secret { return runSecrets(instanceDir, nil) }})
 	if err != nil {
 		return 0, err
 	}
+	entry, _ := lifecycle.SeedEntry(root, main, instanceDir, lifecycle.LoadPlan(root, main), mode)
+	if entry.ID == "" { // cmd != "" above, so SeedEntry has an entry
+		entry.ID = "seed"
+	}
+	step := rec.Step(entry.ID, knowledge.KindExec, lifecycle.StepText(entry))
+	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
+	if err != nil {
+		rec.Finish(err)
+		return 0, err
+	}
 	defer lock.Release()
-	if err := runSeed(stdout, stderr, root, branch, project, instanceDir, newBase, legacyBase, "", nil); err != nil {
+	serr := runSeed(stdout, stderr, root, branch, project, instanceDir, newBase, legacyBase, mode, step)
+	if serr != nil {
+		rec.SetRetry("stackfork --instance " + project + " seed")
+		rec.Finish(fmt.Errorf("step %s failed: %v; retry with stackfork seed", entry.ID, serr))
 		return 1, nil
 	}
+	rec.Finish(nil)
 	return 0, nil
 }
