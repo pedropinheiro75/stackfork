@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -66,5 +67,49 @@ func TestStartEnvRefusesWhileAnotherRunIsActive(t *testing.T) {
 	}
 	if got := runFiles(state); len(got) != 2 { // the held run is the second
 		t.Fatalf("runs: %v", got)
+	}
+}
+
+func schemaRunStates(t *testing.T, migrateService string) (states, seedText string) {
+	t.Helper()
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "migrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Service: migrateService, Cmd: "m"},
+		{ID: "migrate2", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Service: "db", Cmd: "m2"},
+		{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Service: "db", Cmd: "s"},
+	})
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	if out, e, code := runCLI(t, append(base, "start-env", repo)...); code != 0 {
+		t.Fatalf("%d %s %s", code, out, e)
+	}
+	r, err := runs.Get(onlyRunDir(t, state), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range r.Steps {
+		if s.ID == "seed" {
+			seedText = s.Text
+		}
+	}
+	return stepStates(r), seedText
+}
+
+// The seed's migrate prefix covers the first schema step only, and only when
+// both run in the same service.
+func TestOnlyThePrefixedSchemaStepIsSkipped(t *testing.T) {
+	got, text := schemaRunStates(t, "db")
+	want := "prepare=succeeded: up=succeeded: seed=succeeded: migrate=skipped:ran with the seed migrate2=succeeded:"
+	if got != want || text != "m && s  in db" {
+		t.Fatalf("%s\n%q", got, text)
+	}
+}
+
+func TestSchemaStepInAnotherServiceIsNotPrefixedAndRunsAtItsPlace(t *testing.T) {
+	got, text := schemaRunStates(t, "web")
+	want := "prepare=succeeded: up=succeeded: seed=succeeded: migrate=succeeded: migrate2=succeeded:"
+	if got != want || text != "s  in db" {
+		t.Fatalf("%s\n%q", got, text)
 	}
 }

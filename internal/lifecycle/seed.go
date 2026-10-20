@@ -162,20 +162,27 @@ func seedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
 		if !learn.SeedActive(c) {
 			return "", ""
 		}
-		return withMigrate(root, main, c), svc
+		return withMigrate(root, main, instanceDir, c, svc), svc
 	}
 	_, detected := learn.DetectSeed(root)
 	if detected == "" {
 		return "", ""
 	}
-	return withMigrate(root, main, detected), ""
+	return withMigrate(root, main, instanceDir, detected, ""), ""
 }
 
-func withMigrate(root, main, seed string) string {
+// withMigrate puts the plan's first schema step before the seed, so a new
+// database has its tables. The migrate runs in the seed's service, so a
+// schema step that names another service is not prefixed: it runs at its
+// own place in the plan.
+func withMigrate(root, main, instanceDir, seed, seedService string) string {
 	migrate := ""
 	for _, d := range []string{root, main} {
 		if k, err := knowledge.Load(filepath.Join(d, ".stackfork", "knowledge.json")); err == nil {
 			if m := k.Plan.MigrateStep(); m != nil {
+				if ResolveExecService(instanceDir, *m, k.Plan) != ResolveExecService(instanceDir, knowledge.Step{Service: seedService}, k.Plan) {
+					return seed
+				}
 				migrate = m.Cmd
 				break
 			}
@@ -188,6 +195,17 @@ func withMigrate(root, main, seed string) string {
 		return seed
 	}
 	return migrate + " && " + seed
+}
+
+// SeedCoversSchema reports whether the seed command of mode runs the plan's
+// schema step s itself (the migrate prefix), so that step has nothing to do.
+func SeedCoversSchema(root, main, instanceDir string, plan knowledge.Plan, mode string, s knowledge.Step) bool {
+	m := plan.MigrateStep()
+	if m == nil || m.ID != s.ID {
+		return false
+	}
+	cmd, _ := SeedRecipeIn(root, main, instanceDir, mode)
+	return strings.HasPrefix(cmd, m.Cmd+" && ")
 }
 
 // dataVolumesExist reports whether any named volume of the instance's

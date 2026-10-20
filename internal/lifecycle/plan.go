@@ -102,7 +102,7 @@ func (r PlanRunner) Execute() error {
 		case knowledge.KindExec:
 			switch {
 			case s.Once == knowledge.OnceData: // the data seed runs with its compose-up
-			case s.Once == knowledge.OnceSchema && seeded: // the seed prefix (migrate && seed) already ran it
+			case s.Once == knowledge.OnceSchema && seeded && SeedCoversSchema(r.Root, r.Main, r.InstanceDir, r.Plan, r.Mode, s): // the seed prefix (migrate && seed) already ran it
 				r.skip(s, "ran with the seed")
 			default:
 				err = r.step(s, func(w io.Writer) (int, error) { return r.exec(w, s) })
