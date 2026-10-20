@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"errors"
 	"fmt"
 	"github.com/pedropinheiro75/stackfork/internal/learn"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -58,36 +60,54 @@ func ResolveExecService(instanceDir string, step knowledge.Step, plan knowledge.
 
 // RunSeed execs cmd in service (default: the primary app service). On
 // success it records seeded:true; on failure it leaves the marker alone and
-// says how to retry. The caller holds the instance lock.
-func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase, cmd, service string, plan knowledge.Plan) bool {
+// says how to retry. The caller holds the instance lock. With a step, the
+// seed's output goes to the step's writer (and so to its log), not to
+// stdout/stderr; the final failure message still goes to stderr. It returns
+// nil when there was nothing to run.
+func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase, cmd, service string, plan knowledge.Plan, step *runs.Step) error {
 	if cmd == "" { // nothing to run in this mode: leave the marker alone
-		return false
+		if step != nil && step.State == runs.Pending {
+			step.Skip("no seed for this mode")
+		}
+		return nil
 	}
 	retry := "stackfork --instance " + project + " seed"
 	service = ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)
 	f := false
 	SetSeeded(instanceDir, &f) // it ran (or cannot): no longer pending, a failure is retried by hand
+	w, ew := stdout, stderr
+	if step != nil {
+		w = step.Start()
+		ew = w
+	}
 	if service == "" {
+		err := errors.New("no service to run the seed in")
+		if step != nil {
+			step.End(err, 0)
+		}
 		fmt.Fprintf(stderr, "not seeded: no service to run %q in; record one with `stackfork learn record recipe --seed-service SVC`, then run `%s`\n", cmd, retry)
-		return false
+		return err
 	}
-	fmt.Fprintf(stdout, "seeding the new database in %s: %s\n", service, cmd)
-	// The last run's output is kept so the dashboard can say why it failed.
-	if f, err := os.OpenFile(filepath.Join(instanceDir, state.SeedLog), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600); err == nil {
-		defer f.Close()
-		fmt.Fprintf(f, "$ %s\n", cmd)
-		stdout, stderr = io.MultiWriter(stdout, f), io.MultiWriter(stderr, f)
-	}
-	code, err := Execute(stdout, stderr, "exec", root, branch, project, instanceDir, newBase, legacyBase,
+	fmt.Fprintf(w, "seeding the new database in %s: %s\n", service, cmd)
+	code, err := Execute(w, ew, "exec", root, branch, project, instanceDir, newBase, legacyBase,
 		Options{Service: service, Command: []string{"sh", "-c", cmd}})
-	if err != nil || code != 0 {
+	if err == nil && code != 0 {
+		err = fmt.Errorf("exited with status %d", code)
+	}
+	if err != nil {
+		if step != nil {
+			step.End(err, code)
+		}
 		fmt.Fprintf(stderr, "not seeded: the seed command failed (%v, status %d); retry with `%s`, or, if the data is already there, `%s --mark-done`\n", err, code, retry, retry)
-		return false
+		return err
 	}
 	t := true
 	SetSeeded(instanceDir, &t)
-	fmt.Fprintf(stdout, "seeded new database with %s\n", cmd)
-	return true
+	fmt.Fprintf(w, "seeded new database with %s\n", cmd)
+	if step != nil {
+		step.End(nil, 0)
+	}
+	return nil
 }
 
 func boolPtr(b bool) *bool { return &b }

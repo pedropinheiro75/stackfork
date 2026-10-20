@@ -8,11 +8,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
-	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 // HostStart starts one host step. The cli package sets the real one (`host start`); tests stub it.
@@ -102,7 +100,8 @@ func (r PlanRunner) Run() error {
 			fmt.Fprintf(r.Out, "note: %s\n", s.Text)
 		}
 		if err != nil {
-			if strings.HasPrefix(err.Error(), "step "+s.ID+":") {
+			var se stepError
+			if errors.As(err, &se) || strings.HasPrefix(err.Error(), "step "+s.ID+":") {
 				return err
 			}
 			return fmt.Errorf("step %s failed: %v; retry with stackfork start-env", s.ID, err)
@@ -111,18 +110,55 @@ func (r PlanRunner) Run() error {
 	return nil
 }
 
-// composeUp runs Up and reports whether that up ran the data seed (seed.log
-// is rewritten by every seed run; the seeded flag alone also flips for old data).
+// composeUp runs Up as the compose-up step and, when that up creates the
+// data, the seed (UpAndSeed), and reports whether the seed ran. The inner up
+// runs with --in-run: it neither records nor seeds, this call does both.
 func (r PlanRunner) composeUp(s knowledge.Step) (seeded bool, err error) {
+	res := UpAndSeed(r.Out, r.Err, UpSeed{
+		Root: r.Root, Main: r.Main, Branch: r.Branch, Project: r.Project, InstanceDir: r.InstanceDir,
+		NewBase: r.NewBase, LegacyBase: r.LegacyBase, Mode: r.Mode, Plan: r.Plan,
+		UpID: s.ID, UpText: StepText(s), Seed: true, Lock: true,
+		Compose: func(stdout, stderr io.Writer) (int, error) {
+			services, err := r.upServices(s)
+			if err != nil {
+				return 0, err
+			}
+			return 0, r.Up(services)
+		},
+	})
+	if res.Err != nil {
+		return false, res.Err
+	}
+	if res.SeedErr != nil {
+		return false, seedFailure(r.Plan, r.Root, r.Main, r.InstanceDir, r.Mode, res.SeedErr)
+	}
+	return res.Seeded, nil
+}
+
+// stepError is an error that already names its step and its retry.
+type stepError struct{ error }
+
+// seedFailure is the error of a failed seed step; the retry is `seed`.
+func seedFailure(plan knowledge.Plan, root, main, instanceDir, mode string, err error) error {
+	id := "seed"
+	if st, ok := SeedEntry(root, main, instanceDir, plan, mode); ok {
+		id = st.ID
+	}
+	return stepError{fmt.Errorf("step %s failed: %v; retry with stackfork seed", id, err)}
+}
+
+// upServices is the service list of a compose-up step: nil for all, else all
+// but the excluded ones and whatever depends on them.
+func (r PlanRunner) upServices(s knowledge.Step) ([]string, error) {
 	var services []string
 	if len(s.Exclude) > 0 {
 		data, err := os.ReadFile(filepath.Join(r.InstanceDir, "compose.json"))
 		if err != nil {
-			return false, err
+			return nil, err
 		}
 		model, err := compose.DecodeJSON(data)
 		if err != nil {
-			return false, err
+			return nil, err
 		}
 		top, _ := model.(map[string]interface{})
 		svcs, _ := top["services"].(map[string]interface{})
@@ -158,19 +194,13 @@ func (r PlanRunner) composeUp(s knowledge.Step) (seeded bool, err error) {
 		sort.Strings(services)
 		sort.Strings(dependents)
 		if len(services) == 0 {
-			return false, fmt.Errorf("step %s: exclude leaves no services to start", s.ID)
+			return nil, fmt.Errorf("step %s: exclude leaves no services to start", s.ID)
 		}
 		if len(dependents) > 0 {
 			fmt.Fprintf(r.Out, "hybrid: not starting %s (they depend on %s)\n", strings.Join(dependents, ", "), strings.Join(s.Exclude, ", "))
 		}
 	}
-	started := time.Now().Add(-time.Second)
-	if err := r.Up(services); err != nil {
-		return false, err
-	}
-	m, _ := state.ReadManifest(filepath.Join(r.InstanceDir, "manifest.json"))
-	fi, ferr := os.Stat(filepath.Join(r.InstanceDir, state.SeedLog))
-	return m != nil && m.Seeded != nil && *m.Seeded && ferr == nil && fi.ModTime().After(started), nil
+	return services, nil
 }
 
 // exec runs a schema (or plain) exec step in its service.

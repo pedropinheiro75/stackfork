@@ -9,6 +9,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -20,21 +21,13 @@ func seedRecipe(root, instanceDir string) (cmd, service string) {
 	return lifecycle.SeedRecipe(root, repos.MainRepoOf(root), instanceDir)
 }
 
-func planSeed(root, instanceDir, mode string) bool {
-	main := repos.MainRepoOf(root)
-	if mode == "" {
-		mode = lifecycle.PlanMode(root, main)
-	}
-	return lifecycle.PlanSeedIn(root, main, instanceDir, mode)
-}
-
-func runSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase, mode string) bool {
+func runSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase, mode string, step *runs.Step) error {
 	main := repos.MainRepoOf(root)
 	if mode == "" {
 		mode = lifecycle.PlanMode(root, main)
 	}
 	cmd, service := lifecycle.SeedRecipeIn(root, main, instanceDir, mode)
-	return lifecycle.RunSeed(stdout, stderr, root, branch, project, instanceDir, newBase, legacyBase, cmd, service, lifecycle.LoadPlan(root, repos.MainRepoOf(root)))
+	return lifecycle.RunSeed(stdout, stderr, root, branch, project, instanceDir, newBase, legacyBase, cmd, service, lifecycle.LoadPlan(root, main), step)
 }
 
 // cmdSeed is `stackfork seed [--force]`: runs the recorded seed_once unless
@@ -76,7 +69,7 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		return 0, err
 	}
 	defer lock.Release()
-	if !runSeed(stdout, stderr, root, branch, project, instanceDir, newBase, legacyBase, "") {
+	if err := runSeed(stdout, stderr, root, branch, project, instanceDir, newBase, legacyBase, "", nil); err != nil {
 		return 1, nil
 	}
 	return 0, nil

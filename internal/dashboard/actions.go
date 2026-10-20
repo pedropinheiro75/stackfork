@@ -140,12 +140,20 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 			return actionResponse{OK: true, Message: "up complete"}
 		}
 		main := repos.MainRepoOf(root)
-		seedNow := lifecycleAction == "up" && lifecycle.PlanSeed(root, main, instanceDir)
-		code, err := lifecycle.Execute(&out, &out, lifecycleAction, root, branch, req.Project, instanceDir,
-			s.NewStateBase, s.LegacyStateBase, opts)
-		if seedNow && err == nil && code == 0 { // a failed up leaves seeded:false for the next up
-			cmd, svc := lifecycle.SeedRecipe(root, main, instanceDir)
-			lifecycle.RunSeed(&out, &out, root, branch, req.Project, instanceDir, s.NewStateBase, s.LegacyStateBase, cmd, svc, lifecycle.LoadPlan(root, main))
+		compose := func(so, se io.Writer) (int, error) {
+			return lifecycle.Execute(so, se, lifecycleAction, root, branch, req.Project, instanceDir,
+				s.NewStateBase, s.LegacyStateBase, opts)
+		}
+		var code int
+		if lifecycleAction == "up" { // a failed up leaves seeded:false for the next up
+			res := lifecycle.UpAndSeed(&out, &out, lifecycle.UpSeed{
+				Root: root, Main: main, Branch: branch, Project: req.Project, InstanceDir: instanceDir,
+				NewBase: s.NewStateBase, LegacyBase: s.LegacyStateBase, Mode: lifecycle.PlanMode(root, main),
+				Plan: lifecycle.LoadPlan(root, main), Seed: true, Compose: compose,
+			})
+			code, err = res.Code, res.Err
+		} else {
+			code, err = compose(&out, &out)
 		}
 		return execResult(lifecycleAction, code, err, out.String())
 	case "proxy-up":

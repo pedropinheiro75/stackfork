@@ -138,18 +138,14 @@ func TestSeedFailureLeavesFalseAndSeedCommandRetries(t *testing.T) {
 	}
 }
 
-func TestSeedMarkDoneRecordsWithoutRunningAndLogKeepsFailure(t *testing.T) {
+func TestSeedMarkDoneRecordsWithoutRunning(t *testing.T) {
 	root, stateDir, log := seedFixture(t)
 	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
 	t.Setenv("DOCKER_FAKE_EXEC_EXIT", "1")
 	args := []string{"--root", root, "--state-dir", stateDir}
 	runCLI(t, append(args, "up")...)
-	logs, _ := filepath.Glob(filepath.Join(stateDir, "*", "seed.log"))
-	if len(logs) != 1 {
-		t.Fatalf("seed.log not written: %v", logs)
-	}
-	if data, _ := os.ReadFile(logs[0]); !strings.HasPrefix(string(data), "$ ") {
-		t.Fatalf("seed.log: %q", data)
+	if logs, _ := filepath.Glob(filepath.Join(stateDir, "*", "seed.log")); len(logs) != 0 { // the step log replaces it
+		t.Fatalf("seed.log written: %v", logs)
 	}
 	if out, stderr, code := runCLI(t, append(args, "seed", "--mark-done")...); code != 0 || !strings.Contains(out, "nothing ran") {
 		t.Fatalf("mark-done: %s %s", out, stderr)

@@ -26,6 +26,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
+	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -865,6 +866,7 @@ func parseDownFlags(stdout io.Writer, subArgs []string) (instance string, volume
 // same function the dashboard's up/down/restart actions call.
 func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string) (int, error) {
 	var opts lifecycle.Options
+	inRun := false // up: StartEnv's own up; the enclosing run records it and seeds
 	planMode := "" // up: the startup mode whose data step may seed; empty = the configured mode
 
 	switch action {
@@ -877,6 +879,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		var wt string
 		fs.StringVar(&wt, "wait-timeout", "180", "")
 		fs.StringVar(&planMode, "mode", "", "")
+		fs.BoolVar(&inRun, "in-run", false, "")
 		if err := fs.Parse(subArgs); err != nil {
 			return parseFailure(fs, err)
 		}
@@ -938,15 +941,22 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		defer lock.Release()
 	}
 
-	seedNow := action == "up" && planSeed(root, instanceDir, planMode)
-	code, err := lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
-	if seedNow {
-		// up failed: seeded stays false, so the next up seeds
-		if err == nil && code == 0 {
-			runSeed(stdout, stderr, root, branch, project, instanceDir, newStateBase, legacyStateBase, planMode)
+	if action == "up" {
+		main := repos.MainRepoOf(root)
+		if planMode == "" {
+			planMode = lifecycle.PlanMode(root, main)
 		}
+		// a failed up leaves seeded:false, so the next up seeds
+		res := lifecycle.UpAndSeed(stdout, stderr, lifecycle.UpSeed{
+			Root: root, Main: main, Branch: branch, Project: project, InstanceDir: instanceDir,
+			NewBase: newStateBase, LegacyBase: legacyStateBase, Mode: planMode, Plan: lifecycle.LoadPlan(root, main), Seed: !inRun,
+			Compose: func(so, se io.Writer) (int, error) {
+				return lifecycle.Execute(so, se, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
+			},
+		})
+		return res.Code, res.Err
 	}
-	return code, err
+	return lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
 }
 
 // --- output ------------------------------------------------------------

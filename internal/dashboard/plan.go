@@ -2,8 +2,6 @@ package dashboard
 
 import (
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
@@ -98,7 +96,7 @@ func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
 	v.Mode, v.Status, v.Trusted, v.NeedsTrust, v.Diff = out.Mode, out.Status, out.Trusted, out.TrustNeeded, out.Diff
 	conv := func(in []lifecycle.PlanStep, skipped bool) (l []stepView) {
 		for _, st := range in {
-			l = append(l, stepView{ID: st.ID, Kind: st.Kind, Text: stepText(st), Skipped: skipped, Chip: stepChip(st, skipped)})
+			l = append(l, stepView{ID: st.ID, Kind: st.Kind, Text: lifecycle.StepText(st.Step), Skipped: skipped, Chip: stepChip(st, skipped)})
 		}
 		return
 	}
@@ -108,35 +106,6 @@ func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
 	}
 	v.Steps, v.Skipped = conv(out.Steps, false), conv(out.Skipped, true)
 	return v
-}
-
-// stepText is the mono text of a row: the command, or what the step is.
-func stepText(st lifecycle.PlanStep) string {
-	var parts []string
-	switch st.Kind {
-	case knowledge.KindPrepare:
-		parts = append(parts, "prepare "+strings.Join(st.Args, " "))
-	case knowledge.KindComposeUp:
-		parts = append(parts, "compose up")
-		if len(st.Exclude) > 0 {
-			parts = append(parts, "without "+strings.Join(st.Exclude, ", "))
-		}
-	case knowledge.KindNote:
-		parts = append(parts, st.Text)
-	default:
-		parts = append(parts, st.Cmd)
-		if st.Service != "" {
-			parts = append(parts, "in "+st.Service)
-		}
-	}
-	if st.Kind == knowledge.KindHost {
-		if st.Port > 0 {
-			parts = append(parts, "port "+strconv.Itoa(st.Port))
-		} else {
-			parts = append(parts, "port unknown")
-		}
-	}
-	return strings.TrimSpace(strings.Join(parts, "  "))
 }
 
 func stepChip(st lifecycle.PlanStep, skipped bool) chipView {
