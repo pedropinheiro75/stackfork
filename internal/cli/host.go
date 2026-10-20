@@ -6,7 +6,8 @@
 //
 // `host start NAME -- COMMAND...` does the same detached: a supervisor (this
 // binary re-run as `host --supervise`) owns the command, its log, its
-// HostProcs entry and its route, and cleans them up when the command exits.
+// HostProcs entry and its route. When the command exits it drops the route;
+// the entry stays, so the dashboard shows the app as exited with Start.
 // `host stop|restart|logs NAME` manage it. See hostdetach.go.
 package cli
 
@@ -268,10 +269,7 @@ func unregisterHostRoute(name, root, branch, project, instanceDir, newStateBase,
 	}
 	info, err := lifecycle.LoadAndValidateManifest(instanceDir, root, branch, project, "host")
 	if err == nil {
-		delete(info.Routes, name)
-		if info.HostProcs[name].PID == os.Getpid() { // never another supervisor's entry
-			delete(info.HostProcs, name)
-		}
+		delete(info.Routes, name) // the HostProcs entry stays: the row shows exited, Start respawns it
 		err = state.WritePrivate(filepath.Join(instanceDir, "manifest.json"), info)
 	}
 	lock.Release()

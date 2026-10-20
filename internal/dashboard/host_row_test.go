@@ -114,7 +114,7 @@ func TestHostRowActionsRouteByPrefix(t *testing.T) {
 	}
 }
 
-func TestHostStopRemovesStaleEntryWithoutDocker(t *testing.T) {
+func TestHostStopOnStaleEntryKeepsTheRowWithoutDocker(t *testing.T) {
 	installFakeDocker(t)
 	srv, project, dir := hostFixture(t, false)
 	log := filepath.Join(t.TempDir(), "docker.log")
@@ -128,8 +128,8 @@ func TestHostStopRemovesStaleEntryWithoutDocker(t *testing.T) {
 	if code, resp := postAction(t, srv, "127.0.0.1:55903", actionRequestFixture{Action: "service-stop", Project: project, Service: "host:db"}); code != 200 || !resp.OK {
 		t.Fatalf("host stop: %d %+v", code, resp)
 	}
-	if m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json")); len(m.HostProcs) != 0 {
-		t.Errorf("stale entry not cleaned: %+v", m.HostProcs)
+	if m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json")); len(m.HostProcs) != 1 {
+		t.Errorf("the stopped row must stay, with Start: %+v", m.HostProcs)
 	}
 	if b, _ := os.ReadFile(log); strings.Contains(string(b), "stop") {
 		t.Errorf("host stop reached docker: %q", b)

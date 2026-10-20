@@ -4,6 +4,7 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -126,8 +127,15 @@ func TestHostStartDetachesAndSurvivesCaller(t *testing.T) {
 	if _, ok := m.Routes["app"]; ok {
 		t.Fatal("route must be gone")
 	}
-	if _, ok := m.HostProcs["app"]; ok {
-		t.Fatal("HostProcs must be gone")
+	if p, ok := m.HostProcs["app"]; !ok || state.HostIdentity(p) {
+		t.Fatal("a stopped app must stay recorded as exited, so Start can respawn it")
+	}
+	// down forgets it
+	if err := lifecycle.StopAllHosts(io.Discard, filepath.Join(stateDir, project), time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := readManifestAt(t, stateDir, project).HostProcs["app"]; ok {
+		t.Fatal("down must forget the host app")
 	}
 }
 
@@ -168,9 +176,6 @@ func TestHostStatusIgnoresRecycledPID(t *testing.T) {
 		t.Fatal("unreachable")
 	}
 	m = readManifestAt(t, stateDir, project)
-	if _, ok := m.HostProcs["app"]; ok {
-		t.Fatal("stale entry must be cleaned")
-	}
 	if _, ok := m.Routes["app"]; ok {
 		t.Fatal("stale route must be cleaned")
 	}
@@ -299,7 +304,7 @@ func TestSupervisorIgnoresStopFlagOfDeadStopper(t *testing.T) {
 		t.Fatal("supervisor did not exit")
 	}
 	m := readManifestAt(t, stateDir, project)
-	if _, ok := m.HostProcs["app"]; ok || m.Routes["app"] != 0 {
+	if m.Routes["app"] != 0 {
 		t.Fatalf("supervisor must clean up after a dead stopper: %+v %+v", m.HostProcs, m.Routes)
 	}
 	if _, err := os.Stat(flag); err == nil {

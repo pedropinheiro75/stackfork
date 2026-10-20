@@ -48,12 +48,14 @@ func HostStopperActive(instanceDir, name string) bool {
 	return false
 }
 
-// StopHost stops one host process and removes its HostProcs entry and route.
+// StopHost stops one host process and removes its route. keep leaves the
+// HostProcs entry, so the row stays as exited and Start can respawn it from
+// the recorded command line; `down` passes false and forgets it.
 // It signals only when the recorded identity (PID, start time, command line)
 // still matches, and only the supervisor's own process group. A stale entry
 // (dead process, or a recycled PID) is cleaned without signalling anything.
 // The caller must hold the instance lock, or be the only writer.
-func StopHost(stderr io.Writer, instanceDir, name string, timeout time.Duration) error {
+func StopHost(stderr io.Writer, instanceDir, name string, timeout time.Duration, keep bool) error {
 	manifestPath := filepath.Join(instanceDir, "manifest.json")
 	m, err := state.ReadManifest(manifestPath)
 	if err != nil {
@@ -90,14 +92,16 @@ func StopHost(stderr io.Writer, instanceDir, name string, timeout time.Duration)
 		if err := state.KillOrphanGroup(proc.PID); err != nil {
 			return fmt.Errorf("host process %s: %w", name, err)
 		}
-	} else {
-		fmt.Fprintf(stderr, "stackfork: host process %s is not running (stale entry); cleaning it up\n", name)
+	} else if keep {
+		fmt.Fprintf(stderr, "stackfork: host process %s is not running\n", name)
 	}
 	m, err = state.ReadManifest(manifestPath)
 	if err != nil || m == nil {
 		return err
 	}
-	delete(m.HostProcs, name)
+	if !keep {
+		delete(m.HostProcs, name)
+	}
 	delete(m.Routes, name)
 	return state.WritePrivate(manifestPath, m)
 }
@@ -128,7 +132,7 @@ func StopAllHosts(stderr io.Writer, instanceDir string, timeout time.Duration) e
 	sort.Strings(names)
 	var errs []error
 	for _, n := range names {
-		if err := StopHost(stderr, instanceDir, n, timeout); err != nil {
+		if err := StopHost(stderr, instanceDir, n, timeout, false); err != nil {
 			fmt.Fprintf(stderr, "stackfork: warning: %v\n", err)
 			errs = append(errs, err)
 		}
@@ -143,7 +147,7 @@ func StopHostLocked(stderr io.Writer, instanceDir, name, newBase, legacyBase str
 	if err != nil {
 		return err
 	}
-	err = StopHost(stderr, instanceDir, name, HostStopTimeout())
+	err = StopHost(stderr, instanceDir, name, HostStopTimeout(), true)
 	lock.Release()
 	ReloadProxyIfRunning(stderr, newBase, legacyBase)
 	return err
