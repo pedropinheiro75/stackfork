@@ -110,7 +110,13 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	// Set now, not at the end: a killed process leaves an interrupted run
 	// that the card can still retry. A failed seed replaces it.
 	rec.SetRetry("stackfork --root " + root + " start-env")
-	defer func() { rec.Finish(retErr) }() // the run ends with the command, whatever path returned
+	defer func() { // the run ends with the command, whatever path returned
+		if p := recover(); p != nil { // a panic is a failed run, not a succeeded one
+			rec.Finish(fmt.Errorf("panic: %v", p))
+			panic(p)
+		}
+		rec.Finish(retErr)
+	}()
 
 	prepare := func(out io.Writer, _ []string) error {
 		if !needsPrepare(instanceDir, root, branch, project) {

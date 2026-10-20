@@ -2,6 +2,9 @@ package cli
 
 import (
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	state_ "github.com/pedropinheiro75/stackfork/internal/state"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -111,5 +114,34 @@ func TestSchemaStepInAnotherServiceIsNotPrefixedAndRunsAtItsPlace(t *testing.T) 
 	want := "prepare=succeeded: up=succeeded: seed=succeeded: migrate=succeeded: migrate2=succeeded:"
 	if got != want || text != "s  in db" {
 		t.Fatalf("%s\n%q", got, text)
+	}
+}
+
+// A panic inside a step still ends the run, as failed, and the run lock is free.
+func TestStartEnvPanicRecordsAFailedRun(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, runSteps)
+	old := lifecycle.HostStart
+	lifecycle.HostStart = func(io.Writer, io.Writer, []string, string, string, knowledge.Step) error { panic("kaboom") }
+	defer func() { lifecycle.HostStart = old }()
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+	runCLI(t, "config", "set-mode", repo, "hybrid")
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("the panic must go on")
+			}
+		}()
+		runCLI(t, append(base, "start-env", repo)...)
+	}()
+	dir := onlyRunDir(t, state)
+	r, err := runs.Get(dir, 1)
+	if err != nil || r.Outcome != runs.Failed || !strings.Contains(r.Error, "kaboom") {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if state_.Held(filepath.Join(dir, ".run.lock")) {
+		t.Fatal("run lock still held")
 	}
 }
