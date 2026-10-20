@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
@@ -889,6 +890,9 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 			inRun = inRun || a == "--in-run"
 			return a == "--in-run"
 		})
+		if inRun && !inRunHere(instanceDir) {
+			return 2, errors.New("--in-run is internal: only start-env's own up may use it")
+		}
 		if err := fs.Parse(subArgs); err != nil {
 			return parseFailure(fs, err)
 		}
@@ -990,6 +994,31 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		return res.Code, res.Err
 	}
 	return lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
+}
+
+// inRunDirs are the instances whose StartEnv in this process is running its
+// own `up`. Only then may an `up` carry --in-run: it skips the run lock and
+// the seed decision, which the enclosing run does itself.
+var inRunDirs sync.Map
+
+// markInRun marks instanceDir for the duration of StartEnv's inner up.
+func markInRun(instanceDir string) (done func()) {
+	k := inRunKey(instanceDir)
+	inRunDirs.Store(k, true)
+	return func() { inRunDirs.Delete(k) }
+}
+
+func inRunHere(instanceDir string) bool {
+	_, ok := inRunDirs.Load(inRunKey(instanceDir))
+	return ok
+}
+
+// inRunKey names an instance directory however the state dir was spelled.
+func inRunKey(dir string) string {
+	if r, err := filepath.EvalSymlinks(dir); err == nil {
+		return r
+	}
+	return filepath.Clean(dir)
 }
 
 // envTrigger is who started this command: the dashboard sets

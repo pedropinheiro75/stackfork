@@ -40,6 +40,7 @@ func TestUpRecordsItsOwnRun(t *testing.T) {
 func TestUpInRunRecordsAndSeedsNothing(t *testing.T) {
 	root, stateDir, log := seedFixture(t)
 	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	defer markInRun(onlyRunDir(t, stateDir))() // what StartEnv does around its own up
 	if out, e, code := runCLI(t, "--root", root, "--state-dir", stateDir, "up", "--in-run"); code != 0 {
 		t.Fatalf("%d %s %s", code, out, e)
 	}
@@ -51,6 +52,20 @@ func TestUpInRunRecordsAndSeedsNothing(t *testing.T) {
 	}
 	if out, _, _ := runCLI(t, "up", "--help"); strings.Contains(out, "in-run") {
 		t.Fatalf("--in-run is listed in help:\n%s", out)
+	}
+}
+
+// --in-run skips the run lock and the seed decision, so only StartEnv's own
+// up in this process may use it; a person or an agent on the command line gets an error.
+func TestUpInRunFlagIsInternal(t *testing.T) {
+	root, stateDir, log := seedFixture(t)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	_, e, code := runCLI(t, "--root", root, "--state-dir", stateDir, "up", "--in-run")
+	if code == 0 || !strings.Contains(e, "--in-run is internal") {
+		t.Fatalf("%d %s", code, e)
+	}
+	if files := runFiles(stateDir); len(files) != 0 || seedExecs(t, log) != 0 {
+		t.Fatalf("a refused --in-run ran something: %v", files)
 	}
 }
 

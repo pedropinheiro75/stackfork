@@ -178,6 +178,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		for _, s := range services {
 			args = append(args, "--service", s)
 		}
+		defer markInRun(instanceDir)()
 		code, err := run(args, out, out)
 		if err != nil {
 			return err
