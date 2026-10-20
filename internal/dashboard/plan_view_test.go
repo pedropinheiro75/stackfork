@@ -334,3 +334,37 @@ func TestUnloadableKnowledgeShowsFailedCallout(t *testing.T) {
 		t.Fatalf("load error not shown:\n%s", frag)
 	}
 }
+
+// A plan whose approval text does not fit one dialog is never offered for
+// approval: no dialog, no trust file, in both the Start and the page paths.
+func TestOverLongPlanOffersNoApprovalDialog(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := e.readyRepo("svc")
+	p := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp, Modes: []string{"container"}}}}
+	for i := 0; i < 200; i++ {
+		p.Steps = append(p.Steps, knowledge.Step{ID: "host-" + strings.Repeat("x", 5) + string(rune('a'+i%26)) + string(rune('a'+i/26)),
+			Kind: knowledge.KindHost, Name: "web", Cmd: "npm run dev", Modes: []string{"hybrid"}})
+	}
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Plan: p}
+	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	setMode(t, repo, "hybrid")
+	e.get("/api/repos")
+	asked := stubConfirm(t, true)
+
+	rec := e.post("/api/run", map[string]string{"command": "stackfork --root '" + repo + "' plan --trust"}, reqOpts{})
+	if !strings.Contains(rec.Body.String(), "too long to review in a dialog") {
+		t.Fatalf("run: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = e.post("/api/actions", map[string]string{"action": "start", "repo": repo, "path": repo}, reqOpts{})
+	if !strings.Contains(rec.Body.String(), "too long to review in a dialog") {
+		t.Fatalf("start: %d %s", rec.Code, rec.Body.String())
+	}
+	if *asked != "" || len(e.started()) != 0 {
+		t.Fatalf("dialog %q, starts %v", *asked, e.started())
+	}
+	if _, err := os.Stat(trustFile(e, repo)); err == nil {
+		t.Fatal("trust file written for an unseen plan")
+	}
+}

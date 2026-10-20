@@ -651,7 +651,12 @@ func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, 
 		}
 		if ok, _ := lifecycle.TrustedHere(s.NewStateBase, repo.Path, k.Plan, mode); !ok {
 			diff := lifecycle.ReadableDiff(s.NewStateBase, repo.Path, k.Plan)
-			text := "Start " + repo.Name + "?\n\nIts plan runs host commands nobody approved on this machine.\n\n" + lifecycle.TrustPrompt(k.Plan, diff)
+			prompt, perr := lifecycle.TrustPrompt(k.Plan, diff)
+			if perr != nil { // no dialog: steps that cannot be shown are not approved
+				finish(perr)
+				return
+			}
+			text := "Start " + repo.Name + "?\n\nIts plan runs host commands nobody approved on this machine.\n\n" + prompt
 			approved, err := Confirm("stackfork", text)
 			if err != nil || !approved {
 				if err == nil {

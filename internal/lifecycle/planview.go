@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -84,9 +85,16 @@ func TrustHere(stateBase, main string, p knowledge.Plan) ([]knowledge.Step, erro
 	return covered, knowledge.WriteTrust(knowledge.TrustPath(stateBase, main), knowledge.PlanHash(p.Steps), covered)
 }
 
+// ErrTrustPromptTooLong: a dialog nobody can read approves nothing.
+var ErrTrustPromptTooLong = errors.New("This plan is too long to review in a dialog; review it with `stackfork plan`, then run `stackfork plan --trust` in a terminal")
+
+const trustPromptMax = 3000
+
 // TrustPrompt is the text of the native dialog: every step the approval
 // covers with all its fields, then what changed since the last approval.
-func TrustPrompt(p knowledge.Plan, diff []string) string {
+// When that text is longer than one dialog can show, it returns
+// ErrTrustPromptTooLong: nobody may approve steps they could not see.
+func TrustPrompt(p knowledge.Plan, diff []string) (string, error) {
 	lines := []string{"Trusts these steps on this machine:", ""}
 	for _, s := range knowledge.TrustSteps(p.Steps) {
 		lines = append(lines, StepBlock(s)...)
@@ -95,19 +103,11 @@ func TrustPrompt(p knowledge.Plan, diff []string) string {
 		lines = append(lines, "", "Changed since last trusted:")
 		lines = append(lines, diff...)
 	}
-	// a dialog nobody can read approves nothing: cap it
-	var b strings.Builder
-	for i, l := range lines {
-		if b.Len()+len(l) > 3000 {
-			fmt.Fprintf(&b, "\n... %d more lines; review with `stackfork plan`", len(lines)-i)
-			break
-		}
-		if i > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(l)
+	text := strings.Join(lines, "\n")
+	if len(text) > trustPromptMax {
+		return "", ErrTrustPromptTooLong
 	}
-	return b.String()
+	return text, nil
 }
 
 // safe shows a value as written unless it holds a control or non-printing

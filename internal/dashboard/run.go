@@ -206,7 +206,11 @@ func (s *Server) planStackfork(args []string, root string) (*runPlan, error) {
 			return nil, errors.New("not a scanned repo with a plan that has host steps to trust")
 		}
 		diff := lifecycle.ReadableDiff(s.NewStateBase, repo, k.Plan)
-		p.Confirm += "\n\n" + lifecycle.TrustPrompt(k.Plan, diff)
+		prompt, err := lifecycle.TrustPrompt(k.Plan, diff)
+		if err != nil {
+			return nil, err
+		}
+		p.Confirm += "\n\n" + prompt
 		p.Trust = &trustJob{Repo: repo, Plan: k.Plan}
 	}
 	p.Args = argv

@@ -23,9 +23,13 @@ func TestTrustPromptIsCapped(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		p.Steps = append(p.Steps, knowledge.Step{ID: "s" + strings.Repeat("x", 5) + string(rune('a'+i%26)) + string(rune('a'+i/26)), Kind: knowledge.KindHost, Cmd: "npm run dev"})
 	}
-	out := TrustPrompt(p, nil)
-	if len(out) > 3300 || !strings.Contains(out, "more lines; review with `stackfork plan`") {
-		t.Fatalf("len %d:\n%s", len(out), out[len(out)-200:])
+	out, err := TrustPrompt(p, nil)
+	if err != ErrTrustPromptTooLong || out != "" || !strings.Contains(err.Error(), "`stackfork plan --trust`") {
+		t.Fatalf("an over-long prompt must be refused: %q %v", out, err)
+	}
+	short, err := TrustPrompt(knowledge.Plan{Steps: p.Steps[:3]}, nil)
+	if err != nil || !strings.Contains(short, "npm run dev") {
+		t.Fatalf("%q %v", short, err)
 	}
 }
 
