@@ -3,6 +3,7 @@ package secretstore
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // unquoteSecurityLine is the reference parser for the single line written to
@@ -74,7 +75,9 @@ func TestMacStatusMapping(t *testing.T) {
 		"timeout":      {helperCfg{SleepMS: 3000}, Error},
 	} {
 		b, _ := macBackend(t, tc.cfg)
-		b.Timeout = 300 * 1000 * 1000
+		if tc.cfg.SleepMS > 0 { // only the hanging tool gets a short timeout
+			b.Timeout = 300 * time.Millisecond
+		}
 		v, st, err := b.Resolve("keychain:acme")
 		if v != "" || st != tc.want || err == nil {
 			t.Errorf("%s: %q %v %v", name, v, st, err)

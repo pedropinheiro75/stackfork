@@ -64,7 +64,9 @@ func TestOPStatusMapping(t *testing.T) {
 		"timeout":        {helperCfg{SleepMS: 3000}, Error},
 	} {
 		b, _ := opBackend(t, tc.cfg)
-		b.Timeout = 300 * time.Millisecond
+		if tc.cfg.SleepMS > 0 { // only the hanging tool gets a short timeout
+			b.Timeout = 300 * time.Millisecond
+		}
 		v, st, err := b.Resolve(opRef)
 		if v != "" || st != tc.want || err == nil {
 			t.Errorf("%s: %q %v %v", name, v, st, err)

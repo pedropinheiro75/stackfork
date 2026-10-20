@@ -78,6 +78,10 @@ type Knowledge struct {
 	Answers []Answer `json:"answers,omitempty"`
 	Gotchas []Gotcha `json:"gotchas,omitempty"`
 
+	// Secrets are the secret NAMES the project needs, never references or
+	// values (add-secret-vault D6).
+	Secrets []SecretDecl `json:"secrets,omitempty"`
+
 	// Verification is set only once the user confirms the app works (task
 	// 13.6); nil while Status is draft.
 	Verification *Verification `json:"verification,omitempty"`
@@ -195,11 +199,18 @@ func Load(path string) (*Knowledge, error) {
 	var raw struct {
 		Knowledge
 		Legacy Recipe `json:"recipe"`
+		// RawSecrets shadows Knowledge.Secrets so the list is decoded strictly.
+		RawSecrets json.RawMessage `json:"secrets"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	k := raw.Knowledge
+	secrets, err := parseSecrets(raw.RawSecrets)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	k.Secrets = secrets
 	switch k.Schema {
 	case 1:
 		k.Plan = FromRecipe(raw.Legacy)
@@ -237,6 +248,9 @@ func LoadFirst(dirs ...string) (*Knowledge, error) {
 func (k *Knowledge) Save(path string) error {
 	k.Schema = CurrentSchema
 	if err := ValidatePlan(k.Plan); err != nil {
+		return err
+	}
+	if err := ValidateSecrets(k.Secrets); err != nil {
 		return err
 	}
 	b, err := json.MarshalIndent(k, "", "  ")
@@ -377,6 +391,18 @@ func (k *Knowledge) Markdown() string {
 		fmt.Fprintf(&b, "## Startup plan\n\nStatus: %s\n\n", orDefault(k.Plan.Status, PlanProposed))
 		for _, s := range k.Plan.Steps {
 			fmt.Fprintf(&b, "- %s · %s · %s\n", s.ID, s.Kind, s.detail())
+		}
+		b.WriteString("\n")
+	}
+
+	if len(k.Secrets) > 0 {
+		fmt.Fprintf(&b, "## Secrets (names only)\n\n")
+		for _, sd := range k.Secrets {
+			if sd.Hint != "" {
+				fmt.Fprintf(&b, "- %s: %s\n", sd.Name, sd.Hint)
+			} else {
+				fmt.Fprintf(&b, "- %s\n", sd.Name)
+			}
 		}
 		b.WriteString("\n")
 	}

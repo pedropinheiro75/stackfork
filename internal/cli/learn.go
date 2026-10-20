@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/learn"
 )
@@ -32,7 +33,7 @@ type learnOutput struct {
 // (task 13.5/13.6) added on top of it.
 func cmdLearn(stdout io.Writer, subArgs []string, root string) error {
 	if isHelpRequest(subArgs) {
-		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe|step ... | learn verify --check ... --confirm ...")
+		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe|step|secret ... | learn verify --check ... --confirm ...")
 		return nil
 	}
 	if len(subArgs) == 0 {
@@ -97,6 +98,7 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 	if existing.Plan.Status == knowledge.PlanRecorded {
 		fresh.Plan = existing.Plan
 	}
+	fresh.Secrets = existing.Secrets
 	fresh.Answers = existing.Answers
 	fresh.Gotchas = existing.Gotchas
 	fresh.Verification = existing.Verification
@@ -108,7 +110,7 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 // prior `stackfork learn`.
 func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 	if len(subArgs) == 0 {
-		return errors.New("learn record requires a kind (answer, gotcha, recipe, step)")
+		return errors.New("learn record requires a kind (answer, gotcha, recipe, step, secret)")
 	}
 	path := knowledgePath(root)
 	k, err := knowledge.Load(path)
@@ -151,8 +153,20 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 		applyRecipeFlags(&k.Plan, *prepare, *up, *migrate, *seedOnce, *seedService, login)
 	case "step":
 		return cmdLearnRecordStep(stdout, rest, root)
+	case "secret":
+		if isHelpRequest(rest) {
+			printFlaglessUsage(stdout, "learn record secret", "learn record secret NAME [--hint TEXT] | learn record secret --remove NAME")
+			return nil
+		}
+		if err := recordSecret(k, rest); err != nil {
+			return err
+		}
+		if err := learn.WriteKnowledge(root, k); err != nil {
+			return err
+		}
+		return printJSON(stdout, map[string]interface{}{"recorded": "secret", "secrets": k.Secrets})
 	default:
-		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha, recipe or step)", kind)
+		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha, recipe, step or secret)", kind)
 	}
 
 	if err := learn.WriteKnowledge(root, k); err != nil {
@@ -351,4 +365,41 @@ func stepByID(p knowledge.Plan, id string) *knowledge.Step {
 		}
 	}
 	return nil
+}
+
+// recordSecret declares (or, with --remove, drops) a secret NAME in k. Knowledge
+// holds names and hints only; there is no flag that takes a reference or a
+// value. NAME and the flags may come in either order.
+func recordSecret(k *knowledge.Knowledge, rest []string) error {
+	fs := newFlagSet(io.Discard, "learn record secret")
+	hint := fs.String("hint", "", "")
+	remove := fs.String("remove", "", "")
+	var names []string
+	for {
+		if err := fs.Parse(rest); err != nil {
+			return parseFailureErr(fs, err)
+		}
+		if fs.NArg() == 0 {
+			break
+		}
+		names = append(names, fs.Arg(0))
+		rest = fs.Args()[1:]
+	}
+	if *remove != "" {
+		if len(names) > 0 || *hint != "" {
+			return errors.New("usage: learn record secret --remove NAME")
+		}
+		if !k.RemoveSecret(*remove) {
+			if !compose.ValidSecretName(*remove) {
+				return errors.New("no such secret declared")
+			}
+			return fmt.Errorf("no secret %q is declared", *remove)
+		}
+		return nil
+	}
+	if len(names) != 1 {
+		return errors.New("usage: learn record secret NAME [--hint TEXT] | learn record secret --remove NAME")
+	}
+	k.UpsertSecret(names[0], *hint)
+	return knowledge.ValidateSecrets(k.Secrets)
 }
