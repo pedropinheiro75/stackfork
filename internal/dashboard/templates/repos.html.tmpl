@@ -72,7 +72,15 @@
           {{range .Steps}}{{template "planrow" .}}{{end}}
           {{range .Skipped}}{{template "planrow" .}}{{end}}
         </div>
-        {{if .Diff}}
+        {{if and .Diff (not .NeedsTrust)}}
+        <div class="plan-note" data-trust-note>
+          <span class="chip chip-off"><span class="chip-glyph" aria-hidden="true">&#9675;</span>not trusted</span>
+          <span class="small muted">Host steps are not trusted on this machine (needed only in hybrid mode)</span>
+          <div class="menu-anchor"><button type="button" class="btn btn-ghost btn-icon" data-key="{{$r.Path}}/trust-menu" aria-haspopup="menu" aria-expanded="false" aria-label="Trust actions for {{$r.Name}}" title="More actions"><span aria-hidden="true">&#8943;</span></button><div class="menu menu-left" role="menu" hidden>
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$r.Path}}/trust" data-run="stackfork --root {{shq $r.Path}} plan --trust" title="asks for confirmation and shows every step it trusts"><span class="menu-label">Trust on this machine</span><span class="menu-cmd mono">stackfork plan --trust</span></button>
+</div></div>
+        </div>
+        {{else if .Diff}}
         <div class="callout callout-failed" data-trust-callout>
           <span class="callout-glyph" aria-hidden="true">&#9650;</span>
           <div class="callout-body"><p class="callout-title">Host steps changed on this machine</p><pre class="mono-log">{{range .Diff}}{{.}}

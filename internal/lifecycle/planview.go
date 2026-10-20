@@ -31,19 +31,22 @@ type PlanStep struct {
 // PlanOut is the plan for one mode. Diff (not in the JSON) is what changed
 // in the host and prepare steps since this machine trusted them.
 type PlanOut struct {
-	Mode     string     `json:"mode"`
-	Status   string     `json:"status"`
-	Verified bool       `json:"verified"`
-	Trusted  bool       `json:"trusted"`
-	Steps    []PlanStep `json:"steps"`
-	Skipped  []PlanStep `json:"skipped"`
-	Diff     []string   `json:"-"`
+	Mode     string `json:"mode"`
+	Status   string `json:"status"`
+	Verified bool   `json:"verified"`
+	Trusted  bool   `json:"trusted"` // for this mode: true when the mode runs no host step
+	// TrustNeeded: the mode runs a host step, so trust is required.
+	TrustNeeded bool       `json:"trust_needed"`
+	Steps       []PlanStep `json:"steps"`
+	Skipped     []PlanStep `json:"skipped"`
+	Diff        []string   `json:"-"`
 }
 
 // PlanView computes the plan for mode. The CLI (`plan --json`) and the
 // dashboard render this one result, so they cannot disagree.
 func PlanView(stateBase, main string, k *knowledge.Knowledge, mode string) PlanOut {
-	trusted, diff := TrustedHere(stateBase, main, k.Plan)
+	trusted, _ := TrustedHere(stateBase, main, k.Plan, mode)
+	rawTrusted, _ := HashTrusted(stateBase, main, k.Plan)
 	run, skipped := k.Plan.ForMode(mode)
 	state := k.Plan.Status
 	if k.Status == knowledge.StatusVerified {
@@ -56,7 +59,7 @@ func PlanView(stateBase, main string, k *knowledge.Knowledge, mode string) PlanO
 				Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, Text: s.Text, Modes: s.Modes, State: state, Step: s}
 			if s.Kind == knowledge.KindHost || s.Kind == knowledge.KindPrepare {
 				o.Trust = "untrusted"
-				if trusted {
+				if rawTrusted {
 					o.Trust = "trusted-here"
 				}
 			}
@@ -64,8 +67,12 @@ func PlanView(stateBase, main string, k *knowledge.Knowledge, mode string) PlanO
 		}
 		return out
 	}
-	return PlanOut{Mode: mode, Status: k.Plan.Status, Verified: k.Status == knowledge.StatusVerified,
-		Trusted: trusted, Steps: conv(run), Skipped: conv(skipped), Diff: diff}
+	out := PlanOut{Mode: mode, Status: k.Plan.Status, Verified: k.Status == knowledge.StatusVerified,
+		Trusted: trusted, TrustNeeded: NeedsTrust(k.Plan, mode), Steps: conv(run), Skipped: conv(skipped)}
+	if !rawTrusted {
+		out.Diff = ReadableDiff(stateBase, main, k.Plan)
+	}
+	return out
 }
 
 // TrustHere records this machine's trust in the plan's host and prepare

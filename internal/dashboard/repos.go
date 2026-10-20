@@ -628,7 +628,13 @@ func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, 
 	// A host or prepare step nobody approved on this machine: ask first,
 	// before anything is created or run (design.md D9).
 	if k, err := knowledge.Load(filepath.Join(repo.Path, ".stackfork", "knowledge.json")); err == nil {
-		if ok, diff := lifecycle.TrustedHere(s.NewStateBase, repo.Path, k.Plan); !ok {
+		cfg, _ := config.Load()
+		mode := knowledge.ModeContainer
+		if cfg != nil {
+			mode = cfg.ModeFor(repo.Path)
+		}
+		if ok, _ := lifecycle.TrustedHere(s.NewStateBase, repo.Path, k.Plan, mode); !ok {
+			diff := lifecycle.ReadableDiff(s.NewStateBase, repo.Path, k.Plan)
 			text := "Start " + repo.Name + "?\n\nIts plan runs host commands nobody approved on this machine.\n\n" + lifecycle.TrustPrompt(k.Plan, diff)
 			approved, err := Confirm("stackfork", text)
 			if err != nil || !approved {

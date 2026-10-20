@@ -319,6 +319,19 @@ func TestStartEnvRefusesUntrustedBeforeDocker(t *testing.T) {
 	}
 }
 
+// Trust is needed only when the active mode runs a host step.
+func TestStartEnvContainerModeNeedsNoTrustForHybridOnlyHostStep(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, append([]knowledge.Step{{ID: "cup", Kind: knowledge.KindComposeUp, Modes: []string{"container"}}}, hybridSteps...))
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	out, e, code := runCLI(t, append(base, "start-env", repo)...)
+	b, _ := os.ReadFile(log)
+	if code != 0 || strings.Contains(e, "not trusted") || !strings.Contains(string(b), " up -d ") {
+		t.Fatalf("%d %s %s\n%s", code, out, e, b)
+	}
+}
+
 func TestStartEnvRefusesUnsupportedMode(t *testing.T) {
 	root, state := reposEnv(t)
 	repo := planRepo(t, root, []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp}})

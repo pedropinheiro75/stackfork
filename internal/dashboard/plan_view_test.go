@@ -122,6 +122,7 @@ func TestStartAsksForTrustFirstAndCancelRunsNothing(t *testing.T) {
 	e := newBrowserEnv(t)
 	repo := e.readyRepo("svc")
 	hybridPlan(t, repo, "app")
+	setMode(t, repo, "hybrid")
 	e.get("/api/repos")
 	asked := stubConfirm(t, false)
 	rec := e.post("/api/actions", map[string]string{"action": "start", "repo": repo, "path": repo}, reqOpts{})
@@ -150,6 +151,38 @@ func TestStartAsksForTrustFirstAndCancelRunsNothing(t *testing.T) {
 		t.Fatalf("trusted start asked %q, starts %v", *asked, e.started())
 	}
 	_ = lifecycle.StepBlock
+}
+
+func setMode(t *testing.T, repo, mode string) {
+	t.Helper()
+	cfg, _ := config.Load()
+	if err := cfg.SetRepoMode(repo, mode); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Save()
+}
+
+// Container mode runs no host step: Start opens no dialog, and the page shows
+// a quiet note with Trust in the overflow menu, not a failed callout.
+func TestContainerModeStartAsksNothingAndTrustIsQuiet(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := e.readyRepo("svc")
+	hybridPlan(t, repo, "app")
+	e.get("/api/repos")
+	asked := stubConfirm(t, false)
+	e.post("/api/actions", map[string]string{"action": "start", "repo": repo, "path": repo}, reqOpts{})
+	if *asked != "" || len(e.started()) != 1 {
+		t.Fatalf("dialog %q, starts %v", *asked, e.started())
+	}
+	frag := e.get("/fragments/repos").Body.String()
+	if strings.Contains(frag, "data-trust-callout") || !strings.Contains(frag, "needed only in hybrid mode") || !strings.Contains(frag, "plan --trust") {
+		t.Fatalf("container mode must show the quiet note:\n%s", frag)
+	}
+	setMode(t, repo, "hybrid")
+	frag = e.get("/fragments/repos").Body.String()
+	if !strings.Contains(frag, "data-trust-callout") || strings.Contains(frag, `"id":"app"`) || !strings.Contains(frag, "cmd: npm run dev") {
+		t.Fatalf("hybrid mode: callout with readable lines expected:\n%s", frag)
+	}
 }
 
 func TestConfigSetModeFromPage(t *testing.T) {

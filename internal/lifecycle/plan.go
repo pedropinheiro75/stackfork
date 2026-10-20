@@ -33,7 +33,7 @@ type PlanRunner struct {
 
 // Check refuses an untrusted host step and an unsupported mode; it touches nothing.
 func (r PlanRunner) Check() error {
-	if ok, diff := TrustedHere(r.NewBase, r.Main, r.Plan); !ok {
+	if ok, diff := TrustedHere(r.NewBase, r.Main, r.Plan, r.Mode); !ok {
 		return fmt.Errorf("not trusted on this machine: the plan has host steps nobody approved here\n%s\nrun: stackfork plan --trust", strings.Join(diff, "\n"))
 	}
 	if !r.Plan.SupportsMode(r.Mode) {

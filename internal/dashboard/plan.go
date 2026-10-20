@@ -62,12 +62,12 @@ type stepView struct {
 // planView is a repo's startup plan for its current mode, built by
 // lifecycle.PlanView (the same code as `stackfork plan --json`).
 type planView struct {
-	Mode           string
-	Modes          []string
-	Status         string
-	Trusted        bool
-	Diff           []string
-	Steps, Skipped []stepView
+	Mode                string
+	Modes               []string
+	Status              string
+	Trusted, NeedsTrust bool
+	Diff                []string
+	Steps, Skipped      []stepView
 }
 
 // repoPlan returns nil for a repo with no recorded steps; the page then
@@ -91,7 +91,7 @@ func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
 		mode = knowledge.ModeContainer
 	}
 	out := lifecycle.PlanView(s.NewStateBase, repo.Path, k, mode)
-	v.Mode, v.Status, v.Trusted, v.Diff = out.Mode, out.Status, out.Trusted, out.Diff
+	v.Mode, v.Status, v.Trusted, v.NeedsTrust, v.Diff = out.Mode, out.Status, out.Trusted, out.TrustNeeded, out.Diff
 	conv := func(in []lifecycle.PlanStep, skipped bool) (l []stepView) {
 		for _, st := range in {
 			l = append(l, stepView{ID: st.ID, Kind: st.Kind, Text: stepText(st), Skipped: skipped, Chip: stepChip(st, skipped)})

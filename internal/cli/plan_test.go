@@ -38,16 +38,17 @@ func TestPlanTextShowsStatesAndSkipped(t *testing.T) {
 	}
 	out, _, _ = runCLI(t, "--root", root, "plan", "--mode", "container", "--json")
 	var j struct {
-		Mode    string `json:"mode"`
-		Status  string `json:"status"`
-		Trusted bool   `json:"trusted"`
-		Steps   []struct{ ID, Trust, State string }
-		Skipped []struct{ ID, Trust, State string }
+		Mode        string `json:"mode"`
+		Status      string `json:"status"`
+		Trusted     bool   `json:"trusted"`
+		TrustNeeded bool   `json:"trust_needed"`
+		Steps       []struct{ ID, Trust, State string }
+		Skipped     []struct{ ID, Trust, State string }
 	}
 	if err := json.Unmarshal([]byte(out), &j); err != nil {
 		t.Fatal(err, out)
 	}
-	if j.Mode != "container" || j.Status != "recorded" || j.Trusted || len(j.Steps) != 2 || len(j.Skipped) != 1 ||
+	if j.Mode != "container" || j.Status != "recorded" || !j.Trusted || j.TrustNeeded || len(j.Steps) != 2 || len(j.Skipped) != 1 ||
 		j.Skipped[0].Trust != "untrusted" || j.Skipped[0].State != "recorded" {
 		t.Fatalf("%+v", j)
 	}
@@ -62,11 +63,11 @@ func TestPlanTrustWritesFileAndStartIsTrusted(t *testing.T) {
 	}
 	p := knowledgePath(root)
 	k, _ := knowledge.Load(p)
-	if ok, _ := lifecycle.TrustedHere(state, root, k.Plan); !ok {
+	if ok, _ := lifecycle.TrustedHere(state, root, k.Plan, "hybrid"); !ok {
 		t.Fatal("must be trusted after plan --trust")
 	}
 	k.Plan.Steps[2].Cmd = "npm run evil"
-	ok, diff := lifecycle.TrustedHere(state, root, k.Plan)
+	ok, diff := lifecycle.TrustedHere(state, root, k.Plan, "hybrid")
 	if ok || !strings.Contains(strings.Join(diff, "\n"), "~ app:") {
 		t.Fatalf("ok=%v diff=%v", ok, diff)
 	}
