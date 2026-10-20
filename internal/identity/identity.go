@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -72,9 +73,29 @@ func ResolvePath(path string) (string, error) {
 		return "", err
 	}
 	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved, nil
+		return stripExtendedPrefix(resolved), nil
 	}
-	return abs, nil
+	return stripExtendedPrefix(abs), nil
+}
+
+// stripExtendedPrefix turns a Windows extended-length path (\\?\C:\x,
+// \\?\UNC\srv\share) into its plain form, so one checkout never hashes to
+// two project names. EvalSymlinks can return the extended form on Windows.
+func stripExtendedPrefix(p string) string {
+	if runtime.GOOS != "windows" {
+		return p
+	}
+	return trimExtended(p)
+}
+
+func trimExtended(p string) string {
+	if rest, ok := strings.CutPrefix(p, `\\?\UNC\`); ok {
+		return `\\` + rest
+	}
+	if rest, ok := strings.CutPrefix(p, `\\?\`); ok {
+		return rest
+	}
+	return p
 }
 
 // projectName is the shared implementation behind ProjectName and
@@ -135,6 +156,14 @@ func BrowserHostname(project, selected string) (string, error) {
 
 // stateDir joins the given state-dir name onto ~/.local/state.
 func stateDir(name string) (string, error) {
+	if runtime.GOOS == "windows" {
+		// Machine-local state: %LOCALAPPDATA%, not the roaming %APPDATA%.
+		base, err := os.UserCacheDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(base, name), nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -153,6 +182,13 @@ func StateDir() (string, error) {
 func ConfigDir() (string, error) {
 	if dir := os.Getenv("STACKFORK_CONFIG_DIR"); dir != "" {
 		return dir, nil
+	}
+	if runtime.GOOS == "windows" {
+		base, err := os.UserCacheDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(base, "stackfork"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
