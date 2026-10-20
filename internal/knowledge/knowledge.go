@@ -6,11 +6,14 @@ package knowledge
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -208,6 +211,26 @@ func Load(path string) (*Knowledge, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &k, nil
+}
+
+// LoadFirst loads the first knowledge.json found in dirs. A missing file
+// moves on to the next dir; any other failure (broken JSON, unsupported
+// schema, invalid plan) is returned, never silently turned into "nothing
+// recorded". No file anywhere: nil, nil.
+func LoadFirst(dirs ...string) (*Knowledge, error) {
+	for _, d := range dirs {
+		if d == "" {
+			continue
+		}
+		k, err := Load(filepath.Join(d, ".stackfork", "knowledge.json"))
+		if err == nil {
+			return k, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
+			return nil, err
+		}
+	}
+	return nil, nil
 }
 
 // Save writes knowledge.json atomically (temp file + rename) as schema 2.

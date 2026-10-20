@@ -61,7 +61,12 @@
         <div class="callout-actions"><button type="button" class="btn learn-btn" data-key="{{$r.Path}}/panel-setup" data-repo="{{$r.Path}}" data-name="{{$r.Name}}" data-prompt="{{prompt $r.Name $r.Path $r.DefaultBranch}}">Set up with your agent</button></div>
       </div>
       {{end}}
-      {{with $row.Plan}}
+      {{with $row.Plan}}{{if .LoadError}}
+      <div class="callout callout-failed" data-plan-error>
+        <span class="callout-glyph" aria-hidden="true">&#9650;</span>
+        <div class="callout-body"><p class="callout-title">stackfork cannot read this repo's startup plan</p><p class="callout-detail mono">{{.LoadError}}</p></div>
+      </div>
+      {{else}}
       <div class="plan" data-plan="{{.Status}}">
         <div class="plan-bar">
           <span class="micro">Starts with</span>
@@ -89,6 +94,7 @@
         </div>
         {{end}}
       </div>
+      {{end}}
       {{else}}
       <div class="recipe" data-recipe="{{$row.Recipe.State}}">
         <span class="recipe-label small">Starts with</span>

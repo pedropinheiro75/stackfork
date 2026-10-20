@@ -53,11 +53,12 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 		main = root
 	}
 	var plan knowledge.Plan
-	for _, dir := range []string{root, main} {
-		if kk, err := knowledge.Load(filepath.Join(dir, ".stackfork", "knowledge.json")); err == nil {
-			plan = kk.Plan
-			break
-		}
+	kk, err := knowledge.LoadFirst(root, main)
+	if err != nil { // a broken file is not an empty plan
+		return err
+	}
+	if kk != nil {
+		plan = kk.Plan
 	}
 	mode := o.Mode
 	if mode == "" {
@@ -201,12 +202,9 @@ func prepareArgs(root, main, instanceDir string) ([]string, error) {
 	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err == nil {
 		return nil, nil // prepare reuses the files, env file and secrets it recorded
 	}
-	var k *knowledge.Knowledge
-	for _, dir := range []string{root, main} {
-		if kk, err := knowledge.Load(filepath.Join(dir, ".stackfork", "knowledge.json")); err == nil {
-			k = kk
-			break
-		}
+	k, err := knowledge.LoadFirst(root, main)
+	if err != nil {
+		return nil, err
 	}
 	if k != nil {
 		for _, st := range k.Plan.Steps {

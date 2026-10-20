@@ -638,15 +638,10 @@ func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, 
 	// A host or prepare step nobody approved on this machine: ask first,
 	// before anything is created or run (design.md D9).
 	// Same lookup as StartEnv: the checkout's own knowledge.json, then the main repo's.
-	var k *knowledge.Knowledge
-	for _, dir := range []string{checkout, repo.Path} {
-		if dir == "" {
-			continue
-		}
-		if kk, err := knowledge.Load(filepath.Join(dir, ".stackfork", "knowledge.json")); err == nil {
-			k = kk
-			break
-		}
+	k, kerr := knowledge.LoadFirst(checkout, repo.Path)
+	if kerr != nil {
+		finish(kerr)
+		return
 	}
 	if k != nil {
 		cfg, _ := config.Load()

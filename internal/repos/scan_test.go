@@ -163,3 +163,13 @@ func TestReadinessMeansAWorktreeIsStartable(t *testing.T) {
 		t.Fatalf("got %s %q", level, reason)
 	}
 }
+
+// A knowledge.json that fails to load is the reason, not "no verified knowledge".
+func TestReadinessReportsUnloadableKnowledge(t *testing.T) {
+	repo := t.TempDir()
+	write(t, filepath.Join(repo, ".stackfork", "knowledge.json"), "{broken", 0o644)
+	level, reason := ReadinessOf("proj", []string{repo}, "main", nil, nil)
+	if level != NeedsLearn || !strings.Contains(reason, "cannot be loaded") || !strings.Contains(reason, "knowledge.json") {
+		t.Fatalf("got %s %q", level, reason)
+	}
+}

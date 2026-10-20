@@ -18,10 +18,13 @@ import (
 // but nobody confirmed how (migrations, seed, login), so it needs learn.
 // ref is the default branch a sibling's tracked compose files must exist on.
 func ReadinessOf(name string, checkouts []string, ref string, insts []inventory.Instance, profileDirs []string) (level, reason string) {
-	draft, sibling := "", ""
+	draft, sibling, broken := "", "", ""
 	for _, c := range checkouts {
 		ks, ok := inventory.ReadKnowledgeStatus(c)
 		if !ok {
+			if err := inventory.ReadKnowledgeError(c); err != nil && broken == "" {
+				broken = "knowledge in " + filepath.Base(c) + " cannot be loaded: " + err.Error()
+			}
 			continue
 		}
 		switch ks.Status {
@@ -34,6 +37,9 @@ func ReadinessOf(name string, checkouts []string, ref string, insts []inventory.
 				draft = "knowledge in " + filepath.Base(c) + " is a draft, not verified yet; finish stackfork learn"
 			}
 		}
+	}
+	if broken != "" {
+		return NeedsLearn, broken
 	}
 	if draft != "" {
 		return Draft, draft

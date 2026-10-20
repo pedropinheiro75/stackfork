@@ -333,6 +333,24 @@ func TestStartEnvContainerModeNeedsNoTrustForHybridOnlyHostStep(t *testing.T) {
 	}
 }
 
+// A knowledge.json that cannot be loaded is an error, never an empty plan.
+func TestStartEnvRefusesBrokenKnowledge(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, hybridSteps)
+	if err := os.WriteFile(filepath.Join(repo, ".stackfork", "knowledge.json"), []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	_, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if code == 0 || !strings.Contains(e, "knowledge.json") {
+		t.Fatalf("%d %s", code, e)
+	}
+	if b, _ := os.ReadFile(log); len(strings.TrimSpace(string(b))) != 0 {
+		t.Fatalf("docker was called:\n%s", b)
+	}
+}
+
 func TestStartEnvRefusesUnsupportedMode(t *testing.T) {
 	root, state := reposEnv(t)
 	repo := planRepo(t, root, []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp}})

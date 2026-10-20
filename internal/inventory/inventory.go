@@ -607,6 +607,13 @@ func ReadKnowledgeStatus(root string) (*KnowledgeStatus, bool) {
 	return knowledgeStatus(root)
 }
 
+// ReadKnowledgeError is the error of a knowledge.json that exists but cannot
+// be loaded (nil when it loads or is absent).
+func ReadKnowledgeError(root string) error {
+	_, err := knowledge.LoadFirst(root)
+	return err
+}
+
 func knowledgeStatus(root string) (*KnowledgeStatus, bool) {
 	k, err := knowledge.Load(knowledgeJSONPath(root))
 	if err != nil {

@@ -228,7 +228,14 @@ func ValidatePlan(p Plan) error {
 			return fmt.Errorf("step %q: duplicate id", s.ID)
 		}
 		seen[s.ID] = true
-		for _, v := range append([]string{s.ID, s.Service, s.Cmd, s.Name, s.Dir, s.Text}, append(append(append([]string{}, s.Args...), s.PortEnv...), s.Exclude...)...) {
+		// only what the trust dialog must show verbatim: host and prepare
+		// steps (and every id). Exec, note and compose-up values are not
+		// hashed and are quoted for display, so old files keep loading.
+		vals := []string{s.ID}
+		if s.Kind == KindHost || s.Kind == KindPrepare {
+			vals = append(append(append(vals, s.Cmd, s.Name, s.Dir, s.Service), s.Args...), s.PortEnv...)
+		}
+		for _, v := range vals {
 			if strings.IndexFunc(v, unicode.IsControl) >= 0 {
 				return fmt.Errorf("step %q: a value has a control character (newline, escape, tab); the trust dialog must show it as written", s.ID)
 			}

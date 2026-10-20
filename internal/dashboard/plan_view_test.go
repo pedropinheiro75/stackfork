@@ -321,3 +321,16 @@ func TestTrustCalloutTitles(t *testing.T) {
 		t.Fatalf("changed title/diff missing:\n%s", frag)
 	}
 }
+
+func TestUnloadableKnowledgeShowsFailedCallout(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := e.readyRepo("svc")
+	if err := os.WriteFile(filepath.Join(repo, ".stackfork", "knowledge.json"), []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.get("/api/repos")
+	frag := e.get("/fragments/repos").Body.String()
+	if !strings.Contains(frag, "data-plan-error") || !strings.Contains(frag, "callout-failed") || !strings.Contains(frag, "knowledge.json") {
+		t.Fatalf("load error not shown:\n%s", frag)
+	}
+}

@@ -1,6 +1,8 @@
 package knowledge
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -120,17 +122,45 @@ func TestValidatePlanPort(t *testing.T) {
 func TestValidatePlanRefusesControlCharacters(t *testing.T) {
 	for _, st := range []Step{
 		{ID: "a\nb", Kind: KindNote},
-		{ID: "a", Kind: KindExec, Cmd: "x\ny"},
 		{ID: "a", Kind: KindHost, Cmd: "x", Name: "n\x1b[2J"},
 		{ID: "a", Kind: KindHost, Cmd: "x", Dir: "d\n"},
-		{ID: "a", Kind: KindExec, Service: "s\t", Cmd: "x"},
 		{ID: "a", Kind: KindPrepare, Args: []string{"--x\ny"}},
 		{ID: "a", Kind: KindHost, Cmd: "x", PortEnv: []string{"P\nQ"}},
-		{ID: "a", Kind: KindComposeUp, Exclude: []string{"e\n"}},
-		{ID: "a", Kind: KindNote, Text: "t\nu"},
 	} {
 		if ValidatePlan(Plan{Steps: []Step{st}}) == nil {
 			t.Errorf("expected refusal for %+v", st)
 		}
+	}
+}
+
+// Fields the trust hash does not cover keep loading: an existing multi-line
+// migrate/seed command or a login line with a tab must not break the file.
+func TestLoadKeepsMultilineUntrustedFields(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "knowledge.json")
+	os.WriteFile(p, []byte(`{"schema":1,"status":"verified","recipe":{"migrate":"a\nb","seed_once":"seed\n  more","login":["user\tadmin"]}}`), 0o644)
+	k, err := Load(p)
+	if err != nil || len(k.Plan.Steps) < 3 {
+		t.Fatalf("%v %+v", err, k)
+	}
+	for _, st := range []Step{
+		{ID: "a", Kind: KindExec, Cmd: "x\ny", Service: "s\t"},
+		{ID: "a", Kind: KindNote, Text: "t\nu"},
+		{ID: "a", Kind: KindComposeUp, Exclude: []string{"e\n"}},
+	} {
+		if err := ValidatePlan(Plan{Steps: []Step{st}}); err != nil {
+			t.Errorf("%+v: %v", st, err)
+		}
+	}
+}
+
+func TestLoadFirstReportsBrokenFileNotMissing(t *testing.T) {
+	good, bad, none := t.TempDir(), t.TempDir(), t.TempDir()
+	os.MkdirAll(filepath.Join(bad, ".stackfork"), 0o755)
+	os.WriteFile(filepath.Join(bad, ".stackfork", "knowledge.json"), []byte("{nope"), 0o644)
+	if k, err := LoadFirst(none, none); k != nil || err != nil {
+		t.Fatalf("missing is not an error: %v %v", k, err)
+	}
+	if _, err := LoadFirst(bad, good); err == nil || !strings.Contains(err.Error(), "knowledge.json") {
+		t.Fatalf("broken file must be reported: %v", err)
 	}
 }

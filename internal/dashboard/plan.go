@@ -62,6 +62,7 @@ type stepView struct {
 // planView is a repo's startup plan for its current mode, built by
 // lifecycle.PlanView (the same code as `stackfork plan --json`).
 type planView struct {
+	LoadError           string // knowledge.json exists but cannot be loaded
 	Unsupported         bool   // the configured mode is not one this plan supports
 	TrustTitle          string // callout title
 	Mode                string
@@ -75,8 +76,11 @@ type planView struct {
 // repoPlan returns nil for a repo with no recorded steps; the page then
 // falls back to the read-only recipe line.
 func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
-	k, err := knowledge.Load(filepath.Join(repo.Path, ".stackfork", "knowledge.json"))
-	if err != nil || len(k.Plan.Steps) == 0 {
+	k, err := knowledge.LoadFirst(repo.Path)
+	if err != nil { // shown as a failed callout, not hidden
+		return &planView{LoadError: err.Error()}
+	}
+	if k == nil || len(k.Plan.Steps) == 0 {
 		return nil
 	}
 	mode := knowledge.ModeContainer
