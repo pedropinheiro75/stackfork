@@ -1382,7 +1382,7 @@
     return { cls: c[0], glyph: c[1], label: c[2], title: st === "skipped" && reason ? reason : "" };
   }
 
-  // fmtDur must match the CLI's durText: 320 ms, 41 s, 1 m 5 s.
+  // fmtDur must match dashboard/runcard.go durText: 320 ms, 41 s, 1 m 5 s (the CLI formats durations on its own).
   function fmtDur(ms) {
     if (ms < 1000) return Math.round(ms) + " ms";
     var s = Math.round(ms / 1000);
