@@ -44,6 +44,25 @@ func (r PlanRunner) Check() error {
 		}
 		return fmt.Errorf("mode %q is not supported by this plan; supported: %s", r.Mode, strings.Join(sup, ", "))
 	}
+	run, _ := r.Plan.ForMode(r.Mode)
+	var excluded []string
+	for _, st := range run {
+		if st.Kind == knowledge.KindComposeUp {
+			excluded = append(excluded, st.Exclude...)
+		}
+	}
+	for _, st := range run {
+		if st.Kind != knowledge.KindExec || st.Once == knowledge.OnceData {
+			continue
+		}
+		svc := st.Service
+		if svc == "" {
+			svc = r.Plan.AppService
+		}
+		if svc != "" && contains(excluded, svc) {
+			return fmt.Errorf("step %s runs in %s, which this mode does not start; set --service on the step", st.ID, svc)
+		}
+	}
 	return nil
 }
 
@@ -89,6 +108,9 @@ func (r PlanRunner) Run() error {
 			fmt.Fprintf(r.Out, "note: %s\n", s.Text)
 		}
 		if err != nil {
+			if strings.HasPrefix(err.Error(), "step "+s.ID+":") {
+				return err
+			}
 			return fmt.Errorf("step %s failed: %v; retry with stackfork start-env", s.ID, err)
 		}
 	}
@@ -110,16 +132,43 @@ func (r PlanRunner) composeUp(s knowledge.Step) (seeded bool, err error) {
 		}
 		top, _ := model.(map[string]interface{})
 		svcs, _ := top["services"].(map[string]interface{})
-	next:
-		for name := range svcs {
-			for _, x := range s.Exclude {
-				if x == name {
-					continue next
+		// drop the excluded services and, transitively, whatever depends on them:
+		// compose would start an excluded service again for its dependent.
+		drop := map[string]bool{}
+		for _, x := range s.Exclude {
+			drop[x] = true
+		}
+		for changed := true; changed; {
+			changed = false
+			for name, v := range svcs {
+				if drop[name] {
+					continue
+				}
+				sv, _ := v.(map[string]interface{})
+				for _, d := range dependsOn(sv["depends_on"]) {
+					if drop[d] {
+						drop[name], changed = true, true
+						break
+					}
 				}
 			}
-			services = append(services, name)
+		}
+		var dependents []string
+		for name := range svcs {
+			if !drop[name] {
+				services = append(services, name)
+			} else if !contains(s.Exclude, name) {
+				dependents = append(dependents, name)
+			}
 		}
 		sort.Strings(services)
+		sort.Strings(dependents)
+		if len(services) == 0 {
+			return false, fmt.Errorf("step %s: exclude leaves no services to start", s.ID)
+		}
+		if len(dependents) > 0 {
+			fmt.Fprintf(r.Out, "hybrid: not starting %s (they depend on %s)\n", strings.Join(dependents, ", "), strings.Join(s.Exclude, ", "))
+		}
 	}
 	started := time.Now().Add(-time.Second)
 	if err := r.Up(services); err != nil {
@@ -149,4 +198,31 @@ func (r PlanRunner) exec(s knowledge.Step, seeded bool) error {
 		return fmt.Errorf("exited with status %d", code)
 	}
 	return nil
+}
+
+func contains(l []string, x string) bool {
+	for _, v := range l {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}
+
+// dependsOn reads depends_on in its list and map forms.
+func dependsOn(v interface{}) []string {
+	var out []string
+	switch d := v.(type) {
+	case []interface{}:
+		for _, x := range d {
+			if n, ok := x.(string); ok {
+				out = append(out, n)
+			}
+		}
+	case map[string]interface{}:
+		for n := range d {
+			out = append(out, n)
+		}
+	}
+	return out
 }

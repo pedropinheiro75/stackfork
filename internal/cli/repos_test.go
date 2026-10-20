@@ -346,3 +346,60 @@ func TestStartEnvSkipsSchemaStepWhenUpSeeded(t *testing.T) {
 		t.Fatalf("%d %s %s\n%s", code, out, e, b)
 	}
 }
+
+const depCompose = "services:\n  db:\n    image: postgres:17\n  web:\n    image: nginx\n  nginx:\n    image: nginx\n    depends_on:\n      - web\n"
+
+func hybridRepo(t *testing.T, root, compose string, steps []knowledge.Step) (repo, state string, base []string) {
+	repo = planRepo(t, root, steps)
+	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(compose), 0o644)
+	return repo, "", nil
+}
+
+func TestHybridExcludeDropsDependents(t *testing.T) {
+	root, state := reposEnv(t)
+	repo, _, _ := hybridRepo(t, root, depCompose, hybridSteps)
+	log := installFakeDocker(t)
+	old := lifecycle.HostStart
+	lifecycle.HostStart = func(io.Writer, io.Writer, string, string, knowledge.Step) error { return nil }
+	defer func() { lifecycle.HostStart = old }()
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, "config", "set-mode", repo, "hybrid")
+	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+	out, e, code := runCLI(t, append(base, "start-env", repo)...)
+	var upLine string
+	for _, l := range strings.Split(string(mustRead(t, log)), "\n") {
+		if strings.Contains(l, " up -d ") {
+			upLine = strings.TrimSpace(l)
+		}
+	}
+	if code != 0 || !strings.HasSuffix(upLine, " db") || strings.Contains(upLine, "nginx") || !strings.Contains(out, "hybrid: not starting nginx (they depend on web)") {
+		t.Fatalf("%d %s %s\n%s", code, out, e, upLine)
+	}
+}
+
+func TestHybridExcludeAllErrors(t *testing.T) {
+	root, state := reposEnv(t)
+	repo, _, _ := hybridRepo(t, root, "services:\n  web:\n    image: nginx\n", hybridSteps)
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, "config", "set-mode", repo, "hybrid")
+	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+	_, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if code == 0 || !strings.Contains(e, "step up: exclude leaves no services to start") || strings.Contains(string(mustRead(t, log)), " up -d ") {
+		t.Fatalf("%d %s", code, e)
+	}
+}
+
+func TestSchemaStepOnExcludedServiceRefusedBeforeDocker(t *testing.T) {
+	root, state := reposEnv(t)
+	steps := []knowledge.Step{hybridSteps[0], {ID: "migrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Service: "web", Cmd: "m"}, hybridSteps[2]}
+	repo := planRepo(t, root, steps)
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, "config", "set-mode", repo, "hybrid")
+	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+	_, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if b, _ := os.ReadFile(log); code == 0 || !strings.Contains(e, "step migrate runs in web, which this mode does not start; set --service on the step") || len(strings.TrimSpace(string(b))) != 0 {
+		t.Fatalf("%d %s\n%s", code, e, b)
+	}
+}
