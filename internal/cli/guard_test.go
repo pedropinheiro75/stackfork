@@ -139,3 +139,16 @@ func TestGuardBlocksDestructivePruneForEveryTool(t *testing.T) {
 		}
 	}
 }
+
+func TestGuardAllowsRunsCommands(t *testing.T) {
+	repo, _ := guardRepo(t)
+	state, legacy := t.TempDir(), t.TempDir()
+	for _, c := range []string{"stackfork runs", "stackfork runs --json --limit 5", "stackfork runs show", "stackfork runs show 3 --step seed", "stackfork --instance sf-x runs show --json"} {
+		payload := `{"session_id":"s","cwd":"` + repo + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + c + `"}}`
+		var out, errBuf bytes.Buffer
+		code, err := cmdGuard(strings.NewReader(payload), &out, &errBuf, nil, state, legacy)
+		if err != nil || code != 0 || errBuf.Len() != 0 {
+			t.Errorf("%q: code %d err %v stderr %q", c, code, err, errBuf.String())
+		}
+	}
+}

@@ -41,6 +41,7 @@ var commandSummaries = []struct{ name, summary string }{
 	{"env", "print this instance's env vars (for a host-run app)"},
 	{"clone-db", "seed this instance's database from another instance or a dump"},
 	{"seed", "run the recorded seed_once command once (--force to rerun, --mark-done to record it as done)"},
+	{"runs", "the recorded runs of this instance (runs show [ID] [--step STEP]: one run or a step log)"},
 	{"prune", "remove instances and their Docker resources (dry run by default)"},
 	{"gc", "alias of prune --orphaned: instances whose checkout/branch is gone"},
 	{"guard", "pre-tool-use hook: block host dev servers in a managed checkout"},

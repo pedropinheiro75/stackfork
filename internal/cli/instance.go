@@ -16,7 +16,7 @@ import (
 var instanceActions = map[string]bool{
 	"up": true, "down": true, "restart": true, "start": true, "stop": true,
 	"status": true, "urls": true, "logs": true, "exec": true, "run": true,
-	"env": true, "open": true, "host": true, "seed": true, // seed: the dashboard's retry hint uses --instance
+	"env": true, "open": true, "host": true, "seed": true, "runs": true, // seed: the dashboard's retry hint uses --instance
 }
 
 // servicePositional are the commands whose first positional is a service.

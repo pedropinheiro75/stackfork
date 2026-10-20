@@ -160,6 +160,14 @@ Flags: `--force`, `--mark-done`
 stackfork seed
 ```
 
+### runs
+List the recorded runs (`start-env`, `up`, `seed`) of this checkout's instance, newest first: id, command, trigger, mode, outcome, start, duration and the failed step. `runs show [ID]` prints one run (the latest by default) with each step's state, duration and reason; `--step STEP` prints that step's log (secret values are already redacted). Read-only; agents may run it. After a failed start, read `stackfork runs show --step <failed step>`. Works with `--instance NAME` from any directory.
+Flags: `--json`, `--limit`, `--step`
+```sh
+stackfork runs
+stackfork runs show --step seed
+```
+
 ### prune
 Remove whole instances and their Docker resources: containers, networks, stackfork-built images (`<project>-<service>:dev`), state, proxy routes, and volumes unless `--keep-volumes`. **Dry run by default**: a table of what would go (project, state, checkout, branch, legacy, volumes, images, last activity) plus a best-effort disk estimate. `--orphaned` = checkout/branch gone (never a running one); `--stopped` = no running container; `--all` = everything, running ones stopped first, plus the proxy container. No scope flag: the dry run shows all three groups. `--older-than 7d|48h|2w` filters by last activity (newest of manifest/state mtime and container finish time; running = now). Deleting needs `--yes` or an interactive `y/N` (typing `prune` when running instances or `--all` are involved); without a TTY and `--yes` it prints the dry run and exits 1. Only objects labelled `io.stackfork.root` (or the legacy `idv` equivalent), or exactly matching a known instance's compose project, are touched; never `docker system prune`. Covers legacy `idv-` instances. Agents may run the dry run only; the guard blocks `--yes` and `--all`.
 Flags: `--orphaned`, `--stopped`, `--all`, `--older-than`, `--keep-volumes`, `--yes`, `--json`

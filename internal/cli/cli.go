@@ -219,7 +219,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 
 	// A checkout with no prepared stack: say where this repository's
 	// instances are instead of a bare "run prepare".
-	if instanceActions[action] && !isHelpRequest(subArgs) {
+	if instanceActions[action] && action != "runs" && !isHelpRequest(subArgs) { // runs also lists a Start that failed before any manifest
 		if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err != nil {
 			return 0, noStackError(root, newStateBase, legacyStateBase)
 		}
@@ -286,6 +286,8 @@ func dispatch(stdout, stderr io.Writer, action string, subArgs []string, root, b
 		return cmdUpDownRunExec(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "logs":
 		return cmdLogs(stdout, stderr, subArgs, root, branch, project, instanceDir)
+	case "runs":
+		return cmdRuns(stdout, stderr, subArgs, project, instanceDir)
 	case "seed":
 		return cmdSeed(stdout, stderr, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "clone-db":
