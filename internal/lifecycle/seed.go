@@ -60,6 +60,9 @@ func ResolveExecService(instanceDir string, step knowledge.Step, plan knowledge.
 // success it records seeded:true; on failure it leaves the marker alone and
 // says how to retry. The caller holds the instance lock.
 func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase, cmd, service string, plan knowledge.Plan) bool {
+	if cmd == "" { // nothing to run in this mode: leave the marker alone
+		return false
+	}
 	retry := "stackfork --instance " + project + " seed"
 	service = ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)
 	f := false

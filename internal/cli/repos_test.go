@@ -614,3 +614,59 @@ func TestHybridStartLeavesContainerSeedPending(t *testing.T) {
 		t.Fatalf("the container start must seed once in the app service:\n%s", mustRead(t, log))
 	}
 }
+
+func seedModeRepo(t *testing.T, root string) string {
+	t.Helper()
+	repo := adaptedRepo(t, root)
+	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(planCompose), 0o644)
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified,
+		Plan: knowledge.Plan{Status: knowledge.PlanRecorded, AppService: "db", Steps: []knowledge.Step{
+			{ID: "up", Kind: knowledge.KindComposeUp, Modes: []string{"container"}},
+			{ID: "up-h", Kind: knowledge.KindComposeUp, Modes: []string{"hybrid"}, Exclude: []string{"web"}},
+			{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Modes: []string{"container"}, Cmd: "s-cmd"},
+			{ID: "app", Kind: knowledge.KindHost, Modes: []string{"hybrid"}, Name: "app", Cmd: "npm run dev"},
+		}}}
+	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	return repo
+}
+
+// The mode given to start-env decides the seed end to end, whatever the
+// configured mode says: no empty command runs, nothing is burned.
+func TestSeedUsesTheRequestedModeNotTheConfiguredOne(t *testing.T) {
+	for _, c := range []struct{ configured, requested string }{{"hybrid", "container"}, {"container", "hybrid"}} {
+		t.Run(c.requested, func(t *testing.T) {
+			root, state := reposEnv(t)
+			repo := seedModeRepo(t, root)
+			log := installFakeDocker(t)
+			t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+			old := lifecycle.HostStart
+			lifecycle.HostStart = func(io.Writer, io.Writer, []string, string, string, knowledge.Step) error { return nil }
+			defer func() { lifecycle.HostStart = old }()
+			base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+			runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+			if _, e, code := runCLI(t, "config", "set-mode", repo, c.configured); code != 0 {
+				t.Fatal(e)
+			}
+			if out, e, code := runCLI(t, append(base, "start-env", "--mode", c.requested, repo)...); code != 0 {
+				t.Fatalf("%d %s %s", code, out, e)
+			}
+			var execs []string
+			for _, l := range strings.Split(string(mustRead(t, log)), "\n") {
+				if strings.Contains(l, " exec ") {
+					execs = append(execs, l)
+				}
+			}
+			ms, _ := filepath.Glob(filepath.Join(state, "*", "manifest.json"))
+			m, _ := sfstate.ReadManifest(ms[0])
+			if c.requested == "container" {
+				if len(execs) != 1 || !strings.Contains(execs[0], "s-cmd") || m.Seeded == nil || !*m.Seeded {
+					t.Fatalf("container must seed once with the real command: %v %+v", execs, m.Seeded)
+				}
+			} else if len(execs) != 0 || m.Seeded != nil {
+				t.Fatalf("hybrid must not seed or burn it: %v %+v", execs, m.Seeded)
+			}
+		})
+	}
+}

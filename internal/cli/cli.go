@@ -943,7 +943,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 	if seedNow {
 		// up failed: seeded stays false, so the next up seeds
 		if err == nil && code == 0 {
-			runSeed(stdout, stderr, root, branch, project, instanceDir, newStateBase, legacyStateBase)
+			runSeed(stdout, stderr, root, branch, project, instanceDir, newStateBase, legacyStateBase, planMode)
 		}
 	}
 	return code, err
