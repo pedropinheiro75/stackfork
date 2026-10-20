@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -16,10 +17,9 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
-// CurrentSchema is the only schema version this build understands. Load
-// refuses any other value (task 13.1: "unknown schema versions are
-// refused").
-const CurrentSchema = 1
+// CurrentSchema is the schema Save writes. Load also accepts schema 1 (the
+// free-text recipe, converted in memory) and refuses anything higher.
+const CurrentSchema = 2
 
 // Status values (design.md D10).
 const (
@@ -68,8 +68,12 @@ type Knowledge struct {
 	// files the learn session wrote (task 13.8/13.9); empty on a fresh scan.
 	AdapterFiles []string `json:"adapter_files,omitempty"`
 
-	// Recipe is the confirmed startup sequence, recorded by `learn record
-	// recipe` (task 13.5); zero value on a fresh scan.
+	// Plan is the ordered startup sequence (schema 2).
+	Plan Plan `json:"plan"`
+
+	// Recipe is the transitional schema 1 view of Plan, kept so today's
+	// readers compile; Load fills it from Plan on schema 2 and Save writes
+	// it. Removed once those readers move to Plan.
 	Recipe Recipe `json:"recipe"`
 
 	// Answers and Gotchas accumulate across a (possibly resumed) learn
@@ -94,7 +98,7 @@ type Input struct {
 
 // Facts is everything the deterministic scan (task 13.2) observed.
 type Facts struct {
-	ComposeFiles []string `json:"compose_files,omitempty"`
+	ComposeFiles []string  `json:"compose_files,omitempty"`
 	Services     []Service `json:"services,omitempty"`
 
 	PackageManager string   `json:"package_manager,omitempty"` // bun, pnpm, yarn, npm
@@ -114,7 +118,7 @@ type Service struct {
 	Name           string   `json:"name"`
 	Image          string   `json:"image,omitempty"`
 	Build          bool     `json:"build,omitempty"`
-	DBEngine       string   `json:"db_engine,omitempty"`        // postgres, mysql, mariadb, mongo, redis
+	DBEngine       string   `json:"db_engine,omitempty"` // postgres, mysql, mariadb, mongo, redis
 	DBMajorVersion string   `json:"db_major_version,omitempty"`
 	Ports          []string `json:"ports,omitempty"`
 	Volumes        []string `json:"volumes,omitempty"`
@@ -149,16 +153,16 @@ type EnvKey struct {
 
 // Recipe is the confirmed startup sequence (task 13.5/13.6).
 type Recipe struct {
-	Prepare  string   `json:"prepare,omitempty"`
-	Up       string   `json:"up,omitempty"`
-	Migrate  string   `json:"migrate,omitempty"`
-	SeedOnce string   `json:"seed_once,omitempty"`
+	Prepare  string `json:"prepare,omitempty"`
+	Up       string `json:"up,omitempty"`
+	Migrate  string `json:"migrate,omitempty"`
+	SeedOnce string `json:"seed_once,omitempty"`
 	// SeedService is the service SeedOnce runs in; empty = the primary app.
 	SeedService string `json:"seed_service,omitempty"`
 	// SeedPending marks a seed_once the scan proposed that nobody decided
 	// on yet; "none" is the recorded answer "never seed".
-	SeedPending bool `json:"seed_pending,omitempty"`
-	Login    []string `json:"login,omitempty"`
+	SeedPending bool     `json:"seed_pending,omitempty"`
+	Login       []string `json:"login,omitempty"`
 }
 
 // Answer records a question the learn session had to ask the user, and
@@ -182,8 +186,9 @@ type Verification struct {
 	Confirmation string   `json:"confirmation"` // the user's own quoted words
 }
 
-// Load reads and decodes knowledge.json, refusing any schema this build
-// doesn't understand.
+// Load reads and decodes knowledge.json. Schema 1 converts its recipe to a
+// plan in memory (the file is untouched until Save); a higher schema, or an
+// invalid plan, is refused.
 func Load(path string) (*Knowledge, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -193,17 +198,38 @@ func Load(path string) (*Knowledge, error) {
 	if err := json.Unmarshal(data, &k); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if k.Schema != CurrentSchema {
-		return nil, fmt.Errorf("%s: schema %d is not supported (this build understands schema %d); upgrade stackfork or re-run learn", path, k.Schema, CurrentSchema)
+	switch k.Schema {
+	case 1:
+		k.Plan = FromRecipe(k.Recipe)
+	case CurrentSchema:
+		// ToRecipe is lossy ("none" seed, free-text commands), so a recipe
+		// Save already wrote beside the plan is kept as is.
+		if reflect.DeepEqual(k.Recipe, Recipe{}) {
+			k.Recipe = ToRecipe(k.Plan)
+		}
+	default:
+		return nil, fmt.Errorf("%s: schema %d is not supported (this build understands schemas 1 and %d); upgrade stackfork or re-run learn", path, k.Schema, CurrentSchema)
+	}
+	if err := ValidatePlan(k.Plan); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &k, nil
 }
 
-// Save writes knowledge.json atomically (temp file + rename), defaulting
-// Schema to CurrentSchema if unset.
+// Save writes knowledge.json atomically (temp file + rename) as schema 2.
 func (k *Knowledge) Save(path string) error {
-	if k.Schema == 0 {
-		k.Schema = CurrentSchema
+	k.Schema = CurrentSchema
+	// Transitional: readers that still edit Recipe leave Plan stale; a
+	// non-zero Recipe that differs from the plan's view wins.
+	if cur := ToRecipe(k.Plan); !reflect.DeepEqual(k.Recipe, cur) {
+		if !reflect.DeepEqual(k.Recipe, Recipe{}) {
+			k.Plan = FromRecipe(k.Recipe)
+		} else {
+			k.Recipe = cur
+		}
+	}
+	if err := ValidatePlan(k.Plan); err != nil {
+		return err
 	}
 	b, err := json.MarshalIndent(k, "", "  ")
 	if err != nil {
@@ -335,6 +361,14 @@ func (k *Knowledge) Markdown() string {
 			}
 			sort.Strings(names)
 			fmt.Fprintf(&b, "- %s: %s\n", purpose, strings.Join(names, ", "))
+		}
+		b.WriteString("\n")
+	}
+
+	if len(k.Plan.Steps) > 0 {
+		fmt.Fprintf(&b, "## Startup plan\n\nStatus: %s\n\n", orDefault(k.Plan.Status, PlanProposed))
+		for _, s := range k.Plan.Steps {
+			fmt.Fprintf(&b, "- %s · %s · %s\n", s.ID, s.Kind, s.detail())
 		}
 		b.WriteString("\n")
 	}
