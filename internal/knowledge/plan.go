@@ -57,7 +57,10 @@ type Plan struct {
 	Modes      []string `json:"modes,omitempty"`
 	AppService string   `json:"app_service,omitempty"`
 	Status     string   `json:"status,omitempty"`
-	Steps      []Step   `json:"steps,omitempty"`
+	// NoSeed records the explicit answer "never seed". A recorded plan with
+	// neither a data step nor NoSeed leaves seeding undecided (auto-detect).
+	NoSeed bool   `json:"no_seed,omitempty"`
+	Steps  []Step `json:"steps,omitempty"`
 }
 
 func (s Step) inMode(mode string) bool {
@@ -211,6 +214,9 @@ func SplitArgv(cmd string) ([]string, error) {
 // ValidatePlan checks the closed kind set, unique ids, known modes and once
 // values, and that every host step's cmd is a clean argument vector.
 func ValidatePlan(p Plan) error {
+	if p.NoSeed && p.SeedStep() != nil {
+		return fmt.Errorf("plan has no_seed and an exec once data step %q; pick one", p.SeedStep().ID)
+	}
 	seen := map[string]bool{}
 	for i, s := range p.Steps {
 		if s.ID == "" {
@@ -287,6 +293,7 @@ func FromRecipe(r Recipe) Plan {
 	if r.Migrate != "" {
 		p.Steps = append(p.Steps, Step{ID: "migrate", Kind: KindExec, Cmd: r.Migrate, Once: OnceSchema})
 	}
+	p.NoSeed = r.SeedOnce == "none"
 	if r.SeedOnce != "" && r.SeedOnce != "none" {
 		p.Steps = append(p.Steps, Step{ID: "seed", Kind: KindExec, Service: r.SeedService, Cmd: r.SeedOnce, Once: OnceData})
 	}

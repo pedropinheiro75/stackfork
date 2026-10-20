@@ -9,6 +9,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/learn"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -315,5 +316,79 @@ func TestUpMigratesThenSeedsFromPlan(t *testing.T) {
 	b, _ := os.ReadFile(log)
 	if !strings.Contains(string(b), "m && bun run db:seed") {
 		t.Fatalf("expected the migrate then seed exec, log:\n%s", b)
+	}
+}
+
+func writeKnowledgeJSON(t *testing.T, root, doc string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, ".stackfork"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".stackfork", "knowledge.json"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSchema1EmptySeedStaysAutoDetect(t *testing.T) {
+	root := seedScriptRoot(t)
+	writeKnowledgeJSON(t, root, `{"schema":1,"recipe":{"prepare":"stackfork prepare -f a.yaml","up":"stackfork up"}}`)
+	if d, _, _ := learn.SeedDecision([]string{root}, nil); d {
+		t.Fatal("empty seed_once must stay undecided")
+	}
+	cmd, _ := lifecycle.SeedRecipe(root, root, t.TempDir())
+	if cmd != "npm run db:migrate && npm run db:seed" {
+		t.Fatalf("detected seed with migrate prefix expected, got %q", cmd)
+	}
+}
+
+func TestSeedNoneIsExplicit(t *testing.T) {
+	root := seedScriptRoot(t)
+	writeKnowledgeJSON(t, root, `{"schema":1,"recipe":{"seed_once":"none"}}`)
+	path := filepath.Join(root, ".stackfork", "knowledge.json")
+	k, err := knowledge.Load(path)
+	if err != nil || !k.Plan.NoSeed || k.Plan.SeedStep() != nil {
+		t.Fatalf("plan %+v err %v", k.Plan, err)
+	}
+	if cmd, _ := lifecycle.SeedRecipe(root, root, t.TempDir()); cmd != "" {
+		t.Fatalf("none must not seed, got %q", cmd)
+	}
+	if err := k.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := knowledge.Load(path); err != nil || !r.Plan.NoSeed {
+		t.Fatalf("no_seed lost in round trip: %+v %v", r, err)
+	}
+	if cmd, _ := lifecycle.SeedRecipe(root, root, t.TempDir()); cmd != "" {
+		t.Fatalf("none must not seed after a round trip, got %q", cmd)
+	}
+}
+
+// record recipe marks the plan recorded and keeps the scan's proposed seed
+// step, so the detected seed will run: the same outcome as before. A seed
+// step removed on its own stays undecided; --once none is the explicit no.
+func TestRecordRecipeKeepsProposedSeedAndNoneIsExplicit(t *testing.T) {
+	root := seedScriptRoot(t)
+	runCLI(t, "--root", root, "learn")
+	runCLI(t, "--root", root, "learn", "record", "recipe", "--prepare", "p", "--up", "u")
+	path := filepath.Join(root, ".stackfork", "knowledge.json")
+	k, _ := knowledge.Load(path)
+	if k.Plan.Status != knowledge.PlanRecorded || k.Plan.SeedStep() == nil || k.Plan.SeedStep().Cmd != "npm run db:seed" {
+		t.Fatalf("proposed seed must stay in the recorded plan: %+v", k.Plan)
+	}
+	id := k.Plan.SeedStep().ID
+	runCLI(t, "--root", root, "learn", "record", "step", "--remove", id)
+	k, _ = knowledge.Load(path)
+	if k.Plan.NoSeed || k.Plan.SeedStep() != nil {
+		t.Fatalf("--remove must not set no_seed: %+v", k.Plan)
+	}
+	runCLI(t, "--root", root, "learn", "record", "step", "--id", "seed", "--kind", "exec", "--cmd", "s", "--once", "data")
+	runCLI(t, "--root", root, "learn", "record", "step", "--id", "seed", "--kind", "exec", "--once", "none")
+	k, _ = knowledge.Load(path)
+	if !k.Plan.NoSeed || k.Plan.SeedStep() != nil {
+		t.Fatalf("--once none must set no_seed and drop the step: %+v", k.Plan)
+	}
+	runCLI(t, "--root", root, "learn", "record", "step", "--id", "seed", "--kind", "exec", "--cmd", "s", "--once", "data")
+	if k, _ = knowledge.Load(path); k.Plan.NoSeed || k.Plan.SeedStep() == nil {
+		t.Fatalf("recording a data step clears no_seed: %+v", k.Plan)
 	}
 }

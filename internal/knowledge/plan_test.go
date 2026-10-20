@@ -87,3 +87,16 @@ func TestUpsertRemove(t *testing.T) {
 		t.Fatal("remove")
 	}
 }
+
+func TestValidatePlanNoSeedWithDataStep(t *testing.T) {
+	p := Plan{NoSeed: true, Steps: []Step{{ID: "seed", Kind: KindExec, Cmd: "s", Once: OnceData}}}
+	if err := ValidatePlan(p); err == nil || !strings.Contains(err.Error(), "no_seed") {
+		t.Fatalf("err %v", err)
+	}
+	if p := FromRecipe(Recipe{SeedOnce: "none"}); !p.NoSeed || p.SeedStep() != nil {
+		t.Fatalf("none: %+v", p)
+	}
+	if p := FromRecipe(Recipe{}); p.NoSeed {
+		t.Fatal("empty seed is undecided, not never")
+	}
+}

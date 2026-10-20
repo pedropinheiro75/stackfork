@@ -190,10 +190,21 @@ func TestReposTabShowsReadOnlyRecipe(t *testing.T) {
 	}
 	// a recorded decision is shown, never changed from the page
 	os.MkdirAll(filepath.Join(repo, ".stackfork"), 0o755)
-	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Plan: knowledge.Plan{Status: knowledge.PlanRecorded}}
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Plan: knowledge.Plan{Status: knowledge.PlanRecorded, NoSeed: true}}
 	k.Save(filepath.Join(repo, ".stackfork", "knowledge.json"))
 	if frag := e.get("/fragments/repos").Body.String(); !strings.Contains(frag, "never") {
 		t.Errorf("never not shown:\n%s", frag)
+	}
+	// recorded without a data step and without no_seed: still auto-detected
+	k.Plan.NoSeed = false
+	k.Save(filepath.Join(repo, ".stackfork", "knowledge.json"))
+	if frag := e.get("/fragments/repos").Body.String(); strings.Contains(frag, "seed: never") || !strings.Contains(frag, "auto-detected") {
+		t.Errorf("undecided plan must stay auto:\n%s", frag)
+	}
+	k.Plan.Steps = []knowledge.Step{{ID: "seed", Kind: knowledge.KindExec, Cmd: "make seed-it", Once: knowledge.OnceData}}
+	k.Save(filepath.Join(repo, ".stackfork", "knowledge.json"))
+	if frag := e.get("/fragments/repos").Body.String(); !strings.Contains(frag, "make seed-it") || strings.Contains(frag, "auto-detected") {
+		t.Errorf("recorded seed command not shown:\n%s", frag)
 	}
 	if rec := e.post("/api/actions", map[string]string{"action": "recipe-seed", "repo": repo}, reqOpts{}); rec.Code != 400 {
 		t.Errorf("recipe-seed action still exists: %d", rec.Code)

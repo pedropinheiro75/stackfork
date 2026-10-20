@@ -73,7 +73,14 @@ func TestSeedDecisionPrecedence(t *testing.T) {
 	if err := WriteKnowledge(root, k); err != nil {
 		t.Fatal(err)
 	}
+	if d, _, _ := SeedDecision([]string{root}, nil); d {
+		t.Fatal("recorded plan with no data step and no no_seed is undecided")
+	}
+	k.Plan.NoSeed = true
+	if err := WriteKnowledge(root, k); err != nil {
+		t.Fatal(err)
+	}
 	if d, c, _ := SeedDecision([]string{root}, &state.Manifest{SeedOnce: "make other"}); !d || SeedActive(c) {
-		t.Fatalf("recorded plan without a data step means never: %v %q", d, c)
+		t.Fatalf("no_seed means never: %v %q", d, c)
 	}
 }

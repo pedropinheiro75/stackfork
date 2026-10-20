@@ -32,7 +32,7 @@ type learnOutput struct {
 // (task 13.5/13.6) added on top of it.
 func cmdLearn(stdout io.Writer, subArgs []string, root string) error {
 	if isHelpRequest(subArgs) {
-		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe ... | learn verify --check ... --confirm ...")
+		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe|step ... | learn verify --check ... --confirm ...")
 		return nil
 	}
 	if len(subArgs) == 0 {
@@ -248,7 +248,8 @@ func applyRecipeFlags(p *knowledge.Plan, prepare, up, migrate, seedOnce, seedSer
 		for s := p.SeedStep(); s != nil; s = p.SeedStep() {
 			p.Remove(s.ID)
 		}
-		if seedOnce != learn.SeedNone {
+		p.NoSeed = seedOnce == learn.SeedNone
+		if !p.NoSeed {
 			p.Upsert(knowledge.Step{ID: "seed", Kind: knowledge.KindExec, Cmd: seedOnce, Once: knowledge.OnceData, Service: seedService}, "")
 		}
 	} else if seedService != "" {
@@ -312,10 +313,21 @@ func cmdLearnRecordStep(stdout io.Writer, rest []string, root string) error {
 		st := knowledge.Step{ID: *id, Kind: *kind, Cmd: *cmd, Service: *service, Once: *once,
 			Modes: splitList(*modes), Exclude: splitList(*exclude), Name: *name, Dir: *dir,
 			PortEnv: splitList(*portEnv), Text: *text}
-		if st.Once == "none" {
-			st.Once = ""
+		prev := stepByID(k.Plan, st.ID)
+		switch {
+		case st.Once == "none" && prev != nil && prev.Once == knowledge.OnceData:
+			// "never seed" is an explicit answer, not just a removed step.
+			k.Plan.Remove(st.ID)
+			k.Plan.NoSeed = true
+		default:
+			if st.Once == "none" {
+				st.Once = ""
+			}
+			if st.Kind == knowledge.KindExec && st.Once == knowledge.OnceData {
+				k.Plan.NoSeed = false
+			}
+			k.Plan.Upsert(st, *before)
 		}
-		k.Plan.Upsert(st, *before)
 	}
 	k.Plan.Status = knowledge.PlanRecorded
 	if err := knowledge.ValidatePlan(k.Plan); err != nil {
@@ -325,4 +337,13 @@ func cmdLearnRecordStep(stdout io.Writer, rest []string, root string) error {
 		return err
 	}
 	return printJSON(stdout, map[string]interface{}{"recorded": "step", "plan": k.Plan})
+}
+
+func stepByID(p knowledge.Plan, id string) *knowledge.Step {
+	for i := range p.Steps {
+		if p.Steps[i].ID == id {
+			return &p.Steps[i]
+		}
+	}
+	return nil
 }

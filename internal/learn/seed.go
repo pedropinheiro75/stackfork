@@ -79,11 +79,14 @@ func SeedDecision(dirs []string, m *state.Manifest) (decided bool, cmd, service 
 			continue
 		}
 		if k, err := knowledge.Load(filepath.Join(d, ".stackfork", "knowledge.json")); err == nil && k.Plan.Status == knowledge.PlanRecorded {
-			// A recorded plan without a data step means "never seed".
+			// A data step decides; no_seed means never; neither leaves it
+			// undecided (the caller falls back to the detected script).
 			if s := k.Plan.SeedStep(); s != nil {
 				return true, s.Cmd, s.Service
 			}
-			return true, SeedNone, ""
+			if k.Plan.NoSeed {
+				return true, SeedNone, ""
+			}
 		}
 	}
 	if m != nil && m.SeedOnce != "" {

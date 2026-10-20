@@ -80,7 +80,7 @@ stackfork logs app --tail 200 --follow
 
 ### learn
 Scan a project and record/verify what you learned (`.stackfork/knowledge.json`).
-Sub-forms: `learn` (scan), `learn record answer <question> <answer>`, `learn record gotcha <problem> <fix>`, `learn record recipe --prepare ... --up ... [--migrate ...] [--seed-once ...|none] [--seed-service ...] [--login ...]`, `learn verify --check ... --confirm ...`
+Sub-forms: `learn` (scan), `learn record answer <question> <answer>`, `learn record gotcha <problem> <fix>`, `learn record recipe --prepare ... --up ... [--migrate ...] [--seed-once ...|none] [--seed-service ...] [--login ...]` (an alias that writes steps and marks the plan recorded; a seed step the scan proposed stays in the recorded plan, so it will run, until you record `--seed-once none`), `learn record step --id ID --kind K [--cmd ...] [--service ...] [--once data|schema|none] [--modes a,b] [--exclude a,b] [--name ...] [--dir ...] [--port-env A,B] [--text ...] [--before ID]` or `--remove ID`, `learn verify --check ... --confirm ...`
 ```sh
 stackfork learn
 stackfork learn verify --check "database identity" --check "app readiness" --confirm "yes, it works"
