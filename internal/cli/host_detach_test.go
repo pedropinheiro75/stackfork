@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -66,9 +67,11 @@ func killOnCleanup(t *testing.T, stateDir, project string) {
 			return
 		}
 		for _, p := range m.HostProcs {
-			if p.PID > 1 {
-				syscall.Kill(-p.PID, syscall.SIGKILL)
-				syscall.Kill(p.PID, syscall.SIGKILL)
+			switch {
+			case state.HostIdentity(p):
+				state.KillGroup(p.PID, syscall.SIGKILL)
+			case !state.HostAlive(p):
+				state.KillOrphanGroup(p.PID) // leader gone: only its leftovers can carry that group id
 			}
 		}
 	})
@@ -237,5 +240,85 @@ func TestHostForwardsSignalsAndCleansUp(t *testing.T) {
 	}
 	if m := readManifestAt(t, stateDir, project); m.Routes["app"] != 0 {
 		t.Fatalf("route must be removed after a signal: %+v", m.Routes)
+	}
+}
+
+func pgidMembers(t *testing.T, pgid int) []string {
+	t.Helper()
+	out, err := exec.Command("ps", "-eo", "pid=,pgid=,command=").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found []string
+	for _, l := range strings.Split(string(out), "\n") {
+		f := strings.Fields(l)
+		if len(f) >= 2 && f[1] == strconv.Itoa(pgid) {
+			found = append(found, l)
+		}
+	}
+	return found
+}
+
+// A member that ignores SIGTERM and outlives the leader must not be left behind.
+func TestHostStopKillsGroupMembersThatOutliveTheLeader(t *testing.T) {
+	root, stateDir, project := hostEnv(t)
+	g := []string{"--root", root, "--state-dir", stateDir}
+	if _, stderr, code := runCLI(t, append(g, "host", "start", "app", "--", "sh", "-c", `(trap "" TERM; exec sleep 600) & wait`)...); code != 0 {
+		t.Fatalf("start: %d %s", code, stderr)
+	}
+	pid := readManifestAt(t, stateDir, project).HostProcs["app"].PID
+	if len(pgidMembers(t, pid)) < 3 {
+		t.Fatalf("expected supervisor, sh and sleep in the group: %v", pgidMembers(t, pid))
+	}
+	if _, stderr, code := runCLI(t, append(g, "host", "stop", "app")...); code != 0 {
+		t.Fatalf("stop: %d %s", code, stderr)
+	}
+	for end := time.Now().Add(2 * time.Second); len(pgidMembers(t, pid)) > 0 && time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+	}
+	if left := pgidMembers(t, pid); len(left) > 0 {
+		t.Fatalf("group members left: %v", left)
+	}
+}
+
+// A stop flag from a stopper that died must not stop the supervisor cleaning up.
+func TestSupervisorIgnoresStopFlagOfDeadStopper(t *testing.T) {
+	root, stateDir, project := hostEnv(t)
+	g := []string{"--root", root, "--state-dir", stateDir}
+	if _, stderr, code := runCLI(t, append(g, "host", "start", "app", "--", "sh", "-c", "while :; do sleep 1; done")...); code != 0 {
+		t.Fatalf("start: %d %s", code, stderr)
+	}
+	pid := readManifestAt(t, stateDir, project).HostProcs["app"].PID
+	flag := filepath.Join(stateDir, project, "host-app.stopping")
+	if err := os.WriteFile(flag, []byte("999999 jiffies:1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	syscall.Kill(-pid, syscall.SIGTERM) // not through stop: the supervisor exits by itself
+	if !waitDead(pid, 5*time.Second) {
+		t.Fatal("supervisor did not exit")
+	}
+	m := readManifestAt(t, stateDir, project)
+	if _, ok := m.HostProcs["app"]; ok || m.Routes["app"] != 0 {
+		t.Fatalf("supervisor must clean up after a dead stopper: %+v %+v", m.HostProcs, m.Routes)
+	}
+	if _, err := os.Stat(flag); err == nil {
+		t.Fatal("dead stopper's flag must be removed")
+	}
+}
+
+func TestHostRefusesSecondRunAndOutsideDir(t *testing.T) {
+	root, stateDir, _ := hostEnv(t)
+	g := []string{"--root", root, "--state-dir", stateDir}
+	if _, stderr, code := runCLI(t, append(g, "host", "start", "app", "--", "sh", "-c", "while :; do sleep 1; done")...); code != 0 {
+		t.Fatalf("start: %d %s", code, stderr)
+	}
+	if _, stderr, code := runCLI(t, append(g, "host", "app", "--", "true")...); code == 0 || !strings.Contains(stderr, "already running") {
+		t.Fatalf("a second run of the same name must be refused: %d %s", code, stderr)
+	}
+	outside := t.TempDir()
+	os.Symlink(outside, filepath.Join(root, "link"))
+	for _, d := range []string{"..", "../x", "link"} {
+		if _, stderr, code := runCLI(t, append(g, "host", "other", "--dir", d, "--", "true")...); code == 0 || !strings.Contains(stderr, "outside the checkout") && !strings.Contains(stderr, "--dir") {
+			t.Errorf("--dir %s must be refused: %d %s", d, code, stderr)
+		}
 	}
 }

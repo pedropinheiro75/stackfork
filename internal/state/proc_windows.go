@@ -12,6 +12,7 @@ var ErrNotOnWindows = errors.New("host processes are not supported on Windows ye
 
 func DetachAttr() *syscall.SysProcAttr            { return nil }
 func KillGroup(pid int, sig syscall.Signal) error { return ErrNotOnWindows }
+func KillOrphanGroup(pgid int) error              { return ErrNotOnWindows }
 func processAlive(pid int, startedAt string) bool { return false }
 func ProcStart(pid int) (string, error)           { return "", ErrNotOnWindows }
 func procCmdline(pid int) (string, error)         { return "", ErrNotOnWindows }

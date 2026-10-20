@@ -125,7 +125,7 @@ Sub-forms:
 - `host stop NAME` sends SIGTERM to the supervisor's process group, waits 10 s (`STACKFORK_HOST_STOP_TIMEOUT`, for example `2s`), then SIGKILL; removes the route. It signals only when the recorded PID, start time and command line still match; a stale entry is only cleaned up.
 - `host restart NAME` stops it and starts it again with the same command.
 - `host logs NAME [-f]` prints the log (secrets redacted); `-f` follows it.
-`stackfork down` stops host processes before it runs the compose down. Not supported on Windows yet.
+`stackfork down` stops host processes before it runs the compose down. Known limit: if the supervisor itself is killed with SIGKILL (not through `host stop`), its command keeps running without a supervisor; `host stop NAME` still finds the entry, sees the supervisor is gone and cleans up, but cannot reach the orphaned command, so stop it by hand. A foreground `host` run from an interactive shell leads its own job group, so `host stop` can stop it too; inside a pipeline the signal also reaches the other members. Not supported on Windows yet.
 Flags: `--port`, `--dir` (working directory, relative to the checkout), `--port-env` (extra env names set to the port, comma separated)
 ```sh
 stackfork host app -- bun run dev

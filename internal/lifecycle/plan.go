@@ -16,7 +16,8 @@ import (
 )
 
 // HostStart starts one host step. The cli package sets the real one (`host start`); tests stub it.
-var HostStart = func(out, errOut io.Writer, root, instanceDir string, step knowledge.Step) error {
+// base is the global flags (state dirs, --root) of the start that runs the step.
+var HostStart = func(out, errOut io.Writer, base []string, root, instanceDir string, step knowledge.Step) error {
 	return errors.New("host steps are not implemented yet")
 }
 

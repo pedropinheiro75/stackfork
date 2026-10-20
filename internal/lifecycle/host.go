@@ -30,6 +30,24 @@ func HostStopFlag(instanceDir, name string) string {
 	return filepath.Join(instanceDir, "host-"+name+".stopping")
 }
 
+// HostStopperActive tells a supervisor whether to leave its cleanup to a
+// stopper: the flag names the stopper's pid and start time, and counts only
+// while that process is alive. A flag left by a stopper that died is removed.
+func HostStopperActive(instanceDir, name string) bool {
+	flag := HostStopFlag(instanceDir, name)
+	b, err := os.ReadFile(flag)
+	if err != nil {
+		return false
+	}
+	var pid int
+	var started string
+	if _, err := fmt.Sscanf(string(b), "%d %s", &pid, &started); err == nil && state.HostAlive(state.HostProc{PID: pid, StartedAt: started}) {
+		return true
+	}
+	os.Remove(flag)
+	return false
+}
+
 // StopHost stops one host process and removes its HostProcs entry and route.
 // It signals only when the recorded identity (PID, start time, command line)
 // still matches, and only the supervisor's own process group. A stale entry
@@ -51,7 +69,9 @@ func StopHost(stderr io.Writer, instanceDir, name string, timeout time.Duration)
 	}
 	if state.HostIdentity(proc) {
 		flag := HostStopFlag(instanceDir, name)
-		os.WriteFile(flag, nil, 0o600) //nolint:errcheck // best effort; without it a supervisor may wait for the lock
+		if started, err := state.ProcStart(os.Getpid()); err == nil {
+			os.WriteFile(flag, []byte(fmt.Sprintf("%d %s\n", os.Getpid(), started)), 0o600) //nolint:errcheck // best effort; without it a supervisor may wait for the lock
+		}
 		defer os.Remove(flag)
 		if err := state.KillGroup(proc.PID, syscall.SIGTERM); err != nil {
 			return fmt.Errorf("host process %s: %w", name, err)
@@ -64,6 +84,11 @@ func StopHost(stderr io.Writer, instanceDir, name string, timeout time.Duration)
 			if !waitGone(proc, 5*time.Second) {
 				return fmt.Errorf("host process %s (pid %d) did not exit", name, proc.PID)
 			}
+		}
+		// The leader is gone (identity was verified above); a member that
+		// ignored SIGTERM may not be.
+		if err := state.KillOrphanGroup(proc.PID); err != nil {
+			return fmt.Errorf("host process %s: %w", name, err)
 		}
 	} else {
 		fmt.Fprintf(stderr, "stackfork: host process %s is not running (stale entry); cleaning it up\n", name)

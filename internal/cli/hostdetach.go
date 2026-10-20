@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
@@ -20,17 +19,13 @@ import (
 // hostExecutable is the binary the supervisor is re-run from (a test swaps it).
 var hostExecutable = os.Executable
 
-// hostStartBase is the global flags of the start-env in progress (state dirs,
-// --root), read by the default lifecycle.HostStart below.
-var hostStartBase []string
-
 func init() {
-	lifecycle.HostStart = func(out, errOut io.Writer, root, instanceDir string, step knowledge.Step) error {
+	lifecycle.HostStart = func(out, errOut io.Writer, base []string, root, instanceDir string, step knowledge.Step) error {
 		argv, err := knowledge.SplitArgv(step.Cmd)
 		if err != nil || len(argv) == 0 {
 			return fmt.Errorf("host step %s: cannot read its command %q", step.ID, step.Cmd)
 		}
-		args := append([]string{}, hostStartBase...)
+		args := append([]string{}, base...)
 		if len(args) == 0 {
 			args = []string{"--root", root}
 		}
@@ -55,32 +50,6 @@ func hostFlagArgs(port int, dir, portEnv string) []string {
 		a = append(a, "--port-env", portEnv)
 	}
 	return a
-}
-
-// recordHostProc writes this process's HostProcs entry, under the instance lock.
-func recordHostProc(instanceDir, name string, port int, supervise bool, stderr io.Writer) error {
-	started, err := state.ProcStart(os.Getpid())
-	if err != nil {
-		return err
-	}
-	proc := state.HostProc{PID: os.Getpid(), StartedAt: started, Cmdline: os.Args, Port: port}
-	if supervise {
-		proc.Log = filepath.Join(instanceDir, "host-"+name+".log")
-	}
-	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
-	if err != nil {
-		return err
-	}
-	defer lock.Release()
-	m, err := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
-	if err != nil || m == nil {
-		return fmt.Errorf("manifest: %v", err)
-	}
-	if m.HostProcs == nil {
-		m.HostProcs = map[string]state.HostProc{}
-	}
-	m.HostProcs[name] = proc
-	return state.WritePrivate(filepath.Join(instanceDir, "manifest.json"), m)
 }
 
 // hostStart spawns the detached supervisor for a new host process.
@@ -125,13 +94,26 @@ func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, inst
 			tail, _ := os.ReadFile(logPath)
 			return 0, fmt.Errorf("host process %s exited at start:\n%s", name, strings.TrimSpace(string(tail)))
 		case <-deadline:
-			state.KillGroup(pid, syscall.SIGKILL) //nolint:errcheck // our own new session leader
+			select {
+			case <-exited: // it died just now: report that, signal nothing
+				tail, _ := os.ReadFile(logPath)
+				return 0, fmt.Errorf("host process %s exited at start:\n%s", name, strings.TrimSpace(string(tail)))
+			default:
+			}
+			cmd.Process.Kill()         //nolint:errcheck // unreaped, so the pid is still ours
+			state.KillOrphanGroup(pid) //nolint:errcheck // a surviving group keeps the pid from being reused
 			tail, _ := os.ReadFile(logPath)
 			return 0, fmt.Errorf("host process %s did not report in 10s; see %s\n%s", name, logPath, strings.TrimSpace(string(tail)))
 		case <-time.After(50 * time.Millisecond):
 		}
 		if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
 			if p, ok := m.HostProcs[name]; ok && p.PID == pid {
+				select { // a supervisor that fails to start its command dies right after claiming the name
+				case <-exited:
+					tail, _ := os.ReadFile(logPath)
+					return 0, fmt.Errorf("host process %s exited at start:\n%s", name, strings.TrimSpace(string(tail)))
+				case <-time.After(300 * time.Millisecond):
+				}
 				fmt.Fprintf(stderr, "stackfork: started %s (pid %d, port %d); logs: stackfork host logs %s\n", name, pid, p.Port, name)
 				return 0, nil
 			}
@@ -173,6 +155,9 @@ func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, br
 	if !ok {
 		return 0, fmt.Errorf("no host process %s", name)
 	}
+	if sub == "restart" && (len(proc.Cmdline) < 3 || !contains(proc.Cmdline, "--supervise")) {
+		return 0, fmt.Errorf("%s was not started with `host start`; start it again", name)
+	}
 	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
 	if err != nil {
 		return 0, err
@@ -186,9 +171,6 @@ func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, br
 	if sub == "stop" {
 		fmt.Fprintf(stdout, "stopped %s\n", name)
 		return 0, nil
-	}
-	if len(proc.Cmdline) < 3 || !contains(proc.Cmdline, "--supervise") {
-		return 0, fmt.Errorf("%s was not started with `host start`; start it again", name)
 	}
 	return spawnSupervisor(stderr, name, proc.Cmdline[1:], hostWorkDir(root), instanceDir)
 }

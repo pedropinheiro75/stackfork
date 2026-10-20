@@ -159,9 +159,8 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 
 	runner.Out, runner.Err, runner.Root, runner.Branch, runner.Project = out, errOut, root, branch, project
 	runner.InstanceDir, runner.LegacyBase, runner.Prepare, runner.Up = instanceDir, o.LegacyStateBase, prepare, up
-	hostStartBase = base
 	runner.Host = func(step knowledge.Step) error {
-		return lifecycle.HostStart(out, errOut, root, instanceDir, step)
+		return lifecycle.HostStart(out, errOut, base, root, instanceDir, step)
 	}
 	if err := runner.Run(); err != nil {
 		return err

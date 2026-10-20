@@ -50,9 +50,47 @@ func psField(pid int, fields string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// ProcStart is the process start time as RFC3339 UTC (second resolution), or
-// an error when pid does not exist or is a zombie.
+// KillOrphanGroup SIGKILLs the process group pgid if any member is left. Only
+// for the moment after a verified group leader has exited: the kernel does not
+// reuse a PID while a group still carries it as its id, so a group that still
+// exists is the leader's leftovers and not an unrelated process. Refuses
+// pgid <= 1 and the caller's own group.
+func KillOrphanGroup(pgid int) error {
+	if pgid <= 1 || pgid == syscall.Getpgrp() {
+		return fmt.Errorf("refusing to signal process group %d", pgid)
+	}
+	if err := syscall.Kill(-pgid, 0); err != nil {
+		return nil // nobody left
+	}
+	return syscall.Kill(-pgid, syscall.SIGKILL)
+}
+
+// parseProcStat reads /proc/PID/stat: the state letter and the start time in
+// jiffies since boot (field 22). comm (field 2) may hold spaces and parens, so
+// the fields are counted after the last ')'.
+func parseProcStat(stat string) (state string, startTicks string, err error) {
+	i := strings.LastIndex(stat, ")")
+	if i < 0 {
+		return "", "", errors.New("bad stat")
+	}
+	f := strings.Fields(stat[i+1:])
+	if len(f) < 20 { // state is field 3 = f[0]; starttime is field 22 = f[19]
+		return "", "", errors.New("bad stat")
+	}
+	return f[0], f[19], nil
+}
+
+// ProcStart identifies when a process started: "jiffies:N" from /proc where it
+// exists (exact, no clock jitter), else the RFC3339 UTC time from ps lstart
+// (second resolution). Error when pid does not exist or is a zombie.
 func ProcStart(pid int) (string, error) {
+	if b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
+		st, ticks, err := parseProcStat(string(b))
+		if err != nil || st == "Z" {
+			return "", errors.New("no such process")
+		}
+		return "jiffies:" + ticks, nil
+	}
 	out, err := psField(pid, "stat,lstart")
 	if err != nil || out == "" {
 		return "", errors.New("no such process")

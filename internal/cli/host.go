@@ -85,9 +85,9 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	workDir := hostWorkDir(root)
 	if *dirFlag != "" {
-		d := filepath.Join(root, *dirFlag)
-		if rel, err := filepath.Rel(root, d); err != nil || strings.HasPrefix(rel, "..") {
-			return 2, fmt.Errorf("--dir %q is outside the checkout", *dirFlag)
+		d, err := confinedDir(root, *dirFlag)
+		if err != nil {
+			return 2, err
 		}
 		workDir = d
 	}
@@ -107,7 +107,7 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 
 	os.Remove(lifecycle.HostStopFlag(instanceDir, name)) // a leftover from a stopper that died
-	port, err := registerHostRoute(name, *portFlag, root, branch, project, instanceDir, newStateBase, legacyStateBase, stderr)
+	port, err := registerHostRoute(name, *portFlag, supervise, root, branch, project, instanceDir, newStateBase, legacyStateBase, stderr)
 	if err != nil {
 		return 0, err
 	}
@@ -134,12 +134,9 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	signal.Notify(sigCh, hostSignals...)
 	defer signal.Stop(sigCh)
 
+	fmt.Fprintf(stderr, "stackfork: running %q on port %d for %s (routed while it runs)\n", name, port, project)
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("could not start %q: %w", command[0], err)
-	}
-	fmt.Fprintf(stderr, "stackfork: running %q on port %d for %s (routed while it runs)\n", name, port, project)
-	if err := recordHostProc(instanceDir, name, port, supervise, stderr); err != nil {
-		fmt.Fprintf(stderr, "stackfork: warning: could not record the process: %v\n", err)
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -151,6 +148,22 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 			return exitCode(err)
 		}
 	}
+}
+
+// confinedDir resolves dir under root, symlinks included, and refuses a result outside root.
+func confinedDir(root, dir string) (string, error) {
+	rootR, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	d, err := filepath.EvalSymlinks(filepath.Join(root, dir))
+	if err != nil {
+		return "", fmt.Errorf("--dir %q: %w", dir, err)
+	}
+	if rel, err := filepath.Rel(rootR, d); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("--dir %q is outside the checkout", dir)
+	}
+	return d, nil
 }
 
 // hostWorkDir keeps the caller's directory when it is inside the checkout
@@ -167,7 +180,7 @@ func hostWorkDir(root string) string {
 
 // registerHostRoute picks (or reuses) name's stable port, persists it, and
 // registers the proxy route, all under the instance lock.
-func registerHostRoute(name string, requested int, root, branch, project, instanceDir, newStateBase, legacyStateBase string, stderr io.Writer) (int, error) {
+func registerHostRoute(name string, requested int, supervise bool, root, branch, project, instanceDir, newStateBase, legacyStateBase string, stderr io.Writer) (int, error) {
 	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
 	if err != nil {
 		return 0, err
@@ -176,6 +189,10 @@ func registerHostRoute(name string, requested int, root, branch, project, instan
 	if err != nil {
 		lock.Release()
 		return 0, err
+	}
+	if cur, ok := info.HostProcs[name]; ok && cur.PID != os.Getpid() && state.HostIdentity(cur) {
+		lock.Release()
+		return 0, fmt.Errorf("host process %s is already running (pid %d)", name, cur.PID)
 	}
 	port := requested
 	switch {
@@ -214,6 +231,21 @@ func registerHostRoute(name string, requested int, root, branch, project, instan
 	}
 	info.HostPorts[name] = port
 	info.Routes[name] = port
+	// Claim the name in the same lock hold as the check above, so two
+	// starts cannot both pass it.
+	started, perr := state.ProcStart(os.Getpid())
+	if perr != nil {
+		lock.Release()
+		return 0, perr
+	}
+	proc := state.HostProc{PID: os.Getpid(), StartedAt: started, Cmdline: os.Args, Port: port}
+	if supervise {
+		proc.Log = filepath.Join(instanceDir, "host-"+name+".log")
+	}
+	if info.HostProcs == nil {
+		info.HostProcs = map[string]state.HostProc{}
+	}
+	info.HostProcs[name] = proc
 	err = state.WritePrivate(filepath.Join(instanceDir, "manifest.json"), info)
 	lock.Release()
 	if err != nil {
@@ -226,8 +258,8 @@ func registerHostRoute(name string, requested int, root, branch, project, instan
 // unregisterHostRoute removes the route when the command ends. HostPorts
 // keeps the port for next time.
 func unregisterHostRoute(name, root, branch, project, instanceDir, newStateBase, legacyStateBase string, stderr io.Writer) {
-	if _, err := os.Stat(lifecycle.HostStopFlag(instanceDir, name)); err == nil {
-		return // a stopper is cleaning up for us (and may hold the lock)
+	if lifecycle.HostStopperActive(instanceDir, name) {
+		return // a live stopper is cleaning up for us (and may hold the lock)
 	}
 	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
 	if err != nil {

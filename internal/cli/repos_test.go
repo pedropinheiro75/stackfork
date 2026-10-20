@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
@@ -263,7 +266,7 @@ func TestStartEnvHybridExcludesAppAndRunsHostStep(t *testing.T) {
 	log := installFakeDocker(t)
 	var started []string
 	old := lifecycle.HostStart
-	lifecycle.HostStart = func(out, errOut io.Writer, root, instanceDir string, s knowledge.Step) error {
+	lifecycle.HostStart = func(out, errOut io.Writer, _ []string, root, instanceDir string, s knowledge.Step) error {
 		started = append(started, s.Name)
 		return nil
 	}
@@ -360,7 +363,7 @@ func TestHybridExcludeDropsDependents(t *testing.T) {
 	repo, _, _ := hybridRepo(t, root, depCompose, hybridSteps)
 	log := installFakeDocker(t)
 	old := lifecycle.HostStart
-	lifecycle.HostStart = func(io.Writer, io.Writer, string, string, knowledge.Step) error { return nil }
+	lifecycle.HostStart = func(io.Writer, io.Writer, []string, string, string, knowledge.Step) error { return nil }
 	defer func() { lifecycle.HostStart = old }()
 	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
 	runCLI(t, "config", "set-mode", repo, "hybrid")
@@ -401,5 +404,57 @@ func TestSchemaStepOnExcludedServiceRefusedBeforeDocker(t *testing.T) {
 	_, e, code := runCLI(t, append(base, "start-env", repo)...)
 	if b, _ := os.ReadFile(log); code == 0 || !strings.Contains(e, "step migrate runs in web, which this mode does not start; set --service on the step") || len(strings.TrimSpace(string(b))) != 0 {
 		t.Fatalf("%d %s\n%s", code, e, b)
+	}
+}
+
+// Two start-envs at once (the dashboard can do this) must each start their own
+// project's host step: nothing about one start may live in a package variable.
+func TestConcurrentStartEnvKeepsHostStepsApart(t *testing.T) {
+	root, state := reposEnv(t)
+	repoA := planRepo(t, root, hybridSteps)
+	repoB := planRepo(t, t.TempDir(), hybridSteps)
+	installFakeDocker(t)
+	var mu sync.Mutex
+	got := map[string]string{} // root passed in base -> root passed directly
+	old := lifecycle.HostStart
+	lifecycle.HostStart = func(_, _ io.Writer, base []string, r, _ string, _ knowledge.Step) error {
+		time.Sleep(100 * time.Millisecond) // overlap the two runs
+		mu.Lock()
+		defer mu.Unlock()
+		for i, a := range base {
+			if a == "--root" {
+				got[base[i+1]] = r
+			}
+		}
+		return nil
+	}
+	defer func() { lifecycle.HostStart = old }()
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, "config", "set-mode", repoA, "hybrid")
+	runCLI(t, "config", "set-mode", repoB, "hybrid")
+	for _, r := range []string{repoA, repoB} {
+		if _, e, code := runCLI(t, append(base, "--root", r, "plan", "--trust")...); code != 0 {
+			t.Fatal(e)
+		}
+	}
+	var wg sync.WaitGroup
+	for _, r := range []string{repoA, repoB} {
+		wg.Add(1)
+		go func(r string) {
+			defer wg.Done()
+			var o, e bytes.Buffer
+			if err := StartEnv(&o, &e, StartOptions{Checkout: r, NewStateBase: state, LegacyStateBase: t.TempDir(), Mode: "hybrid"}); err != nil {
+				t.Errorf("%s: %v %s", r, err, e.String())
+			}
+		}(r)
+	}
+	wg.Wait()
+	if len(got) != 2 {
+		t.Fatalf("each start must reach its own host step: %v", got)
+	}
+	for baseRoot, r := range got {
+		if baseRoot != r {
+			t.Errorf("host step got base root %s but root %s", baseRoot, r)
+		}
 	}
 }
