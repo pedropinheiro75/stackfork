@@ -27,3 +27,9 @@ func runAppJS(t *testing.T, caseFile string) {
 func TestPlanListLiveRunSurvivesARender(t *testing.T) {
 	runAppJS(t, "runs_live.case.js")
 }
+
+// The LogDrawer's Run source opens on the failed step and lists every step
+// with a chip (design D14).
+func TestRunLogDrawerStepSelector(t *testing.T) {
+	runAppJS(t, "runs_drawer.case.js")
+}

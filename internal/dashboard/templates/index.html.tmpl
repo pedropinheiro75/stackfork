@@ -128,6 +128,10 @@
     <h2 id="logs-title" class="mono"></h2>
     <button id="logs-close" type="button" class="btn btn-ghost btn-icon" aria-label="Close logs" title="Close (Escape)"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
   </div>
+  <div id="logs-run" hidden>
+    <div id="logs-steps" role="group" aria-label="Steps of this run"></div>
+    <label id="logs-follow-label"><input type="checkbox" id="logs-follow" checked> Follow</label>
+  </div>
   <pre id="logs-body" class="mono-log" tabindex="0" aria-label="Log output"></pre>
 </aside>
 

@@ -700,6 +700,14 @@ code.setting-value { display: inline-block; }
 #logs-panel:focus { outline: none; }
 #logs-header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 48px; padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-bottom: 1px solid var(--line); }
 #logs-title { margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; overflow-wrap: anywhere; }
+/* Run source: a step selector (chip + step id per button) and Follow while the run runs. */
+#logs-run { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--line); }
+#logs-run[hidden] { display: none; }
+#logs-steps { display: flex; flex-wrap: wrap; gap: var(--space-1); min-width: 0; }
+.logs-step { min-height: 28px; padding: 2px var(--space-2); gap: var(--space-2); font-weight: 400; }
+.logs-step[aria-pressed="true"] { background: var(--surface-2); border-color: var(--line-strong); font-weight: 600; }
+#logs-follow-label { flex: none; display: inline-flex; align-items: center; gap: var(--space-1); color: var(--fg-muted); }
+#logs-follow-label[hidden] { display: none; }
 #logs-body { flex: 1 1 auto; max-height: none; border-radius: 0; background: transparent; padding: var(--space-4); }
 @media (max-width: 719px) {
   #logs-panel { width: 100%; border-left: 0; border-top: 3px solid var(--lane, var(--line-strong)); }

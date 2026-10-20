@@ -786,6 +786,8 @@
     panel.className = "log-drawer" + (project ? " lane-" + (stackColorIndex(appOfProject(project)) + 1) : "");
     document.getElementById("logs-title").textContent = title;
     document.getElementById("logs-body").textContent = bodyText;
+    document.getElementById("logs-run").hidden = true;
+    stopRunFollow();
     panel.hidden = false;
     // after the click finishes: a closing menu would otherwise take focus back
     setTimeout(function () { if (!panel.hidden) panel.focus(); }, 0);
@@ -795,6 +797,7 @@
     var panel = document.getElementById("logs-panel");
     if (panel.hidden) return;
     panel.hidden = true;
+    stopRunFollow();
     focusBack(drawerOpener);
     drawerOpener = null;
   }
@@ -810,24 +813,83 @@
       .catch(function (err) { body.textContent = "error: " + err.message; });
   }
 
-  // Run log: a step of a recorded run in the drawer. Without a step the
-  // failed one opens, else the last step that has a log.
+  // Run log source of the LogDrawer (design.md D14): the title reads
+  // project / run N / step, the step buttons list the run's steps with their
+  // chips, and Follow keeps the log at its end while the run is running.
+  // Without a step the failed one opens, else the last step that has a log.
+  var runLog = null; // {project, runId, step, run, timer}
+
+  function stopRunFollow() {
+    if (runLog && runLog.timer) clearTimeout(runLog.timer);
+    runLog = null;
+  }
+
+  function pickStep(run, step) {
+    if (step) return step;
+    var withLog = (run.steps || []).filter(function (s) { return s.log; });
+    var failed = withLog.filter(function (s) { return s.state === "failed"; })[0];
+    return (failed || withLog[withLog.length - 1] || (run.steps || [])[0] || {}).id || "";
+  }
+
+  function stepsHtml(run, current) {
+    return (run.steps || []).map(function (s) {
+      var c = runChip(s.state === "failed" && s.reason === "interrupted" ? "interrupted" : s.state, s.reason);
+      return '<button type="button" class="btn btn-ghost logs-step" data-step="' + escapeHtml(s.id) + '" data-key="logs/step/' + escapeHtml(s.id) +
+        '" aria-pressed="' + (s.id === current) + '">' + chipHtml(c) + '<span class="mono">' + escapeHtml(s.id) + "</span></button>";
+    }).join("");
+  }
+
   function openRunLog(project, runId, step, opener) {
     openDrawer(project + " / run " + runId + (step ? " / " + step : ""), project, "loading...", opener);
+    var st = runLog = { project: project, runId: runId, step: step || "", run: null, timer: null };
+    document.getElementById("logs-run").hidden = false;
+    document.getElementById("logs-steps").innerHTML = "";
+    loadRunLog(st);
+  }
+
+  function loadRunLog(st) {
+    var mine = st.seq = (st.seq || 0) + 1; // a newer load (step click) retires this one
     var body = document.getElementById("logs-body");
-    var q = "project=" + encodeURIComponent(project) + "&id=" + runId;
+    var q = "project=" + encodeURIComponent(st.project) + "&id=" + st.runId;
     fetch("/api/runs?" + q, { credentials: "same-origin" })
-      .then(function (r) { if (!r.ok) throw new Error("run " + runId + " is gone"); return r.json(); })
+      .then(function (r) { if (!r.ok) throw new Error("run " + st.runId + " is gone"); return r.json(); })
       .then(function (run) {
-        var withLog = (run.steps || []).filter(function (s) { return s.log; });
-        var pick = step || (withLog.filter(function (s) { return s.state === "failed"; })[0] || withLog[withLog.length - 1] || {}).id;
-        if (!pick) { body.textContent = "(no step has output)"; return; }
-        document.getElementById("logs-title").textContent = project + " / run " + runId + " / " + pick;
-        return fetch("/api/runs/log?" + q + "&step=" + encodeURIComponent(pick), { credentials: "same-origin" })
-          .then(function (r) { if (!r.ok) throw new Error("no log for " + pick); return r.text(); })
-          .then(function (text) { body.textContent = text || "(no output)"; });
+        if (runLog !== st || mine !== st.seq) return;
+        st.run = run;
+        st.step = pickStep(run, st.step);
+        document.getElementById("logs-title").textContent = st.project + " / run " + st.runId + (st.step ? " / " + st.step : "");
+        var steps = document.getElementById("logs-steps");
+        var html = stepsHtml(run, st.step);
+        if (steps.dataset.html !== html) {
+          var hadFocus = steps.contains(document.activeElement) ? document.activeElement.dataset.key : "";
+          steps.dataset.html = html;
+          steps.innerHTML = html;
+          if (hadFocus) { var again = keyedIn("#logs-steps", hadFocus); if (again) again.focus({ preventScroll: true }); }
+        }
+        var running = run.outcome === "running";
+        var follow = document.getElementById("logs-follow");
+        document.getElementById("logs-follow-label").hidden = !running;
+        var cur = (run.steps || []).filter(function (s) { return s.id === st.step; })[0];
+        if (!cur || !cur.log) {
+          body.textContent = !cur ? "(this run has no steps)" : cur.state === "skipped" ? "(skipped" + (cur.reason ? ": " + cur.reason : "") + ")" : cur.state === "pending" ? "(not started)" : "(no output)";
+          return;
+        }
+        return fetch("/api/runs/log?" + q + "&step=" + encodeURIComponent(st.step), { credentials: "same-origin" })
+          .then(function (r) { if (!r.ok) throw new Error("no log for " + st.step); return r.text(); })
+          .then(function (text) {
+            if (runLog !== st || mine !== st.seq) return;
+            text = text || "(no output)";
+            if (body.textContent !== text) {
+              body.textContent = text;
+              if (running && follow.checked) body.scrollTop = body.scrollHeight;
+            }
+          });
       })
-      .catch(function (err) { body.textContent = "error: " + err.message; });
+      .catch(function (err) { if (runLog === st && mine === st.seq) body.textContent = "error: " + err.message; })
+      .then(function () {
+        if (runLog !== st || mine !== st.seq) return;
+        if (st.run && st.run.outcome === "running") st.timer = setTimeout(function () { loadRunLog(st); }, 1500);
+      });
   }
 
   function wireControls() {
@@ -1066,6 +1128,13 @@
 
   function wireLogsPanel() {
     document.getElementById("logs-close").addEventListener("click", closeDrawer);
+    document.getElementById("logs-steps").addEventListener("click", function (e) {
+      var b = e.target.closest(".logs-step");
+      if (!b || !runLog) return;
+      if (runLog.timer) clearTimeout(runLog.timer);
+      runLog.step = b.dataset.step;
+      loadRunLog(runLog);
+    });
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (document.querySelector('[aria-haspopup="menu"][aria-expanded="true"]') || document.querySelector("dialog[open]")) return;
@@ -1450,6 +1519,18 @@
       body.appendChild(head); body.appendChild(detail); body.appendChild(msg); body.appendChild(retry);
       var actions = document.createElement("div");
       actions.className = "callout-actions";
+      if (err.log) {
+        var view = document.createElement("button");
+        view.type = "button";
+        view.className = "btn";
+        view.dataset.runLog = "";
+        view.dataset.project = err.log.project;
+        view.dataset.runId = err.log.id;
+        view.dataset.step = err.log.step;
+        view.dataset.key = d.dataset.key + "/error/viewlog";
+        view.textContent = "View log";
+        actions.appendChild(view);
+      }
       var dismiss = document.createElement("button");
       dismiss.type = "button";
       dismiss.className = "btn btn-ghost";
@@ -1490,8 +1571,10 @@
     var what = d.branch || (d.path && d.path !== d.repo ? d.path.split("/").pop() : "");
     var label = name + (what ? ":" + what : "") + " " + d.repoAction;
     var created = "";
+    var runRef = null; // the run this Start recorded, for the callout's View log
     function fail(msg) {
-      reposState.errors[d.repo] = { label: label, title: ({ start: "Start", "worktree-add": "Create worktree", fetch: "Fetch" }[d.repoAction] || "Action") + " failed", message: msg, command: retryCommand(d, created) };
+      reposState.errors[d.repo] = { label: label, title: ({ start: "Start", "worktree-add": "Create worktree", fetch: "Fetch" }[d.repoAction] || "Action") + " failed", message: msg, command: retryCommand(d, created),
+        log: runRef && runRef.step ? runRef : null };
     }
     // A menu item keeps its label (it is hidden once the menu closes); the
     // progress text goes next to the row's overflow button instead.
@@ -1541,10 +1624,12 @@
             onStreamObject(d.repo, o);
             paintStarts();
           } else if (o.ok === undefined) { // run and step objects (design.md D12)
+            if (o.run && typeof o.run === "object") runRef = { project: o.run.project, id: o.run.id, step: "" };
             onStreamObject(d.repo, o);
             paintStarts();
           } else {
             log(label + ": " + (o.ok ? "done - " : "failed - ") + o.message);
+            if (runRef && o.failed_step) runRef.step = o.failed_step;
             if (!o.ok) fail(o.message);
             // the callout and the step log hold the detail; the toast names the step
             toast(o.ok ? "ok" : "failed", o.ok || !o.failed_step ? label + ": " + o.message : label + " failed at step " + o.failed_step);
@@ -1640,6 +1725,8 @@
       if (e.target.closest("[data-rescan]")) { rescan(); return; }
       var row = e.target.closest(".repo-row");
       if (row && !e.target.closest("button, a, .menu-anchor, .copyable")) { var rt = row.querySelector(".repo-toggle"); if (rt) rt.click(); return; }
+      var rl = e.target.closest("[data-run-log]");
+      if (rl) { openRunLog(rl.dataset.project, Number(rl.dataset.runId), rl.dataset.step, rl); return; }
       var dis = e.target.closest("[data-dismiss-repo]");
       if (dis) { delete reposState.errors[dis.dataset.dismissRepo]; renderRepoErrors(); return; }
       var act = e.target.closest("[data-repo-action]");
@@ -1841,7 +1928,7 @@
   // The script tests (appscript_runs_test.go) load this file in Node and ask
   // for the functions they exercise; a browser never defines __sfExport.
   if (typeof window.__sfExport === "function") {
-    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText });
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml });
   }
 
   if (document.readyState === "loading") {
