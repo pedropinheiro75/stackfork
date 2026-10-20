@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -139,6 +140,10 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 			return lifecycle.ErrAlreadyPrepared
 		}
 		args, err := prepareArgs(root, main, instanceDir)
+		mapped, merr := lifecycle.MappedSecrets(root)
+		if merr != nil {
+			return merr
+		}
 		pbase := base
 		var seedCmd, seedSvc string
 		var sibRefs []string // NAME=ref pairs taken from a sibling worktree
@@ -147,6 +152,9 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 			var secrets []string
 			args, secrets, seedCmd, seedSvc, err = seedFromSibling(out, root, main, insts, err)
 			for _, sec := range secrets {
+				if name, _, _ := strings.Cut(sec, "="); mapped[name] != "" {
+					continue // the machine map beats a sibling's reference (D7)
+				}
 				sibRefs = append(sibRefs, sec)
 				pbase = append(append([]string{}, pbase...), "--secret", sec)
 			}
@@ -163,6 +171,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 				names = append(names, n)
 			}
 			sort.Strings(names)
+			names = slices.DeleteFunc(names, func(n string) bool { return mapped[n] != "" }) // the machine map beats a sibling's reference (D7)
 			for _, n := range names {
 				sibRefs = append(sibRefs, n+"="+sec[n])
 				pbase = append(append([]string{}, pbase...), "--secret", n+"="+sec[n])
@@ -245,7 +254,10 @@ func needsPrepare(instanceDir, root, branch, project string) bool {
 			return true
 		}
 	}
-	return false
+	// A mapped name the manifest lacks needs a new prepare (D7).
+	mapped, _ := lifecycle.MappedSecrets(root)
+	_, _, unprepared := lifecycle.InstanceSecrets(info, mapped)
+	return len(unprepared) > 0
 }
 
 // prepareArgs decides what to pass to `prepare`: nothing when an instance

@@ -169,6 +169,33 @@ func TestStartEnvWithOwnAdapterReusesSiblingSecretReferences(t *testing.T) {
 	}
 }
 
+// D7: the machine map beats a sibling worktree's reference.
+func TestStartEnvMapBeatsSiblingSecretReference(t *testing.T) {
+	repo, _, base := siblingRepo(t)
+	installFakeDocker(t)
+	t.Setenv("SF_TEST_MAPPED_TOKEN", "x")
+	mapSecret(t, repo, "tok", "env:SF_TEST_MAPPED_TOKEN")
+	nw := filepath.Join(repo, ".worktrees", "feat-b")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "feat-b", nw).CombinedOutput(); err != nil {
+		t.Fatalf("%s", out)
+	}
+	ad := filepath.Join(nw, ".stackfork")
+	os.MkdirAll(ad, 0o755)
+	os.WriteFile(filepath.Join(ad, "app.compose.yaml"), []byte("services:\n  app:\n    image: alpine:3.20\n    secrets: [tok]\nsecrets:\n  tok:\n    environment: tok\n"), 0o644)
+	if out, e, code := runCLI(t, append(base, "start-env", nw)...); code != 0 {
+		t.Fatalf("%d\n%s\n%s", code, out, e)
+	}
+	whereOut, _, _ := runCLI(t, append(base, "--root", nw, "where")...)
+	var w struct{ State string }
+	json.Unmarshal([]byte(whereOut), &w)
+	m, _ := os.ReadFile(filepath.Join(w.State, "manifest.json"))
+	var man struct{ Secrets map[string]string }
+	json.Unmarshal(m, &man)
+	if man.Secrets["tok"] != "env:SF_TEST_MAPPED_TOKEN" {
+		t.Errorf("secrets %v", man.Secrets)
+	}
+}
+
 func TestStartEnvRedactsSiblingSecretsInPrepareLog(t *testing.T) {
 	repo, _, base := siblingRepo(t)
 	installFakeDocker(t)

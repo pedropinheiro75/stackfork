@@ -171,7 +171,15 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		// name), so a service that references it directly as `${NPM_TOKEN}`
 		// (253fb81's regression) resolves for real here, matching the same
 		// literal reference Render already preserved in the snapshot.
-		for name, ref := range info.ResolvedSecrets() {
+		mapped, err := MappedSecrets(root)
+		if err != nil {
+			return 0, err
+		}
+		refs, _, unprepared := InstanceSecrets(info, mapped)
+		if len(unprepared) > 0 {
+			return 0, UnpreparedError(unprepared[0])
+		}
+		for name, ref := range refs {
 			value, err := compose.ResolveSecret(name, ref)
 			if err != nil {
 				return 0, err

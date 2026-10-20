@@ -15,7 +15,9 @@ import (
 // a reason logs can't be viewed at all.
 func SecretsForRedaction(info *state.Manifest) []redact.Secret {
 	var secrets []redact.Secret
-	for name, ref := range info.ResolvedSecrets() {
+	mapped, _ := MappedSecrets(info.Root)
+	refs, _, _ := InstanceSecrets(info, mapped)
+	for name, ref := range refs {
 		if value, err := compose.ResolveSecret(name, ref); err == nil {
 			secrets = append(secrets, redact.Secret{Name: name, Value: value})
 		}

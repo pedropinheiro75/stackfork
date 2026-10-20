@@ -34,6 +34,7 @@ func installFakeDocker(t *testing.T) (logPath string) {
 	script := `#!/bin/sh
 { for a in "$@"; do printf '%s ' "$a"; done; printf '\n'; } >> "` + logPath + `"
 if [ "$1" = "compose" ]; then
+  { printf -- '--- %s\n' "$*"; env; } >> "` + logPath + `.env"
   for a in "$@"; do
     if [ "$a" = "config" ]; then
       exec "` + real + `" "$@"
@@ -86,4 +87,11 @@ func requireDocker(t *testing.T) {
 	if err := exec.Command("docker", "compose", "version").Run(); err != nil {
 		t.Skip("docker compose not available")
 	}
+}
+
+// dockerEnvLog is what installFakeDocker's `docker compose` calls saw in
+// their environment ("--- args" header, then KEY=value lines, per call).
+func dockerEnvLog(logPath string) string {
+	b, _ := os.ReadFile(logPath + ".env")
+	return string(b)
 }

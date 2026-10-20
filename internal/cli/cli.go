@@ -603,6 +603,15 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	if previous != nil {
 		secretRefs = previous.ResolvedSecrets()
 	}
+	// The machine map beats the recorded references (D7), and a mapped name
+	// the manifest lacks is recorded now: Render must know every name.
+	mapped, err := lifecycle.MappedSecrets(root)
+	if err != nil {
+		return err
+	}
+	for name, ref := range mapped {
+		secretRefs[name] = ref
+	}
 	if npmrcTop != "" {
 		resolvedNpmrc, err := identity.ResolvePath(npmrcTop)
 		if err != nil {
