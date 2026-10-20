@@ -2,6 +2,7 @@ package dashboard_test
 
 import (
 	"encoding/json"
+	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -87,5 +88,86 @@ func TestServicePlayStopButtonMatchesState(t *testing.T) {
 	}
 	if strings.Contains(db, `data-action="service-stop"`) {
 		t.Errorf("stopped db service: did not expect a service-stop button, got:\n%s", db)
+	}
+}
+
+func TestHostServiceRowActionsAndLogs(t *testing.T) {
+	installFakeDocker(t)
+	newBase, legacyBase := t.TempDir(), t.TempDir()
+	root := fixtureGitRepo(t, "main")
+	project := "sf-hostrow-1"
+	dir := filepath.Join(newBase, project)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	start, err := state.ProcStart(os.Getpid())
+	if err != nil {
+		t.Skip("no process start time on this platform")
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	m := &state.Manifest{
+		Project: project, Root: root, Branch: "main", Hostname: project + ".localhost",
+		Files: []string{"compose.yaml"}, Inputs: map[string]string{},
+		HostProcs: map[string]state.HostProc{"app": {PID: os.Getpid(), StartedAt: start, Cmdline: os.Args, Port: ln.Addr().(*net.TCPAddr).Port}},
+	}
+	if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.WritePrivate(filepath.Join(dir, "compose.json"), map[string]interface{}{"services": map[string]interface{}{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "host-app.log"), []byte("one\ntwo\nthree\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := dashboard.New(newBase, legacyBase, "test", 55903)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Host = "127.0.0.1:55903"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	body := rec.Body.String()
+	i := strings.Index(body, `class="service-row" data-service="app"`)
+	if i < 0 {
+		t.Fatalf("host row missing:\n%s", body)
+	}
+	row := body[i : i+strings.Index(body[i:], `class="service-settings"`)]
+	for _, w := range []string{`data-action="service-stop"`, `data-action="restart"`, `>host<`, "Running"} {
+		if !strings.Contains(row, w) {
+			t.Errorf("host row lacks %q:\n%s", w, row)
+		}
+	}
+}
+
+// TestLogsForHostServiceReadsFile: a service that is a host process reads
+// its host-NAME.log, last lines only, and never calls docker.
+func TestLogsForHostServiceReadsFile(t *testing.T) {
+	newBase, legacyBase, project := preparedFixture(t)
+	t.Setenv("DOCKER_FAKE_LOGS", "DOCKER-WAS-CALLED\n")
+	dir := filepath.Join(newBase, project)
+	mp := filepath.Join(dir, "manifest.json")
+	m, err := state.ReadManifest(mp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.HostProcs = map[string]state.HostProc{"app": {PID: 999999, StartedAt: "x", Cmdline: []string{"x"}, Port: 40998}}
+	if err := state.WritePrivate(mp, m); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "host-app.log"), []byte("one\ntwo\nthree\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := dashboard.New(newBase, legacyBase, "test", 55904)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := getLogs(t, srv, "127.0.0.1:55904", project, "service=app&host=1&tail=2")
+	if rec.Code != 200 || rec.Body.String() != "two\nthree\n" {
+		t.Fatalf("status %d body %q", rec.Code, rec.Body.String())
 	}
 }

@@ -135,3 +135,22 @@ func StopAllHosts(stderr io.Writer, instanceDir string, timeout time.Duration) e
 	}
 	return errors.Join(errs...)
 }
+
+// StopHostLocked is StopHost under the instance lock, then a proxy reload so
+// the removed route disappears. Used by `host stop|restart` and the dashboard.
+func StopHostLocked(stderr io.Writer, instanceDir, name, newBase, legacyBase string) error {
+	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
+	if err != nil {
+		return err
+	}
+	err = StopHost(stderr, instanceDir, name, HostStopTimeout())
+	lock.Release()
+	ReloadProxyIfRunning(stderr, newBase, legacyBase)
+	return err
+}
+
+// HostRestart stops and respawns one recorded host process. The cli package
+// sets the real one (it owns the supervisor spawn).
+var HostRestart = func(stderr io.Writer, root, instanceDir, name, newBase, legacyBase string) error {
+	return errors.New("host restart is not available")
+}

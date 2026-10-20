@@ -329,7 +329,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		inst.Warnings = append(inst.Warnings, fmt.Sprintf("branch %s no longer exists in %s; run `stackfork gc`", info.Branch, info.Root))
 	default:
 		services, serviceState, apps := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
-		inst.Services = services
+		inst.Services = append(services, hostServices(manifestPath, info)...)
 		inst.State = serviceState
 		inst.Warnings = append(inst.Warnings, serviceWarnings(project, services)...)
 		fillOneOffs(&inst, rows)
@@ -1049,4 +1049,27 @@ func appName(root string) string {
 		return filepath.Base(string(data)[:i])
 	}
 	return ""
+}
+
+// hostServices lists each recorded host process as a service row: running
+// only when HostStatus confirms identity and a bound port, else exited.
+func hostServices(manifestPath string, info *state.Manifest) []Service {
+	names := make([]string, 0, len(info.HostProcs))
+	for n := range info.HostProcs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	var out []Service
+	for _, n := range names {
+		up, proc := state.HostStatus(filepath.Dir(manifestPath), n)
+		svc := Service{Name: n, Kind: "host", Image: "host", State: "exited"}
+		if up {
+			svc.State = "running"
+		}
+		if proc.Port != 0 {
+			svc.Endpoints = []Endpoint{{Scheme: "http", URL: fmt.Sprintf("http://127.0.0.1:%d", proc.Port), Container: proc.Port, Known: true}}
+		}
+		out = append(out, svc)
+	}
+	return out
 }

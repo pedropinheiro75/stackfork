@@ -102,9 +102,12 @@ func (s *Server) handleActions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) runAction(req actionRequest) actionResponse {
 	switch req.Action {
 	case "up", "down", "restart", "service-start", "service-stop":
-		instanceDir, root, branch, _, err := s.resolveInstance(req.Project)
+		instanceDir, root, branch, info, err := s.resolveInstance(req.Project)
 		if err != nil {
 			return actionResponse{Message: err.Error()}
+		}
+		if _, isHost := info.HostProcs[req.Service]; isHost && req.Service != "" && req.Action != "up" && req.Action != "down" {
+			return s.hostAction(req, instanceDir, root)
 		}
 		var out bytes.Buffer
 		opts := lifecycle.Options{}
@@ -156,6 +159,23 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 	default:
 		return actionResponse{Message: "unknown action"}
 	}
+}
+
+// hostAction runs service-stop, service-start or restart on a host process
+// row: the host commands, not docker. Start of an exited row is a restart
+// from the recorded command line.
+func (s *Server) hostAction(req actionRequest, instanceDir, root string) actionResponse {
+	var errBuf bytes.Buffer
+	var err error
+	if req.Action == "service-stop" {
+		err = lifecycle.StopHostLocked(&errBuf, instanceDir, req.Service, s.NewStateBase, s.LegacyStateBase)
+	} else {
+		err = lifecycle.HostRestart(&errBuf, root, instanceDir, req.Service, s.NewStateBase, s.LegacyStateBase)
+	}
+	if err != nil {
+		return actionResponse{Message: err.Error()}
+	}
+	return actionResponse{OK: true, Message: req.Action + " complete"}
 }
 
 // execResult turns a lifecycle.Execute outcome into the response the page
@@ -268,6 +288,14 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	if _, isHost := info.HostProcs[service]; isHost && service != "" {
+		n, _ := strconv.Atoi(tail)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		redacted := lifecycle.NewRedactedWriter(w, info)
+		redacted.Write(lastLines(filepath.Join(instanceDir, "host-"+service+".log"), n)) //nolint:errcheck // client gone
+		redacted.Close()
+		return
+	}
 
 	select {
 	case s.logSlots <- struct{}{}:
@@ -311,4 +339,21 @@ func (f flushWriter) Write(p []byte) (int, error) {
 		flusher.Flush()
 	}
 	return n, err
+}
+
+// lastLines returns the last n lines of a file (nil when it cannot be read).
+// Host logs are truncated at each start, so reading whole is fine.
+func lastLines(path string, n int) []byte {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	lines := bytes.SplitAfter(b, []byte("\n"))
+	if len(lines) > 0 && len(lines[len(lines)-1]) == 0 {
+		lines = lines[:len(lines)-1]
+	}
+	if n < len(lines) {
+		lines = lines[len(lines)-n:]
+	}
+	return bytes.Join(lines, nil)
 }

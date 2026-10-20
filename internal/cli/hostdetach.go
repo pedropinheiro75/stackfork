@@ -20,6 +20,24 @@ import (
 var hostExecutable = os.Executable
 
 func init() {
+	lifecycle.HostRestart = func(stderr io.Writer, root, instanceDir, name, newBase, legacyBase string) error {
+		m, err := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+		if err != nil || m == nil {
+			return fmt.Errorf("no prepared stack for %s", instanceDir)
+		}
+		proc, ok := m.HostProcs[name]
+		if !ok {
+			return fmt.Errorf("no host process %s", name)
+		}
+		if len(proc.Cmdline) < 3 || !contains(proc.Cmdline, "--supervise") {
+			return fmt.Errorf("%s was not started with `host start`; start it again", name)
+		}
+		if err := lifecycle.StopHostLocked(stderr, instanceDir, name, newBase, legacyBase); err != nil {
+			return err
+		}
+		_, err = spawnSupervisor(stderr, name, proc.Cmdline[1:], hostWorkDir(root), instanceDir)
+		return err
+	}
 	lifecycle.HostStart = func(out, errOut io.Writer, base []string, root, instanceDir string, step knowledge.Step) error {
 		argv, err := knowledge.SplitArgv(step.Cmd)
 		if err != nil || len(argv) == 0 {
@@ -158,13 +176,7 @@ func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, br
 	if sub == "restart" && (len(proc.Cmdline) < 3 || !contains(proc.Cmdline, "--supervise")) {
 		return 0, fmt.Errorf("%s was not started with `host start`; start it again", name)
 	}
-	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
-	if err != nil {
-		return 0, err
-	}
-	err = lifecycle.StopHost(stderr, instanceDir, name, lifecycle.HostStopTimeout())
-	lock.Release()
-	lifecycle.ReloadProxyIfRunning(stderr, newBase, legacyBase)
+	err = lifecycle.StopHostLocked(stderr, instanceDir, name, newBase, legacyBase)
 	if err != nil {
 		return 0, err
 	}

@@ -611,3 +611,46 @@ func TestAppName(t *testing.T) {
 		}
 	}
 }
+
+func TestInventoryListsHostProcessAsService(t *testing.T) {
+	installFakeDocker(t)
+	base := t.TempDir()
+	root := gitRepo(t, "main")
+	writeInstance(t, base, "sf-hostrow-1", root, "main", []string{"db"}, nil)
+	mp := filepath.Join(base, "sf-hostrow-1", "manifest.json")
+	m, err := state.ReadManifest(mp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, err := state.ProcStart(os.Getpid())
+	if err != nil {
+		t.Skip("no process start time on this platform")
+	}
+	port := startListener(t)
+	m.HostProcs = map[string]state.HostProc{
+		"app":  {PID: os.Getpid(), StartedAt: start, Cmdline: os.Args, Port: port},
+		"gone": {PID: 999999, StartedAt: "1970-01-01T00:00:00Z", Cmdline: []string{"x"}, Port: 40999},
+	}
+	if err := state.WritePrivate(mp, m); err != nil {
+		t.Fatal(err)
+	}
+	inst := collectOne(t, base)
+	got := map[string]Service{}
+	for _, s := range inst.Services {
+		got[s.Name] = s
+	}
+	app, gone := got["app"], got["gone"]
+	if app.Kind != "host" || app.State != "running" || app.Image != "host" {
+		t.Fatalf("app: %+v", app)
+	}
+	want := "http://127.0.0.1:" + strconv.Itoa(port)
+	if len(app.Endpoints) != 1 || app.Endpoints[0].URL != want {
+		t.Errorf("app endpoints %+v, want %s", app.Endpoints, want)
+	}
+	if gone.Kind != "host" || gone.State != "exited" {
+		t.Errorf("gone: %+v", gone)
+	}
+	if inst.State != StateStopped {
+		t.Errorf("a host row must not change the instance state, got %s", inst.State)
+	}
+}
