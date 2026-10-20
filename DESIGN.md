@@ -276,7 +276,7 @@ Lightness ladder (dark, relative luminance): off 0.27 → failed 0.33 → ok 0.4
 
 ### Lanes (instance colours)
 
-Eight fills with white text (all ≥5.1:1): `lane-1 #2F5BD8`, `lane-2 #6D3FD6`, `lane-3 #B8266A`, `lane-4 #A85A00`, `lane-5 #137A4B`, `lane-6 #0B6F86`, `lane-7 #B9231F`, `lane-8 #4A4AD0`. Same values in both themes. A lane colour is assigned per instance by the existing byte-sum hash of the project slug, and it is the one colour that follows an instance everywhere: the avatar letter on its card, the branch pill of its worktree in Repos, the lane line in the worktree mini-graph, and the title stripe of its log drawer. The lane never carries state.
+Eight fills with white text (all ≥5.1:1): `lane-1 #2F5BD8`, `lane-2 #6D3FD6`, `lane-3 #B8266A`, `lane-4 #A85A00`, `lane-5 #137A4B`, `lane-6 #0B6F86`, `lane-7 #B9231F`, `lane-8 #4A4AD0`. Same values in both themes. A lane colour is assigned per app (not per instance) by the existing byte-sum hash of the app name, so every instance of the same app shares one colour, and it is the one colour that follows an app everywhere: the avatar on its cards, the branch pills of its worktrees in Repos, the lane line in the worktree mini-graph, and the title stripe of its log drawer. The lane never carries state.
 
 ### Surfaces and shadows
 
@@ -328,7 +328,7 @@ Toolbar left: filter input (`placeholder="Filter instances"`), `Running only` sw
 **InstanceCard** (full-width, `surface-1`, radius `md`, hairline border, 12 px 16 px padding):
 
 ```
-[A] acme-web  ⌥ main            ● Running   [Open App] [Stop] [⋯]
+[AW] acme-web  ⌥ main           ● Running  draft  [Open App] [Stop] [⋯]
     .worktrees/feature-login · acme-web-2ffa6841c75d.localhost
     App ↗  web ↗  Mail inbox ↗
     ▲ Database seed failed — npm: not found            [Retry seed] [⋯]
@@ -340,8 +340,8 @@ Toolbar left: filter input (`placeholder="Filter instances"`), `Running only` sw
     ◉ cache      ○ Stopped      127.0.0.1:26518 ⧉              [Start] [⋯]
 ```
 
-- **Identity**: lane avatar + project slug (`heading`) + branch pill (lane colour). The hostname hash moves to the second line in `mono fg-muted` and the path is shown relative to the repo (`.worktrees/feature-login`; the main checkout shows `main checkout`). Absolute path lives in the overflow ("Copy path", "Reveal in Finder" command) and in the `title`.
-- **State chip** (`StatusChip`): `● Running`, `◐ Partial`, `○ Stopped`, `⊘ Checkout missing`, `? Unknown`, `legacy` as an `off` chip.
+- **Identity**: lane avatar + app name (`heading`) + branch pill (lane colour). The app is the folder of the repo's main checkout (a worktree card shows its main repo, never the worktree slug; non-git roots fall back to the project name), exposed as `app` on the instance. Avatar initials are the first letter of the first two words of the app name (split on `-`, `_`, `.`, space and camelCase), or its first two letters when it is one word. The hostname hash moves to the second line in `mono fg-muted` and the path is shown relative to the repo (`.worktrees/feature-login`; the main checkout shows `main checkout`). Absolute path lives in the overflow ("Copy path", "Reveal in Finder" command) and in the `title`.
+- **State chip** (`StatusChip`): sits on the right of line 1, grouped with the knowledge chip (`draft`/`verified`) directly before the actions: `● Running`, `◐ Partial`, `○ Stopped`, `⊘ Checkout missing`, `? Unknown`, `legacy` as an `off` chip. At 400 px the actions stay on line 1 right, the pill moves to line 2 and the chips wrap after it.
 - **Actions**: one visible verb that fits the state (`Open App` when running and an app URL exists; `Start` when stopped), then `Stop`/`Restart` as ghost, then overflow (`⋯`): Down keeping volumes, Copy `.env`, Copy down command, Remove instance (danger, with the dry-run confirmation), and the warning commands. The command text is shown in the menu item as a mono second line, so the user still sees what will run.
 - **App strip**: link chips in `accent-text` with an external-link icon; a stopped app's chip is `off` with no `href`, tooltip "Starts with the stack".
 - **Callouts** (`Callout`): warnings (`attention`), seed failed (`failed`), one-off leftovers (`attention`). Title in `body-strong`, detail in `small`, error text in `mono-log` capped at 6 lines with a scroll, actions on the right: one secondary button + overflow. The seed callout's three commands become **Retry seed** (secondary), **Mark as seeded** and **Re-seed, overwriting data** (overflow, the last one danger). Each menu item shows its command in mono.

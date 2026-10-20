@@ -357,8 +357,8 @@
     var collapsed = isCollapsed(inst.project, !live);
     var cmds = commandsOf(inst);
     var down = cmds[0];
-    var app = null;
-    (inst.apps || []).forEach(function (a) { if (!app && isWebUrl(a.url) && a.running) app = a; });
+    var openApp = null;
+    (inst.apps || []).forEach(function (a) { if (!openApp && isWebUrl(a.url) && a.running) openApp = a; });
 
     var items = "";
     if (inst.state === "partial") items += menuItem(inst.project + "/menu/up", "Start stopped services", "", ' data-action="up" data-project="' + p + '"');
@@ -379,14 +379,15 @@
     items += '<hr class="menu-sep" role="separator">';
     items += menuItem(inst.project + "/menu/remove", "Remove instance and data", down, ' data-run="' + escapeHtml(down) + '"', "menu-item-danger");
 
-    var chips = chipHtml(stateChip(inst.state)) + (inst.legacy ? '<span class="chip chip-off">legacy</span>' : "") +
+    var app = appName(inst);
+    var chips = '<div class="stack-chips">' + chipHtml(stateChip(inst.state)) + (inst.legacy ? '<span class="chip chip-off">legacy</span>' : "") +
       (inst.knowledge ? '<span class="chip chip-' + (inst.knowledge.status === "draft" || inst.knowledge.status === "stale" ? "attention" : "off") +
-        '" title="Setup knowledge">' + escapeHtml(inst.knowledge.status) + "</span>" : "");
+        '" title="Setup knowledge">' + escapeHtml(inst.knowledge.status) + "</span>" : "") + "</div>";
     var meta = '<div class="stack-meta mono"><span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.rel_root || inst.root) + "</span>" +
       (inst.hostname ? '<span class="stack-sep" aria-hidden="true"> · </span><span class="stack-host" title="' + escapeHtml(inst.hostname) + '">' + escapeHtml(inst.hostname) + "</span>" : "") + "</div>";
     var actions =
       (!live ? '<button type="button" class="btn" data-action="up" data-project="' + p + '" data-key="' + p + '/up">Start</button>' : "") +
-      (live && app && isWebUrl(app.url) ? '<a class="btn mobile-hide" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" data-key="' + p + '/open" title="' + escapeHtml(app.url) + '">Open App</a>' : "") +
+      (live && openApp && isWebUrl(openApp.url) ? '<a class="btn mobile-hide" href="' + escapeHtml(openApp.url) + '" target="_blank" rel="noopener" data-key="' + p + '/open" title="' + escapeHtml(openApp.url) + '">Open App</a>' : "") +
       (live ? '<button type="button" class="btn btn-ghost mobile-hide" data-action="down" data-project="' + p + '" data-key="' + p + '/down" title="Stop (keeps volumes)">Stop</button>' : "") +
       menuHtml(inst.project + "/menu", "More actions for " + name, "More actions", items);
 
@@ -401,12 +402,12 @@
       : "";
     var appStrip = (inst.apps || []).map(function (a, i) { return appChipHtml(a, i, inst.project); }).join("");
     return (
-      '<article class="stack lane-' + (stackColorIndex(inst.project) + 1) + '" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '" data-collapsed="' + (collapsed ? "1" : "0") + '">' +
+      '<article class="stack lane-' + (stackColorIndex(app) + 1) + '" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '" data-collapsed="' + (collapsed ? "1" : "0") + '">' +
       '<header class="stack-header">' +
       '<button type="button" class="btn btn-ghost btn-icon chevron" data-toggle-stack data-project="' + p + '" data-key="' + p + '/toggle" aria-expanded="' + !collapsed +
       '" aria-label="Details for ' + escapeHtml(name) + '"><span class="chevron-glyph" aria-hidden="true"></span></button>' +
-      '<span class="avatar" aria-hidden="true">' + escapeHtml((projectSlug(inst.project || "?").charAt(0) || "?").toUpperCase()) + "</span>" +
-      '<div class="stack-id"><h3 class="stack-name" title="' + p + '">' + escapeHtml(name) + "</h3>" +
+      '<span class="avatar" aria-hidden="true">' + escapeHtml(initials(app)) + "</span>" +
+      '<div class="stack-id"><h3 class="stack-name" title="' + p + '">' + escapeHtml(app) + "</h3>" +
       '<span class="branch-pill" title="' + escapeHtml(inst.branch) + '">⌥ ' + escapeHtml(inst.branch) + "</span>" + chips +
       '<div class="stack-actions">' + actions + "</div>" + meta + "</div></header>" +
       (appStrip ? '<div class="app-strip">' + appStrip + "</div>" : "") +
@@ -415,23 +416,48 @@
     );
   }
 
-  // projectSlug must match dashboard.go's projectSlug exactly: strip the
-  // sf-/idv- instance prefix so every legacy instance doesn't show the same
-  // "R" initial and color.
+  // projectSlug must match dashboard.go's projectSlug: strip the sf-/idv-
+  // instance prefix.
   function projectSlug(project) {
     if (project.indexOf("sf-") === 0) return project.slice(3);
     if (project.indexOf("idv-") === 0) return project.slice(3);
     return project;
   }
 
+  // appName must match dashboard.go's appName: the main checkout folder,
+  // else the project's display name.
+  function appName(inst) { return inst.app || displayName(inst.project); }
+
+  // initials must match dashboard.go's initials: first letter of the first
+  // two words (split on - _ . space and camelCase), or the first two letters
+  // of a one-word name.
+  function initials(name) {
+    var words = [], cur = [], prev = "";
+    Array.from(name).forEach(function (c) {
+      if (/[-_.\s]/.test(c)) { if (cur.length) words.push(cur); cur = []; }
+      else if (cur.length && c !== c.toLowerCase() && c === c.toUpperCase() && prev !== prev.toUpperCase()) { words.push(cur); cur = [c]; }
+      else cur.push(c);
+      prev = c;
+    });
+    if (cur.length) words.push(cur);
+    if (!words.length) return "?";
+    var out = words.length === 1 ? words[0].slice(0, 2) : [words[0][0], words[1][0]];
+    return out.join("").toUpperCase();
+  }
+
   // stackColorIndex must match dashboard.go's stackColorIndex exactly: a
-  // plain byte sum mod the palette size, never a real hash, so the two
-  // sides agree without sharing code.
-  function stackColorIndex(project) {
-    var slug = projectSlug(project);
+  // plain byte sum of the app name mod the palette size, never a real hash,
+  // so the two sides agree without sharing code. (UTF-8 bytes, like Go.)
+  function stackColorIndex(app) {
+    var bytes = new TextEncoder().encode(app);
     var sum = 0;
-    for (var i = 0; i < slug.length; i++) sum += slug.charCodeAt(i);
+    for (var i = 0; i < bytes.length; i++) sum += bytes[i];
     return sum % 8;
+  }
+
+  function appOfProject(project) {
+    var found = ((state.inventory || {}).instances || []).filter(function (i) { return i.project === project; })[0];
+    return found ? appName(found) : displayName(project);
   }
 
   function matchesFilter(inst) {
@@ -584,7 +610,7 @@
   function openDrawer(title, project, bodyText, opener) {
     var panel = document.getElementById("logs-panel");
     if (panel.hidden) drawerOpener = openerOf(opener);
-    panel.className = "log-drawer" + (project ? " lane-" + (stackColorIndex(project) + 1) : "");
+    panel.className = "log-drawer" + (project ? " lane-" + (stackColorIndex(appOfProject(project)) + 1) : "");
     document.getElementById("logs-title").textContent = title;
     document.getElementById("logs-body").textContent = bodyText;
     panel.hidden = false;

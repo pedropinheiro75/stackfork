@@ -158,8 +158,11 @@ type Instance struct {
 	// linked worktree, "main checkout" for a repo's own checkout, else the
 	// path with the home directory written "~".
 	RelRoot string `json:"rel_root,omitempty"`
-	Legacy  bool   `json:"legacy"`
-	State   string `json:"state"`
+	// App is the folder name of the repo's main checkout (for a worktree,
+	// the main repo it belongs to), empty when Root is not a git checkout.
+	App    string `json:"app,omitempty"`
+	Legacy bool   `json:"legacy"`
+	State  string `json:"state"`
 
 	Services  []Service        `json:"services,omitempty"`
 	Knowledge *KnowledgeStatus `json:"knowledge,omitempty"`
@@ -302,7 +305,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 
 	hostname, _ := identity.BrowserHostname(info.Project, info.Hostname)
 	inst := Instance{
-		Project: info.Project, Root: info.Root, RelRoot: relRoot(info.Root), Branch: info.Branch,
+		Project: info.Project, Root: info.Root, RelRoot: relRoot(info.Root), App: appName(info.Root), Branch: info.Branch,
 		Hostname: hostname, Legacy: legacy, Files: info.Files,
 		Secrets: info.ResolvedSecrets(),
 	}
@@ -1022,4 +1025,28 @@ func relRoot(root string) string {
 		}
 	}
 	return root
+}
+
+// appName is the folder name of the main checkout Root belongs to: the part
+// before "/.worktrees/", the checkout itself when .git is a directory, or the
+// main repo a linked worktree's .git file points at. "" when none applies.
+func appName(root string) string {
+	if i := strings.LastIndex(root, "/.worktrees/"); i > 0 {
+		return filepath.Base(root[:i])
+	}
+	fi, err := os.Stat(filepath.Join(root, ".git"))
+	if err != nil {
+		return ""
+	}
+	if fi.IsDir() {
+		return filepath.Base(root)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".git"))
+	if err != nil {
+		return ""
+	}
+	if i := strings.Index(string(data), "/.git/worktrees/"); i > 0 {
+		return filepath.Base(string(data)[:i])
+	}
+	return ""
 }

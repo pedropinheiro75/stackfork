@@ -76,7 +76,7 @@
       <div class="wt-table">
         <div class="wt-head micro" aria-hidden="true"><span>Lane</span><span>Branch</span><span>Path</span><span>Ahead / behind upstream</span><span>State</span><span></span></div>
         {{$nwt := len $r.Worktrees}}
-        {{range $j, $w := $r.Worktrees}}{{$lane := laneOf $w}}
+        {{range $j, $w := $r.Worktrees}}{{$lane := laneOf $r $w}}
         <div class="wt-row{{if $lane}} lane-{{$lane}}{{end}}{{if $w.Main}} wt-main{{end}}{{if isLast $j $nwt}} wt-last{{end}}" data-key="{{$r.Path}}/wt/{{$w.Path}}">
           <span class="wt-lane" aria-hidden="true"><svg width="24" height="100%" focusable="false"><rect class="lane-trunk" x="11" y="0" width="2" height="100%"/>{{if not $w.Main}}<rect class="lane-stub{{if not $lane}} lane-none{{end}}" x="11" y="50%" width="9" height="2"/>{{end}}<circle class="lane-dot{{if not $lane}} lane-none{{end}}" cx="{{if $w.Main}}12{{else}}20{{end}}" cy="50%" r="3"/></svg></span>
           <span class="wt-branch">

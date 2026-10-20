@@ -150,15 +150,15 @@
 {{define "chip"}}<span class="chip chip-{{.Class}}"{{if .Title}} title="{{.Title}}"{{end}}><span class="chip-glyph" aria-hidden="true">{{.Glyph}}</span>{{.Label}}</span>{{end}}
 
 {{define "stack"}}
-{{$inst := .}}{{$p := .Project}}{{$name := displayName .Project}}{{$live := isLive .State}}{{$app := openApp .Apps}}
+{{$inst := .}}{{$p := .Project}}{{$name := displayName .Project}}{{$appName := appName .Instance}}{{$live := isLive .State}}{{$app := openApp .Apps}}
 <article class="stack lane-{{lane .ColorIndex}}" data-project="{{.Project}}" data-state="{{.State}}" data-collapsed="{{if $live}}0{{else}}1{{end}}">
 <header class="stack-header">
 <button type="button" class="btn btn-ghost btn-icon chevron" data-toggle-stack data-project="{{.Project}}" data-key="{{.Project}}/toggle" aria-expanded="{{if $live}}true{{else}}false{{end}}" aria-label="Details for {{$name}}"><span class="chevron-glyph" aria-hidden="true"></span></button>
-<span class="avatar" aria-hidden="true">{{initial .Project}}</span>
+<span class="avatar" aria-hidden="true">{{initial $appName}}</span>
 <div class="stack-id">
-<h3 class="stack-name" title="{{.Project}}">{{$name}}</h3>
+<h3 class="stack-name" title="{{.Project}}">{{$appName}}</h3>
 <span class="branch-pill" title="{{.Branch}}">&#8997; {{.Branch}}</span>
-{{template "chip" stateChip .State}}{{if .Legacy}}<span class="chip chip-off">legacy</span>{{end}}{{if .Knowledge}}<span class="chip chip-{{knowledgeTone .Knowledge.Status}}" title="Setup knowledge">{{.Knowledge.Status}}</span>{{end}}
+<div class="stack-chips">{{template "chip" stateChip .State}}{{if .Legacy}}<span class="chip chip-off">legacy</span>{{end}}{{if .Knowledge}}<span class="chip chip-{{knowledgeTone .Knowledge.Status}}" title="Setup knowledge">{{.Knowledge.Status}}</span>{{end}}</div>
 <div class="stack-actions">
 {{if not $live}}<button type="button" class="btn" data-action="up" data-project="{{.Project}}" data-key="{{.Project}}/up">Start</button>{{end}}
 {{if and $live $app}}<a class="btn mobile-hide" href="{{$app.URL}}" target="_blank" rel="noopener" data-key="{{.Project}}/open" title="{{$app.URL}}">Open App</a>{{end}}

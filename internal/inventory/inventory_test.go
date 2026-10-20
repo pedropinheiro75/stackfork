@@ -585,3 +585,29 @@ func TestRelRoot(t *testing.T) {
 		}
 	}
 }
+
+func TestAppName(t *testing.T) {
+	parent := t.TempDir()
+	main := filepath.Join(parent, "acme-web")
+	wt := filepath.Join(parent, "elsewhere", "feat")
+	for _, d := range []string{filepath.Join(main, ".git", "worktrees", "feat"), wt} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitfile := "gitdir: " + filepath.Join(main, ".git", "worktrees", "feat") + "\n"
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte(gitfile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for root, want := range map[string]string{
+		main:                             "acme-web",
+		main + "/.worktrees/328-add-x":   "acme-web",
+		wt:                               "acme-web",
+		t.TempDir():                      "",
+		filepath.Join(parent, "missing"): "",
+	} {
+		if got := appName(root); got != want {
+			t.Errorf("appName(%q) = %q, want %q", root, got, want)
+		}
+	}
+}

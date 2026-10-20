@@ -218,13 +218,13 @@ func bar(ahead, behind int) barView {
 	return barView{Ahead: a, Behind: total - a}
 }
 
-// laneOf is the 1-based lane colour of a worktree (its instance's colour),
+// laneOf is the 1-based lane colour of a worktree (its app's colour, same as the instance card),
 // 0 when it has no instance.
-func laneOf(w repos.Worktree) int {
+func laneOf(r repos.Repo, w repos.Worktree) int {
 	if w.Instance == nil {
 		return 0
 	}
-	return stackColorIndex(w.Instance.Project) + 1
+	return stackColorIndex(r.Name) + 1
 }
 
 func shortSha(branch string) string {

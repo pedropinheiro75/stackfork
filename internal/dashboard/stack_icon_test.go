@@ -11,15 +11,16 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
-// TestStackIconUsesSlugAfterPrefix covers the maintainer's real-machine
-// feedback: the stack icon's initial letter (and its color, indirectly)
-// come from the project name with its sf-/idv- instance prefix stripped, so
-// every legacy instance doesn't render the same "R" - "idv-app-b-..." must
-// show "C", not "R".
-func TestStackIconUsesSlugAfterPrefix(t *testing.T) {
+// TestStackIconUsesAppName: the avatar initials and the card heading come
+// from the app (the repo's main checkout folder), never from the worktree
+// slug or the instance prefix.
+func TestStackIconUsesAppName(t *testing.T) {
 	installFakeDocker(t)
 	newBase, legacyBase := t.TempDir(), t.TempDir()
-	root := fixtureGitRepo(t, "main")
+	root := filepath.Join(t.TempDir(), "export-user-portal")
+	if err := os.Rename(fixtureGitRepo(t, "main"), root); err != nil {
+		t.Fatal(err)
+	}
 
 	project := "idv-app-b-isolated-20260922-071e511abe10"
 	dir := filepath.Join(legacyBase, project)
@@ -57,7 +58,10 @@ func TestStackIconUsesSlugAfterPrefix(t *testing.T) {
 	start := strings.Index(body, `class="avatar"`)
 	end := strings.Index(body[start:], "</span>") + start
 	iconElement := body[start:end]
-	if !strings.HasSuffix(iconElement, ">C") {
-		t.Fatalf("expected the stack icon's initial to be C (from \"app-b\", not the idv- prefix), got element %q", iconElement)
+	if !strings.HasSuffix(iconElement, ">EU") {
+		t.Fatalf("expected the avatar initials EU (from the app folder export-user-portal), got element %q", iconElement)
+	}
+	if !strings.Contains(body, `<h3 class="stack-name" title="`+project+`">export-user-portal</h3>`) {
+		t.Fatalf("expected the card heading to be the app name:\n%s", body)
 	}
 }

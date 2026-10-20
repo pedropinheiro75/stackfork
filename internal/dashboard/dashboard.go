@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
@@ -46,12 +47,8 @@ var indexFuncs = template.FuncMap{
 	"warningCommands": warningCommands,
 	"endpointNote":    endpointNote,
 	"isLive":          func(state string) bool { return isRunningState(state) },
-	"initial": func(project string) string {
-		for _, r := range projectSlug(project) {
-			return strings.ToUpper(string(r))
-		}
-		return "?"
-	},
+	"initial":         initials,
+	"appName":         appName,
 }
 
 var indexTemplate = template.Must(
@@ -271,14 +268,60 @@ func projectSlug(project string) string {
 	return project
 }
 
-// stackColorIndex hashes a project's slug (a simple byte sum, deliberately
-// not a real hash function: it only needs to be cheap and identical on both
+// appName is the app an instance belongs to: the main checkout folder
+// computed by inventory, else the project's display name.
+func appName(inst inventory.Instance) string {
+	if inst.App != "" {
+		return inst.App
+	}
+	return displayName(inst.Project)
+}
+
+// initials is the avatar text of an app name: the first letter of its first
+// two words (split on - _ . space and camelCase), or its first two letters
+// when it is one word. app.js's initials must match.
+func initials(name string) string {
+	var words [][]rune
+	var cur []rune
+	var prev rune
+	for _, r := range name {
+		switch {
+		case r == '-' || r == '_' || r == '.' || unicode.IsSpace(r):
+			if cur != nil {
+				words, cur = append(words, cur), nil
+			}
+		case unicode.IsUpper(r) && unicode.IsLower(prev) && cur != nil:
+			words, cur = append(words, cur), []rune{r}
+		default:
+			cur = append(cur, r)
+		}
+		prev = r
+	}
+	if cur != nil {
+		words = append(words, cur)
+	}
+	var out []rune
+	switch {
+	case len(words) == 0:
+		return "?"
+	case len(words) == 1:
+		out = words[0]
+		if len(out) > 2 {
+			out = out[:2]
+		}
+	default:
+		out = []rune{words[0][0], words[1][0]}
+	}
+	return strings.ToUpper(string(out))
+}
+
+// stackColorIndex hashes an app name (a simple byte sum, deliberately not a
+// real hash function: it only needs to be cheap and identical on both
 // sides, not collision-resistant) into 0..stackPaletteSize-1.
-func stackColorIndex(project string) int {
-	slug := projectSlug(project)
+func stackColorIndex(app string) int {
 	sum := 0
-	for i := 0; i < len(slug); i++ {
-		sum += int(slug[i])
+	for i := 0; i < len(app); i++ {
+		sum += int(app[i])
 	}
 	return sum % stackPaletteSize
 }
@@ -292,7 +335,7 @@ func isRunningState(state string) bool {
 
 func buildCards(instances []inventory.Instance) (running, stopped []cardData) {
 	for _, inst := range instances {
-		card := cardData{Instance: inst, Commands: cliCommands(inst), ColorIndex: stackColorIndex(inst.Project)}
+		card := cardData{Instance: inst, Commands: cliCommands(inst), ColorIndex: stackColorIndex(appName(inst))}
 		if isRunningState(inst.State) {
 			running = append(running, card)
 		} else {
