@@ -518,3 +518,22 @@ func TestStartEnvRunsSchema1MigrateInPrimaryService(t *testing.T) {
 		}
 	}
 }
+
+// plan --trust from a worktree reads the plan start-env reads: the worktree's
+// own file, else the main repo's.
+func TestPlanTrustFromWorktreeUsesMainPlan(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, hybridSteps)
+	wt := filepath.Join(repo, ".worktrees", "wt")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "wt", wt).CombinedOutput(); err != nil {
+		t.Fatalf("%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(wt, ".stackfork", "knowledge.json")); err == nil {
+		t.Skip("worktree carries its own knowledge.json")
+	}
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	out, e, code := runCLI(t, append(base, "--root", wt, "plan", "--trust")...)
+	if code != 0 || !strings.Contains(out, "trusted on this machine") {
+		t.Fatalf("%d %s %s", code, out, e)
+	}
+}

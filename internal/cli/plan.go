@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -22,13 +23,17 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 	if err := fs.Parse(subArgs); err != nil {
 		return parseFailure(fs, err)
 	}
-	k, err := knowledge.Load(knowledgePath(root))
-	if err != nil {
-		return 2, fmt.Errorf("no startup plan; run `stackfork learn` first: %w", err)
-	}
 	main := repos.MainRepoOf(root)
 	if main == "" {
 		main = root
+	}
+	// same lookup as start-env: the checkout's own file, then the main repo's
+	k, err := knowledge.LoadFirst(root, main)
+	if err == nil && k == nil {
+		err = errors.New("knowledge.json not found")
+	}
+	if err != nil {
+		return 2, fmt.Errorf("no startup plan; run `stackfork learn` first: %w", err)
 	}
 
 	if *trustFlag {
