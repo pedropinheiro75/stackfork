@@ -363,7 +363,7 @@
     }
     var more = step ? menuHtml(p + "/run/menu", "More run actions for " + name, "More run actions",
       menuItem(p + "/run/viewlog", "View log", "", runLogAttrs(p, lr.id, step))) : "";
-    return '<div class="callout callout-' + (interrupted ? "attention" : "failed") + '" data-run="' + escapeHtml(lr.outcome) + '"><span class="callout-glyph" aria-hidden="true">' +
+    return '<div class="callout callout-' + (interrupted ? "attention" : "failed") + '" data-run-outcome="' + escapeHtml(lr.outcome) + '"><span class="callout-glyph" aria-hidden="true">' +
       (interrupted ? GLYPH.attention : GLYPH.failed) + '</span><div class="callout-body"><p class="callout-title">' + title + "</p>" +
       (lr.tail ? '<pre class="mono-log" tabindex="0" data-key="' + escapeHtml(p) + '/run/log" aria-label="Output of step ' + escapeHtml(step) + '">' + escapeHtml(lr.tail) + "</pre>" : "") +
       '</div><div class="callout-actions">' + retry + more + "</div></div>";
@@ -1928,7 +1928,7 @@
   // The script tests (appscript_runs_test.go) load this file in Node and ask
   // for the functions they exercise; a browser never defines __sfExport.
   if (typeof window.__sfExport === "function") {
-    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml });
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml });
   }
 
   if (document.readyState === "loading") {

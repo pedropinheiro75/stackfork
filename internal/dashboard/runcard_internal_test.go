@@ -37,7 +37,7 @@ var runCardCases = []struct {
 		[]string{`title="step 3 of 6: seed"`, "Starting…"}, []string{">Stopped<", "callout"}},
 	{"failed start-env", runInst(&inventory.LastRun{ID: 4, Command: "start-env", Trigger: "dashboard", Outcome: "failed", FailedStep: "app", StartedAt: ago5(), EndedAt: ago5(),
 		Retry: "stackfork --root /src/acme-web/.worktrees/feature-login start-env", Tail: "line 1\nboom <b>"}, nil),
-		[]string{`class="callout callout-failed" data-run="failed"`, `Start failed at step <code class="mono">app</code>`, `data-repo-action="start"`,
+		[]string{`class="callout callout-failed" data-run-outcome="failed"`, `Start failed at step <code class="mono">app</code>`, `data-repo-action="start"`,
 			`data-repo="/src/acme-web"`, `data-path="/src/acme-web/.worktrees/feature-login"`, "line 1\nboom &lt;b&gt;", `data-run-id="4" data-step="app"`, ">View log<"}, []string{"data-seed", "Last run"}},
 	{"failed up", runInst(&inventory.LastRun{ID: 5, Command: "up", Trigger: "cli", Outcome: "failed", FailedStep: "up", StartedAt: ago5(), EndedAt: ago5(),
 		Retry: "stackfork --instance sf-acme-web-2ffa6841c75d up"}, nil),
@@ -46,24 +46,24 @@ var runCardCases = []struct {
 		[]string{">Start failed</p>"}, []string{">Retry<", ">View log<", "<code"}},
 	{"interrupted", runInst(&inventory.LastRun{ID: 7, Command: "start-env", Trigger: "cli", Outcome: "interrupted", FailedStep: "up", StartedAt: ago5(),
 		Retry: "stackfork --root /src/acme-web/.worktrees/feature-login start-env"}, nil),
-		[]string{`class="callout callout-attention" data-run="interrupted"`, "Start interrupted at step", ">Retry<"}, []string{"callout-failed"}},
+		[]string{`class="callout callout-attention" data-run-outcome="interrupted"`, "Start interrupted at step", ">Retry<"}, []string{"callout-failed"}},
 	{"succeeded", runInst(&inventory.LastRun{ID: 8, Command: "up", Trigger: "cli", Outcome: "succeeded", StartedAt: ago5(), EndedAt: ago5().Add(41 * time.Second)}, nil),
 		[]string{"Last run", "succeeded · 41 s · 5 min ago", `data-run-id="8" data-step=""`}, []string{"callout"}},
 	{"seed failure reported once", runInst(&inventory.LastRun{ID: 9, Command: "start-env", Trigger: "cli", Outcome: "failed", FailedStep: "seed", StartedAt: ago5(), EndedAt: ago5(),
 		Retry: "stackfork --instance sf-acme-web-2ffa6841c75d seed", Tail: "duplicate key"}, func(i *inventory.Instance) {
 		i.SeedCommand, i.SeedForce, i.SeedDone = "stackfork --instance P seed", "stackfork --instance P seed --force", "stackfork --instance P seed --mark-done"
 		i.SeedError, i.SeedRun, i.SeedStep = "duplicate key", 9, "seed"
-	}), []string{`data-seed="failed"`, `data-run-log data-project="sf-acme-web-2ffa6841c75d" data-run-id="9" data-step="seed"`, ">View log<"}, []string{`data-run="failed"`, "Start failed"}},
+	}), []string{`data-seed="failed"`, `data-run-log data-project="sf-acme-web-2ffa6841c75d" data-run-id="9" data-step="seed"`, ">View log<"}, []string{`data-run-outcome="failed"`, "Start failed"}},
 	{"interrupted at the seed shows both", runInst(&inventory.LastRun{ID: 11, Command: "start-env", Trigger: "cli", Outcome: "interrupted", FailedStep: "seed", StartedAt: ago5(),
 		Retry: "stackfork --root /src/acme-web/.worktrees/feature-login start-env"}, func(i *inventory.Instance) {
 		i.SeedCommand, i.SeedDone, i.SeedForce = "stackfork --instance P seed", "d", "f"
 		i.SeedRun, i.SeedStep = 11, "seed"
-	}), []string{`data-seed="failed"`, `data-run="interrupted"`, "Start interrupted at step"}, nil},
+	}), []string{`data-seed="failed"`, `data-run-outcome="interrupted"`, "Start interrupted at step"}, nil},
 	{"seed callout of an older run", runInst(&inventory.LastRun{ID: 10, Command: "up", Trigger: "cli", Outcome: "failed", FailedStep: "up", StartedAt: ago5(), EndedAt: ago5(),
 		Retry: "stackfork --instance sf-acme-web-2ffa6841c75d up"}, func(i *inventory.Instance) {
 		i.SeedCommand, i.SeedDone, i.SeedForce = "stackfork --instance P seed", "d", "f"
 		i.SeedRun, i.SeedStep = 8, "seed"
-	}), []string{`data-seed="failed"`, `data-run="failed"`, "Start failed at step"}, nil},
+	}), []string{`data-seed="failed"`, `data-run-outcome="failed"`, "Start failed at step"}, nil},
 }
 
 func renderVersion(t *testing.T, i inventory.Instance) string {

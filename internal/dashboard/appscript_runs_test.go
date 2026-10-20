@@ -33,3 +33,9 @@ func TestPlanListLiveRunSurvivesARender(t *testing.T) {
 func TestRunLogDrawerStepSelector(t *testing.T) {
 	runAppJS(t, "runs_drawer.case.js")
 }
+
+// A click inside the run callout (Retry, View log, the body) must not reach
+// the document's [data-run] handler, which posts /api/run.
+func TestRunCalloutIsNotAClickTarget(t *testing.T) {
+	runAppJS(t, "run_callout.case.js")
+}
