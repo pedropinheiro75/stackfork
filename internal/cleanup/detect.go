@@ -35,6 +35,10 @@ type Result struct {
 	Branch string
 	State  string // Merged, Closed or Open
 	Via    string // set when Merged
+	// Set by GH.Enrich when the forge answered.
+	PR    int
+	URL   string
+	Forge string // MERGED, CLOSED or OPEN as the forge says
 }
 
 // Remote is the remote of the default branch: its configured remote, else origin.
