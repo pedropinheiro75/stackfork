@@ -70,10 +70,18 @@ func Log(dir string, id int, step string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, s := range r.Steps {
-		if s.ID == step && s.Log != "" {
-			return os.ReadFile(filepath.Join(runsDir(dir), filepath.FromSlash(s.Log)))
+	for i, s := range r.Steps {
+		if s.ID != step || s.Log == "" {
+			continue
 		}
+		if s.Log != itoa(r.ID)+"/"+logFileName(s.ID, i+1) { // a stored file is not trusted for a path
+			return nil, ErrNotFound
+		}
+		p := filepath.Join(runsDir(dir), filepath.FromSlash(s.Log))
+		if fi, err := os.Lstat(p); err != nil || !fi.Mode().IsRegular() {
+			return nil, ErrNotFound
+		}
+		return os.ReadFile(p)
 	}
 	return nil, ErrNotFound
 }

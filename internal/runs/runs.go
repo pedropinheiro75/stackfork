@@ -203,11 +203,13 @@ func (r *Run) Finish(err error) {
 
 // logName is the file name for a step log: the step id, or step-<n> when the
 // id holds a path separator (or nothing).
-func (s *Step) logName() string {
-	if s.ID == "" || strings.ContainsAny(s.ID, `/\`) {
-		return fmt.Sprintf("step-%d.log", s.index)
+func (s *Step) logName() string { return logFileName(s.ID, s.index) }
+
+func logFileName(id string, index int) string {
+	if id == "" || strings.ContainsAny(id, `/\`) {
+		return fmt.Sprintf("step-%d.log", index)
 	}
-	return s.ID + ".log"
+	return id + ".log"
 }
 
 // Start marks the step running and returns its writer: redactor, then the

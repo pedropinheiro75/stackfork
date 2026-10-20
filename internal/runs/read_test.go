@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -102,5 +103,36 @@ func TestKilledProcessReadsInterrupted(t *testing.T) {
 	got, _ = Get(dir, 1)
 	if got.Outcome != Interrupted || got.Steps[0].State != Failed || got.Steps[0].Reason != "interrupted" {
 		t.Fatalf("after kill: %s %+v", got.Outcome, got.Steps[0])
+	}
+}
+
+// Log trusts the stored run only when its log path is the one the writer
+// would have made, and never follows a symlink.
+func TestLogRefusesTamperedPathAndSymlink(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := Begin(dir, Meta{Command: "up"})
+	s := r.Step("s", "exec", "x")
+	s.Start().Write([]byte("line\n"))
+	s.End(nil, 0)
+	r.Finish(nil)
+	outside := filepath.Join(t.TempDir(), "secret")
+	os.WriteFile(outside, []byte("private"), 0o600)
+
+	path := filepath.Join(runsDir(dir), "1.json")
+	data, _ := os.ReadFile(path)
+	rel, _ := filepath.Rel(runsDir(dir), outside)
+	os.WriteFile(path, []byte(strings.Replace(string(data), `"1/s.log"`, `"`+filepath.ToSlash(rel)+`"`, 1)), 0o600)
+	if b, err := Log(dir, 1, "s"); err == nil {
+		t.Fatalf("a log path outside <id>/<step>.log was read: %q", b)
+	}
+
+	os.WriteFile(path, data, 0o600) // restore the stored path, then swap the file for a link
+	logf := filepath.Join(runsDir(dir), "1", "s.log")
+	os.Remove(logf)
+	if err := os.Symlink(outside, logf); err != nil {
+		t.Skip("no symlinks:", err)
+	}
+	if b, err := Log(dir, 1, "s"); err == nil {
+		t.Fatalf("a symlinked log was read: %q", b)
 	}
 }
