@@ -216,18 +216,20 @@ var OpenAgentTerminal = func(stateBase, term, dir string, a agentDef, prompt str
 
 // openWindowsTerminal writes the prompt and a .ps1 launcher next to each
 // other (same 0o700 dir) and opens a PowerShell window running it: Windows
-// Terminal when wt.exe is on PATH, else a plain console via cmd's start.
+// Terminal when wt.exe is on PATH, else a plain PowerShell in its own console.
 func openWindowsTerminal(launchDir, id, dir string, a agentDef, prompt string) error {
 	promptPath := filepath.Join(launchDir, id+".prompt.txt")
 	if err := os.WriteFile(promptPath, []byte(prompt), 0o600); err != nil {
 		return err
 	}
 	ps1 := filepath.Join(launchDir, id+".ps1")
-	if err := os.WriteFile(ps1, []byte(psLauncherScript(dir, a.Bin, a.Flag, promptPath)), 0o600); err != nil {
+	if err := os.WriteFile(ps1, psLauncherFile(psLauncherScript(dir, a.Bin, a.Flag, promptPath)), 0o600); err != nil {
 		return err
 	}
-	if wt, err := exec.LookPath("wt.exe"); err == nil {
+	if wt, err := exec.LookPath("wt.exe"); err == nil && wtUsable(dir) && wtUsable(ps1) {
 		return exec.Command(wt, "-d", dir, "powershell", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", ps1).Start()
 	}
-	return exec.Command("cmd", "/c", "start", "", "powershell", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", ps1).Start()
+	c := exec.Command("powershell", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", ps1)
+	c.SysProcAttr = newConsoleAttr()
+	return c.Start()
 }

@@ -61,7 +61,9 @@ var Confirm = func(title, text string) (bool, error) {
 	if runtime.GOOS == "windows" {
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
-		out, err := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", psMessageBoxScript(title, text)).Output()
+		cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(psMessageBoxScript()))
+		cmd.Env = confirmEnv(os.Environ(), title, text)
+		out, err := cmd.Output()
 		return err == nil && strings.TrimSpace(string(out)) == "OK", nil
 	}
 	if runtime.GOOS != "darwin" {
