@@ -21,6 +21,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/learn"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
@@ -928,11 +929,13 @@ func endOf(text string, n int) string {
 // run and step it came from; "" when no run did (an instance seeded before
 // runs existed has only seed.log).
 func seedRunLog(instanceDir, root string) (text string, run int, step string) {
-	id := "seed"
-	if k, _ := knowledge.LoadFirst(root); k != nil {
-		if st := k.Plan.SeedStep(); st != nil {
-			id = st.ID
-		}
+	main := identity.MainRepoOf(root)
+	if main == "" {
+		main = root
+	}
+	id := "seed" // the step a Start or `seed` records, as SeedEntry names it
+	if st, ok := lifecycle.SeedEntry(root, main, instanceDir, lifecycle.LoadPlan(root, main), lifecycle.PlanMode(root, main)); ok {
+		id = st.ID
 	}
 	all, _ := runs.List(instanceDir)
 	for _, r := range all {

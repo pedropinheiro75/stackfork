@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
@@ -102,5 +103,39 @@ func TestLastRunCarriesRetryTailAndRunningStep(t *testing.T) {
 	if lr.Outcome != runs.Failed || lr.FailedStep != "app" || lr.Retry != "stackfork --root /x start-env" || lr.Step != "" ||
 		lr.Tail != "line 4\nline 5\nline 6\nline 7\nline 8\nline 9" {
 		t.Fatalf("failed: %+v", lr)
+	}
+}
+
+// The seed step is found as SeedEntry finds it: through the main checkout's
+// plan when the instance is a linked worktree.
+func TestSeedRunLogUsesTheMainCheckoutsPlan(t *testing.T) {
+	installFakeDocker(t)
+	base := t.TempDir()
+	main := gitRepo(t, "main")
+	wt := filepath.Join(main, ".worktrees", "wt")
+	os.MkdirAll(wt, 0o755)
+	os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+filepath.Join(main, ".git", "worktrees", "wt")+"\n"), 0o644)
+	os.WriteFile(filepath.Join(wt, "package.json"), []byte(`{"scripts":{"db:seed":"bun scripts/seed"}}`), 0o600)
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Plan: knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "load-data", Kind: knowledge.KindExec, Once: knowledge.OnceData, Cmd: "bun scripts/seed"},
+	}}}
+	if err := k.Save(filepath.Join(main, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	writeInstance(t, base, "sf-seed-3", wt, "wt", []string{"web"}, nil)
+	dir := filepath.Join(base, "sf-seed-3")
+	mp := filepath.Join(dir, "manifest.json")
+	m, _ := state.ReadManifest(mp)
+	f := false
+	m.Seeded = &f
+	state.WritePrivate(mp, m)
+	r, _ := runs.Begin(dir, runs.Meta{Command: "start-env", Trigger: "cli"})
+	s := r.Step("load-data", "exec", "seed")
+	s.Start().Write([]byte("seed failed here\n"))
+	s.End(errors.New("exited with status 1"), 1)
+	r.Finish(errors.New("failed"))
+	if i := collectOne(t, base); i.SeedStep != "load-data" || i.SeedError != "seed failed here" {
+		t.Fatalf("%q %q", i.SeedStep, i.SeedError)
 	}
 }

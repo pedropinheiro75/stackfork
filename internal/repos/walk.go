@@ -67,7 +67,7 @@ func Walk(roots, exclude []string, maxDepth int) []string {
 				// (e.g. a projects folder that is itself a git repo).
 				return nil
 			case fi.Mode().IsRegular():
-				if main := mainRepoOfWorktree(path); main != "" && underAny(roots, main) && !excludedPath(roots, skip, main) {
+				if main := identity.MainRepoOfWorktree(path); main != "" && underAny(roots, main) && !excludedPath(roots, skip, main) {
 					add(main)
 				}
 				return fs.SkipDir
@@ -103,49 +103,6 @@ func excludedPath(roots []string, skip map[string]bool, p string) bool {
 	return false
 }
 
-// mainRepoOfWorktree reads a worktree's .git file ("gitdir: <common>/
-// worktrees/<name>") and returns the main checkout, or "" for anything
-// else (a submodule, a malformed file).
-func mainRepoOfWorktree(dir string) string {
-	data, err := os.ReadFile(filepath.Join(dir, ".git"))
-	if err != nil {
-		return ""
-	}
-	line := strings.TrimSpace(string(data))
-	gitdir, ok := strings.CutPrefix(line, "gitdir:")
-	if !ok {
-		return ""
-	}
-	gitdir = strings.TrimSpace(gitdir)
-	if !filepath.IsAbs(gitdir) {
-		gitdir = filepath.Join(dir, gitdir)
-	}
-	if filepath.Base(filepath.Dir(gitdir)) != "worktrees" {
-		return ""
-	}
-	common := filepath.Dir(filepath.Dir(gitdir))
-	if filepath.Base(common) != ".git" {
-		return ""
-	}
-	main := filepath.Dir(common)
-	if _, err := os.Stat(filepath.Join(main, ".git")); err != nil {
-		return ""
-	}
-	if r, err := identity.ResolvePath(main); err == nil {
-		return r
-	}
-	return ""
-}
-
 // MainRepoOf returns the main checkout for a repo root or a linked
 // worktree, or "" when dir is neither.
-func MainRepoOf(dir string) string {
-	fi, err := os.Lstat(filepath.Join(dir, ".git"))
-	switch {
-	case err != nil:
-		return ""
-	case fi.IsDir():
-		return dir
-	}
-	return mainRepoOfWorktree(dir)
-}
+func MainRepoOf(dir string) string { return identity.MainRepoOf(dir) }
