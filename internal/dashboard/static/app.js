@@ -128,6 +128,17 @@
     }
   }
 
+  // A project (app) is expanded unless the user collapsed it.
+  function projectCollapsedKey(app) {
+    return "stackfork:project-collapsed:" + app;
+  }
+  function isProjectCollapsed(app) {
+    try { return localStorage.getItem(projectCollapsedKey(app)) === "1"; } catch (e) { return false; }
+  }
+  function setProjectCollapsed(app, collapsed) {
+    try { localStorage.setItem(projectCollapsedKey(app), collapsed ? "1" : "0"); } catch (e) { /* ignore */ }
+  }
+
   // --- rendering ---------------------------------------------------------
   // Instance cards are rendered twice: by the Go template (first paint) and
   // here (every poll). Both emit the same markup, so a change to one is a
@@ -216,13 +227,24 @@
   // Only http(s) URLs become links (html/template's guarantee on first paint).
   function isWebUrl(u) { return /^https?:\/\//.test(u || ""); }
 
+  // The knowledge-only host app chip never prints its hint inline: it sits in
+  // the tooltip and in the version menu (hostHint). Must match the template.
   function appChipHtml(app, i, project) {
     if (isWebUrl(app.url) && app.running) {
       var title = app.url + (app.direct ? " (direct: " + app.direct + ")" : "");
       return '<a class="app-chip" data-key="' + escapeHtml(project) + '/app' + i + '" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(title) + '">' + escapeHtml(app.label) + "</a>";
     }
-    var hint = !app.url && app.hint ? ": " + escapeHtml(app.hint) : "";
-    return '<span class="app-chip stopped" title="Starts with the stack">' + escapeHtml(app.label) + hint + "</span>";
+    var l = escapeHtml(app.label);
+    if (app.url) return '<span class="app-chip stopped" title="Starts with the stack">' + l + "</span>";
+    if (app.source === "knowledge") return '<span class="app-chip stopped host" title="' + escapeHtml(app.hint || "") + '">' + l + " · on host</span>";
+    if (app.hint) return '<span class="app-chip stopped" title="Starts with the stack">' + l + " · " + escapeHtml(app.hint) + "</span>";
+    return '<span class="app-chip stopped" title="Starts with the stack">' + l + "</span>";
+  }
+
+  function hostHint(apps) {
+    var h = "";
+    (apps || []).forEach(function (a) { if (!h && a.source === "knowledge" && a.hint) h = a.hint; });
+    return h;
   }
 
   // endpointNote must match dot.go's endpointNote.
@@ -292,7 +314,7 @@
 
   // The seed callout: Retry seed is the button; Mark as seeded and the
   // overwriting Re-seed live in the menu, each with its command in mono.
-  function seedHtml(inst) {
+  function seedHtml(inst, name) {
     if (!inst.seed_command) return "";
     var k = inst.project;
     return '<div class="callout callout-failed" data-seed="failed"><span class="callout-glyph" aria-hidden="true">' + GLYPH.failed + "</span>" +
@@ -301,7 +323,7 @@
       (inst.seed_error ? '<pre class="mono-log" tabindex="0" data-key="' + escapeHtml(k) + '/seed/log" aria-label="Seed output">' + escapeHtml(inst.seed_error) + "</pre>" : "") + "</div>" +
       '<div class="callout-actions"><button type="button" class="btn" data-run="' + escapeHtml(inst.seed_command) + '" data-key="' + escapeHtml(k) +
       '/seed/retry" title="' + escapeHtml(inst.seed_command) + '">Retry seed</button>' +
-      menuHtml(k + "/seed/menu", "More seed actions for " + displayName(k), "More seed actions",
+      menuHtml(k + "/seed/menu", "More seed actions for " + name, "More seed actions",
         menuItem(k + "/seed/done", "Mark as seeded", inst.seed_done, ' data-run="' + escapeHtml(inst.seed_done) + '"') +
         '<hr class="menu-sep" role="separator">' +
         menuItem(k + "/seed/force", "Re-seed, overwriting data", inst.seed_force, ' data-run="' + escapeHtml(inst.seed_force) + '"', "menu-item-danger")) +
@@ -350,9 +372,11 @@
 
   function isLive(inst) { return inst.state === "running" || inst.state === "partial"; }
 
-  function stackHtml(inst) {
+  function versionHtml(inst) {
     var p = escapeHtml(inst.project);
-    var name = displayName(inst.project);
+    var app = appName(inst);
+    var name = app + " " + inst.branch;
+    var hint = hostHint(inst.apps);
     var live = isLive(inst);
     var collapsed = isCollapsed(inst.project, !live);
     var cmds = commandsOf(inst);
@@ -367,6 +391,7 @@
       items += menuItem(inst.project + "/menu/down", "Stop", "", ' data-action="down" data-project="' + p + '"', "mobile-only");
     }
     items += menuItem(inst.project + "/menu/path", "Copy path", "", ' data-copy="' + escapeHtml(inst.root) + '"');
+    if (hint) items += menuItem(inst.project + "/menu/host", "How to run the host app", hint, ' data-copy="' + escapeHtml(hint) + '" title="' + escapeHtml(hint) + '"');
     if (inst.env_block) {
       items += menuItem(inst.project + "/menu/env", "Copy .env for host app", "",
         ' data-copy="' + escapeHtml(inst.env_block) + '" data-copy-kind="env_block" data-copy-project="' + p + '"');
@@ -379,15 +404,14 @@
     items += '<hr class="menu-sep" role="separator">';
     items += menuItem(inst.project + "/menu/remove", "Remove instance and data", down, ' data-run="' + escapeHtml(down) + '"', "menu-item-danger");
 
-    var app = appName(inst);
     var chips = '<div class="stack-chips">' + chipHtml(stateChip(inst.state)) + (inst.legacy ? '<span class="chip chip-off">legacy</span>' : "") +
-      (inst.knowledge ? '<span class="chip chip-' + (inst.knowledge.status === "draft" || inst.knowledge.status === "stale" ? "attention" : "off") +
-        '" title="Setup knowledge">' + escapeHtml(inst.knowledge.status) + "</span>" : "") + "</div>";
+      (inst.knowledge && (inst.knowledge.status === "draft" || inst.knowledge.status === "stale")
+        ? '<span class="chip chip-attention" title="Setup knowledge: ' + escapeHtml(inst.knowledge.status) + '"><span class="chip-glyph" aria-hidden="true">' + GLYPH.attention + "</span>Setup unverified</span>" : "") + "</div>";
     var meta = '<div class="stack-meta mono"><span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.rel_root || inst.root) + "</span>" +
       (inst.hostname ? '<span class="stack-sep" aria-hidden="true"> · </span><span class="stack-host" title="' + escapeHtml(inst.hostname) + '">' + escapeHtml(inst.hostname) + "</span>" : "") + "</div>";
     var actions =
       (!live ? '<button type="button" class="btn" data-action="up" data-project="' + p + '" data-key="' + p + '/up">Start</button>' : "") +
-      (live && openApp && isWebUrl(openApp.url) ? '<a class="btn mobile-hide" href="' + escapeHtml(openApp.url) + '" target="_blank" rel="noopener" data-key="' + p + '/open" title="' + escapeHtml(openApp.url) + '">Open App</a>' : "") +
+      (live && openApp && isWebUrl(openApp.url) ? '<a class="btn" href="' + escapeHtml(openApp.url) + '" target="_blank" rel="noopener" data-key="' + p + '/open" title="' + escapeHtml(openApp.url) + '">Open App</a>' : "") +
       (live ? '<button type="button" class="btn btn-ghost mobile-hide" data-action="down" data-project="' + p + '" data-key="' + p + '/down" title="Stop (keeps volumes)">Stop</button>' : "") +
       menuHtml(inst.project + "/menu", "More actions for " + name, "More actions", items);
 
@@ -401,18 +425,17 @@
         '<thead><tr><th scope="col" class="micro">Service</th><th scope="col" class="micro">State</th><th scope="col" class="micro">Endpoints</th><th scope="col" class="micro">Actions</th></tr></thead>' + services + "</table>"
       : "";
     var appStrip = (inst.apps || []).map(function (a, i) { return appChipHtml(a, i, inst.project); }).join("");
+    var id = domId(inst.project);
     return (
-      '<article class="stack lane-' + (stackColorIndex(app) + 1) + '" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '" data-collapsed="' + (collapsed ? "1" : "0") + '">' +
+      '<article class="stack version lane-' + (stackColorIndex(app) + 1) + '" id="ver-' + id + '" data-project="' + p + '" data-state="' + escapeHtml(inst.state) + '" data-collapsed="' + (collapsed ? "1" : "0") + '">' +
       '<header class="stack-header">' +
       '<button type="button" class="btn btn-ghost btn-icon chevron" data-toggle-stack data-project="' + p + '" data-key="' + p + '/toggle" aria-expanded="' + !collapsed +
-      '" aria-label="Details for ' + escapeHtml(name) + '"><span class="chevron-glyph" aria-hidden="true"></span></button>' +
-      '<span class="avatar" aria-hidden="true">' + escapeHtml(initials(app)) + "</span>" +
-      '<div class="stack-id"><h3 class="stack-name" title="' + p + '">' + escapeHtml(app) + "</h3>" +
-      '<span class="branch-pill" title="' + escapeHtml(inst.branch) + '">⌥ ' + escapeHtml(inst.branch) + "</span>" + chips +
-      '<div class="stack-actions">' + actions + "</div>" + meta + "</div></header>" +
+      '" aria-controls="body-' + id + '" aria-label="Details for ' + escapeHtml(name) + '"><span class="chevron-glyph" aria-hidden="true"></span></button>' +
+      '<div class="stack-id"><h3 class="version-title" title="' + p + '"><span class="branch-pill" title="' + escapeHtml(inst.branch) + '">' + escapeHtml(inst.branch) + "</span></h3>" +
+      chips + '<div class="stack-actions">' + actions + "</div>" + meta + "</div></header>" +
       (appStrip ? '<div class="app-strip">' + appStrip + "</div>" : "") +
-      seedHtml(inst) + warnings + oneOffHtml(inst) +
-      '<div class="stack-body">' + table + "</div></article>"
+      seedHtml(inst, name) + warnings + oneOffHtml(inst) +
+      '<div class="stack-body" id="body-' + id + '">' + table + "</div></article>"
     );
   }
 
@@ -460,14 +483,104 @@
     return found ? appName(found) : displayName(project);
   }
 
-  function matchesFilter(inst) {
-    if (!state.filter) return true;
-    var needle = state.filter.toLowerCase();
-    var haystack = (inst.project + " " + inst.branch + " " + inst.root).toLowerCase();
-    return haystack.indexOf(needle) !== -1;
+  function domId(s) {
+    return Array.from(String(s)).map(function (c) { return /[A-Za-z0-9_-]/.test(c) ? c : "-"; }).join("");
   }
 
-  // lastCards is the HTML last written to the lists. A poll that brings the
+  // repoRoot must match dashboard.go's repoRoot: the main checkout.
+  function repoRoot(root) {
+    var i = root.lastIndexOf("/.worktrees/");
+    return i > 0 ? root.slice(0, i) : root;
+  }
+
+  // groupProjects must sort exactly like dashboard.go's buildProjects:
+  // projects with a live version first, then the newest activity, then name;
+  // inside a project live versions, the main checkout, then branch.
+  function groupProjects(instances) {
+    var by = {}, list = [];
+    instances.forEach(function (inst) {
+      var app = appName(inst);
+      if (!Object.prototype.hasOwnProperty.call(by, app)) {
+        by[app] = { app: app, root: repoRoot(inst.root), versions: [], live: false, last: 0 };
+        list.push(by[app]);
+      }
+      var g = by[app];
+      g.versions.push(inst);
+      if (isLive(inst)) g.live = true;
+      var ms = Date.parse(inst.used);
+      if (ms > g.last) g.last = ms;
+    });
+    list.forEach(function (g) {
+      g.versions.sort(function (a, b) {
+        if (isLive(a) !== isLive(b)) return isLive(a) ? -1 : 1;
+        if (!!a.is_main !== !!b.is_main) return a.is_main ? -1 : 1;
+        if (a.branch !== b.branch) return a.branch < b.branch ? -1 : 1;
+        return a.project < b.project ? -1 : a.project > b.project ? 1 : 0;
+      });
+    });
+    list.sort(function (a, b) {
+      if (a.live !== b.live) return a.live ? -1 : 1;
+      if (a.last !== b.last) return b.last - a.last;
+      return a.app < b.app ? -1 : a.app > b.app ? 1 : 0;
+    });
+    return list;
+  }
+
+  function versionMatches(inst, needle) {
+    return (inst.project + " " + inst.branch + " " + inst.root + " " + (inst.rel_root || "") + " " + (inst.hostname || "")).toLowerCase().indexOf(needle) !== -1;
+  }
+
+  // Filter: an app-name match shows the whole project, otherwise only the
+  // matching versions; Running only drops stopped versions first. Projects
+  // left empty disappear; hidden is how many versions were dropped.
+  function visibleProjects(instances) {
+    var needle = state.filter.toLowerCase();
+    var out = [];
+    groupProjects(instances).forEach(function (g) {
+      var appMatch = !!needle && g.app.toLowerCase().indexOf(needle) !== -1;
+      var vs = g.versions.filter(function (v) {
+        return (!state.runningOnly || isLive(v)) && (!needle || appMatch || versionMatches(v, needle));
+      });
+      if (!vs.length) return;
+      out.push({ app: g.app, root: g.root, total: g.versions.length, hidden: g.versions.length - vs.length, all: g.versions, versions: vs });
+    });
+    return out;
+  }
+
+  function projectChips(all) {
+    var running = all.filter(function (v) { return v.state === "running"; }).length;
+    var partial = all.filter(function (v) { return v.state === "partial"; }).length;
+    var chips = [];
+    if (running) chips.push({ cls: "ok", glyph: GLYPH.ok, label: running + " running" });
+    if (partial) chips.push({ cls: "attention", glyph: GLYPH.partial, label: partial + " partial" });
+    if (!running && !partial) chips.push({ cls: "off", glyph: GLYPH.off, label: "Stopped" });
+    return chips;
+  }
+
+  function projectHtml(g) {
+    var app = g.app, id = domId(app), a = escapeHtml(app);
+    var collapsed = isProjectCollapsed(app);
+    var count = plural(g.total, "version") + (g.hidden ? " \u00B7 " + g.hidden + " hidden" : "");
+    return (
+      '<section class="project lane-' + (stackColorIndex(app) + 1) + '" id="proj-' + id + '" data-app="' + a + '" data-collapsed="' + (collapsed ? "1" : "0") + '" aria-labelledby="proj-' + id + '-h">' +
+      '<header class="project-header">' +
+      '<button type="button" class="btn btn-ghost btn-icon chevron" data-toggle-project data-app="' + a + '" data-key="' + a + '/toggle" aria-expanded="' + !collapsed +
+      '" aria-controls="proj-' + id + '-body" aria-label="Versions of ' + a + '"><span class="chevron-glyph" aria-hidden="true"></span></button>' +
+      '<span class="avatar" aria-hidden="true">' + escapeHtml(initials(app)) + "</span>" +
+      '<div class="project-id"><h2 class="project-name" id="proj-' + id + '-h">' + a + "</h2>" +
+      '<span class="project-count">' + count + "</span></div>" +
+      '<div class="project-chips">' + projectChips(g.all).map(chipHtml).join("") + "</div>" +
+      menuHtml(app + "/menu", "More actions for " + app, "More actions",
+        menuItem(app + "/menu/start", "Start a branch…", "", ' data-project-action="start" data-repo="' + escapeHtml(g.root) + '"') +
+        menuItem(app + "/menu/repos", "Show in Repos", "", ' data-project-action="repos" data-repo="' + escapeHtml(g.root) + '"') +
+        menuItem(app + "/menu/path", "Copy repo path", "", ' data-copy="' + escapeHtml(g.root) + '"')) +
+      "</header>" +
+      '<div class="project-pills">' + g.versions.map(function (v) { return '<span class="branch-pill" title="' + escapeHtml(v.branch) + '">' + escapeHtml(v.branch) + "</span>"; }).join("") + "</div>" +
+      '<div class="project-body" id="proj-' + id + '-body">' + g.versions.map(versionHtml).join("") + "</div></section>"
+    );
+  }
+
+  // lastCards is the HTML last written to the list. A poll that brings the
   // same data changes nothing in the DOM; one that differs remembers the
   // focused element, the open menu and the scroll position, writes, and
   // puts them back (the cards are replaced wholesale).
@@ -480,9 +593,8 @@
   }
   function keyed(key) { return keyedIn("#view-instances", key); }
 
-  function writeCards(running, stopped) {
-    var runHtml = running.map(stackHtml).join(""), stopHtml = stopped.map(stackHtml).join("");
-    var html = runHtml + "\u0000" + stopHtml;
+  function writeProjects(groups) {
+    var html = groups.map(projectHtml).join("");
     if (html === lastCards) return;
     lastCards = html;
     var active = document.activeElement;
@@ -490,8 +602,7 @@
     var menu = document.querySelector('#view-instances [aria-haspopup="menu"][aria-expanded="true"]');
     var menuKey = menu ? menu.dataset.key : "";
     var scrollY = window.scrollY;
-    document.querySelector('[data-section="running"] .stack-list').innerHTML = runHtml;
-    document.querySelector('[data-section="stopped"] .stack-list').innerHTML = stopHtml;
+    document.getElementById("projects").innerHTML = html;
     Object.keys(inFlight).forEach(function (k) {
       var el = keyed(k);
       if (el) markRunning(el);
@@ -511,16 +622,11 @@
     var inv = state.inventory;
     if (!inv) return;
     var all = inv.instances || [];
-    var instances = all.filter(matchesFilter);
-    var running = instances.filter(isLive);
-    var stopped = instances.filter(function (i) { return !isLive(i); });
+    var groups = visibleProjects(all);
 
-    writeCards(running, stopped);
-    document.querySelector('[data-section="running"] .section-count').textContent = running.length;
-    var stoppedSection = document.querySelector('[data-section="stopped"]');
-    stoppedSection.querySelector(".section-count").textContent = stopped.length;
-    stoppedSection.hidden = state.runningOnly;
+    writeProjects(groups);
     document.getElementById("instances-empty").hidden = all.length > 0;
+    document.getElementById("instances-none").hidden = all.length === 0 || groups.length > 0;
 
     document.getElementById("view-instances").classList.toggle("stale", state.stale);
 
@@ -741,6 +847,17 @@
         setCollapsed(toggleStack.dataset.project, collapsed);
         return;
       }
+      var toggleProject = e.target.closest("[data-toggle-project]");
+      if (toggleProject) {
+        var section = toggleProject.closest(".project");
+        var pc = section.dataset.collapsed !== "1";
+        section.dataset.collapsed = pc ? "1" : "0";
+        toggleProject.setAttribute("aria-expanded", String(!pc));
+        setProjectCollapsed(toggleProject.dataset.app, pc);
+        return;
+      }
+      var projAct = e.target.closest("[data-project-action]");
+      if (projAct) { showInRepos(projAct.dataset.repo, projAct.dataset.projectAction === "start"); return; }
       var toggleSettings = e.target.closest("[data-toggle-settings]");
       if (toggleSettings) {
         var settings = toggleSettings.closest("tbody").querySelector(".service-settings");
@@ -983,6 +1100,29 @@
         rows.insertBefore(h, el);
       });
     }
+  }
+
+  // The project menu's way into Repos: switch view, find the repo row once
+  // the fragment is there (it loads asynchronously) and open its panel.
+  function showInRepos(path, start) {
+    setView("repos");
+    var tries = 0;
+    (function find() {
+      var row = keyedIn("#repos-list", path);
+      if (row) {
+        if (start) {
+          setRepoOpen(row, true);
+          var first = row.querySelector('.repo-panel [data-repo-action="start"]');
+          if (first) { first.scrollIntoView({ block: "nearest" }); first.focus({ preventScroll: true }); return; }
+        }
+        row.scrollIntoView({ block: "center" });
+        var t = row.querySelector(".repo-toggle");
+        if (t) t.focus({ preventScroll: true });
+        return;
+      }
+      if (++tries < 15) setTimeout(find, 200);
+      else toast("failed", "This repo is not in Repos. Check the scan folders in Settings.");
+    })();
   }
 
   function setRepoOpen(repo, open) {
@@ -1247,7 +1387,13 @@
         setView("instances");
         var art = document.querySelector('.stack[data-project="' + inst.dataset.project.replace(/"/g, "") + '"]');
         if (art) {
-          // same path as the chevron, so the next poll keeps it open
+          // same path as the chevrons, so the next poll keeps both open
+          var proj = art.closest(".project");
+          if (proj) {
+            proj.dataset.collapsed = "0";
+            var pchev = proj.querySelector("[data-toggle-project]");
+            if (pchev) { pchev.setAttribute("aria-expanded", "true"); setProjectCollapsed(pchev.dataset.app, false); }
+          }
           art.dataset.collapsed = "0";
           var chev = art.querySelector("[data-toggle-stack]");
           if (chev) { chev.setAttribute("aria-expanded", "true"); setCollapsed(chev.dataset.project, false); }
