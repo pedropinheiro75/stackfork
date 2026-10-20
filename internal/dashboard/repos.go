@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -19,6 +20,8 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 )
 
@@ -357,6 +360,7 @@ type repoView struct {
 	repos.Repo
 	Search string
 	Recipe recipeView
+	Plan   *planView
 }
 
 type reposPage struct {
@@ -369,6 +373,7 @@ type reposPage struct {
 func (s *Server) handleReposFragment(w http.ResponseWriter, r *http.Request) {
 	res, scanning := s.currentRepos()
 	page := reposPage{Result: res, Scanning: scanning}
+	cfg, _ := config.Load()
 	for _, repo := range sortRepos(res.Repos) {
 		var b strings.Builder
 		b.WriteString(repo.Group + " " + repo.Name)
@@ -378,7 +383,7 @@ func (s *Server) handleReposFragment(w http.ResponseWriter, r *http.Request) {
 		for _, w := range repo.Worktrees {
 			b.WriteString(" " + w.Branch)
 		}
-		page.Rows = append(page.Rows, repoView{Repo: repo, Search: strings.ToLower(b.String()), Recipe: s.repoRecipe(repo)})
+		page.Rows = append(page.Rows, repoView{Repo: repo, Search: strings.ToLower(b.String()), Recipe: s.repoRecipe(repo), Plan: s.repoPlan(repo, cfg)})
 	}
 	page.FirstSetup = firstSetup(page.Rows)
 	s.renderFragment(w, "repos", page)
@@ -450,6 +455,19 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		} else {
 			err = cfg.SetMaxDepth(n)
 		}
+	case "set-mode":
+		// value is REPO=MODE; REPO must be a repo found by the scan
+		i := strings.LastIndex(req.Value, "=")
+		if i < 0 {
+			err = errors.New("expected REPO=MODE")
+			break
+		}
+		repo, mode := req.Value[:i], req.Value[i+1:]
+		if s.scannedRepo(repo) == nil {
+			writeActionResult(w, http.StatusForbidden, actionResponse{Message: "not a repo found by the scan under a configured folder"})
+			return
+		}
+		err = cfg.SetRepoMode(repo, mode)
 	case "rescan":
 		s.rescanAsync(true)
 		writeActionResult(w, http.StatusOK, actionResponse{OK: true, Message: "rescan started"})
@@ -606,6 +624,26 @@ func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, 
 		b, _ := json.Marshal(resp)
 		w.Write(append(b, '\n')) //nolint:errcheck // client gone
 		flush(w)
+	}
+	// A host or prepare step nobody approved on this machine: ask first,
+	// before anything is created or run (design.md D9).
+	if k, err := knowledge.Load(filepath.Join(repo.Path, ".stackfork", "knowledge.json")); err == nil {
+		if ok, diff := lifecycle.TrustedHere(s.NewStateBase, repo.Path, k.Plan); !ok {
+			text := "Start " + repo.Name + "?\n\nIts plan runs host commands nobody approved on this machine.\n\n" + lifecycle.TrustPrompt(k.Plan, diff)
+			approved, err := Confirm("stackfork", text)
+			if err != nil || !approved {
+				if err == nil {
+					err = errors.New("cancelled; nothing ran")
+				}
+				finish(err)
+				return
+			}
+			if _, err := lifecycle.TrustHere(s.NewStateBase, repo.Path, k.Plan); err != nil {
+				finish(err)
+				return
+			}
+			fmt.Fprintln(lw, "trusted the host steps on this machine")
+		}
 	}
 	if checkout == "" { // a branch without a worktree: create it first
 		fmt.Fprintf(lw, "creating a worktree for %s\n", branch)

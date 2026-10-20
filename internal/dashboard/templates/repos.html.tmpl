@@ -61,6 +61,27 @@
         <div class="callout-actions"><button type="button" class="btn learn-btn" data-key="{{$r.Path}}/panel-setup" data-repo="{{$r.Path}}" data-name="{{$r.Name}}" data-prompt="{{prompt $r.Name $r.Path $r.DefaultBranch}}">Set up with your agent</button></div>
       </div>
       {{end}}
+      {{with $row.Plan}}
+      <div class="plan" data-plan="{{.Status}}">
+        <div class="plan-bar">
+          <span class="micro">Starts with</span>
+          <label class="plan-mode"><span class="small muted">Mode</span> <select data-mode-for="{{$r.Path}}" data-key="{{$r.Path}}/mode" aria-label="Start mode for {{$r.Name}}">{{$m := .Mode}}{{range .Modes}}<option value="{{.}}"{{if eq . $m}} selected{{end}}>{{.}}</option>{{end}}</select></label>
+        </div>
+        <div class="plan-list" role="table" aria-label="Startup plan, {{.Mode}} mode">
+          <div class="plan-head micro" role="row"><span role="columnheader">Step</span><span role="columnheader">Kind</span><span role="columnheader">Command</span><span role="columnheader">State</span></div>
+          {{range .Steps}}{{template "planrow" .}}{{end}}
+          {{range .Skipped}}{{template "planrow" .}}{{end}}
+        </div>
+        {{if .Diff}}
+        <div class="callout callout-failed" data-trust-callout>
+          <span class="callout-glyph" aria-hidden="true">&#9650;</span>
+          <div class="callout-body"><p class="callout-title">Host steps changed on this machine</p><pre class="mono-log">{{range .Diff}}{{.}}
+{{end}}</pre></div>
+          <div class="callout-actions"><button type="button" class="btn" data-key="{{$r.Path}}/trust" data-run="stackfork --root {{shq $r.Path}} plan --trust">Trust on this machine</button></div>
+        </div>
+        {{end}}
+      </div>
+      {{else}}
       <div class="recipe" data-recipe="{{$row.Recipe.State}}">
         <span class="recipe-label small">Starts with</span>
         {{if $row.Recipe.Migrate}}<code class="mono chip-code copyable" data-copy="{{$row.Recipe.Migrate}}" title="click to copy">migrate: {{$row.Recipe.Migrate}}</code>{{end}}
@@ -72,6 +93,8 @@
 <button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$r.Path}}/recipe/copy" data-copy="stackfork learn record recipe --seed-once CMD"><span class="menu-label">Copy command (CMD is your seed command, or none)</span><span class="menu-cmd mono">stackfork learn record recipe --seed-once CMD</span></button>
 </div></div>
       </div>
+
+      {{end}}
 
       <div class="wt-table">
         <div class="wt-head micro" aria-hidden="true"><span>Lane</span><span>Branch</span><span>Path</span><span>Ahead / behind upstream</span><span>State</span><span></span></div>
@@ -132,6 +155,8 @@
 </div>
 {{end}}
 {{end}}
+
+{{define "planrow"}}<div class="plan-row{{if .Skipped}} plan-skipped{{end}}" role="row" data-step="{{.ID}}"><span class="plan-id mono" role="cell">{{.ID}}</span><span class="plan-kind" role="cell">{{.Kind}}</span><span class="plan-text mono" role="cell">{{.Text}}</span><span class="plan-state" role="cell"><span class="chip chip-{{.Chip.Class}}"><span class="chip-glyph" aria-hidden="true">{{.Chip.Glyph}}</span>{{.Chip.Label}}</span></span></div>{{end}}
 
 {{define "aheadbehind"}}{{$t := aheadBehindText .Ahead .Behind .Upstream}}{{if eq .Upstream ""}}<span class="ab-none" title="this branch tracks no upstream">no upstream</span>
 {{else if and (eq .Ahead 0) (eq .Behind 0)}}<span class="ab-none" title="matches {{.Upstream}}">up to date</span>

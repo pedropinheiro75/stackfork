@@ -9,12 +9,15 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/guard"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/prune"
 )
 
@@ -40,7 +43,7 @@ type runPlan struct {
 // (config, learn record, hooks, ...) stays copy-only.
 var runStackfork = map[string]bool{
 	"up": true, "down": true, "restart": true, "start": true, "stop": true,
-	"seed": true, "gc": true, "prune": true, "prepare": true, "learn": true, "proxy": true,
+	"seed": true, "gc": true, "prune": true, "prepare": true, "learn": true, "proxy": true, "plan": true,
 }
 
 // Confirm asks the person at this Mac to approve a destructive command with
@@ -155,6 +158,10 @@ func (s *Server) planStackfork(args []string, root string) (*runPlan, error) {
 		if len(rest) != 0 {
 			return nil, errors.New("only a plain `stackfork learn` runs from the page")
 		}
+	case "plan":
+		if len(rest) != 1 || rest[0] != "--trust" || len(global) < 2 || global[0] != "--root" {
+			return nil, errors.New("only `plan --trust` runs from the page, with --root REPO")
+		}
 	case "proxy":
 		if len(rest) != 1 || (rest[0] != "up" && rest[0] != "reload") {
 			return nil, errors.New("only `proxy up` and `proxy reload` run from the page")
@@ -182,6 +189,16 @@ func (s *Server) planStackfork(args []string, root string) (*runPlan, error) {
 		if action == "down" {
 			p.Confirm += "\n\nThis deletes the stack's volumes: its database is lost."
 		}
+	}
+	if action == "plan" {
+		// the dialog shows every step this approval covers, with all its fields
+		repo := global[1]
+		k, err := knowledge.Load(filepath.Join(repo, ".stackfork", "knowledge.json"))
+		if s.scannedRepo(repo) == nil || err != nil || len(k.Plan.HostSteps()) == 0 {
+			return nil, errors.New("not a scanned repo with a plan that has host steps to trust")
+		}
+		_, diff := lifecycle.TrustedHere(s.NewStateBase, repo, k.Plan)
+		p.Confirm += "\n\n" + lifecycle.TrustPrompt(k.Plan, diff)
 	}
 	p.Args = argv
 	return p, nil

@@ -1,0 +1,118 @@
+package lifecycle
+
+import (
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+)
+
+// PlanStep is one step of `stackfork plan --json` and of the Repos panel.
+type PlanStep struct {
+	ID      string         `json:"id"`
+	Kind    string         `json:"kind"`
+	Cmd     string         `json:"cmd,omitempty"`
+	Service string         `json:"service,omitempty"`
+	Args    []string       `json:"args,omitempty"`
+	Exclude []string       `json:"exclude,omitempty"`
+	Name    string         `json:"name,omitempty"`
+	Dir     string         `json:"dir,omitempty"`
+	PortEnv []string       `json:"port_env,omitempty"`
+	Port    int            `json:"port,omitempty"`
+	Once    string         `json:"once,omitempty"`
+	Text    string         `json:"text,omitempty"`
+	Modes   []string       `json:"modes,omitempty"`
+	State   string         `json:"state"`
+	Step    knowledge.Step `json:"-"` // the original, for StepBlock
+	Trust   string         `json:"trust"`
+}
+
+// PlanOut is the plan for one mode. Diff (not in the JSON) is what changed
+// in the host and prepare steps since this machine trusted them.
+type PlanOut struct {
+	Mode     string     `json:"mode"`
+	Status   string     `json:"status"`
+	Verified bool       `json:"verified"`
+	Trusted  bool       `json:"trusted"`
+	Steps    []PlanStep `json:"steps"`
+	Skipped  []PlanStep `json:"skipped"`
+	Diff     []string   `json:"-"`
+}
+
+// PlanView computes the plan for mode. The CLI (`plan --json`) and the
+// dashboard render this one result, so they cannot disagree.
+func PlanView(stateBase, main string, k *knowledge.Knowledge, mode string) PlanOut {
+	trusted, diff := TrustedHere(stateBase, main, k.Plan)
+	run, skipped := k.Plan.ForMode(mode)
+	state := k.Plan.Status
+	if k.Status == knowledge.StatusVerified {
+		state = knowledge.StatusVerified
+	}
+	conv := func(in []knowledge.Step) []PlanStep {
+		out := []PlanStep{}
+		for _, s := range in {
+			o := PlanStep{ID: s.ID, Kind: s.Kind, Cmd: s.Cmd, Service: s.Service, Args: s.Args, Exclude: s.Exclude,
+				Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, Text: s.Text, Modes: s.Modes, State: state, Step: s}
+			if s.Kind == knowledge.KindHost || s.Kind == knowledge.KindPrepare {
+				o.Trust = "untrusted"
+				if trusted {
+					o.Trust = "trusted-here"
+				}
+			}
+			out = append(out, o)
+		}
+		return out
+	}
+	return PlanOut{Mode: mode, Status: k.Plan.Status, Verified: k.Status == knowledge.StatusVerified,
+		Trusted: trusted, Steps: conv(run), Skipped: conv(skipped), Diff: diff}
+}
+
+// TrustHere records this machine's trust in the plan's host and prepare
+// steps and returns the steps it covers. Callers ask a person first.
+func TrustHere(stateBase, main string, p knowledge.Plan) ([]knowledge.Step, error) {
+	covered := knowledge.TrustSteps(p.Steps)
+	return covered, knowledge.WriteTrust(knowledge.TrustPath(stateBase, main), knowledge.PlanHash(p.Steps), covered)
+}
+
+// TrustPrompt is the text of the native dialog: every step the approval
+// covers with all its fields, then what changed since the last approval.
+func TrustPrompt(p knowledge.Plan, diff []string) string {
+	var b strings.Builder
+	b.WriteString("Trusts these steps on this machine:\n")
+	for _, s := range knowledge.TrustSteps(p.Steps) {
+		b.WriteString("\n" + strings.Join(StepBlock(s), "\n"))
+	}
+	if len(diff) > 0 {
+		b.WriteString("\n\nChanged since last trusted:\n" + strings.Join(diff, "\n"))
+	}
+	return b.String()
+}
+
+// StepBlock lists every non-empty field of the step (derived from the Step
+// struct, so a future field cannot be left out), which is what the trust
+// hash covers, one per line.
+func StepBlock(s knowledge.Step) []string {
+	l := []string{s.ID + " [" + s.Kind + "]"}
+	v, t := reflect.ValueOf(s), reflect.TypeOf(s)
+	for i := 0; i < t.NumField(); i++ {
+		key, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		if !t.Field(i).IsExported() || key == "id" || key == "kind" || v.Field(i).IsZero() ||
+			(v.Field(i).Kind() == reflect.Slice && v.Field(i).Len() == 0) {
+			continue
+		}
+		val := ""
+		switch f := v.Field(i).Interface().(type) {
+		case []string:
+			sep := ", "
+			if key == "args" {
+				sep = " "
+			}
+			val = strings.Join(f, sep)
+		default:
+			val = fmt.Sprint(f)
+		}
+		l = append(l, "    "+key+": "+val)
+	}
+	return l
+}

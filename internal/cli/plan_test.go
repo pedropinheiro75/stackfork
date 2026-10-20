@@ -125,7 +125,7 @@ func TestStepBlockPrintsEveryStepField(t *testing.T) {
 			f.Set(reflect.ValueOf([]string{"a", "b"}))
 		}
 	}
-	if got, want := len(stepBlock(s)), 1+v.NumField()-2; got != want {
-		t.Fatalf("stepBlock printed %d lines, want %d:\n%s", got, want, strings.Join(stepBlock(s), "\n"))
+	if got, want := len(lifecycle.StepBlock(s)), 1+v.NumField()-2; got != want {
+		t.Fatalf("stepBlock printed %d lines, want %d:\n%s", got, want, strings.Join(lifecycle.StepBlock(s), "\n"))
 	}
 }

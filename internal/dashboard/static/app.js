@@ -1282,6 +1282,18 @@
         copyText(copy.dataset.copy, copy.dataset.label || (lbl || copy).textContent.trim(), copy);
       }
     });
+    document.getElementById("repos-list").addEventListener("change", function (e) {
+      var sel = e.target.closest("select[data-mode-for]");
+      if (!sel) return;
+      post("/api/config", { op: "set-mode", value: sel.dataset.modeFor + "=" + sel.value })
+        .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+        .then(function (res) {
+          if (!res.ok) toast("failed", "mode: " + (res.body.message || "refused"));
+          else log("mode: " + sel.value);
+          loadRepos();
+        })
+        .catch(function (err) { toast("failed", "mode: " + err.message); loadRepos(); });
+    });
     document.querySelectorAll('input[name="repo-sort"]').forEach(function (r) {
       r.addEventListener("change", function () { reposState.sort = r.value; applyRepoView(); applyRepoFilters(); });
     });

@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"reflect"
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
@@ -11,34 +10,6 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 )
-
-type planStepOut struct {
-	ID      string         `json:"id"`
-	Kind    string         `json:"kind"`
-	Cmd     string         `json:"cmd,omitempty"`
-	Service string         `json:"service,omitempty"`
-	Args    []string       `json:"args,omitempty"`
-	Exclude []string       `json:"exclude,omitempty"`
-	Name    string         `json:"name,omitempty"`
-	Dir     string         `json:"dir,omitempty"`
-	PortEnv []string       `json:"port_env,omitempty"`
-	Port    int            `json:"port,omitempty"`
-	Once    string         `json:"once,omitempty"`
-	Text    string         `json:"text,omitempty"`
-	Modes   []string       `json:"modes,omitempty"`
-	State   string         `json:"state"`
-	step    knowledge.Step // the original, for stepBlock
-	Trust   string         `json:"trust"`
-}
-
-type planOut struct {
-	Mode     string        `json:"mode"`
-	Status   string        `json:"status"`
-	Verified bool          `json:"verified"`
-	Trusted  bool          `json:"trusted"`
-	Steps    []planStepOut `json:"steps"`
-	Skipped  []planStepOut `json:"skipped"`
-}
 
 // cmdPlan prints the startup plan for a mode, or (--trust) records this
 // machine's trust in its host and prepare steps. --trust never prompts: the
@@ -65,12 +36,12 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 			fmt.Fprintln(stderr, "stackfork: nothing to trust: this plan runs only in containers")
 			return 2, nil
 		}
-		covered := knowledge.TrustSteps(k.Plan.Steps)
-		for _, s := range covered {
-			fmt.Fprintln(stdout, "trusting "+strings.Join(stepBlock(s), "\n"))
-		}
-		if err := knowledge.WriteTrust(knowledge.TrustPath(stateBase, main), knowledge.PlanHash(k.Plan.Steps), covered); err != nil {
+		covered, err := lifecycle.TrustHere(stateBase, main, k.Plan)
+		if err != nil {
 			return 1, err
+		}
+		for _, s := range covered {
+			fmt.Fprintln(stdout, "trusting "+strings.Join(lifecycle.StepBlock(s), "\n"))
 		}
 		fmt.Fprintln(stdout, "trusted on this machine")
 		return 0, nil
@@ -87,29 +58,7 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 	if mode != knowledge.ModeContainer && mode != knowledge.ModeHybrid {
 		return 1, fmt.Errorf("unknown mode %q (%s or %s)", mode, knowledge.ModeContainer, knowledge.ModeHybrid)
 	}
-	trusted, _ := lifecycle.TrustedHere(stateBase, main, k.Plan)
-	run, skipped := k.Plan.ForMode(mode)
-	state := k.Plan.Status
-	if k.Status == knowledge.StatusVerified {
-		state = knowledge.StatusVerified
-	}
-	conv := func(in []knowledge.Step) []planStepOut {
-		out := []planStepOut{}
-		for _, s := range in {
-			o := planStepOut{ID: s.ID, Kind: s.Kind, Cmd: s.Cmd, Service: s.Service, Args: s.Args, Exclude: s.Exclude,
-				Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, Text: s.Text, Modes: s.Modes, State: state, step: s}
-			if s.Kind == knowledge.KindHost || s.Kind == knowledge.KindPrepare {
-				o.Trust = "untrusted"
-				if trusted {
-					o.Trust = "trusted-here"
-				}
-			}
-			out = append(out, o)
-		}
-		return out
-	}
-	res := planOut{Mode: mode, Status: k.Plan.Status, Verified: k.Status == knowledge.StatusVerified,
-		Trusted: trusted, Steps: conv(run), Skipped: conv(skipped)}
+	res := lifecycle.PlanView(stateBase, main, k, mode)
 	if *jsonFlag {
 		return 0, printJSON(stdout, res)
 	}
@@ -133,35 +82,7 @@ func orDash(s string) string {
 	return s
 }
 
-// stepBlock lists every non-empty field of the step (derived from the Step
-// struct, so a future field cannot be left out), which is what the trust
-// hash covers, one per line.
-func stepBlock(s knowledge.Step) []string {
-	l := []string{s.ID + " [" + s.Kind + "]"}
-	v, t := reflect.ValueOf(s), reflect.TypeOf(s)
-	for i := 0; i < t.NumField(); i++ {
-		key, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
-		if !t.Field(i).IsExported() || key == "id" || key == "kind" || v.Field(i).IsZero() ||
-			(v.Field(i).Kind() == reflect.Slice && v.Field(i).Len() == 0) {
-			continue
-		}
-		val := ""
-		switch f := v.Field(i).Interface().(type) {
-		case []string:
-			sep := ", "
-			if key == "args" {
-				sep = " "
-			}
-			val = strings.Join(f, sep)
-		default:
-			val = fmt.Sprint(f)
-		}
-		l = append(l, "    "+key+": "+val)
-	}
-	return l
-}
-
-func planLine(s planStepOut) string {
+func planLine(s lifecycle.PlanStep) string {
 	suffix := " - " + s.State
 	if s.Trust != "" {
 		suffix += ", " + s.Trust
@@ -179,7 +100,7 @@ func planLine(s planStepOut) string {
 		}
 		return l + suffix
 	}
-	b := stepBlock(s.step)
+	b := lifecycle.StepBlock(s.Step)
 	if s.Kind == knowledge.KindHost && s.Port == 0 {
 		b = append(b, "    port: unknown")
 	}
