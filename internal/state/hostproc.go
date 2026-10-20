@@ -2,7 +2,6 @@ package state
 
 import (
 	"path/filepath"
-	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 )
@@ -14,8 +13,7 @@ func HostIdentity(proc HostProc) bool {
 	if !processAlive(proc.PID, proc.StartedAt) {
 		return false
 	}
-	got, err := procCmdline(proc.PID)
-	return err == nil && strings.Join(strings.Fields(got), " ") == strings.Join(strings.Fields(strings.Join(proc.Cmdline, " ")), " ")
+	return cmdlineMatches(proc.PID, proc.Cmdline)
 }
 
 // HostStatus is running only when the identity holds AND the port answers.
