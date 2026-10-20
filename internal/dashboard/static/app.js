@@ -332,12 +332,12 @@
       '<tbody class="service-group"><tr class="service-row" data-service="' + escapeHtml(svc.name) + '">' +
       '<td class="cell-service"><span class="service-logo" data-kind="' + escapeHtml(svc.kind || "") + '"></span>' +
       '<div class="service-text"><button type="button" class="service-name" data-toggle-settings data-key="' + escapeHtml(key) +
-      '/settings" aria-expanded="' + settingsOpen + '">' + escapeHtml(svc.name) + "</button>" + image + "</div></td>" +
+      '/settings" aria-expanded="' + settingsOpen + '">' + escapeHtml(svc.label || svc.name) + "</button>" + image + "</div></td>" +
       '<td class="cell-state">' + chipHtml(serviceChip(svc)) + "</td>" +
       '<td class="cell-endpoints">' + endpoints + "</td>" +
       '<td class="cell-actions"><div class="row-actions"><button type="button" class="btn btn-ghost logs-button mobile-hide"' + pa +
       ' data-key="' + escapeHtml(key) + '/logs">Logs</button>' +
-      menuHtml(key + "/menu", "More actions for " + svc.name, "More actions",
+      menuHtml(key + "/menu", "More actions for " + (svc.label || svc.name), "More actions",
         (running
           ? menuItem(key + "/menu/stop", "Stop", "", ' data-action="service-stop"' + pa)
           : menuItem(key + "/menu/start", "Start", "", ' data-action="service-start"' + pa)) +

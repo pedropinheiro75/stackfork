@@ -98,7 +98,10 @@ type VolumeMount struct {
 
 // Service is one Compose service's current row within an instance.
 type Service struct {
-	Name   string `json:"name"`
+	Name string `json:"name"`
+	// Label is the text shown instead of Name when it differs (a host
+	// process row has the id "host:NAME" and the label NAME).
+	Label  string `json:"label,omitempty"`
 	State  string `json:"state"`
 	Health string `json:"health,omitempty"`
 	// HealthDetail is the last health-check line of an unhealthy service.
@@ -329,7 +332,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		inst.Warnings = append(inst.Warnings, fmt.Sprintf("branch %s no longer exists in %s; run `stackfork gc`", info.Branch, info.Root))
 	default:
 		services, serviceState, apps := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
-		inst.Services = append(services, hostServices(manifestPath, info)...)
+		inst.Services = append(append([]Service{}, services...), hostServices(info)...)
 		inst.State = serviceState
 		inst.Warnings = append(inst.Warnings, serviceWarnings(project, services)...)
 		fillOneOffs(&inst, rows)
@@ -1051,9 +1054,14 @@ func appName(root string) string {
 	return ""
 }
 
+// HostPrefix starts the service id of a host process row ("host:NAME"), so
+// it can never collide with a compose service called NAME.
+const HostPrefix = "host:"
+
 // hostServices lists each recorded host process as a service row: running
-// only when HostStatus confirms identity and a bound port, else exited.
-func hostServices(manifestPath string, info *state.Manifest) []Service {
+// only when the identity holds and the port answers, else exited. It uses
+// the manifest already loaded (no re-read per process).
+func hostServices(info *state.Manifest) []Service {
 	names := make([]string, 0, len(info.HostProcs))
 	for n := range info.HostProcs {
 		names = append(names, n)
@@ -1061,9 +1069,9 @@ func hostServices(manifestPath string, info *state.Manifest) []Service {
 	sort.Strings(names)
 	var out []Service
 	for _, n := range names {
-		up, proc := state.HostStatus(filepath.Dir(manifestPath), n)
-		svc := Service{Name: n, Kind: "host", Image: "host", State: "exited"}
-		if up {
+		proc := info.HostProcs[n]
+		svc := Service{Name: HostPrefix + n, Label: n, Kind: "host", Image: "host", State: "exited"}
+		if proc.PID != 0 && state.HostIdentity(proc) && ports.Bound(proc.Port) {
 			svc.State = "running"
 		}
 		if proc.Port != 0 {

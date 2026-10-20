@@ -639,8 +639,8 @@ func TestInventoryListsHostProcessAsService(t *testing.T) {
 	for _, s := range inst.Services {
 		got[s.Name] = s
 	}
-	app, gone := got["app"], got["gone"]
-	if app.Kind != "host" || app.State != "running" || app.Image != "host" {
+	app, gone := got["host:app"], got["host:gone"]
+	if app.Label != "app" || app.Kind != "host" || app.State != "running" || app.Image != "host" {
 		t.Fatalf("app: %+v", app)
 	}
 	want := "http://127.0.0.1:" + strconv.Itoa(port)

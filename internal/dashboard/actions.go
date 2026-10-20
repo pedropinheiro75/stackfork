@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -106,8 +107,8 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 		if err != nil {
 			return actionResponse{Message: err.Error()}
 		}
-		if _, isHost := info.HostProcs[req.Service]; isHost && req.Service != "" && req.Action != "up" && req.Action != "down" {
-			return s.hostAction(req, instanceDir, root)
+		if name, ok := hostName(info, req.Service); ok && req.Action != "up" && req.Action != "down" {
+			return s.hostAction(req, name, instanceDir, root)
 		}
 		var out bytes.Buffer
 		opts := lifecycle.Options{}
@@ -161,16 +162,27 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 	}
 }
 
+// hostName reports whether service is a host process row ("host:NAME" with
+// NAME recorded in HostProcs). Plain names always belong to compose.
+func hostName(info *state.Manifest, service string) (string, bool) {
+	name, ok := strings.CutPrefix(service, "host:")
+	if !ok {
+		return "", false
+	}
+	_, ok = info.HostProcs[name]
+	return name, ok
+}
+
 // hostAction runs service-stop, service-start or restart on a host process
 // row: the host commands, not docker. Start of an exited row is a restart
 // from the recorded command line.
-func (s *Server) hostAction(req actionRequest, instanceDir, root string) actionResponse {
+func (s *Server) hostAction(req actionRequest, name, instanceDir, root string) actionResponse {
 	var errBuf bytes.Buffer
 	var err error
 	if req.Action == "service-stop" {
-		err = lifecycle.StopHostLocked(&errBuf, instanceDir, req.Service, s.NewStateBase, s.LegacyStateBase)
+		err = lifecycle.StopHostLocked(&errBuf, instanceDir, name, s.NewStateBase, s.LegacyStateBase)
 	} else {
-		err = lifecycle.HostRestart(&errBuf, root, instanceDir, req.Service, s.NewStateBase, s.LegacyStateBase)
+		err = lifecycle.HostRestart(&errBuf, root, instanceDir, name, s.NewStateBase, s.LegacyStateBase)
 	}
 	if err != nil {
 		return actionResponse{Message: err.Error()}
@@ -288,11 +300,16 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	if _, isHost := info.HostProcs[service]; isHost && service != "" {
+	if name, ok := hostName(info, service); ok {
+		// Snapshot only: a host log is a plain file, so follow=1 gets the
+		// same snapshot plus a closing note instead of a live stream.
 		n, _ := strconv.Atoi(tail)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		redacted := lifecycle.NewRedactedWriter(w, info)
-		redacted.Write(lastLines(filepath.Join(instanceDir, "host-"+service+".log"), n)) //nolint:errcheck // client gone
+		redacted.Write(lastLines(filepath.Join(instanceDir, "host-"+name+".log"), n)) //nolint:errcheck // client gone
+		if follow {
+			redacted.Write([]byte("(live follow is not available for host apps; reopen to refresh)\n")) //nolint:errcheck // client gone
+		}
 		redacted.Close()
 		return
 	}
@@ -341,12 +358,33 @@ func (f flushWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// lastLines returns the last n lines of a file (nil when it cannot be read).
-// Host logs are truncated at each start, so reading whole is fine.
+// hostLogWindow bounds how much of a host log is read: a dev server can log
+// for days.
+const hostLogWindow = 256 << 10
+
+// lastLines returns the last n lines of a file, reading only its final
+// hostLogWindow bytes (nil when it cannot be read).
 func lastLines(path string, n int) []byte {
-	b, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil
+	}
+	off := max(0, fi.Size()-hostLogWindow)
+	b := make([]byte, fi.Size()-off)
+	if _, err := f.ReadAt(b, off); err != nil && err != io.EOF {
+		return nil
+	}
+	if off > 0 { // the window starts mid-line: drop that partial line
+		if i := bytes.IndexByte(b, '\n'); i >= 0 {
+			b = b[i+1:]
+		} else {
+			return nil
+		}
 	}
 	lines := bytes.SplitAfter(b, []byte("\n"))
 	if len(lines) > 0 && len(lines[len(lines)-1]) == 0 {
