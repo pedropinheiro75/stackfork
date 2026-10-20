@@ -35,7 +35,7 @@
       "reason": "data already exists",
       "started_at": "TIME",
       "state": "skipped",
-      "text": "s  in db"
+      "text": "m \u0026\u0026 s  in db"
     },
     {
       "ended_at": "TIME",

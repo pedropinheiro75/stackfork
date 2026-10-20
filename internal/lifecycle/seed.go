@@ -153,7 +153,10 @@ func SeedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
 }
 
 func seedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
-	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+	var m *state.Manifest
+	if instanceDir != "" { // the Repos plan list has no instance yet
+		m, _ = state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+	}
 	decided, c, svc := learn.SeedDecisionIn([]string{root, main}, m, mode)
 	if decided {
 		if !learn.SeedActive(c) {

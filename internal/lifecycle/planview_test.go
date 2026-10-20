@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -47,5 +48,31 @@ func TestReadableDiffReorderedAndTrusted(t *testing.T) {
 	d := ReadableDiff(base, main, knowledge.Plan{Steps: []knowledge.Step{b, a}})
 	if len(d) != 1 || d[0] != "steps were reordered" {
 		t.Fatalf("%v", d)
+	}
+}
+
+// A plan is listed in the order a Start runs it: the data step follows the
+// first compose-up and shows the command that really runs (migrate prefix).
+func TestPlanViewListsSeedAfterFirstUpWithRealCommand(t *testing.T) {
+	main := t.TempDir()
+	p := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+		{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Service: "db", Cmd: "s"},
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "migrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Service: "db", Cmd: "m"},
+	}}
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Plan: p}
+	if err := k.Save(filepath.Join(main, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	out := PlanView(t.TempDir(), main, k, knowledge.ModeContainer)
+	var ids []string
+	for _, s := range out.Steps {
+		ids = append(ids, s.ID)
+	}
+	if got := strings.Join(ids, ","); got != "up,seed,migrate" {
+		t.Fatalf("order %s", got)
+	}
+	if got := out.Steps[1].Cmd; got != "m && s" {
+		t.Fatalf("seed command %q", got)
 	}
 }

@@ -144,15 +144,8 @@ func (r PlanRunner) declare(steps []knowledge.Step) {
 		return
 	}
 	seed, hasSeed := SeedEntry(r.Root, r.Main, r.InstanceDir, r.Plan, r.Mode)
-	for _, s := range steps {
-		if s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData {
-			continue
-		}
+	for _, s := range RunOrder(steps, seed, hasSeed) {
 		r.Run.Step(s.ID, s.Kind, StepText(s))
-		if s.Kind == knowledge.KindComposeUp && hasSeed {
-			r.Run.Step(seed.ID, knowledge.KindExec, StepText(seed))
-			hasSeed = false
-		}
 	}
 }
 

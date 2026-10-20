@@ -51,6 +51,8 @@ func PlanView(stateBase, main string, k *knowledge.Knowledge, mode string) PlanO
 	trusted, _ := TrustedHere(stateBase, main, k.Plan, mode)
 	rawTrusted, _ := HashTrusted(stateBase, main, k.Plan)
 	run, skipped := k.Plan.ForMode(mode)
+	seed, hasSeed := SeedEntry(main, main, "", k.Plan, mode)
+	run = RunOrder(run, seed, hasSeed) // execution order, as a Start lists it
 	state := k.Plan.Status
 	if k.Status == knowledge.StatusVerified {
 		state = knowledge.StatusVerified

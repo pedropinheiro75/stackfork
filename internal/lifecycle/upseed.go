@@ -33,20 +33,44 @@ type UpOutcome struct {
 }
 
 // SeedEntry is the plan's `exec once: data` step for mode or, when the seed is
-// auto-detected, a synthetic step with id "seed". ok is false when the mode
-// has no seed at all.
+// auto-detected, a synthetic step with id "seed". Its Cmd is the command that
+// really runs (SeedRecipeIn: with the migrate prefix). ok is false when the
+// mode has no seed at all.
 func SeedEntry(root, main, instanceDir string, plan knowledge.Plan, mode string) (step knowledge.Step, ok bool) {
+	cmd, svc := SeedRecipeIn(root, main, instanceDir, mode)
 	run, _ := plan.ForMode(mode)
 	for _, s := range run {
 		if s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData {
+			if cmd != "" {
+				s.Cmd = cmd
+			}
 			return s, true
 		}
 	}
-	cmd, svc := SeedRecipeIn(root, main, instanceDir, mode)
 	if cmd == "" {
 		return knowledge.Step{}, false
 	}
 	return knowledge.Step{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Cmd: cmd, Service: svc}, true
+}
+
+// RunOrder is the order a Start runs and shows steps in: the data step is
+// not at its place in the plan but right after the first compose-up (design.md
+// D9), or last when the plan has none. seed is SeedEntry's result.
+func RunOrder(steps []knowledge.Step, seed knowledge.Step, hasSeed bool) []knowledge.Step {
+	out := make([]knowledge.Step, 0, len(steps)+1)
+	for _, s := range steps {
+		if s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData {
+			continue
+		}
+		out = append(out, s)
+		if s.Kind == knowledge.KindComposeUp && hasSeed {
+			out, hasSeed = append(out, seed), false
+		}
+	}
+	if hasSeed {
+		out = append(out, seed)
+	}
+	return out
 }
 
 func withLock(do bool, instanceDir string, fn func()) {
