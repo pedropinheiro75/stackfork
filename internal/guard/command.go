@@ -355,6 +355,8 @@ func Destructive(command, cwd string) bool {
 				return true
 			case action == "gc" && name == "apply":
 				return true
+			case action == "plan" && name == "trust": // people trust host steps, agents never
+				return true
 			case action == "seed" && name == "force":
 				return true
 			case action == "start-env" && name == "force": // agents learn the project instead

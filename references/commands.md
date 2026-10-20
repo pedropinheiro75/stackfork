@@ -86,6 +86,15 @@ stackfork learn
 stackfork learn verify --check "database identity" --check "app readiness" --confirm "yes, it works"
 ```
 
+### plan
+Print the startup plan (`.stackfork/knowledge.json`) for a mode: each step with its state (proposed, recorded, verified), the steps skipped in this mode, and whether this machine trusts the host steps. `--trust` records that trust (host and prepare steps) without prompting; agents are blocked from running it. Host steps print `port: unknown` when no port was detected.
+Flags: `--mode`, `--json`, `--trust`
+```sh
+stackfork plan --mode hybrid
+stackfork plan --json
+stackfork plan --trust
+```
+
 ### env
 Print this instance's env vars, for a host-run app - `eval "$(stackfork env)"`.
 Flags: `--format` (`shell`, the default, or `dotenv`), `--with-passwords`

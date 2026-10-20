@@ -112,6 +112,13 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		}
 		return 0, cmdLearn(stdout, subArgs, root)
 	}
+	if action == "plan" {
+		root, err := identity.ResolvePath(rootArg)
+		if err != nil {
+			return 0, err
+		}
+		return cmdPlan(stdout, stderr, subArgs, root, newStateBase)
+	}
 	// proxy and doctor operate on the tool's shared state, not one instance,
 	// so they too skip the Git checkout/branch resolution below (task
 	// 9.1/9.6).
