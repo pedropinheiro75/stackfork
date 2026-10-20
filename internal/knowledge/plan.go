@@ -48,6 +48,7 @@ type Step struct {
 	Name    string   `json:"name,omitempty"` // host
 	Dir     string   `json:"dir,omitempty"`
 	PortEnv []string `json:"port_env,omitempty"`
+	Port    int      `json:"port,omitempty"` // host: the dev server port, when known
 
 	Text string `json:"text,omitempty"` // note
 }
@@ -239,6 +240,9 @@ func ValidatePlan(p Plan) error {
 		if s.Once != "" && (s.Kind != KindExec || (s.Once != OnceData && s.Once != OnceSchema)) {
 			return fmt.Errorf("step %q: once %q is not valid here (exec steps take data or schema)", s.ID, s.Once)
 		}
+		if s.Port != 0 && (s.Kind != KindHost || s.Port < 1 || s.Port > 65535) {
+			return fmt.Errorf("step %q: port %d is not valid here (host steps take 1..65535)", s.ID, s.Port)
+		}
 		if s.Kind == KindHost {
 			argv, err := SplitArgv(s.Cmd)
 			if err == nil && len(argv) == 0 {
@@ -334,12 +338,4 @@ func (s Step) detail() string {
 		parts = append(parts, s.Text)
 	}
 	return strings.TrimSpace(strings.Join(parts, " "))
-}
-
-// Proposed is the plan a scan proposes from the detected migrate and seed
-// commands; nobody has decided on it yet.
-func Proposed(migrate, seed string) Plan {
-	p := FromRecipe(Recipe{Migrate: migrate, SeedOnce: seed})
-	p.Status = PlanProposed
-	return p
 }

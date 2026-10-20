@@ -75,6 +75,8 @@ func TestDetectDevPort(t *testing.T) {
 		{"env", nil, "PORT=4000 node server.js", 4000},
 		{"nuxt config", map[string]string{"nuxt.config.ts": "export default defineNuxtConfig({ devServer: { port: 3100 } })"}, "nuxt dev", 3100},
 		{"vite config", map[string]string{"vite.config.js": "export default { server: { port: 8081 } }"}, "vite", 8081},
+		{"next config", map[string]string{"next.config.js": "module.exports = { devServer: { port: 3200 } }"}, "next dev", 3200},
+		{"out of range", nil, "vite --port 99999", 0},
 		{"nothing", nil, "node x.js", 0},
 	}
 	for _, c := range cases {
@@ -84,6 +86,50 @@ func TestDetectDevPort(t *testing.T) {
 		}
 		if got := detectDevPort(root, c.script); got != c.want {
 			t.Errorf("%s: got %d want %d", c.name, got, c.want)
+		}
+	}
+}
+
+func appServices() *knowledge.Knowledge {
+	k := &knowledge.Knowledge{}
+	k.Facts.Services = []knowledge.Service{{Name: "web", Build: true, Ports: []string{"3000:3000/tcp"}}}
+	return k
+}
+
+func hostPlan(t *testing.T, pkg string, k *knowledge.Knowledge) knowledge.Plan {
+	root := t.TempDir()
+	put(t, root, "package.json", pkg)
+	k.Facts.Scripts = detectScripts(root)
+	return ProposePlan(root, k)
+}
+
+func TestProposePlanStartOnlyIsContainerOnly(t *testing.T) {
+	p := hostPlan(t, `{"scripts":{"start":"node server.js","prestart":"x","start:prod":"y"}}`, appServices())
+	if len(p.HostSteps()) != 0 || !reflect.DeepEqual(p.Modes, []string{knowledge.ModeContainer}) {
+		t.Fatalf("unexpected: %+v", p)
+	}
+}
+
+func TestProposePlanDevPick(t *testing.T) {
+	p := hostPlan(t, `{"scripts":{"prestart":"x","dev:web":"vite --port 5173"}}`, appServices())
+	h := p.HostSteps()
+	if len(h) != 1 || h[0].Cmd != "npm run dev:web" || h[0].Port != 5173 {
+		t.Fatalf("host: %+v", h)
+	}
+	p = hostPlan(t, `{"scripts":{"dev:web":"a","start:dev":"b"}}`, appServices())
+	if h := p.HostSteps(); len(h) != 1 || h[0].Cmd != "npm run start:dev" {
+		t.Fatalf("host: %+v", h)
+	}
+}
+
+func TestProposePlanDevWithoutAppService(t *testing.T) {
+	p := hostPlan(t, `{"scripts":{"dev":"vite"}}`, &knowledge.Knowledge{})
+	if len(p.HostSteps()) != 0 || !reflect.DeepEqual(p.Modes, []string{knowledge.ModeContainer}) {
+		t.Fatalf("unexpected: %+v", p)
+	}
+	for _, s := range p.Steps {
+		if s.ID == "up-hybrid" {
+			t.Fatal("no hybrid compose-up without an app service")
 		}
 	}
 }

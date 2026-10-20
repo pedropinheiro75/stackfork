@@ -100,3 +100,19 @@ func TestValidatePlanNoSeedWithDataStep(t *testing.T) {
 		t.Fatal("empty seed is undecided, not never")
 	}
 }
+
+func TestValidatePlanPort(t *testing.T) {
+	ok := Plan{Steps: []Step{{ID: "a", Kind: KindHost, Cmd: "x", Port: 3000}}}
+	if err := ValidatePlan(ok); err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range []Step{
+		{ID: "a", Kind: KindHost, Cmd: "x", Port: 70000},
+		{ID: "a", Kind: KindHost, Cmd: "x", Port: -1},
+		{ID: "a", Kind: KindNote, Port: 80},
+	} {
+		if ValidatePlan(Plan{Steps: []Step{st}}) == nil {
+			t.Errorf("expected refusal for %+v", st)
+		}
+	}
+}
