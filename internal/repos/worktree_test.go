@@ -153,3 +153,22 @@ func TestFetchUpdatesRemoteRefsOfThatRepoOnly(t *testing.T) {
 		t.Fatal("fetch did not bring the new remote branch")
 	}
 }
+
+// A branch already checked out somewhere (here: main, in the main checkout)
+// gets no second worktree: the error names that checkout and the start-env
+// command for it, so an agent does not have to guess.
+func TestAddWorktreeBranchAlreadyCheckedOut(t *testing.T) {
+	repo, _ := mkWithOrigin(t)
+	_, err := AddWorktree(repo, "main", "")
+	if err == nil {
+		t.Fatal("main is checked out in the main checkout; expected a refusal")
+	}
+	for _, want := range []string{"already checked out at " + repo, "stackfork start-env " + repo} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in %q", want, err)
+		}
+	}
+	if _, serr := os.Stat(filepath.Join(repo, ".worktrees", "main")); serr == nil {
+		t.Error("no folder may be created")
+	}
+}

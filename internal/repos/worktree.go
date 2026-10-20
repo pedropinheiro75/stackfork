@@ -91,6 +91,9 @@ func AddWorktree(repo, branch, from string) (WorktreeResult, error) {
 	if _, err := os.Lstat(dest); err == nil {
 		return res, fmt.Errorf("%s already exists; nothing changed", dest)
 	}
+	if at := checkedOutAt(repo, branch); at != "" {
+		return res, fmt.Errorf("branch %q is already checked out at %s; start it there with `stackfork start-env %s` (uncommitted changes there do not block it), or pass a new branch name with --from %s", branch, at, shellArg(at), branch)
+	}
 	var args []string
 	switch {
 	case refExists(repo, "refs/heads/"+branch):
@@ -114,6 +117,34 @@ func AddWorktree(repo, branch, from string) (WorktreeResult, error) {
 	}
 	res.Copied, res.Skipped = copyAdapterFiles(repo, dest)
 	return res, nil
+}
+
+// checkedOutAt is the checkout that has branch checked out, or "".
+func checkedOutAt(repo, branch string) string {
+	out, err := gitRun(repo, "worktree", "list", "--porcelain")
+	if err != nil {
+		return ""
+	}
+	path := ""
+	for _, l := range strings.Split(out, "\n") {
+		if p, ok := strings.CutPrefix(l, "worktree "); ok {
+			path = p
+		} else if l == "branch refs/heads/"+branch {
+			if r, err := filepath.EvalSymlinks(path); err == nil {
+				return r
+			}
+			return path
+		}
+	}
+	return ""
+}
+
+// shellArg quotes s for a copy-pasted shell command when it needs it.
+func shellArg(s string) string {
+	if strings.ContainsAny(s, " '\"$`\\&;|<>()*?") {
+		return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	}
+	return s
 }
 
 // excludeWorktrees adds /.worktrees/ to the repo's local git exclude.
