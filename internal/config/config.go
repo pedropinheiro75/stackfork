@@ -310,6 +310,22 @@ func (c *Config) ModeFor(repo string) string {
 	return knowledge.ModeContainer
 }
 
+// ModeForPlan is ModeFor, except that a machine-wide hybrid falls back to
+// container for a plan that cannot run hybrid, with a note saying so. A
+// per-repo setting never falls back: it is a choice about that repo.
+func (c *Config) ModeForPlan(repo string, p knowledge.Plan) (mode, note string) {
+	mode = c.ModeFor(repo)
+	if mode != knowledge.ModeHybrid || p.SupportsMode(mode) {
+		return mode, ""
+	}
+	if rp, err := identity.ResolvePath(repo); err == nil {
+		if m, ok := c.Modes[rp]; ok && validMode(m) == nil {
+			return mode, ""
+		}
+	}
+	return knowledge.ModeContainer, "this plan has no hybrid mode; using container (the machine-wide mode is hybrid)"
+}
+
 // SetMode sets the machine-wide mode.
 func (c *Config) SetMode(mode string) error {
 	if err := validMode(mode); err != nil {

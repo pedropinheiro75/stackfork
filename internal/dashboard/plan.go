@@ -85,7 +85,7 @@ func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
 	}
 	mode := knowledge.ModeContainer
 	if cfg != nil {
-		mode = cfg.ModeFor(repo.Path)
+		mode, _ = cfg.ModeForPlan(repo.Path, k.Plan)
 	}
 	v := &planView{Modes: []string{}}
 	for _, m := range []string{knowledge.ModeContainer, knowledge.ModeHybrid} {

@@ -647,7 +647,7 @@ func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, 
 		cfg, _ := config.Load()
 		mode := knowledge.ModeContainer
 		if cfg != nil {
-			mode = cfg.ModeFor(repo.Path)
+			mode, _ = cfg.ModeForPlan(repo.Path, k.Plan)
 		}
 		if ok, _ := lifecycle.TrustedHere(s.NewStateBase, repo.Path, k.Plan, mode); !ok {
 			diff := lifecycle.ReadableDiff(s.NewStateBase, repo.Path, k.Plan)

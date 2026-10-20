@@ -55,7 +55,10 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 	mode := *modeFlag
 	if mode == "" {
 		if cfg, err := config.Load(); err == nil {
-			mode = cfg.ModeFor(main)
+			var note string
+			if mode, note = cfg.ModeForPlan(main, k.Plan); note != "" && !*jsonFlag {
+				fmt.Fprintln(stderr, "note: "+note)
+			}
 		} else {
 			mode = knowledge.ModeContainer
 		}

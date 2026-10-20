@@ -537,3 +537,26 @@ func TestPlanTrustFromWorktreeUsesMainPlan(t *testing.T) {
 		t.Fatalf("%d %s %s", code, out, e)
 	}
 }
+
+// A machine-wide hybrid mode falls back to container (with a note) for a plan
+// without hybrid; a per-repo setting or --mode hybrid still refuses.
+func TestGlobalHybridFallsBackToContainer(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp}})
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	if _, e, code := runCLI(t, "config", "set", "mode", "hybrid"); code != 0 {
+		t.Fatal(e)
+	}
+	out, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if code != 0 || strings.Count(out, "using container") != 1 || !strings.Contains(string(mustRead(t, log)), " up -d ") {
+		t.Fatalf("global hybrid must fall back: %d %s %s", code, out, e)
+	}
+	if _, e, code := runCLI(t, append(base, "start-env", "--mode", "hybrid", repo)...); code == 0 || !strings.Contains(e, `mode "hybrid" is not supported`) {
+		t.Fatalf("--mode hybrid must refuse: %d %s", code, e)
+	}
+	runCLI(t, "config", "set-mode", repo, "hybrid")
+	if _, e, code := runCLI(t, append(base, "start-env", repo)...); code == 0 || !strings.Contains(e, `mode "hybrid" is not supported`) {
+		t.Fatalf("a per-repo hybrid must refuse: %d %s", code, e)
+	}
+}

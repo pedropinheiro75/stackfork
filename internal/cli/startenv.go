@@ -64,7 +64,10 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 	if mode == "" {
 		mode = knowledge.ModeContainer
 		if cfg, err := config.Load(); err == nil {
-			mode = cfg.ModeFor(main)
+			var note string
+			if mode, note = cfg.ModeForPlan(main, plan); note != "" {
+				fmt.Fprintln(out, "note: "+note)
+			}
 		}
 	}
 	runner := lifecycle.PlanRunner{NewBase: o.NewStateBase, Main: main, Mode: mode, Plan: plan}
