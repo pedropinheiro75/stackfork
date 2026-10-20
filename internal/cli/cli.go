@@ -22,6 +22,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
@@ -864,6 +865,7 @@ func parseDownFlags(stdout io.Writer, subArgs []string) (instance string, volume
 // same function the dashboard's up/down/restart actions call.
 func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string) (int, error) {
 	var opts lifecycle.Options
+	planMode := "" // up: the startup mode whose data step may seed; empty = the configured mode
 
 	switch action {
 	case "up":
@@ -874,12 +876,16 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		fs.Var(&services, "service", "")
 		var wt string
 		fs.StringVar(&wt, "wait-timeout", "180", "")
+		fs.StringVar(&planMode, "mode", "", "")
 		if err := fs.Parse(subArgs); err != nil {
 			return parseFailure(fs, err)
 		}
 		n, err := strconv.Atoi(wt)
 		if err != nil {
 			return 2, fmt.Errorf("invalid --wait-timeout: %s", wt)
+		}
+		if planMode != "" && planMode != knowledge.ModeContainer && planMode != knowledge.ModeHybrid {
+			return 2, fmt.Errorf("invalid --mode %q (container or hybrid)", planMode)
 		}
 		opts.WaitTimeout = n
 		opts.Profiles = profiles
@@ -932,7 +938,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		defer lock.Release()
 	}
 
-	seedNow := action == "up" && planSeed(root, instanceDir)
+	seedNow := action == "up" && planSeed(root, instanceDir, planMode)
 	code, err := lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
 	if seedNow {
 		// up failed: seeded stays false, so the next up seeds

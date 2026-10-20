@@ -15,7 +15,8 @@ Dependency caches across restarts: `prepare` turns an anonymous volume on a depe
 
 ### up
 Start the prepared stack.
-Flags: `--build`, `--profile`, `--service`, `--wait-timeout`
+Flags: `--build`, `--mode`, `--profile`, `--service`, `--wait-timeout`
+`--mode container|hybrid` names the plan mode that decides whether this `up` runs the one-time seed (default: the configured mode); `start-env` sets it.
 ```sh
 stackfork up --build --wait-timeout 120
 ```

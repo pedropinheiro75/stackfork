@@ -47,12 +47,7 @@ func (r PlanRunner) Check() error {
 		return fmt.Errorf("mode %q is not supported by this plan; supported: %s", r.Mode, strings.Join(sup, ", "))
 	}
 	run, _ := r.Plan.ForMode(r.Mode)
-	var excluded []string
-	for _, st := range run {
-		if st.Kind == knowledge.KindComposeUp {
-			excluded = append(excluded, st.Exclude...)
-		}
-	}
+	excluded := excludedServices(run)
 	for _, st := range run {
 		if st.Kind != knowledge.KindExec {
 			continue
@@ -194,6 +189,17 @@ func (r PlanRunner) exec(s knowledge.Step, seeded bool) error {
 		return fmt.Errorf("exited with status %d", code)
 	}
 	return nil
+}
+
+// excludedServices are the services the steps' compose-up leave out.
+func excludedServices(run []knowledge.Step) []string {
+	var excluded []string
+	for _, st := range run {
+		if st.Kind == knowledge.KindComposeUp {
+			excluded = append(excluded, st.Exclude...)
+		}
+	}
+	return excluded
 }
 
 func contains(l []string, x string) bool {

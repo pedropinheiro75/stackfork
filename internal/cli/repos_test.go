@@ -14,6 +14,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	sfstate "github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 // scratchRepo makes a one-commit repo on main at dir.
@@ -558,5 +559,58 @@ func TestGlobalHybridFallsBackToContainer(t *testing.T) {
 	runCLI(t, "config", "set-mode", repo, "hybrid")
 	if _, e, code := runCLI(t, append(base, "start-env", repo)...); code == 0 || !strings.Contains(e, `mode "hybrid" is not supported`) {
 		t.Fatalf("a per-repo hybrid must refuse: %d %s", code, e)
+	}
+}
+
+// In hybrid the container-only data step must not run (its service is the
+// excluded app) and must not be burned: a later container start seeds, in the
+// plan's app service.
+func TestHybridStartLeavesContainerSeedPending(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := adaptedRepo(t, root)
+	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(planCompose), 0o644)
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified,
+		Plan: knowledge.Plan{Status: knowledge.PlanRecorded, AppService: "db", Steps: []knowledge.Step{
+			{ID: "up", Kind: knowledge.KindComposeUp, Modes: []string{"container"}},
+			{ID: "up-h", Kind: knowledge.KindComposeUp, Modes: []string{"hybrid"}, Exclude: []string{"web"}},
+			{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Modes: []string{"container"}, Cmd: "s-cmd"},
+			{ID: "app", Kind: knowledge.KindHost, Modes: []string{"hybrid"}, Name: "app", Cmd: "npm run dev"},
+		}}}
+	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	log := installFakeDocker(t)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1") // a new volume: an up that seeds would seed
+	old := lifecycle.HostStart
+	lifecycle.HostStart = func(io.Writer, io.Writer, []string, string, string, knowledge.Step) error { return nil }
+	defer func() { lifecycle.HostStart = old }()
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	if _, e, code := runCLI(t, append(base, "--root", repo, "plan", "--trust")...); code != 0 {
+		t.Fatal(e)
+	}
+	if out, e, code := runCLI(t, append(base, "start-env", "--mode", "hybrid", repo)...); code != 0 {
+		t.Fatalf("hybrid: %d %s %s", code, out, e)
+	}
+	if b := string(mustRead(t, log)); strings.Contains(b, " exec ") {
+		t.Fatalf("hybrid ran the container-only seed:\n%s", b)
+	}
+	ms, _ := filepath.Glob(filepath.Join(state, "*", "manifest.json"))
+	if len(ms) != 1 {
+		t.Fatalf("manifests: %v", ms)
+	}
+	if m, _ := sfstate.ReadManifest(ms[0]); m == nil || m.Seeded != nil || m.SeedPending {
+		t.Fatalf("seed must stay undecided: %+v", m)
+	}
+	if out, e, code := runCLI(t, append(base, "start-env", "--mode", "container", repo)...); code != 0 {
+		t.Fatalf("container: %d %s %s", code, out, e)
+	}
+	n := 0
+	for _, l := range strings.Split(string(mustRead(t, log)), "\n") {
+		if strings.Contains(l, " exec ") && strings.Contains(l, "s-cmd") && strings.Contains(l, " db ") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("the container start must seed once in the app service:\n%s", mustRead(t, log))
 	}
 }

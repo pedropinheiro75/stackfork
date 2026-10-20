@@ -74,6 +74,13 @@ func DetectSeed(root string) (migrate, seed string) {
 // knowledge plan in any of dirs (first wins), else the manifest's. cmd is
 // SeedNone for "never".
 func SeedDecision(dirs []string, m *state.Manifest) (decided bool, cmd, service string) {
+	return SeedDecisionIn(dirs, m, "")
+}
+
+// SeedDecisionIn is SeedDecision for one startup mode ("" = any). A recorded
+// data step that the mode does not run is decided-but-empty: nothing seeds in
+// this mode, and nothing is marked seeded, so a mode that runs it still can.
+func SeedDecisionIn(dirs []string, m *state.Manifest, mode string) (decided bool, cmd, service string) {
 	for _, d := range dirs {
 		if d == "" {
 			continue
@@ -82,6 +89,16 @@ func SeedDecision(dirs []string, m *state.Manifest) (decided bool, cmd, service 
 			// A data step decides; no_seed means never; neither leaves it
 			// undecided (the caller falls back to the detected script).
 			if s := k.Plan.SeedStep(); s != nil {
+				if mode != "" {
+					run, _ := k.Plan.ForMode(mode)
+					in := false
+					for _, r := range run {
+						in = in || r.ID == s.ID
+					}
+					if !in {
+						return true, "", ""
+					}
+				}
 				return true, s.Cmd, s.Service
 			}
 			if k.Plan.NoSeed {

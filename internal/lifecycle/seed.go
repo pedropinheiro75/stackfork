@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
+	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
@@ -58,9 +59,9 @@ func ResolveExecService(instanceDir string, step knowledge.Step, plan knowledge.
 // RunSeed execs cmd in service (default: the primary app service). On
 // success it records seeded:true; on failure it leaves the marker alone and
 // says how to retry. The caller holds the instance lock.
-func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase, cmd, service string) bool {
+func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase, cmd, service string, plan knowledge.Plan) bool {
 	retry := "stackfork --instance " + project + " seed"
-	service = ResolveExecService(instanceDir, knowledge.Step{Service: service}, knowledge.Plan{})
+	service = ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)
 	f := false
 	SetSeeded(instanceDir, &f) // it ran (or cannot): no longer pending, a failure is retried by hand
 	if service == "" {
@@ -94,8 +95,43 @@ func boolPtr(b bool) *bool { return &b }
 // The recorded or detected migrate runs first: a brand-new database has no
 // tables, and an app image's entrypoint may not migrate on its own.
 func SeedRecipe(root, main, instanceDir string) (cmd, service string) {
+	return SeedRecipeIn(root, main, instanceDir, PlanMode(root, main))
+}
+
+// LoadPlan is the plan start-env runs for this checkout (empty when none).
+func LoadPlan(root, main string) knowledge.Plan {
+	if k, _ := knowledge.LoadFirst(root, main); k != nil {
+		return k.Plan
+	}
+	return knowledge.Plan{}
+}
+
+// PlanMode is the startup mode `up` and `seed` use when none is given: the
+// machine's configuration for the repo, as start-env resolves it.
+func PlanMode(root, main string) string {
+	mode := knowledge.ModeContainer
+	if cfg, err := config.Load(); err == nil {
+		mode, _ = cfg.ModeForPlan(main, LoadPlan(root, main))
+	}
+	return mode
+}
+
+// SeedRecipeIn is SeedRecipe for an explicit mode: a data step the mode does
+// not run gives no seed.
+func SeedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
+	cmd, service = seedRecipeIn(root, main, instanceDir, mode)
+	if cmd != "" { // a service this mode leaves out cannot run it: do not burn the one-time seed
+		plan := LoadPlan(root, main)
+		if run, _ := plan.ForMode(mode); contains(excludedServices(run), ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)) {
+			return "", ""
+		}
+	}
+	return cmd, service
+}
+
+func seedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
 	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
-	decided, c, svc := learn.SeedDecision([]string{root, main}, m)
+	decided, c, svc := learn.SeedDecisionIn([]string{root, main}, m, mode)
 	if decided {
 		if !learn.SeedActive(c) {
 			return "", ""
@@ -165,15 +201,21 @@ func dataVolumesExist(instanceDir string) bool {
 // again, except a seed still pending because the up that created the
 // volume failed: the volume exists by then, so it is not read as old data.
 func PlanSeed(root, main, instanceDir string) bool {
+	return PlanSeedIn(root, main, instanceDir, PlanMode(root, main))
+}
+
+// PlanSeedIn is PlanSeed for an explicit mode. When the mode does not run the
+// recorded data step it decides nothing: the seed stays undecided.
+func PlanSeedIn(root, main, instanceDir, mode string) bool {
 	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
 	if m != nil && m.SeedPending {
-		cmd, _ := SeedRecipe(root, main, instanceDir)
+		cmd, _ := SeedRecipeIn(root, main, instanceDir, mode)
 		return cmd != ""
 	}
 	if m == nil || m.Seeded != nil {
 		return false
 	}
-	if cmd, _ := SeedRecipe(root, main, instanceDir); cmd == "" {
+	if cmd, _ := SeedRecipeIn(root, main, instanceDir, mode); cmd == "" {
 		return false
 	}
 	if dataVolumesExist(instanceDir) {

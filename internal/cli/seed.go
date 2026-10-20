@@ -20,13 +20,17 @@ func seedRecipe(root, instanceDir string) (cmd, service string) {
 	return lifecycle.SeedRecipe(root, repos.MainRepoOf(root), instanceDir)
 }
 
-func planSeed(root, instanceDir string) bool {
-	return lifecycle.PlanSeed(root, repos.MainRepoOf(root), instanceDir)
+func planSeed(root, instanceDir, mode string) bool {
+	main := repos.MainRepoOf(root)
+	if mode == "" {
+		mode = lifecycle.PlanMode(root, main)
+	}
+	return lifecycle.PlanSeedIn(root, main, instanceDir, mode)
 }
 
 func runSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase string) bool {
 	cmd, service := seedRecipe(root, instanceDir)
-	return lifecycle.RunSeed(stdout, stderr, root, branch, project, instanceDir, newBase, legacyBase, cmd, service)
+	return lifecycle.RunSeed(stdout, stderr, root, branch, project, instanceDir, newBase, legacyBase, cmd, service, lifecycle.LoadPlan(root, repos.MainRepoOf(root)))
 }
 
 // cmdSeed is `stackfork seed [--force]`: runs the recorded seed_once unless

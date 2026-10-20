@@ -147,7 +147,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 	up := func(services []string) error {
 		fmt.Fprintf(out, "starting %s\n", project)
 		args := append([]string{}, base...)
-		args = append(args, "up")
+		args = append(args, "up", "--mode", mode)
 		for _, s := range services {
 			args = append(args, "--service", s)
 		}
