@@ -12,8 +12,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Hybrid mode (`config set mode hybrid`, `config set-mode REPO hybrid`, `start-env --mode`) runs
   your app on the host and the rest in containers. Host steps run only after you trust them with
   `stackfork plan --trust` or the dashboard's Trust button. `host start|stop|restart|logs NAME`
-  runs an app detached and supervised, and `down` stops it first. macOS and Linux only for now;
-  the Windows runtime comes in a later release.
+  runs an app detached and supervised, and `down` stops it first.
+- Windows support (`add-learn-plan` slices 2 and 3): host steps, instance locks, the dashboard's
+  trust and confirm dialogs, the Learn terminal and the agent guard (Windows paths, `cmd /c` and
+  `powershell -Command`) are built for native Windows, and state and config live under
+  `%LOCALAPPDATA%`. `env --format powershell` prints PowerShell lines. It is built and vetted but
+  has not run on a Windows machine; the limits are in SECURITY.md.
+- `doctor` reports a `host apps` warning for a host app whose supervisor is gone but whose port
+  still answers.
 - A new worktree of a repo that another worktree already runs can be started: `start-env` (and
   `worktree add`) rebuild the recipe from that sibling's prepared instance, copying its untracked
   adapter files and runtime env with checkout paths rewritten (never `.env`, keys or tokens), and
@@ -92,6 +98,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `.sql`, `.sql.gz`, or Postgres custom-format dump, streamed directly into
   the container (never a temp copy on disk). Postgres supports all three
   forms; MySQL/MariaDB gets plain SQL.
+
+### Fixed
+
+- A stopped or exited host app stays as an exited row with Start; `down` forgets it.
+- The card's Start on a hybrid instance runs the startup plan, not a plain `compose up`.
 
 ### Rewritten in Go
 

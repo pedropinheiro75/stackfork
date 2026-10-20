@@ -72,9 +72,17 @@ Known limits:
 
 - The guard does not watch the state directory. An agent with file access can write the trust file directly.
 - Trust is stored once for each main checkout. Worktrees with different host steps invalidate each other's trust.
-- If you kill a host supervisor with `kill -9`, its app keeps running. Doctor detection is planned for slice 2.
+- If you kill a host supervisor with `kill -9`, its app keeps running. `doctor` reports it (the `host apps` check) when its port still answers.
 - A foreground `host NAME` command that ignores SIGTERM is orphaned after its stackfork gets SIGKILL.
-- The Windows native runtime is not available yet. The stubs refuse.
+
+## Windows
+
+The Windows runtime is built and vetted (`GOOS=windows go vet`), but it has not run on a Windows machine. Its ceilings:
+
+- No graceful stop. `host stop` and `down` use `taskkill /T /F`, so the app gets no chance to clean up.
+- Process identity is the PID plus its creation time. stackfork does not read the command line, so a recycled PID is not matched, but a process is not checked for being the app it started.
+- Children of a supervisor that was killed first can survive. Their tree was not killed, and `doctor` reports their port.
+- The guard treats a backslash as a literal character (paths such as `C:\Users\x\stackfork.exe`). It unwraps `cmd /c` and `powershell -Command` before it checks the command, and it still splits on `&&`, `||`, `;`, `|` and `&`.
 
 ## Reporting a vulnerability
 

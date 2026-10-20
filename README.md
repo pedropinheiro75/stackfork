@@ -34,6 +34,8 @@ From a local checkout instead:
 go install ./cmd/stackfork
 ```
 
+Windows is supported natively: it is built and vetted, but not yet run on a Windows machine.
+
 ## ⚡ Quick start
 
 Five commands, on a project you already have checked out with a Compose file:
@@ -72,7 +74,7 @@ To let stackfork run the app on the host and keep everything else in containers,
 3. Run `stackfork plan --trust`. In the dashboard, click **Trust** instead: a native dialog shows every field of the plan, and stackfork trusts exactly that plan.
 4. Run `stackfork start-env`.
 
-Hybrid mode drops the app service and every service that depends on it. The host step runs detached under a supervisor: use `stackfork host stop|restart|logs NAME`; `stackfork down` stops it first. Trust is per machine, covers all host and prepare steps, and is stored once for each main checkout. An agent cannot trust a plan. See [SECURITY.md](SECURITY.md). On Windows the host runtime is not supported yet.
+Hybrid mode drops the app service and every service that depends on it. The host step runs detached under a supervisor: use `stackfork host stop|restart|logs NAME`; `stackfork down` stops it first. Trust is per machine, covers all host and prepare steps, and is stored once for each main checkout. An agent cannot trust a plan. See [SECURITY.md](SECURITY.md). On Windows the host runtime is built and vetted but has not run on a Windows machine yet; its limits are in [SECURITY.md](SECURITY.md).
 
 ## 🆚 How it's different
 

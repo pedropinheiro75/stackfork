@@ -98,7 +98,8 @@ stackfork plan --trust
 
 ### env
 Print this instance's env vars, for a host-run app - `eval "$(stackfork env)"`.
-Flags: `--format` (`shell`, the default, or `dotenv`), `--with-passwords`
+`--format powershell` prints `$env:NAME = '…'` lines for PowerShell, with each value single-quoted.
+Flags: `--format` (`shell`, the default, `dotenv` or `powershell`), `--with-passwords`
 ```sh
 eval "$(stackfork env)"
 stackfork env --format dotenv > .env.local
@@ -126,7 +127,7 @@ Sub-forms:
 - `host stop NAME` sends SIGTERM to the supervisor's process group, waits 10 s (`STACKFORK_HOST_STOP_TIMEOUT`, for example `2s`), then SIGKILL; removes the route. It signals only when the recorded PID, start time and command line still match; a stale entry is only cleaned up.
 - `host restart NAME` stops it and starts it again with the same command.
 - `host logs NAME [-f]` prints the log (secrets redacted); `-f` follows it.
-`stackfork down` stops host processes before it runs the compose down. Known limit: if the supervisor itself is killed with SIGKILL (not through `host stop`), its command keeps running without a supervisor; `host stop NAME` still finds the entry, sees the supervisor is gone and cleans up, but cannot reach the orphaned command, so stop it by hand. A foreground `host` run from an interactive shell leads its own job group, so `host stop` can stop it too; inside a pipeline the signal also reaches the other members. Not supported on Windows yet.
+`stackfork down` stops host processes before it runs the compose down. Known limit: if the supervisor itself is killed with SIGKILL (not through `host stop`), its command keeps running without a supervisor; `host stop NAME` still finds the entry, sees the supervisor is gone and cleans up, but cannot reach the orphaned command, so stop it by hand. A foreground `host` run from an interactive shell leads its own job group, so `host stop` can stop it too; inside a pipeline the signal also reaches the other members. On Windows it stops the process tree with `taskkill /T /F`, with no graceful stop; see SECURITY.md.
 Flags: `--port`, `--dir` (working directory, relative to the checkout), `--port-env` (extra env names set to the port, comma separated)
 ```sh
 stackfork host app -- bun run dev
@@ -233,6 +234,8 @@ stackfork start-env .worktrees/fix-login
 
 ### doctor
 Check the local environment the proxy/tool depend on (Docker context, Compose version, `*.localhost` resolution, proxy port, `host.docker.internal`, Docker disk usage). The disk check warns at 85% used, because a full Docker disk makes installs fail later with `no space left on device`.
+
+The `host apps` check warns about a host app whose supervisor is gone but whose port still answers. Find the process on that port (macOS/Linux: `lsof -i :PORT`; Windows: `netstat -ano | findstr :PORT`), stop it, then run `stackfork host start`. A stopped app that shows as an exited row is normal and is not reported.
 
 `--free-space` removes the Docker build cache, dangling images and anonymous volumes that no container uses, then runs the checks. It never removes a named volume, so databases are kept. The dashboard's "Free Docker space" button (in the disk banner and the "…" panel) runs the same steps.
 ```sh
