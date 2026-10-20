@@ -65,7 +65,7 @@
       <div class="plan" data-plan="{{.Status}}">
         <div class="plan-bar">
           <span class="micro">Starts with</span>
-          <label class="plan-mode"><span class="small muted">Mode</span> <select data-mode-for="{{$r.Path}}" data-key="{{$r.Path}}/mode" aria-label="Start mode for {{$r.Name}}">{{$m := .Mode}}{{range .Modes}}<option value="{{.}}"{{if eq . $m}} selected{{end}}>{{.}}</option>{{end}}</select></label>
+          <label class="plan-mode"><span class="small muted">Mode</span> <select data-mode-for="{{$r.Path}}" data-key="{{$r.Path}}/mode" aria-label="Start mode for {{$r.Name}}">{{$m := .Mode}}{{range .Modes}}<option value="{{.}}"{{if eq . $m}} selected{{end}}>{{.}}</option>{{end}}</select>{{if .Unsupported}} <span class="chip chip-attention"><span class="chip-glyph" aria-hidden="true">&#9679;</span>{{.Mode}} not supported by this plan</span>{{end}}</label>
         </div>
         <div class="plan-list" role="table" aria-label="Startup plan, {{.Mode}} mode">
           <div class="plan-head micro" role="row"><span role="columnheader">Step</span><span role="columnheader">Kind</span><span role="columnheader">Command</span><span role="columnheader">State</span></div>
@@ -83,7 +83,7 @@
         {{else if .Diff}}
         <div class="callout callout-failed" data-trust-callout>
           <span class="callout-glyph" aria-hidden="true">&#9650;</span>
-          <div class="callout-body"><p class="callout-title">Host steps changed on this machine</p><pre class="mono-log">{{range .Diff}}{{.}}
+          <div class="callout-body"><p class="callout-title">{{.TrustTitle}}</p><pre class="mono-log">{{range .Diff}}{{.}}
 {{end}}</pre></div>
           <div class="callout-actions"><button type="button" class="btn" data-key="{{$r.Path}}/trust" data-run="stackfork --root {{shq $r.Path}} plan --trust">Trust on this machine</button></div>
         </div>

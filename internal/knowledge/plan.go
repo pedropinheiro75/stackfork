@@ -3,6 +3,7 @@ package knowledge
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // Modes a plan can run in (design.md D1/D3).
@@ -227,6 +228,11 @@ func ValidatePlan(p Plan) error {
 			return fmt.Errorf("step %q: duplicate id", s.ID)
 		}
 		seen[s.ID] = true
+		for _, v := range append([]string{s.ID, s.Service, s.Cmd, s.Name, s.Dir, s.Text}, append(append(append([]string{}, s.Args...), s.PortEnv...), s.Exclude...)...) {
+			if strings.IndexFunc(v, unicode.IsControl) >= 0 {
+				return fmt.Errorf("step %q: a value has a control character (newline, escape, tab); the trust dialog must show it as written", s.ID)
+			}
+		}
 		switch s.Kind {
 		case KindPrepare, KindComposeUp, KindExec, KindHost, KindNote:
 		default:

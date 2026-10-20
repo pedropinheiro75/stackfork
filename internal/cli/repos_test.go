@@ -311,7 +311,8 @@ func TestStartEnvRefusesUntrustedBeforeDocker(t *testing.T) {
 	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
 	runCLI(t, "config", "set-mode", repo, "hybrid")
 	_, e, code := runCLI(t, append(base, "start-env", repo)...)
-	if code != 1 || !strings.Contains(e, "not trusted on this machine") || !strings.Contains(e, "stackfork plan --trust") {
+	if code != 1 || !strings.Contains(e, "not trusted on this machine") || !strings.Contains(e, "stackfork plan --trust") ||
+		!strings.Contains(e, "+ app [host]") || strings.Contains(e, `{"id"`) {
 		t.Fatalf("%d %s", code, e)
 	}
 	if b, _ := os.ReadFile(log); len(strings.TrimSpace(string(b))) != 0 {

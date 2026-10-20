@@ -45,6 +45,9 @@ func HashTrusted(stateBase, mainRoot string, p knowledge.Plan) (trusted bool, di
 // ReadableDiff is HashTrusted's diff as lines a person can read: each added
 // or changed step with all its fields (StepBlock), removed ones by id.
 func ReadableDiff(stateBase, mainRoot string, p knowledge.Plan) []string {
+	if ok, _ := HashTrusted(stateBase, mainRoot, p); ok {
+		return nil
+	}
 	old := map[string]knowledge.Step{}
 	for _, s := range knowledge.ReadTrustSteps(knowledge.TrustPath(stateBase, mainRoot)) {
 		old[s.ID] = s
@@ -67,8 +70,11 @@ func ReadableDiff(stateBase, mainRoot string, p knowledge.Plan) []string {
 	}
 	for id, o := range old {
 		if !seen[id] {
-			out = append(out, "- "+id+" ["+o.Kind+"]")
+			out = append(out, "- "+safe(id)+" ["+safe(o.Kind)+"]")
 		}
+	}
+	if len(out) == 0 { // same steps, different order
+		out = []string{"steps were reordered"}
 	}
 	return out
 }

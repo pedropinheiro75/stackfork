@@ -62,6 +62,8 @@ type stepView struct {
 // planView is a repo's startup plan for its current mode, built by
 // lifecycle.PlanView (the same code as `stackfork plan --json`).
 type planView struct {
+	Unsupported         bool   // the configured mode is not one this plan supports
+	TrustTitle          string // callout title
 	Mode                string
 	Modes               []string
 	Status              string
@@ -87,9 +89,7 @@ func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
 			v.Modes = append(v.Modes, m)
 		}
 	}
-	if !k.Plan.SupportsMode(mode) {
-		mode = knowledge.ModeContainer
-	}
+	v.Unsupported = !k.Plan.SupportsMode(mode)
 	out := lifecycle.PlanView(s.NewStateBase, repo.Path, k, mode)
 	v.Mode, v.Status, v.Trusted, v.NeedsTrust, v.Diff = out.Mode, out.Status, out.Trusted, out.TrustNeeded, out.Diff
 	conv := func(in []lifecycle.PlanStep, skipped bool) (l []stepView) {
@@ -97,6 +97,10 @@ func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
 			l = append(l, stepView{ID: st.ID, Kind: st.Kind, Text: stepText(st), Skipped: skipped, Chip: stepChip(st, skipped)})
 		}
 		return
+	}
+	v.TrustTitle = "Host steps are not trusted on this machine yet"
+	if _, _, ok := knowledge.ReadTrust(knowledge.TrustPath(s.NewStateBase, repo.Path)); ok {
+		v.TrustTitle = "Host steps changed since you trusted them"
 	}
 	v.Steps, v.Skipped = conv(out.Steps, false), conv(out.Skipped, true)
 	return v

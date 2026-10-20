@@ -37,6 +37,14 @@ type runPlan struct {
 	Confirm string // non-empty: the question the native dialog asks
 	DryRun  []string
 	Down    string // after a worktree removal: this instance's stack goes too
+	// Trust: `plan --trust` runs in this process, on exactly the plan the
+	// dialog showed, so a knowledge.json edited while it is open is not trusted.
+	Trust *trustJob
+}
+
+type trustJob struct {
+	Repo string
+	Plan knowledge.Plan
 }
 
 // runStackfork are the stackfork actions the page may run. Everything else
@@ -159,7 +167,7 @@ func (s *Server) planStackfork(args []string, root string) (*runPlan, error) {
 			return nil, errors.New("only a plain `stackfork learn` runs from the page")
 		}
 	case "plan":
-		if len(rest) != 1 || rest[0] != "--trust" || len(global) < 2 || global[0] != "--root" {
+		if len(rest) != 1 || rest[0] != "--trust" || len(global) != 2 || global[0] != "--root" {
 			return nil, errors.New("only `plan --trust` runs from the page, with --root REPO")
 		}
 	case "proxy":
@@ -199,6 +207,7 @@ func (s *Server) planStackfork(args []string, root string) (*runPlan, error) {
 		}
 		diff := lifecycle.ReadableDiff(s.NewStateBase, repo, k.Plan)
 		p.Confirm += "\n\n" + lifecycle.TrustPrompt(k.Plan, diff)
+		p.Trust = &trustJob{Repo: repo, Plan: k.Plan}
 	}
 	p.Args = argv
 	return p, nil
@@ -278,6 +287,14 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 			writeActionResult(w, http.StatusOK, actionResponse{Message: "cancelled; nothing ran"})
 			return
 		}
+	}
+	if plan.Trust != nil {
+		if _, err := lifecycle.TrustHere(s.NewStateBase, plan.Trust.Repo, plan.Trust.Plan); err != nil {
+			writeActionResult(w, http.StatusOK, actionResponse{Message: err.Error()})
+			return
+		}
+		writeActionResult(w, http.StatusOK, actionResponse{OK: true, Message: "trusted on this machine"})
+		return
 	}
 	out, err := s.execPlan(ctx, plan.Name, plan.Args)
 	if err == nil && plan.Down != "" {

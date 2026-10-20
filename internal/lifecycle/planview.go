@@ -3,7 +3,9 @@ package lifecycle
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
@@ -85,22 +87,43 @@ func TrustHere(stateBase, main string, p knowledge.Plan) ([]knowledge.Step, erro
 // TrustPrompt is the text of the native dialog: every step the approval
 // covers with all its fields, then what changed since the last approval.
 func TrustPrompt(p knowledge.Plan, diff []string) string {
-	var b strings.Builder
-	b.WriteString("Trusts these steps on this machine:\n")
+	lines := []string{"Trusts these steps on this machine:", ""}
 	for _, s := range knowledge.TrustSteps(p.Steps) {
-		b.WriteString("\n" + strings.Join(StepBlock(s), "\n"))
+		lines = append(lines, StepBlock(s)...)
 	}
 	if len(diff) > 0 {
-		b.WriteString("\n\nChanged since last trusted:\n" + strings.Join(diff, "\n"))
+		lines = append(lines, "", "Changed since last trusted:")
+		lines = append(lines, diff...)
+	}
+	// a dialog nobody can read approves nothing: cap it
+	var b strings.Builder
+	for i, l := range lines {
+		if b.Len()+len(l) > 3000 {
+			fmt.Fprintf(&b, "\n... %d more lines; review with `stackfork plan`", len(lines)-i)
+			break
+		}
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(l)
 	}
 	return b.String()
+}
+
+// safe shows a value as written unless it holds a control or non-printing
+// character, which could fake a line of the dialog: then it is quoted.
+func safe(v string) string {
+	if strings.IndexFunc(v, func(r rune) bool { return r != ' ' && !unicode.IsPrint(r) }) >= 0 {
+		return strconv.Quote(v)
+	}
+	return v
 }
 
 // StepBlock lists every non-empty field of the step (derived from the Step
 // struct, so a future field cannot be left out), which is what the trust
 // hash covers, one per line.
 func StepBlock(s knowledge.Step) []string {
-	l := []string{s.ID + " [" + s.Kind + "]"}
+	l := []string{safe(s.ID) + " [" + safe(s.Kind) + "]"}
 	v, t := reflect.ValueOf(s), reflect.TypeOf(s)
 	for i := 0; i < t.NumField(); i++ {
 		key, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
@@ -119,7 +142,7 @@ func StepBlock(s knowledge.Step) []string {
 		default:
 			val = fmt.Sprint(f)
 		}
-		l = append(l, "    "+key+": "+val)
+		l = append(l, "    "+key+": "+safe(val))
 	}
 	return l
 }

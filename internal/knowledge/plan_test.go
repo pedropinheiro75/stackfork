@@ -116,3 +116,21 @@ func TestValidatePlanPort(t *testing.T) {
 		}
 	}
 }
+
+func TestValidatePlanRefusesControlCharacters(t *testing.T) {
+	for _, st := range []Step{
+		{ID: "a\nb", Kind: KindNote},
+		{ID: "a", Kind: KindExec, Cmd: "x\ny"},
+		{ID: "a", Kind: KindHost, Cmd: "x", Name: "n\x1b[2J"},
+		{ID: "a", Kind: KindHost, Cmd: "x", Dir: "d\n"},
+		{ID: "a", Kind: KindExec, Service: "s\t", Cmd: "x"},
+		{ID: "a", Kind: KindPrepare, Args: []string{"--x\ny"}},
+		{ID: "a", Kind: KindHost, Cmd: "x", PortEnv: []string{"P\nQ"}},
+		{ID: "a", Kind: KindComposeUp, Exclude: []string{"e\n"}},
+		{ID: "a", Kind: KindNote, Text: "t\nu"},
+	} {
+		if ValidatePlan(Plan{Steps: []Step{st}}) == nil {
+			t.Errorf("expected refusal for %+v", st)
+		}
+	}
+}

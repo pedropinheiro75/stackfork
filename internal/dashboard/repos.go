@@ -467,6 +467,16 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			writeActionResult(w, http.StatusForbidden, actionResponse{Message: "not a repo found by the scan under a configured folder"})
 			return
 		}
+		if k, kerr := knowledge.Load(filepath.Join(repo, ".stackfork", "knowledge.json")); kerr == nil && !k.Plan.SupportsMode(mode) && (mode == knowledge.ModeContainer || mode == knowledge.ModeHybrid) {
+			var sup []string
+			for _, m := range []string{knowledge.ModeContainer, knowledge.ModeHybrid} {
+				if k.Plan.SupportsMode(m) {
+					sup = append(sup, m)
+				}
+			}
+			err = fmt.Errorf("mode %s is not supported by this plan; supported: %s", mode, strings.Join(sup, ", "))
+			break
+		}
 		err = cfg.SetRepoMode(repo, mode)
 	case "rescan":
 		s.rescanAsync(true)
@@ -627,7 +637,18 @@ func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, 
 	}
 	// A host or prepare step nobody approved on this machine: ask first,
 	// before anything is created or run (design.md D9).
-	if k, err := knowledge.Load(filepath.Join(repo.Path, ".stackfork", "knowledge.json")); err == nil {
+	// Same lookup as StartEnv: the checkout's own knowledge.json, then the main repo's.
+	var k *knowledge.Knowledge
+	for _, dir := range []string{checkout, repo.Path} {
+		if dir == "" {
+			continue
+		}
+		if kk, err := knowledge.Load(filepath.Join(dir, ".stackfork", "knowledge.json")); err == nil {
+			k = kk
+			break
+		}
+	}
+	if k != nil {
 		cfg, _ := config.Load()
 		mode := knowledge.ModeContainer
 		if cfg != nil {
