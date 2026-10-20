@@ -75,12 +75,12 @@ func StopHost(stderr io.Writer, instanceDir, name string, timeout time.Duration,
 			os.WriteFile(flag, []byte(fmt.Sprintf("%d %s\n", os.Getpid(), started)), 0o600) //nolint:errcheck // best effort; without it a supervisor may wait for the lock
 		}
 		defer os.Remove(flag)
-		if err := state.KillGroup(proc.PID, syscall.SIGTERM); err != nil {
+		if err := state.KillHost(proc, syscall.SIGTERM); err != nil {
 			return fmt.Errorf("host process %s: %w", name, err)
 		}
 		if !waitGone(proc, timeout) {
 			fmt.Fprintf(stderr, "stackfork: %s ignored SIGTERM for %v; killing it\n", name, timeout)
-			if err := state.KillGroup(proc.PID, syscall.SIGKILL); err != nil {
+			if err := state.KillHost(proc, syscall.SIGKILL); err != nil {
 				return fmt.Errorf("host process %s: %w", name, err)
 			}
 			if !waitGone(proc, 5*time.Second) {

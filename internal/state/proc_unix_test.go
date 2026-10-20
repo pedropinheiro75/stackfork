@@ -4,6 +4,7 @@ package state
 
 import (
 	"os"
+	"os/exec"
 	"syscall"
 	"testing"
 )
@@ -29,5 +30,22 @@ func TestHostIdentityNeedsStartTime(t *testing.T) {
 	}
 	if HostIdentity(HostProc{PID: os.Getpid(), StartedAt: start, Cmdline: []string{"other"}}) {
 		t.Error("wrong cmdline must not match")
+	}
+}
+
+func TestKillHostIsKillGroup(t *testing.T) {
+	if err := KillHost(HostProc{PID: os.Getpid()}, syscall.SIGTERM); err == nil {
+		t.Error("KillHost must refuse the calling process")
+	}
+	c := exec.Command("sleep", "30")
+	c.SysProcAttr = DetachAttr()
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := KillHost(HostProc{PID: c.Process.Pid}, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Wait(); err == nil {
+		t.Error("child should have been killed")
 	}
 }

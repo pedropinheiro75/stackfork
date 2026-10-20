@@ -36,6 +36,10 @@ func KillGroup(pid int, sig syscall.Signal) error {
 	return syscall.Kill(-pg, sig)
 }
 
+// KillHost signals proc's process group. Unix: KillGroup; a group id is not
+// reused while the group exists, so the identity check by the caller suffices.
+func KillHost(proc HostProc, sig syscall.Signal) error { return KillGroup(proc.PID, sig) }
+
 func psField(pid int, fields string) (string, error) {
 	args := []string{"-ww"}
 	for _, f := range strings.Split(fields, ",") {

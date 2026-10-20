@@ -22,8 +22,9 @@ type Lock struct {
 }
 
 // AcquireLock blocks until it holds an exclusive LockFileEx lock on path.
+// No O_APPEND: on Windows Go then drops GENERIC_WRITE and LockFileEx fails with access denied.
 func AcquireLock(path string) (*Lock, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}

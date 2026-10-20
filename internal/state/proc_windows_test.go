@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -20,14 +21,54 @@ func TestProcStartSelf(t *testing.T) {
 }
 
 func TestExitedChildNotAlive(t *testing.T) {
-	c := exec.Command("cmd", "/c", "exit 0")
+	c := exec.Command("ping", "-n", "30", "127.0.0.1")
 	if err := c.Start(); err != nil {
 		t.Fatal(err)
 	}
-	start, _ := ProcStart(c.Process.Pid) // may already be gone
+	start, err := ProcStart(c.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !processAlive(c.Process.Pid, start) {
+		t.Fatal("running child must be alive")
+	}
+	c.Process.Kill()
 	c.Wait()
 	if processAlive(c.Process.Pid, start) {
 		t.Fatal("exited child reported alive")
+	}
+}
+
+func TestDetachAttrHasHiddenConsole(t *testing.T) {
+	a := DetachAttr()
+	if a.CreationFlags&createNoWindow == 0 || a.CreationFlags&syscall.CREATE_NEW_PROCESS_GROUP == 0 {
+		t.Fatalf("flags %#x", a.CreationFlags)
+	}
+}
+
+func TestKillHostChecksIdentity(t *testing.T) {
+	c := exec.Command("ping", "-n", "30", "127.0.0.1")
+	c.SysProcAttr = DetachAttr()
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { c.Process.Kill(); c.Wait() }()
+	start, err := ProcStart(c.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if KillHost(HostProc{PID: c.Process.Pid, StartedAt: "filetime:1"}, 0) == nil {
+		t.Fatal("a different creation time must not be killed")
+	}
+	if !processAlive(c.Process.Pid, start) {
+		t.Fatal("child must still run")
+	}
+	if err := KillHost(HostProc{PID: c.Process.Pid, StartedAt: start}, 0); err != nil {
+		t.Fatal(err)
+	}
+	c.Wait()
+	if processAlive(c.Process.Pid, start) {
+		t.Fatal("child still alive")
 	}
 }
 
