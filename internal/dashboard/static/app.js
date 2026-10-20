@@ -342,7 +342,7 @@
   // two callouts for one failure.
   function seedCovers(inst) {
     var lr = inst.last_run;
-    return !!(lr && inst.seed_command && lr.failed_step && inst.seed_run === lr.id && inst.seed_step === lr.failed_step);
+    return !!(lr && lr.outcome === "failed" && inst.seed_command && lr.failed_step && inst.seed_run === lr.id && inst.seed_step === lr.failed_step);
   }
 
   function runLogAttrs(project, run, step) {

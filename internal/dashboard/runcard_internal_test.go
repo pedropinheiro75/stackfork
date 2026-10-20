@@ -54,6 +54,11 @@ var runCardCases = []struct {
 		i.SeedCommand, i.SeedForce, i.SeedDone = "stackfork --instance P seed", "stackfork --instance P seed --force", "stackfork --instance P seed --mark-done"
 		i.SeedError, i.SeedRun, i.SeedStep = "duplicate key", 9, "seed"
 	}), []string{`data-seed="failed"`, `data-run-log data-project="sf-acme-web-2ffa6841c75d" data-run-id="9" data-step="seed"`, ">View log<"}, []string{`data-run="failed"`, "Start failed"}},
+	{"interrupted at the seed shows both", runInst(&inventory.LastRun{ID: 11, Command: "start-env", Trigger: "cli", Outcome: "interrupted", FailedStep: "seed", StartedAt: ago5(),
+		Retry: "stackfork --root /src/acme-web/.worktrees/feature-login start-env"}, func(i *inventory.Instance) {
+		i.SeedCommand, i.SeedDone, i.SeedForce = "stackfork --instance P seed", "d", "f"
+		i.SeedRun, i.SeedStep = 11, "seed"
+	}), []string{`data-seed="failed"`, `data-run="interrupted"`, "Start interrupted at step"}, nil},
 	{"seed callout of an older run", runInst(&inventory.LastRun{ID: 10, Command: "up", Trigger: "cli", Outcome: "failed", FailedStep: "up", StartedAt: ago5(), EndedAt: ago5(),
 		Retry: "stackfork --instance sf-acme-web-2ffa6841c75d up"}, func(i *inventory.Instance) {
 		i.SeedCommand, i.SeedDone, i.SeedForce = "stackfork --instance P seed", "d", "f"

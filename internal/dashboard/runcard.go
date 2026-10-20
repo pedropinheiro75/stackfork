@@ -50,7 +50,7 @@ func (c cardData) RunStarting() *chipView {
 // last run, so the card never shows two callouts for one failure.
 func (c cardData) seedCovers() bool {
 	lr := c.LastRun
-	return lr != nil && c.SeedCommand != "" && lr.FailedStep != "" && c.SeedRun == lr.ID && c.SeedStep == lr.FailedStep
+	return lr != nil && lr.Outcome == "failed" && c.SeedCommand != "" && lr.FailedStep != "" && c.SeedRun == lr.ID && c.SeedStep == lr.FailedStep
 }
 
 // RunCallout is nil unless the last run failed or was interrupted.
