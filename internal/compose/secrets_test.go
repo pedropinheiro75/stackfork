@@ -29,8 +29,9 @@ func TestParseSecretFlag(t *testing.T) {
 	} {
 		if _, _, err := ParseSecretFlag(bad); err == nil {
 			t.Fatalf("accepted malformed --secret %q", bad)
-		} else if !strings.Contains(err.Error(), bad) {
-			t.Fatalf("expected error to name the malformed flag %q, got %v", bad, err)
+		} else if strings.Contains(err.Error(), "ftp:foo") || strings.Contains(err.Error(), "onlypath") {
+			// design D1: an error never echoes input that did not parse.
+			t.Fatalf("error echoes the malformed reference: %v", err)
 		}
 	}
 }

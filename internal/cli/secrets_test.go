@@ -108,7 +108,8 @@ func TestSecretMalformedFlagRefusedAtPrepare(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("expected exit 1, got %d", code)
 	}
-	if !strings.Contains(stderr, "not-a-valid-flag") {
+	// design D1: the refusal never echoes input that did not parse.
+	if strings.Contains(stderr, "not-a-valid-flag") || !strings.Contains(stderr, "--secret: expected NAME=REF") {
 		t.Fatalf("unexpected stderr: %s", stderr)
 	}
 }

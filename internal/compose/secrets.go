@@ -5,29 +5,37 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/pedropinheiro75/stackfork/internal/secretstore"
 )
 
 var secretNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+// ValidSecretName reports whether name is a valid secret name.
+func ValidSecretName(name string) bool { return secretNamePattern.MatchString(name) }
+
 // ParseSecretFlag splits a --secret NAME=REF argument (design.md D6) into
-// its name and reference, validating only the shape (env:VAR or
-// npmrc:PATH#HOST), never resolving a value. Errors name the raw flag and
-// the reference, never a value, since REF never carries one.
+// its name and reference, validating only the shape (env:VAR, npmrc:PATH#HOST,
+// keychain:ITEM or op://VAULT/ITEM/FIELD), never resolving a value. Errors
+// never echo the input: it may be a value pasted by mistake. They name the
+// secret only when the name is itself a valid name.
 func ParseSecretFlag(raw string) (name, ref string, err error) {
 	name, ref, ok := strings.Cut(raw, "=")
 	if !ok || name == "" || ref == "" {
-		return "", "", fmt.Errorf("--secret %q: expected NAME=env:VAR or NAME=npmrc:PATH#HOST", raw)
+		return "", "", fmt.Errorf("--secret: expected NAME=REF where REF is env:VAR, npmrc:PATH#HOST, keychain:ITEM or op://VAULT/ITEM/FIELD")
 	}
-	if !secretNamePattern.MatchString(name) {
-		return "", "", fmt.Errorf("--secret %q: secret name %q must match [A-Za-z_][A-Za-z0-9_]*", raw, name)
+	if !ValidSecretName(name) {
+		return "", "", fmt.Errorf("--secret: secret name must match [A-Za-z_][A-Za-z0-9_]*")
 	}
-	if err := validateSecretRef(ref); err != nil {
-		return "", "", fmt.Errorf("--secret %q: %w", raw, err)
+	if err := ValidateSecretRef(ref); err != nil {
+		return "", "", fmt.Errorf("--secret %s: %w", name, err)
 	}
 	return name, ref, nil
 }
 
-func validateSecretRef(ref string) error {
+// ValidateSecretRef is the one validator for references from flags, the
+// machine map and the manifest. Its errors never contain ref.
+func ValidateSecretRef(ref string) error {
 	switch {
 	case strings.HasPrefix(ref, "env:"):
 		if strings.TrimPrefix(ref, "env:") == "" {
@@ -38,8 +46,11 @@ func validateSecretRef(ref string) error {
 		if !ok || path == "" || host == "" {
 			return fmt.Errorf("npmrc reference needs PATH#HOST")
 		}
+	case secretstore.IsStoreRef(ref):
+		_, _, err := secretstore.ParseRef(ref)
+		return err
 	default:
-		return fmt.Errorf("reference must start with env: or npmrc:")
+		return fmt.Errorf("not a reference: it must start with env:, npmrc:, keychain: or op://")
 	}
 	return nil
 }
