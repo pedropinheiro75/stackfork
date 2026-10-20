@@ -23,7 +23,7 @@ func throwawayItem(t *testing.T) string {
 }
 
 func TestLiveKeychainRoundTrip(t *testing.T) {
-	if os.Getenv("STACKFORK_LIVE_KEYCHAIN") != "1" {
+	if !liveEnabled("STACKFORK_LIVE_KEYCHAIN") {
 		t.Skip("set STACKFORK_LIVE_KEYCHAIN=1 to touch the real credential store with a throwaway item")
 	}
 	item := throwawayItem(t)
@@ -63,7 +63,7 @@ func TestLiveKeychainRoundTrip(t *testing.T) {
 // created (stackfork never writes to 1Password). STACKFORK_LIVE_OP_REF names
 // it, for example op://Dev/stackfork-test-<random>/value.
 func TestLiveOPRead(t *testing.T) {
-	if os.Getenv("STACKFORK_LIVE_OP") != "1" {
+	if !liveEnabled("STACKFORK_LIVE_OP") {
 		t.Skip("set STACKFORK_LIVE_OP=1 and STACKFORK_LIVE_OP_REF=op://VAULT/stackfork-test-.../FIELD to read a test item")
 	}
 	ref := os.Getenv("STACKFORK_LIVE_OP_REF")
@@ -74,4 +74,9 @@ func TestLiveOPRead(t *testing.T) {
 	if st != Resolves || err != nil || v == "" {
 		t.Fatalf("status %v err %v", st, err)
 	}
+}
+
+// liveEnabled: the backend's own flag, or STACKFORK_LIVE_SECRETS=1 for all.
+func liveEnabled(flag string) bool {
+	return os.Getenv(flag) == "1" || os.Getenv("STACKFORK_LIVE_SECRETS") == "1"
 }
