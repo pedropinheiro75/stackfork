@@ -106,3 +106,10 @@ func calls(t *testing.T, p string) []helperRec {
 }
 
 func bytesReader(b []byte) io.Reader { return bytes.NewReader(b) }
+
+func chmodWorldWritable(t *testing.T, p string) {
+	t.Helper()
+	if err := os.Chmod(p, 0o777); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -55,5 +56,22 @@ func TestLiveKeychainRoundTrip(t *testing.T) {
 	}
 	if got, _, _ := b.Resolve(ref); got != value+"2" {
 		t.Fatal("update did not replace the value")
+	}
+}
+
+// TestLiveOPRead reads one throwaway 1Password test item that a person
+// created (stackfork never writes to 1Password). STACKFORK_LIVE_OP_REF names
+// it, for example op://Dev/stackfork-test-<random>/value.
+func TestLiveOPRead(t *testing.T) {
+	if os.Getenv("STACKFORK_LIVE_OP") != "1" {
+		t.Skip("set STACKFORK_LIVE_OP=1 and STACKFORK_LIVE_OP_REF=op://VAULT/stackfork-test-.../FIELD to read a test item")
+	}
+	ref := os.Getenv("STACKFORK_LIVE_OP_REF")
+	if !strings.HasPrefix(ref, "op://") || !strings.Contains(ref, "stackfork-test-") {
+		t.Fatal("STACKFORK_LIVE_OP_REF must be a throwaway op:// item whose name contains stackfork-test-")
+	}
+	v, st, err := (&Backend{}).Resolve(ref)
+	if st != Resolves || err != nil || v == "" {
+		t.Fatalf("status %v err %v", st, err)
 	}
 }

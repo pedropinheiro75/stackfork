@@ -159,10 +159,3 @@ func orPaths(override string, fixed []string) []string {
 	}
 	return fixed
 }
-
-func (b *Backend) readOP(ref string) (string, Status, error) {
-	if _, err := b.opTool(); err != nil {
-		return "", Unavailable, fmt.Errorf("1Password: %w", err)
-	}
-	return "", Unavailable, errNoBackend
-}
