@@ -250,7 +250,7 @@ var hybridSteps = []knowledge.Step{
 
 func TestStartEnvRunsPlanInContainerMode(t *testing.T) {
 	root, state := reposEnv(t)
-	repo := readyRepo(t, root) // schema 1 conversion, empty recipe: starts as before, no trust asked
+	repo := readyRepo(t, root) // current-schema file, empty plan: starts as before, no trust asked
 	log := installFakeDocker(t)
 	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
 	out, e, code := runCLI(t, append(base, "start-env", repo)...)
@@ -487,6 +487,34 @@ func TestConcurrentStartEnvKeepsHostStepsApart(t *testing.T) {
 	for baseRoot, r := range got {
 		if baseRoot != r {
 			t.Errorf("host step got base root %s but root %s", baseRoot, r)
+		}
+	}
+}
+
+const portCompose = "services:\n  db:\n    image: postgres:17\n    volumes:\n      - pgdata:/var/lib/postgresql/data\n  web:\n    image: nginx\n    ports:\n      - \"3000:3000\"\nvolumes:\n  pgdata: {}\n"
+
+// A real schema 1 file with a migrate recipe converts to an exec step with no
+// service; every start must still run it, in the primary service.
+func TestStartEnvRunsSchema1MigrateInPrimaryService(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := adaptedRepo(t, root)
+	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(portCompose), 0o644)
+	writeKnowledgeJSON(t, repo, `{"schema":1,"status":"verified","recipe":{"migrate":"npm run db:migrate","seed_once":"none"}}`)
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	for i := 1; i <= 2; i++ {
+		out, e, code := runCLI(t, append(base, "start-env", repo)...)
+		if code != 0 {
+			t.Fatalf("start %d: %d %s %s", i, code, out, e)
+		}
+		var n int
+		for _, l := range strings.Split(string(mustRead(t, log)), "\n") {
+			if strings.Contains(l, " exec ") && strings.Contains(l, "npm run db:migrate") && strings.Contains(l, " web ") {
+				n++
+			}
+		}
+		if n != i {
+			t.Fatalf("start %d: migrate ran %d times in web\n%s", i, n, mustRead(t, log))
 		}
 	}
 }

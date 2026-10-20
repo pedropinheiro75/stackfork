@@ -186,10 +186,7 @@ func (r PlanRunner) exec(s knowledge.Step, seeded bool) error {
 	if s.Once == knowledge.OnceSchema && seeded {
 		return nil // the seed prefix (migrate && seed) already ran it
 	}
-	svc := s.Service
-	if svc == "" {
-		svc = r.Plan.AppService
-	}
+	svc := ResolveExecService(r.InstanceDir, s, r.Plan)
 	fmt.Fprintf(r.Out, "running %s: %s\n", s.ID, s.Cmd)
 	code, err := Execute(r.Out, r.Err, "exec", r.Root, r.Branch, r.Project, r.InstanceDir, r.NewBase, r.LegacyBase,
 		Options{Service: svc, Command: []string{"sh", "-c", s.Cmd}})

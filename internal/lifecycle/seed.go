@@ -27,23 +27,40 @@ func setSeed(instanceDir string, v *bool, pending bool) {
 	_ = state.WritePrivate(path, m)
 }
 
+// ResolveExecService picks the service an exec step runs in: the step's own,
+// else the plan's app service, else the instance's primary HTTP service, else
+// the only service. "" when none applies (or compose.json is not there yet).
+func ResolveExecService(instanceDir string, step knowledge.Step, plan knowledge.Plan) string {
+	if step.Service != "" {
+		return step.Service
+	}
+	if plan.AppService != "" {
+		return plan.AppService
+	}
+	if instanceDir == "" {
+		return ""
+	}
+	data, _ := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
+	model, _ := compose.DecodeJSON(data)
+	if service, _, _, _ := compose.PrimaryHTTPService(model); service != "" {
+		return service
+	}
+	if top, _ := model.(map[string]interface{}); top != nil {
+		if svcs, _ := top["services"].(map[string]interface{}); len(svcs) == 1 {
+			for name := range svcs { // a single-service stack has one place to run it
+				return name
+			}
+		}
+	}
+	return ""
+}
+
 // RunSeed execs cmd in service (default: the primary app service). On
 // success it records seeded:true; on failure it leaves the marker alone and
 // says how to retry. The caller holds the instance lock.
 func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase, cmd, service string) bool {
 	retry := "stackfork --instance " + project + " seed"
-	if service == "" {
-		data, _ := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
-		model, _ := compose.DecodeJSON(data)
-		service, _, _, _ = compose.PrimaryHTTPService(model)
-		if top, _ := model.(map[string]interface{}); service == "" && top != nil {
-			if svcs, _ := top["services"].(map[string]interface{}); len(svcs) == 1 {
-				for name := range svcs { // a single-service stack has one place to run it
-					service = name
-				}
-			}
-		}
-	}
+	service = ResolveExecService(instanceDir, knowledge.Step{Service: service}, knowledge.Plan{})
 	f := false
 	SetSeeded(instanceDir, &f) // it ran (or cannot): no longer pending, a failure is retried by hand
 	if service == "" {
