@@ -35,7 +35,6 @@ var denylist = []string{
 //   - internal/identity/identity.go: the legacy-compat constants themselves.
 //   - CHANGELOG.md: history necessarily names what changed.
 //   - LICENSE: the copyright holder's name (design.md D4).
-//   - openspec/changes/: internal planning docs, scrubbed in task 12.3.
 //   - .goreleaser.yaml: like go.mod's module path, GoReleaser needs the
 //     real GitHub owner login (task 4.2's release.github/homebrew_casks
 //     repository owner), which is the "pedropinheiro" account name.
@@ -47,13 +46,8 @@ var allowedFiles = map[string]bool{
 	"internal/privatecheck/no_private_material_test.go": true, // holds the denylist itself
 }
 
-const allowedDirPrefix = "openspec/changes/"
-
 func allowedPath(rel string) bool {
-	if allowedFiles[rel] {
-		return true
-	}
-	return strings.HasPrefix(rel, allowedDirPrefix)
+	return allowedFiles[rel]
 }
 
 // skippedDir reports repo-relative directories the walk ignores. A top-level
