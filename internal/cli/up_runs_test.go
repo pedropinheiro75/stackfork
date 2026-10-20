@@ -29,7 +29,7 @@ func TestUpRecordsItsOwnRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Command != "up" || r.Trigger != "cli" || r.Outcome != runs.Succeeded || stepStates(r) != "up=succeeded: seed=succeeded:" {
+	if r.Command != "up" || r.Trigger != "cli" || r.Outcome != runs.Succeeded || stepStates(r) != "secrets=skipped:no secrets up=succeeded: seed=succeeded:" {
 		t.Fatalf("%s %s %s %s", r.Command, r.Trigger, r.Outcome, stepStates(r))
 	}
 	if b, err := runs.Log(dir, 1, "seed"); err != nil || !strings.Contains(string(b), "seeding the new database") {
@@ -74,7 +74,7 @@ func TestFailedUpIsAFailedRun(t *testing.T) {
 	t.Setenv("DOCKER_FAKE_EXIT", "1")
 	runCLI(t, "--root", root, "--state-dir", stateDir, "up")
 	r, err := runs.Get(onlyRunDir(t, stateDir), 1)
-	if err != nil || r.Outcome != runs.Failed || !strings.Contains(r.Retry, " up") || stepStates(r) != "up=failed: seed=pending:" {
+	if err != nil || r.Outcome != runs.Failed || !strings.Contains(r.Retry, " up") || stepStates(r) != "secrets=skipped:no secrets up=failed: seed=pending:" {
 		t.Fatalf("%+v %v %s", r, err, stepStates(r))
 	}
 }
@@ -86,7 +86,7 @@ func TestSeedRecordsItsOwnRun(t *testing.T) {
 	args := []string{"--root", root, "--state-dir", stateDir}
 	runCLI(t, append(args, "up")...) // run 1: the seed fails
 	r, _ := runs.Get(onlyRunDir(t, stateDir), 1)
-	if r.Outcome != runs.Failed || !strings.HasSuffix(r.Retry, " seed") || stepStates(r) != "up=succeeded: seed=failed:" {
+	if r.Outcome != runs.Failed || !strings.HasSuffix(r.Retry, " seed") || stepStates(r) != "secrets=skipped:no secrets up=succeeded: seed=failed:" {
 		t.Fatalf("%s %q %s", r.Outcome, r.Retry, stepStates(r))
 	}
 	t.Setenv("DOCKER_FAKE_EXEC_EXIT", "0")
@@ -94,7 +94,7 @@ func TestSeedRecordsItsOwnRun(t *testing.T) {
 		t.Fatal(e)
 	}
 	r, _ = runs.Get(onlyRunDir(t, stateDir), 2)
-	if r.Command != "seed" || r.Outcome != runs.Succeeded || stepStates(r) != "seed=succeeded:" {
+	if r.Command != "seed" || r.Outcome != runs.Succeeded || stepStates(r) != "secrets=skipped:no secrets seed=succeeded:" {
 		t.Fatalf("%s %s %s", r.Command, r.Outcome, stepStates(r))
 	}
 }

@@ -158,6 +158,10 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 				return actionResponse{Message: berr.Error()}
 			}
 			rec.SetRetry("stackfork --instance " + req.Project + " up")
+			if _, perr := lifecycle.InstancePreflight(rec, &out, root, instanceDir, true); perr != nil {
+				rec.Finish(perr)
+				return actionResponse{Message: out.String() + perr.Error()}
+			}
 			res := lifecycle.UpAndSeed(&out, &out, lifecycle.UpSeed{
 				Run: rec, Root: root, Main: main, Branch: branch, Project: req.Project, InstanceDir: instanceDir,
 				NewBase: s.NewStateBase, LegacyBase: s.LegacyStateBase, Mode: mode,

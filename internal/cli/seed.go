@@ -74,6 +74,10 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		return 0, err
 	}
 	rec.SetRetry("stackfork --instance " + project + " seed")
+	if _, err := lifecycle.InstancePreflight(rec, stdout, root, instanceDir, envTrigger() == "dashboard"); err != nil {
+		rec.Finish(err)
+		return 0, err
+	}
 	entry, _ := lifecycle.SeedEntry(root, main, instanceDir, lifecycle.LoadPlan(root, main), mode)
 	if entry.ID == "" { // cmd != "" above, so SeedEntry has an entry
 		entry.ID = "seed"

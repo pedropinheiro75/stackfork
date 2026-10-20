@@ -1,0 +1,2 @@
+NPM_TOKEN (GitHub Packages read token) has no reference on this machine; run: stackfork secret map REPO NPM_TOKEN=keychain:npm-token
+STRIPE_TEST_KEY (keychain:acme-stripe): missing; run: stackfork secret set acme-stripe

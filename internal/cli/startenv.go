@@ -134,6 +134,14 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	}
 	sync.End(nil, 0)
 
+	// secrets: resolve every effective reference before prepare, which already
+	// calls Docker, and fail naming every problem (design D8).
+	vals, err := startPreflight(rec, o, root, main, instanceDir, trigger, insts)
+	if err != nil {
+		return err
+	}
+	_ = vals
+
 	prepare := func(out io.Writer, _ []string) error {
 		if !needsPrepare(instanceDir, root, branch, project) {
 			fmt.Fprintf(out, "%s is already prepared\n", project)
@@ -497,3 +505,47 @@ func refSecrets(refs []string) []redact.Secret {
 var runPrepare func([]string, io.Writer, io.Writer) (int, error)
 
 func init() { runPrepare = run }
+
+// flagSecrets are the references a command's global flags carry: --secret
+// NAME=REF pairs and --npmrc PATH (the npm_token sugar). A malformed flag is
+// left to prepare to report.
+func flagSecrets(global []string) map[string]string {
+	refs := map[string]string{}
+	for i := 0; i+1 < len(global); i++ {
+		switch global[i] {
+		case "--npmrc":
+			if p, err := identity.ResolvePath(global[i+1]); err == nil {
+				refs["npm_token"] = "npmrc:" + p + "#npm.pkg.github.com"
+			}
+		case "--secret":
+			if name, ref, err := compose.ParseSecretFlag(global[i+1]); err == nil {
+				refs[name] = ref
+			}
+		}
+	}
+	return refs
+}
+
+// startPreflight is the secrets step of a Start. The references are the ones
+// prepare is about to record: a sibling worktree's (only when nothing is
+// prepared and no --secret is given), the manifest's, the machine map's and
+// the flags' (design D7).
+func startPreflight(rec *runs.Run, o StartOptions, root, main, instanceDir, trigger string, insts []inventory.Instance) (lifecycle.SecretValues, error) {
+	mapped, err := lifecycle.MappedSecrets(root)
+	if err != nil {
+		return nil, err
+	}
+	var sibling, manifest map[string]string
+	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
+		manifest = m.ResolvedSecrets()
+	} else if !hasSecretFlag(o.Global) {
+		sibling = repos.SiblingSecrets(main, root, insts)
+	}
+	refs, _ := lifecycle.Effective(
+		lifecycle.Layer{Source: lifecycle.SourceSibling, Refs: sibling},
+		lifecycle.Layer{Source: lifecycle.SourceManifest, Refs: manifest},
+		lifecycle.Layer{Source: lifecycle.SourceMap, Refs: mapped},
+		lifecycle.Layer{Source: lifecycle.SourceFlag, Refs: flagSecrets(o.Global)})
+	return lifecycle.Preflight{Run: rec, Main: main, Refs: refs, Declared: lifecycle.DeclaredSecrets(root, main),
+		Dashboard: trigger == "dashboard"}.Do()
+}

@@ -964,6 +964,9 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 		rec.SetRetry("stackfork --instance " + project + " up")
 		defer func() { rec.Finish(runErr) }()
+		if _, runErr = lifecycle.InstancePreflight(rec, stdout, root, instanceDir, envTrigger() == "dashboard"); runErr != nil {
+			return 0, runErr
+		}
 	}
 
 	// up/down/restart/start/stop all mutate this instance's manifest/compose

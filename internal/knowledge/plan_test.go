@@ -164,3 +164,15 @@ func TestLoadFirstReportsBrokenFileNotMissing(t *testing.T) {
 		t.Fatalf("broken file must be reported: %v", err)
 	}
 }
+
+func TestValidatePlanRefusesTheRunnersSecretsStep(t *testing.T) {
+	for _, s := range []Step{
+		{ID: "pre", Kind: KindSecrets},
+		{ID: "secrets", Kind: KindNote, Text: "x"},
+	} {
+		err := ValidatePlan(Plan{Steps: []Step{s}})
+		if err == nil || !strings.Contains(err.Error(), "added by the runner") {
+			t.Errorf("%+v: %v", s, err)
+		}
+	}
+}

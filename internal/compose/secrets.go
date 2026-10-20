@@ -55,35 +55,43 @@ func ValidateSecretRef(ref string) error {
 	return nil
 }
 
-// ResolveSecret resolves a stored reference (never a value, per
-// ParseSecretFlag) into its value, at up/run as design.md D6 requires.
-// Errors name the secret and the reference, never a partial value.
-func ResolveSecret(name, ref string) (string, error) {
+// CheckSecret resolves a reference of any kind into a value and a status
+// (design D4). The error says why the status is not Resolves, never a value.
+func CheckSecret(ref string) (string, secretstore.Status, error) {
 	switch {
 	case strings.HasPrefix(ref, "env:"):
 		v := strings.TrimPrefix(ref, "env:")
 		value := os.Getenv(v)
 		if value == "" {
-			return "", fmt.Errorf("secret %s (%s): environment variable %s is not set", name, ref, v)
+			return "", secretstore.Missing, fmt.Errorf("environment variable %s is not set", v)
 		}
-		return value, nil
+		return value, secretstore.Resolves, nil
 	case strings.HasPrefix(ref, "npmrc:"):
 		path, host, ok := strings.Cut(strings.TrimPrefix(ref, "npmrc:"), "#")
 		if !ok || path == "" || host == "" {
-			return "", fmt.Errorf("secret %s (%s): malformed npmrc reference, expected npmrc:PATH#HOST", name, ref)
+			return "", secretstore.Error, fmt.Errorf("malformed npmrc reference, expected npmrc:PATH#HOST")
 		}
 		value, err := RegistryTokenForHost(path, host)
 		if err != nil {
-			return "", fmt.Errorf("secret %s (%s): %w", name, ref, err)
+			return "", secretstore.Missing, err
 		}
+		return value, secretstore.Resolves, nil
+	case secretstore.IsStoreRef(ref):
+		return secretstore.Resolve(ref)
+	}
+	return "", secretstore.Error, fmt.Errorf("reference must start with env:, npmrc:, keychain: or op://")
+}
+
+// ResolveSecret resolves a stored reference (never a value, per
+// ParseSecretFlag) into its value, at up/run as design.md D6 requires.
+// Errors name the secret and the reference, never a partial value.
+func ResolveSecret(name, ref string) (string, error) {
+	value, st, err := CheckSecret(ref)
+	switch {
+	case st == secretstore.Resolves:
 		return value, nil
 	case secretstore.IsStoreRef(ref):
-		value, st, err := secretstore.Resolve(ref)
-		if st != secretstore.Resolves {
-			return "", fmt.Errorf("secret %s (%s): %s: %v", name, ref, st, err)
-		}
-		return value, nil
-	default:
-		return "", fmt.Errorf("secret %s (%s): reference must start with env:, npmrc:, keychain: or op://", name, ref)
+		return "", fmt.Errorf("secret %s (%s): %s: %v", name, ref, st, err)
 	}
+	return "", fmt.Errorf("secret %s (%s): %v", name, ref, err)
 }

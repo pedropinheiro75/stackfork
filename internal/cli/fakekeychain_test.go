@@ -12,7 +12,8 @@ import (
 // fakeKeychain points the secret store at a shell script that plays
 // /usr/bin/security over a directory of items (one file per item). Nothing
 // touches the real keychain, keyring or 1Password. It returns the item
-// directory; a file "stdin.rec" there records what `security -i` was fed.
+// directory; a file "stdin.rec" there records what `security -i` was fed, and creating
+// a file "locked" there makes reads fail like a locked keychain.
 func fakeKeychain(t *testing.T, items map[string]string) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -38,6 +39,7 @@ if [ "$1" = "-i" ]; then
   printf '%s\n' "$val" > "$D/items/$item"
   exit 0
 fi
+[ -f "$D/locked" ] && { echo "User interaction is not allowed." >&2; exit 36; }
 item=; w=0
 while [ $# -gt 0 ]; do
   case "$1" in -a) item=$2; shift;; -w) w=1;; esac

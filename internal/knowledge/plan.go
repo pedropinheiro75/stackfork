@@ -21,6 +21,10 @@ const (
 	KindNote      = "note"
 )
 
+// KindSecrets is the kind (and id) of the preflight step the runner adds to
+// every run. A plan cannot declare it.
+const KindSecrets = "secrets"
+
 // Once values for an exec step.
 const (
 	OnceData   = "data"
@@ -228,6 +232,9 @@ func ValidatePlan(p Plan) error {
 			return fmt.Errorf("step %q: duplicate id", s.ID)
 		}
 		seen[s.ID] = true
+		if s.ID == KindSecrets || s.Kind == KindSecrets {
+			return fmt.Errorf("step %q: the %q step is added by the runner to every run and cannot be declared", s.ID, KindSecrets)
+		}
 		// only what the trust dialog must show verbatim: host and prepare
 		// steps (and every id). Exec, note and compose-up values are not
 		// hashed and are quoted for display, so old files keep loading.

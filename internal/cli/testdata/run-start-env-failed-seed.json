@@ -23,6 +23,15 @@
     },
     {
       "ended_at": "TIME",
+      "id": "secrets",
+      "kind": "secrets",
+      "reason": "no secrets",
+      "started_at": "TIME",
+      "state": "skipped",
+      "text": "resolve secrets"
+    },
+    {
+      "ended_at": "TIME",
       "id": "prepare",
       "kind": "prepare",
       "log": "1/prepare.log",

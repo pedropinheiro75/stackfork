@@ -1,0 +1,1 @@
+NPM_TOKEN (env:SF_TEST_PREFLIGHT_VAR): missing; set SF_TEST_PREFLIGHT_VAR in your shell, or keep it in the keychain: printenv SF_TEST_PREFLIGHT_VAR | stackfork secret set npm-token; stackfork secret map REPO NPM_TOKEN=keychain:npm-token
