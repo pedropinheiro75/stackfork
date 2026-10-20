@@ -19,6 +19,8 @@ type planStepOut struct {
 	Args    []string `json:"args,omitempty"`
 	Exclude []string `json:"exclude,omitempty"`
 	Name    string   `json:"name,omitempty"`
+	Dir     string   `json:"dir,omitempty"`
+	PortEnv []string `json:"port_env,omitempty"`
 	Port    int      `json:"port,omitempty"`
 	Once    string   `json:"once,omitempty"`
 	Modes   []string `json:"modes,omitempty"`
@@ -62,7 +64,7 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 		}
 		covered := knowledge.TrustSteps(k.Plan.Steps)
 		for _, s := range covered {
-			fmt.Fprintf(stdout, "trusting %s\n", describeStep(s))
+			fmt.Fprintln(stdout, "trusting "+strings.Join(stepBlock(s), "\n"))
 		}
 		if err := knowledge.WriteTrust(knowledge.TrustPath(stateBase, main), knowledge.PlanHash(k.Plan.Steps), covered); err != nil {
 			return 1, err
@@ -79,6 +81,9 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 			mode = knowledge.ModeContainer
 		}
 	}
+	if mode != knowledge.ModeContainer && mode != knowledge.ModeHybrid {
+		return 1, fmt.Errorf("unknown mode %q (%s or %s)", mode, knowledge.ModeContainer, knowledge.ModeHybrid)
+	}
 	trusted, _ := lifecycle.TrustedHere(stateBase, main, k.Plan)
 	run, skipped := k.Plan.ForMode(mode)
 	state := k.Plan.Status
@@ -89,7 +94,7 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 		out := []planStepOut{}
 		for _, s := range in {
 			o := planStepOut{ID: s.ID, Kind: s.Kind, Cmd: s.Cmd, Service: s.Service, Args: s.Args, Exclude: s.Exclude,
-				Name: s.Name, Port: s.Port, Once: s.Once, Modes: s.Modes, State: state}
+				Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, Modes: s.Modes, State: state}
 			if s.Kind == knowledge.KindHost || s.Kind == knowledge.KindPrepare {
 				o.Trust = "untrusted"
 				if trusted {
@@ -125,32 +130,51 @@ func orDash(s string) string {
 	return s
 }
 
-func describeStep(s knowledge.Step) string {
-	d := s.ID + " [" + s.Kind + "]"
-	if s.Cmd != "" {
-		d += " " + s.Cmd
+// stepBlock lists every field the trust hash covers that is set, one per
+// line, so a person sees exactly what they approve.
+func stepBlock(s knowledge.Step) []string {
+	l := []string{s.ID + " [" + s.Kind + "]"}
+	add := func(k, v string) {
+		if v != "" {
+			l = append(l, "    "+k+": "+v)
+		}
 	}
-	if len(s.Args) > 0 {
-		d += " " + strings.Join(s.Args, " ")
+	add("name", s.Name)
+	add("cmd", s.Cmd)
+	add("args", strings.Join(s.Args, " "))
+	add("dir", s.Dir)
+	add("port_env", strings.Join(s.PortEnv, ", "))
+	if s.Port > 0 {
+		add("port", fmt.Sprint(s.Port))
 	}
-	return d
+	add("modes", strings.Join(s.Modes, ", "))
+	return l
 }
 
 func planLine(s planStepOut) string {
-	l := describeStep(knowledge.Step{ID: s.ID, Kind: s.Kind, Cmd: s.Cmd, Args: s.Args})
-	if s.Service != "" {
-		l += " (service " + s.Service + ")"
-	}
-	if s.Kind == knowledge.KindHost {
-		if s.Port > 0 {
-			l += fmt.Sprintf(" port: %d", s.Port)
-		} else {
-			l += " port: unknown"
-		}
-	}
-	l += " - " + s.State
+	st := knowledge.Step{ID: s.ID, Kind: s.Kind, Cmd: s.Cmd, Args: s.Args, Name: s.Name, Port: s.Port, Modes: s.Modes}
+	suffix := " - " + s.State
 	if s.Trust != "" {
-		l += ", " + s.Trust
+		suffix += ", " + s.Trust
 	}
-	return l
+	if s.Kind != knowledge.KindHost && s.Kind != knowledge.KindPrepare {
+		l := s.ID + " [" + s.Kind + "]"
+		if s.Cmd != "" {
+			l += " " + s.Cmd
+		}
+		if s.Service != "" {
+			l += " (service " + s.Service + ")"
+		}
+		if len(s.Exclude) > 0 {
+			l += " exclude " + strings.Join(s.Exclude, ",")
+		}
+		return l + suffix
+	}
+	st.Dir, st.PortEnv = s.Dir, s.PortEnv
+	b := stepBlock(st)
+	if s.Kind == knowledge.KindHost && s.Port == 0 {
+		b = append(b, "    port: unknown")
+	}
+	b[0] += suffix
+	return strings.Join(b, "\n  ")
 }

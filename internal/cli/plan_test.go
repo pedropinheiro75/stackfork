@@ -83,3 +83,25 @@ func TestPlanTrustRefusedWithoutHostStep(t *testing.T) {
 		t.Fatalf("code=%d %s", code, stderr)
 	}
 }
+
+func TestPlanTrustShowsAllHashedFieldsAndRejectsBadMode(t *testing.T) {
+	root := planFixture(t)
+	k, _ := knowledge.Load(knowledgePath(root))
+	k.Plan.Steps[2].Dir = "web"
+	k.Plan.Steps[2].PortEnv = []string{"PORT", "NUXT_PORT"}
+	if err := k.Save(knowledgePath(root)); err != nil {
+		t.Fatal(err)
+	}
+	out, _, code := runCLI(t, "--root", root, "--state-dir", t.TempDir(), "plan", "--trust")
+	if code != 0 || !strings.Contains(out, "dir: web") || !strings.Contains(out, "NUXT_PORT") {
+		t.Fatalf("code=%d\n%s", code, out)
+	}
+	out, _, _ = runCLI(t, "--root", root, "plan", "--mode", "hybrid")
+	if !strings.Contains(out, "dir: web") {
+		t.Fatalf("plan text must show dir:\n%s", out)
+	}
+	_, stderr, code := runCLI(t, "--root", root, "plan", "--mode", "bogus")
+	if code != 1 || !strings.Contains(stderr, "container") || !strings.Contains(stderr, "hybrid") {
+		t.Fatalf("code=%d %s", code, stderr)
+	}
+}
