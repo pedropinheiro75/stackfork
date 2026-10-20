@@ -14,85 +14,136 @@
 
 </div>
 
-The moment you (or a coding agent) open a second Git worktree of a project and run `docker compose up`, it collides with the first: same ports, same container names, same volumes, sometimes the same database. Today the fix is manual — hand-edit `.env`, guess free ports, remember which worktree owns which container — and it breaks the moment a teammate's agent does the same thing next to yours.
+You open a second Git worktree of a project and run `docker compose up`. It collides with the first one: same ports, same container names, same volumes, sometimes the same database. This happens each time a coding agent works next to you, or next to another agent.
 
-**stackfork takes the Compose stack you already have and isolates it per checkout-and-branch** — its own ports, volumes, network, container names — so a human and an agent, or five agents, can each have a fully running copy of the same project at the same time, on the same machine, without coordinating.
+**stackfork takes the Compose stack you already have and isolates it for each checkout and branch.** Each copy gets its own ports, volumes, network and container names. A person and an agent, or five agents, can run the same project at the same time on one machine without coordination.
 
-<!-- TODO: 20s demo GIF (openspec/changes/prepare-open-source-release task 12.2) -->
+<img src="docs/demo.gif" alt="Terminal demo: two Git worktrees of one project each start with stackfork up, then stackfork list shows both instances running, and both app URLs answer in the browser">
 
-## 🚀 Install
+## Install
+
+Supported platforms: macOS and Linux (amd64 and arm64). Windows is built and vetted, but it has not run on a Windows machine yet. See [SECURITY.md](SECURITY.md) for its limits.
+
+Choose one method:
+
+- Go 1.24 or later:
+
+  ```sh
+  go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest
+  ```
+
+  Make sure `$(go env GOPATH)/bin` is on your `PATH`.
+
+- Release binary: download the archive for your system from the [releases page](https://github.com/pedropinheiro75/stackfork/releases), unpack it, and put `stackfork` on your `PATH`.
+
+A Homebrew tap is coming with the first release.
+
+To check the install, run `stackfork version`. Docker with the Compose plugin must be running.
+
+## Quick start
+
+These five steps start two isolated copies of one Compose project. The project is the `examples/node-postgres` example: a small Node server and Postgres. Each request counts a visit, so you can see that the two copies have separate data. The first run builds the app image.
+
+1. Clone the repository and go into it:
+
+   ```sh
+   git clone https://github.com/pedropinheiro75/stackfork && cd stackfork
+   ```
+
+2. Prepare and start the first copy:
+
+   ```sh
+   stackfork prepare -f examples/node-postgres/docker-compose.yml && stackfork up
+   ```
+
+3. Create a second worktree of the same repository and go into it:
+
+   ```sh
+   git worktree add ../stackfork-2 && cd ../stackfork-2
+   ```
+
+4. Prepare and start the second copy. Use the same command as in step 2:
+
+   ```sh
+   stackfork prepare -f examples/node-postgres/docker-compose.yml && stackfork up
+   ```
+
+5. Show both instances and the URL of this one:
+
+   ```sh
+   stackfork list
+   stackfork urls
+   ```
+
+`stackfork list` shows two instances in the `running` state, one for each checkout. `stackfork urls` prints the app URL, for example `http://stackfork-2-ba629bc76a3b.localhost`. Run `stackfork urls` in the first checkout to get the other URL. Request each URL more than once. The `visits` count of one copy does not change the count of the other.
+
+If the `.localhost` URLs do not answer, for example after a Docker restart, run `stackfork proxy up`.
+
+To clean up, run `stackfork down --volumes` in each checkout. Without `--volumes`, `down` keeps your data.
+
+The example is a normal Compose project that stackfork does not change. For your own project, replace the `-f` path with your Compose file. `stackfork prepare` renders the file into an isolated snapshot and does not edit it.
+
+## How it differs from other tools
+
+stackfork does not add an environment format. It isolates the Compose file that you already maintain.
+
+| Tool | What it needs from you | What stackfork does differently |
+|---|---|---|
+| devcontainers | A `devcontainer.json`, often a copy of your Compose setup | Reads your Compose file as it is. It targets collisions between parallel copies, not one reproducible environment. |
+| Dagger and container-use | A pipeline or an agent sandbox that you define | Works at a different layer. It runs your existing stack and does not build or sandbox for you. |
+| Conductor-style worktree managers | Nothing for Compose. They create and orchestrate worktrees and agents | Complements them. The manager creates the worktrees. stackfork makes each worktree's stack safe to run. |
+
+## Safety model
+
+stackfork isolates checkouts from each other. It is not a sandbox. It does not protect you from a malicious Compose file, and it adds no isolation between containers and the host beyond what Docker gives you.
+
+- **Refusals.** stackfork refuses a stack that it cannot isolate safely. Examples are fixed container names, external networks, the Docker socket, writable binds outside the checkout and fixed subnets.
+- **Guard hooks.** `stackfork hooks install` adds a pre-tool-use hook to Claude Code, Codex and Copilot CLI. The hook blocks a host dev server or a raw `docker compose up` inside a managed checkout, and it allows everything else. It is a guardrail for cooperative agents, not a security boundary.
+- **Trust for host steps.** A project can record a command to run on the host (hybrid mode). That command runs only after a person runs `stackfork plan --trust` or clicks **Trust** in the dashboard. Trust is stored for each machine. The guard blocks agents from trusting a plan.
+- **Native confirmation.** The dashboard runs a data-deleting command (`down --volumes`, `prune`, `gc`, worktree removal) only after a person clicks Run in a native macOS dialog. An agent can send the request, but it cannot answer the dialog.
+- **Data kept by default.** `stackfork down` removes no volumes. `stackfork prune` is a dry run until you pass `--yes`. It touches only Docker objects that carry stackfork labels, and it never runs `docker system prune`.
+- **Secrets.** stackfork does not print or store secrets. The dashboard shows a `<password>` placeholder. It returns a real password only when the value is written literally in your Compose file.
+
+Read [SECURITY.md](SECURITY.md) for the full boundary, the known limits and how to report a vulnerability.
+
+## Agent skill
+
+The repository ships an agent skill (`SKILL.md` and `references/`). It teaches an agent the flow: discover, prepare, up, verify, down. Link a checkout of this repository into your agent's skill directory. Run these commands from the root of your clone.
+
+For Claude Code:
 
 ```sh
-go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest
+mkdir -p ~/.claude/skills && ln -s "$(pwd)" ~/.claude/skills/stackfork
 ```
 
-Make sure `stackfork` resolves on `PATH` (typically `$(go env GOPATH)/bin`, often `~/go/bin`).
-
-From a local checkout instead:
+For Codex:
 
 ```sh
-go install ./cmd/stackfork
+mkdir -p ~/.codex/skills && ln -s "$(pwd)" ~/.codex/skills/stackfork
 ```
 
-Windows is supported natively: it is built and vetted, but not yet run on a Windows machine.
+Then ask the agent in your own words, for example "prepare this project in a new worktree". Claude Code selects the skill from the `description` in `SKILL.md`. Codex reads `agents/openai.yaml`, so use this prompt:
 
-## ⚡ Quick start
+```text
+Use $stackfork to prepare this checkout with an isolated development environment using stackfork.
+```
 
-Five commands, on a project you already have checked out with a Compose file:
+To block agents that start a dev server on the host, install the guard hooks:
 
 ```sh
-git worktree add ../myproject-feature feature-branch   # a second copy of the same repo
-cd ../myproject-feature
-stackfork prepare                                       # isolate this checkout+branch's copy of the stack
-stackfork up                                             # start it
-stackfork urls                                           # e.g. myproject-feature-a1b2c3.localhost:54211
+stackfork hooks install      # add --tool to choose one tool
+stackfork hooks status
 ```
 
-Run `stackfork list` from either checkout to see both instances — and your original checkout's stack, still running untouched on its own ports. No `.env` surgery, no port bookkeeping, no `docker compose down` in the other window first.
+Codex runs only a hook that you trusted. After `hooks install --tool codex`, open `codex` once and approve the hook, or run `/hooks`.
 
-`prepare` reuses the same source-file selection on later runs. It renders your project's actual `docker-compose.yml` (or whichever files you pass with `-f`) into an isolated snapshot: fresh container/volume/network names keyed on checkout path + branch, ports reassigned off Docker's collision, secrets never printed or stored. Nothing about your Compose file itself changes.
-
-**No Compose file yet?** `assets/nuxt/` and `assets/go/` are optional starting-point stacks (app + Postgres, no host installs needed) for a Nuxt or a Go web app with nothing to adapt — see `references/nuxt-template.md` / `references/go-template.md`. Everything else (any other language, any existing Compose setup) goes through the isolation flow above directly; the templates are a bootstrap for the one case that has nothing to isolate yet, not a requirement.
-
-### Host-run apps
-
-Only the dependencies need isolating? `stackfork prepare`/`up` your Compose file (database, cache, mail catcher, …), then run the app itself on the host, pointed at the isolated stack with:
-
-```sh
-eval "$(stackfork env)"   # DATABASE_URL, REDIS_URL, SMTP_HOST/PORT, <SERVICE>_URL — one per service
-npm run dev                # or however this project starts
-```
-
-`stackfork route add <name> <port>` gives it a portless `*.localhost` URL through the shared proxy, same as a containerized service. `--with-passwords` fills in a real credential, but only when it's a literal value in your Compose file — never a `--secret`/`env_file` one. Seeding that database from a teammate's dump or a production export instead of an empty one: `stackfork clone-db --from-dump backup.sql` (also takes `.sql.gz` or a Postgres custom-format dump).
-
-#### Hybrid mode
-
-To let stackfork run the app on the host and keep everything else in containers, record the app as a `host` step in the startup plan (`stackfork learn record step --kind host ...`, see `references/learning.md`) and switch the mode:
-
-1. Run `stackfork config set mode hybrid`, or `stackfork config set-mode REPO hybrid` for one repo.
-2. Run `stackfork plan --mode hybrid` and read the host steps.
-3. Run `stackfork plan --trust`. In the dashboard, click **Trust** instead: a native dialog shows every field of the plan, and stackfork trusts exactly that plan.
-4. Run `stackfork start-env`.
-
-Hybrid mode drops the app service and every service that depends on it. The host step runs detached under a supervisor: use `stackfork host stop|restart|logs NAME`; `stackfork down` stops it first. Trust is per machine, covers all host and prepare steps, and is stored once for each main checkout. An agent cannot trust a plan. See [SECURITY.md](SECURITY.md). On Windows the host runtime is built and vetted but has not run on a Windows machine yet; its limits are in [SECURITY.md](SECURITY.md).
-
-## 🆚 How it's different
-
-stackfork isn't a new environment format and it doesn't run your project *for* you — it isolates the Compose stack you already maintain, as-is:
-
-| | stackfork | devcontainers | Dagger / container-use | Conductor-style worktree managers |
-|---|---|---|---|---|
-| What it reads | Your existing Compose file, unmodified | A new `devcontainer.json`, usually duplicating Compose | A pipeline you write | Whatever you've already set up |
-| What it solves | Two copies of the same stack colliding | One reproducible dev environment | Programmable container builds/CI | Orchestrating worktrees & agents |
-| Overlaps with stackfork | — | Partial (dev environment, not collision-safe) | Rarely (different layer) | Complements it — stackfork is the missing piece underneath |
-
-## 📊 Dashboard
+## Dashboard
 
 ```sh
 stackfork dashboard --open
 ```
 
-A local, read-mostly web page listing every instance across every checkout it knows about: status, services, health, clickable app/DB/mail endpoints (labelled by role, not just raw ports), learned-knowledge status, plain-language warnings. Local-only (binds `127.0.0.1`, checks the `Host` header, a per-process token guards every action) — the only actions it can take are `up`, `down` (volumes always kept), per-service `restart`/`start`/`stop`, viewing logs, the shared proxy's up/down/reload, and, from the Repos tab, Start, creating a worktree and a per-repo fetch. Every command the page shows (`down --volumes`, `prepare --reassign-ports`, `seed`, `gc`, `prune`, removing a worktree…) has a **Run** button next to Copy. The server runs only an allowlist of commands, without a shell, and asks for a native macOS confirmation before anything that deletes data. An agent can send the request but cannot click the dialog. Commands with a placeholder, such as `config add-root PATH`, stay copy-only. `stackfork list` / `list --json` show the same data from a terminal.
+The dashboard is a local web page. It lists every instance in every checkout that stackfork knows about, with status, health and clickable endpoints. It binds to `127.0.0.1`, checks the `Host` header and uses a token for each process. `stackfork list --json` gives the same data in a terminal.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-overview-dark.png">
@@ -100,7 +151,7 @@ A local, read-mostly web page listing every instance across every checkout it kn
   <img src="docs/screenshots/dashboard-overview-light.png" alt="Dashboard overview: three running instances (two container-based, one host-run) and one stopped, each with its app/DB/mail endpoints and branch/checkout shown">
 </picture>
 
-Each service's row expands to the exact command for a destructive action, and connection strings/CLI snippets copy with one click (a real password only ever appears if it's a literal value in your Compose file — see [SECURITY.md](SECURITY.md)):
+Each service row expands to show the exact command for a destructive action and one-click copy of connection strings:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-service-detail-dark.png">
@@ -108,16 +159,7 @@ Each service's row expands to the exact command for a destructive action, and co
   <img src="docs/screenshots/dashboard-service-detail-light.png" alt="One instance expanded, showing its down command to copy and each service's connection URL/psql/exec copy actions">
 </picture>
 
-## 🗂️ Repos
-
-```sh
-stackfork config add-root ~/code     # or use the Settings panel in the dashboard
-stackfork repos                      # every repo under your folders, with readiness
-stackfork worktree add storefront fix/login
-stackfork start-env .worktrees/fix-login
-```
-
-The dashboard's **Repos** tab (next to Instances) finds any repo under the folders you configure (search, ready-only filter, grouped by folder), shows its branches, worktrees and instance state, and starts one with a click. Discovery uses local git only and is cached; **Fetch** (one repo, on click) is the only network access. **Start** works only for projects whose startup was learned and verified (`stackfork learn` then `learn verify`, in any checkout of the repo); one that could run (an adapter, a prepared instance, a profile reference) but was never verified shows a **needs learn** badge instead: it prepares when needed, creates `<repo>/.worktrees/<branch>` first for a branch with no worktree (after a confirmation), then brings it up. For those and for projects it has never seen, the page offers **Learn with your agent**: pick Claude Code, Codex or Copilot CLI and stackfork opens a new terminal window (Warp, iTerm or Terminal on macOS) in the repo with that agent already running the learn prompt. It learns the project, checks migrations, seed and login with you, and records it as verified. The prompt is also there to copy. **Remove** on a worktree runs `git worktree remove` (never `--force`, so git refuses a worktree with changes) and removes its stack, after a native confirmation. It never deletes a branch, never switches a checkout and never pushes or pulls. Requests are accepted only for repos the scan found under your configured folders. Nothing is scanned until you add a folder (Settings panel, or `stackfork config add-root PATH`).
+The **Repos** tab finds the repositories under the folders that you add with `stackfork config add-root PATH`. It shows branches, worktrees and readiness, and it starts a ready project with one click. Nothing is scanned until you add a folder.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/repos-dark.png">
@@ -125,70 +167,27 @@ The dashboard's **Repos** tab (next to Instances) finds any repo under the folde
   <img src="docs/screenshots/repos-light.png" alt="Repos tab: repositories grouped by folder with readiness badges, worktrees, branches without a worktree and Start buttons">
 </picture>
 
-## 🔒 Safety model
+## Learn and plan: container or hybrid mode
 
-stackfork's job is **collision isolation between checkouts** — making sure parallel worktrees/branches of the same project don't collide on ports, volumes, networks, container names, databases or cookies, and refusing what it can't isolate safely (fixed container names, external networks, the Docker socket, writable binds outside the checkout, fixed subnets) rather than working around it silently.
+`stackfork learn` scans a project and records how to start it in `.stackfork/knowledge.json`. You or your agent check the result with `stackfork learn verify`. The file is safe to commit, and later worktrees reuse it. The record is a startup plan: an ordered list of steps. Run `stackfork plan` to see the steps and whether this machine trusts them.
 
-It is **not** a sandbox. It doesn't protect against a malicious or untrusted Compose file, doesn't isolate containers from the host beyond what Docker itself provides, and assumes the project you're isolating is one you already trust enough to run its Compose stack directly. See [SECURITY.md](SECURITY.md) for the full boundary, including the one endpoint (`/api/copy`, dashboard) that ever returns a real credential and exactly when.
+The plan has two modes:
 
-## 🤖 Agent skill install
+- **container** (default): every service, including the app, runs in Docker.
+- **hybrid**: the app runs on the host as a `host` step. The app service and the services that depend on it are dropped from Compose. The other services stay in containers.
 
-The skill this repo ships (`SKILL.md` plus `references/`) teaches an agent the same discover → prepare → up → verify → down flow this README uses, plus how to adapt a project's real Compose stack instead of forcing a template on it. Point your agent's skill directory at this checkout:
+To use hybrid mode:
 
-```sh
-# Claude Code
-mkdir -p ~/.claude/skills && ln -s "$(pwd)" ~/.claude/skills/stackfork
+1. Run `stackfork config set mode hybrid`. For one repository, run `stackfork config set-mode REPO hybrid`.
+2. Run `stackfork plan --mode hybrid` and read the host steps.
+3. Run `stackfork plan --trust`, or click **Trust** in the dashboard.
+4. Run `stackfork start-env`.
 
-# Codex
-mkdir -p ~/.codex/skills && ln -s "$(pwd)" ~/.codex/skills/stackfork
-```
+Manage a host app with `stackfork host stop|restart|logs NAME`. `stackfork down` stops it first. For the full command list, see [references/commands.md](references/commands.md) and `stackfork --help`.
 
-Then just ask, in your own words, for what you want done — Claude Code matches the skill from `SKILL.md`'s own `description`, e.g. "prepare this project in a new worktree" or "run the app in an isolated dev environment" is enough, no special syntax required (that's how every isolation task in this project's own history got triggered). Codex reads `agents/openai.yaml`'s `default_prompt` instead, so use that exact phrasing there:
+## Project files
 
-```
-Use $stackfork to prepare this checkout with an isolated development environment using stackfork.
-```
-
-Project- or company-specific recipes (a client's known gotchas, a shared registry token source, a house Nuxt template) stay out of this repo entirely — they live in your own private profile directory (`~/.config/stackfork/profiles/*`, or `$STACKFORK_PROFILE_DIRS`), which `stackfork where` reports back to the agent when one applies.
-
-### Agent guardrails
-
-Agents drift: one that was told to use isolation will still, now and then, run `cd .worktrees/pr630 && bun run dev` straight on the host and collide with everything. stackfork ships a pre-tool-use hook that stops exactly that, and nothing else:
-
-```sh
-stackfork hooks install      # Claude Code, Codex and Copilot CLI (--tool to pick one); backs up each file first
-stackfork hooks status
-```
-
-`stackfork guard` then reads each tool's hook JSON and blocks only a dev server (`bun|npm|pnpm|yarn dev|start|serve`, `nuxt dev`, `vite`, `next dev`, `nodemon`) or a raw `docker compose up/start`, and only inside a stackfork-managed checkout. Tests, builds, lint, `git`, `stackfork` itself and anything outside a managed checkout pass untouched; when it can't tell, it allows. **Codex only runs a hook you have trusted:** after `hooks install --tool codex`, open `codex` once and approve the new hook (or run `/hooks`). stackfork never writes that approval itself; `hooks status` reports `installed but untrusted` until it exists. For Copilot CLI the hook lives in `~/.copilot/settings.json`; `config.json` is rewritten by Copilot at session end and loses hooks. The sanctioned host-run path is `stackfork host app -- <your command>`: a stable port, this instance's env and a portless route for as long as it runs. It is a guardrail for cooperative agents, not a sandbox.
-
-Two related conveniences: `--instance NAME` (any command) addresses an instance from any directory, and `stackfork open` opens its app URL. If the portless URLs stop answering after a Docker restart, `stackfork proxy up` brings the proxy back (it now restarts with Docker by itself); `status`, `urls`, `doctor` and the dashboard say so when it is down.
-
-### Cleaning up
-
-Instances pile up (one per worktree and branch). `stackfork prune` removes them with everything they own, and is a **dry run unless you say otherwise**:
-
-```sh
-stackfork prune                          # table of what would go, by group, plus the disk it would free; deletes nothing
-stackfork prune --stopped --older-than 7d
-stackfork prune --orphaned --keep-volumes --yes
-stackfork prune --all                    # also running instances (stopped first) and the shared proxy; asks you to type `prune`
-```
-
-`--orphaned` is an instance whose checkout or branch is gone (what `gc` always did; `gc` is now an alias), `--stopped` has no running container, `--all` is everything. Per instance it removes containers, networks, the images stackfork built (`<project>-<service>:dev`), state and proxy routes, and the volumes unless `--keep-volumes`. Without a TTY it needs `--yes`, or it prints the plan and exits 1. It only touches Docker objects carrying stackfork's labels or exactly matching a known instance's compose project, never by name prefix, and never runs `docker system prune`, so unrelated containers and volumes on the machine are safe. The agent guard blocks `prune --yes`, `prune --all` and `gc --apply` ("destructive; ask the user to run it") but lets agents see the dry run; the dashboard's header "…" menu has a "Clean up" panel with counts, where **Run** shows the dry run in a native confirmation dialog before anything is removed.
-
-## ✅ Checks
-
-```sh
-go test ./...
-```
-
-Optional live checks create disposable Docker stacks and clean up their own resources:
-
-```sh
-STACKFORK_LIVE=1 go test ./...
-```
-
-Live tests use synthetic Compose fixtures in `testdata/`, including a synthetic Node streaming app for the template/proxy checks, and may download public images/packages. Neither establishes compatibility with any real application.
-
-State lives under `~/.local/state/stackfork`. Legacy `idv-` Docker identities and their previous state path are still read, so existing stacks are never orphaned.
+- [SECURITY.md](SECURITY.md): the safety boundary, known limits and how to report a vulnerability.
+- [CHANGELOG.md](CHANGELOG.md): the history of changes.
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to build, test and contribute. Run `go test ./...` to run the offline tests.
+- [LICENSE](LICENSE): MIT.
