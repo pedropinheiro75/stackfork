@@ -13,7 +13,7 @@ import (
 // remove-exclude|set]`: the same edits the dashboard's Settings panel makes.
 func cmdConfig(stdout io.Writer, subArgs []string) (int, error) {
 	if isHelpRequest(subArgs) {
-		printFlaglessUsage(stdout, "config", "config [get | add-root PATH | remove-root PATH | add-exclude NAME | remove-exclude NAME | set max-depth N | set roots PATH... | set exclude NAME...]")
+		printFlaglessUsage(stdout, "config", "config [get | add-root PATH | remove-root PATH | add-exclude NAME | remove-exclude NAME | set max-depth N | set mode M | set-mode REPO M | set roots PATH... | set exclude NAME...]")
 		return 0, nil
 	}
 	c, err := config.Load()
@@ -33,8 +33,13 @@ func cmdConfig(stdout io.Writer, subArgs []string) (int, error) {
 	switch verb {
 	case "get":
 		path, _ := config.Path()
+		mode := c.Mode
+		if mode == "" {
+			mode = "container"
+		}
 		return 0, printJSON(stdout, map[string]interface{}{
 			"path": path, "roots": nonNilStrings(c.Roots), "exclude": nonNilStrings(c.Exclude), "maxDepth": c.Depth(),
+			"mode": mode, "modes": c.Modes,
 		})
 	case "add-root", "remove-root", "add-exclude", "remove-exclude":
 		arg, err := one()
@@ -54,6 +59,13 @@ func cmdConfig(stdout io.Writer, subArgs []string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
+	case "set-mode":
+		if len(subArgs) != 2 {
+			return 2, errors.New("config set-mode REPO MODE")
+		}
+		if err := c.SetRepoMode(subArgs[0], subArgs[1]); err != nil {
+			return 0, err
+		}
 	case "set":
 		if len(subArgs) < 1 {
 			return 2, errors.New("config set KEY VALUE...")
@@ -66,6 +78,13 @@ func cmdConfig(stdout io.Writer, subArgs []string) (int, error) {
 				n, _ = strconv.Atoi(vals[0])
 			}
 			if err := c.SetMaxDepth(n); err != nil {
+				return 0, err
+			}
+		case "mode":
+			if len(vals) != 1 {
+				return 2, errors.New("config set mode MODE")
+			}
+			if err := c.SetMode(vals[0]); err != nil {
 				return 0, err
 			}
 		case "roots":
@@ -83,7 +102,7 @@ func cmdConfig(stdout io.Writer, subArgs []string) (int, error) {
 				}
 			}
 		default:
-			return 2, fmt.Errorf("unknown config key %q (roots, exclude, max-depth)", key)
+			return 2, fmt.Errorf("unknown config key %q (roots, exclude, max-depth, mode)", key)
 		}
 	default:
 		return 2, fmt.Errorf("unknown config command %q", verb)

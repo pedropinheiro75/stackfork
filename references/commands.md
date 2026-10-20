@@ -178,7 +178,7 @@ stackfork dashboard --open
 ```
 
 ### config
-Show or edit `<config dir>/config.json` (`STACKFORK_CONFIG_DIR` respected): the folders (`roots`) the repo browser scans, folder names to skip (`exclude`) and `maxDepth` (default 6). Sub-forms: `config get`, `config add-root PATH`, `config remove-root PATH`, `config add-exclude NAME`, `config remove-exclude NAME`, `config set max-depth N`, `config set roots PATH...`, `config set exclude NAME...`. A root must exist, be a folder, not be `/` or the bare home directory, and not sit inside (or contain) another root. Removing a root deletes nothing on disk.
+Show or edit `<config dir>/config.json` (`STACKFORK_CONFIG_DIR` respected): the folders (`roots`) the repo browser scans, folder names to skip (`exclude`) and `maxDepth` (default 6). Sub-forms: `config get`, `config add-root PATH`, `config remove-root PATH`, `config add-exclude NAME`, `config remove-exclude NAME`, `config set max-depth N`, `config set mode container|hybrid`, `config set-mode REPO container|hybrid`, `config set roots PATH...`, `config set exclude NAME...`. A root must exist, be a folder, not be `/` or the bare home directory, and not sit inside (or contain) another root. Removing a root deletes nothing on disk. `mode` is the startup mode on this machine (default `container`); `set-mode` overrides it for one repo, stored under the repo's resolved main-checkout path.
 
 Two keys are edited in the file itself:
 - `terminal`: where **Learn with your agent** opens the agent: `warp`, `iterm` or `terminal`. Default: the terminal the dashboard was started from, else Terminal.app.

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -24,6 +25,10 @@ type Config struct {
 	Roots    []string `json:"roots"`
 	Exclude  []string `json:"exclude"`
 	MaxDepth int      `json:"maxDepth"`
+	// Mode is the machine-wide startup mode ("" = container); Modes overrides
+	// it per repo, keyed by the resolved absolute main-checkout path.
+	Mode  string            `json:"mode,omitempty"`
+	Modes map[string]string `json:"modes,omitempty"`
 
 	extra map[string]json.RawMessage
 }
@@ -57,7 +62,7 @@ func Load() (*Config, error) {
 	if err := json.Unmarshal(data, &c.extra); err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
-	for _, k := range []string{"roots", "exclude", "maxDepth"} {
+	for _, k := range []string{"roots", "exclude", "maxDepth", "mode", "modes"} {
 		delete(c.extra, k)
 	}
 	return c, nil
@@ -80,6 +85,12 @@ func (c *Config) Save() error {
 	out["exclude"] = nonNil(c.Exclude)
 	if c.MaxDepth != 0 {
 		out["maxDepth"] = c.MaxDepth
+	}
+	if c.Mode != "" {
+		out["mode"] = c.Mode
+	}
+	if len(c.Modes) > 0 {
+		out["modes"] = c.Modes
 	}
 	return state.WritePrivate(p, out)
 }
@@ -276,4 +287,50 @@ func (c *Config) Terminal() string {
 		_ = json.Unmarshal(raw, &t)
 	}
 	return t
+}
+
+func validMode(m string) error {
+	if m == knowledge.ModeContainer || m == knowledge.ModeHybrid {
+		return nil
+	}
+	return fmt.Errorf("unknown mode %q (%s or %s)", m, knowledge.ModeContainer, knowledge.ModeHybrid)
+}
+
+// ModeFor is the startup mode for a repo: its override, else the global
+// mode, else container. repo is resolved like the keys of Modes.
+func (c *Config) ModeFor(repo string) string {
+	if p, err := identity.ResolvePath(repo); err == nil {
+		if m, ok := c.Modes[p]; ok && validMode(m) == nil {
+			return m
+		}
+	}
+	if validMode(c.Mode) == nil {
+		return c.Mode
+	}
+	return knowledge.ModeContainer
+}
+
+// SetMode sets the machine-wide mode.
+func (c *Config) SetMode(mode string) error {
+	if err := validMode(mode); err != nil {
+		return err
+	}
+	c.Mode = mode
+	return nil
+}
+
+// SetRepoMode overrides the mode for one repo (stored under its resolved path).
+func (c *Config) SetRepoMode(repo, mode string) error {
+	if err := validMode(mode); err != nil {
+		return err
+	}
+	p, err := identity.ResolvePath(repo)
+	if err != nil {
+		return err
+	}
+	if c.Modes == nil {
+		c.Modes = map[string]string{}
+	}
+	c.Modes[p] = mode
+	return nil
 }

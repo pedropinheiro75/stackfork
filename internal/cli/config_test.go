@@ -30,6 +30,21 @@ func TestConfigCommandRoundTrip(t *testing.T) {
 			t.Fatalf("get missing %q:\n%s", want, out)
 		}
 	}
+	if _, stderr, code := runCLI(t, "config", "set", "mode", "hybrid"); code != 0 {
+		t.Fatalf("set mode: %s", stderr)
+	}
+	if _, stderr, code := runCLI(t, "config", "set-mode", root, "container"); code != 0 {
+		t.Fatalf("set-mode: %s", stderr)
+	}
+	if _, _, code := runCLI(t, "config", "set", "mode", "fast"); code == 0 {
+		t.Fatal("bad mode accepted")
+	}
+	out, _, _ = runCLI(t, "config", "get")
+	for _, want := range []string{`"mode": "hybrid"`, `"modes"`, resolved} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("get missing %q:\n%s", want, out)
+		}
+	}
 	if _, _, code := runCLI(t, "config", "remove-root", root); code != 0 {
 		t.Fatal("remove-root failed")
 	}

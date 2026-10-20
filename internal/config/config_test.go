@@ -91,3 +91,41 @@ func TestExcludeAndDepthValidation(t *testing.T) {
 		t.Fatal("expected accepts")
 	}
 }
+
+func TestModeDefaultsAndPerRepo(t *testing.T) {
+	dir := tempConfig(t)
+	os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"future":"keep"}`), 0o600)
+	repo := t.TempDir()
+	other := t.TempDir()
+	c, _ := Load()
+	if got := c.ModeFor(repo); got != "container" {
+		t.Fatalf("default = %q", got)
+	}
+	if err := c.SetMode("hybrid"); err != nil {
+		t.Fatal(err)
+	}
+	if c.ModeFor(repo) != "hybrid" || c.ModeFor(other) != "hybrid" {
+		t.Fatal("global hybrid must apply to every repo")
+	}
+	if err := c.SetRepoMode(repo, "container"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	c, _ = Load()
+	if c.ModeFor(repo) != "container" || c.ModeFor(other) != "hybrid" {
+		t.Fatalf("override: %q %q", c.ModeFor(repo), c.ModeFor(other))
+	}
+	err := c.SetMode("fast")
+	if err == nil || !strings.Contains(err.Error(), "container") || !strings.Contains(err.Error(), "hybrid") {
+		t.Fatalf("bad mode error = %v", err)
+	}
+	if c.SetRepoMode(repo, "fast") == nil {
+		t.Fatal("bad repo mode accepted")
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "config.json"))
+	if strings.Count(string(raw), `"mode"`) != 1 || !strings.Contains(string(raw), `"future"`) {
+		t.Fatalf("file: %s", raw)
+	}
+}
