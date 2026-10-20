@@ -204,6 +204,13 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		}
 	}
 
+	if action == "down" {
+		// Host processes first: they talk to the containers about to go away.
+		if err := StopAllHosts(stderr, instanceDir, HostStopTimeout()); err != nil {
+			fmt.Fprintln(stderr, "stackfork: some host processes could not be stopped; continuing with down")
+		}
+	}
+
 	dockerCommand := []string{"compose", "-p", project, "--project-directory", root,
 		"--env-file", os.DevNull, "-f", configPath}
 

@@ -3,6 +3,11 @@
 // stackfork-managed checkout. It gives the app a stable free port, the same
 // environment `stackfork env --with-passwords` exports, and a proxy route for
 // as long as it runs. The guard (internal/guard) allows it.
+//
+// `host start NAME -- COMMAND...` does the same detached: a supervisor (this
+// binary re-run as `host --supervise`) owns the command, its log, its
+// HostProcs entry and its route, and cleans them up when the command exits.
+// `host stop|restart|logs NAME` manage it. See hostdetach.go.
 package cli
 
 import (
@@ -16,7 +21,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/pedropinheiro75/stackfork/internal/guard"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
@@ -26,7 +30,26 @@ import (
 
 var hostNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
+const hostUsage = "usage: host <name> [--port N] -- <command...> | host start <name> [--port N] -- <command...> | host stop|restart <name> | host logs <name> [-f]"
+
 func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string) (int, error) {
+	if hostUnsupported != nil {
+		return 0, hostUnsupported
+	}
+	supervise := false
+	if len(subArgs) > 0 && subArgs[0] == "--supervise" { // internal: set by `host start`
+		supervise, subArgs = true, subArgs[1:]
+	}
+	if len(subArgs) > 0 && !supervise {
+		switch subArgs[0] {
+		case "stop", "restart", "logs":
+			return cmdHostManage(stdout, stderr, subArgs[0], subArgs[1:], root, branch, project, instanceDir, newStateBase, legacyStateBase)
+		}
+	}
+	detach := false
+	if len(subArgs) > 0 && subArgs[0] == "start" && !supervise {
+		detach, subArgs = true, subArgs[1:]
+	}
 	// Everything after the first `--` is the command; it is never parsed
 	// as stackfork flags.
 	var command []string
@@ -39,6 +62,8 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	fs := newFlagSet(stdout, "host")
 	portFlag := fs.Int("port", 0, "")
+	dirFlag := fs.String("dir", "", "")
+	portEnvFlag := fs.String("port-env", "", "")
 	var name string
 	if len(own) > 0 && !strings.HasPrefix(own[0], "-") {
 		name, own = own[0], own[1:]
@@ -50,7 +75,7 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		name = fs.Arg(0)
 	}
 	if name == "" || len(command) == 0 {
-		return 2, errors.New("usage: host <name> [--port N] -- <command...>")
+		return 2, errors.New(hostUsage)
 	}
 	if !hostNamePattern.MatchString(name) {
 		return 2, fmt.Errorf("invalid name %q; use lowercase letters, digits and dashes", name)
@@ -58,12 +83,30 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	if *portFlag < 0 || *portFlag > 65535 {
 		return 2, fmt.Errorf("invalid --port %d", *portFlag)
 	}
+	workDir := hostWorkDir(root)
+	if *dirFlag != "" {
+		d := filepath.Join(root, *dirFlag)
+		if rel, err := filepath.Rel(root, d); err != nil || strings.HasPrefix(rel, "..") {
+			return 2, fmt.Errorf("--dir %q is outside the checkout", *dirFlag)
+		}
+		workDir = d
+	}
+	var portEnv []string
+	for _, e := range strings.Split(*portEnvFlag, ",") {
+		if e = strings.TrimSpace(e); e != "" {
+			portEnv = append(portEnv, e)
+		}
+	}
+	if detach {
+		return hostStart(stderr, name, command, workDir, project, instanceDir, newStateBase, legacyStateBase, hostFlagArgs(*portFlag, *dirFlag, *portEnvFlag))
+	}
 
 	block, err := envBlock(project, instanceDir, newStateBase, legacyStateBase, true)
 	if err != nil {
 		return 0, err
 	}
 
+	os.Remove(lifecycle.HostStopFlag(instanceDir, name)) // a leftover from a stopper that died
 	port, err := registerHostRoute(name, *portFlag, root, branch, project, instanceDir, newStateBase, legacyStateBase, stderr)
 	if err != nil {
 		return 0, err
@@ -78,40 +121,34 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	p := strconv.Itoa(port)
 	env = append(env, "PORT="+p, "NUXT_PORT="+p, "NITRO_PORT="+p, "HOST=127.0.0.1", guard.HostRunEnv+"=1")
+	for _, e := range portEnv {
+		env = append(env, e+"="+p)
+	}
 
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Env = env
-	cmd.Dir = hostWorkDir(root)
+	cmd.Dir = workDir
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, stdout, stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // own group: signals reach the whole tree
+	cmd.SysProcAttr = childProcAttr(supervise)
 	sigCh := make(chan os.Signal, 4)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(sigCh, hostSignals...)
 	defer signal.Stop(sigCh)
 
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("could not start %q: %w", command[0], err)
 	}
 	fmt.Fprintf(stderr, "stackfork: running %q on port %d for %s (routed while it runs)\n", name, port, project)
+	if err := recordHostProc(instanceDir, name, port, supervise, stderr); err != nil {
+		fmt.Fprintf(stderr, "stackfork: warning: could not record the process: %v\n", err)
+	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	for {
 		select {
 		case sig := <-sigCh:
-			if s, ok := sig.(syscall.Signal); ok {
-				syscall.Kill(-cmd.Process.Pid, s) //nolint:errcheck // the group may already be gone
-			}
+			forwardSignal(cmd.Process, sig, supervise)
 		case err := <-done:
-			if err == nil {
-				return 0, nil
-			}
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) {
-				if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-					return 128 + int(ws.Signal()), nil
-				}
-				return exitErr.ExitCode(), nil
-			}
-			return 0, err
+			return exitCode(err)
 		}
 	}
 }
@@ -189,6 +226,9 @@ func registerHostRoute(name string, requested int, root, branch, project, instan
 // unregisterHostRoute removes the route when the command ends. HostPorts
 // keeps the port for next time.
 func unregisterHostRoute(name, root, branch, project, instanceDir, newStateBase, legacyStateBase string, stderr io.Writer) {
+	if _, err := os.Stat(lifecycle.HostStopFlag(instanceDir, name)); err == nil {
+		return // a stopper is cleaning up for us (and may hold the lock)
+	}
 	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
 	if err != nil {
 		fmt.Fprintf(stderr, "stackfork: warning: could not remove route %q: %v\n", name, err)
@@ -197,6 +237,9 @@ func unregisterHostRoute(name, root, branch, project, instanceDir, newStateBase,
 	info, err := lifecycle.LoadAndValidateManifest(instanceDir, root, branch, project, "host")
 	if err == nil {
 		delete(info.Routes, name)
+		if info.HostProcs[name].PID == os.Getpid() { // never another supervisor's entry
+			delete(info.HostProcs, name)
+		}
 		err = state.WritePrivate(filepath.Join(instanceDir, "manifest.json"), info)
 	}
 	lock.Release()

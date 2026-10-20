@@ -119,11 +119,20 @@ echo '{"cwd":"/repo","tool_name":"Bash","tool_input":{"command":"bun run dev"}}'
 ```
 
 ### host
-The sanctioned way to run an app on the host in a managed checkout: `stackfork host NAME [--port N] -- COMMAND...`. The instance must be running. It gives COMMAND a stable free port (kept in the manifest), the same environment as `env --with-passwords` plus `PORT`, `NUXT_PORT`, `NITRO_PORT` and `HOST`, and a proxy route `NAME` for as long as it runs; signals are forwarded and the route is removed on exit. The guard allows it.
-Flags: `--port`
+The sanctioned way to run an app on the host in a managed checkout: `stackfork host NAME [--port N] -- COMMAND...`. The instance must be running. It gives COMMAND a stable free port (kept in the manifest), the same environment as `env --with-passwords` plus `PORT`, `NUXT_PORT`, `NITRO_PORT` and `HOST` (and each `--port-env` name), and a proxy route `NAME` for as long as it runs; signals are forwarded and the route is removed on exit. The guard allows it.
+Sub-forms:
+- `host start NAME [--port N] [--dir D] [--port-env A,B] -- COMMAND...` runs it detached: a supervisor outlives your terminal, writes `host-NAME.log` in the instance directory (truncated at each start), records itself in the manifest and removes its route on exit. Returns once it is recorded. Refused when NAME already runs.
+- `host stop NAME` sends SIGTERM to the supervisor's process group, waits 10 s (`STACKFORK_HOST_STOP_TIMEOUT`, for example `2s`), then SIGKILL; removes the route. It signals only when the recorded PID, start time and command line still match; a stale entry is only cleaned up.
+- `host restart NAME` stops it and starts it again with the same command.
+- `host logs NAME [-f]` prints the log (secrets redacted); `-f` follows it.
+`stackfork down` stops host processes before it runs the compose down. Not supported on Windows yet.
+Flags: `--port`, `--dir` (working directory, relative to the checkout), `--port-env` (extra env names set to the port, comma separated)
 ```sh
 stackfork host app -- bun run dev
 stackfork host app --port 3000 --instance sf-310-parsed-report-8d0cca37ec66 -- bun run dev
+stackfork host start web --port-env VITE_PORT -- bun run dev
+stackfork host logs web -f
+stackfork host stop web
 ```
 
 ### hooks

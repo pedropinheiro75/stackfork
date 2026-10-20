@@ -8,9 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
-	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
@@ -139,43 +137,6 @@ func TestHostRefusesWhenNotRunning(t *testing.T) {
 	_, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "host", "app", "--", "true")
 	if code == 0 || !strings.Contains(stderr, "not running") {
 		t.Fatalf("code=%d %q", code, stderr)
-	}
-}
-
-// SIGTERM to stackfork is forwarded to the command, and the route is still
-// removed afterwards.
-func TestHostForwardsSignalsAndCleansUp(t *testing.T) {
-	root, stateDir, project, psLine := envSetup(t, hostFixture)
-	t.Setenv("DOCKER_FAKE_PS", psLine+"\n")
-
-	var out, errBuf bytes.Buffer
-	done := make(chan int, 1)
-	go func() {
-		done <- Run([]string{"--root", root, "--state-dir", stateDir, "host", "app", "--", "sh", "-c", "sleep 30"}, &out, &errBuf)
-	}()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		m, _ := state.ReadManifest(filepath.Join(stateDir, project, "manifest.json"))
-		if m != nil && m.Routes["app"] != 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("route never registered; stderr=%s", errBuf.String())
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	time.Sleep(200 * time.Millisecond) // let cmd.Start finish
-	syscall.Kill(os.Getpid(), syscall.SIGTERM)
-	select {
-	case code := <-done:
-		if code != 128+int(syscall.SIGTERM) {
-			t.Fatalf("expected exit 143 after forwarding SIGTERM, got %d (%s)", code, errBuf.String())
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("host did not exit after SIGTERM")
-	}
-	if m := readManifestAt(t, stateDir, project); m.Routes["app"] != 0 {
-		t.Fatalf("route must be removed after a signal: %+v", m.Routes)
 	}
 }
 

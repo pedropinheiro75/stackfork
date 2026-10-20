@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"syscall"
 )
 
 // Manifest mirrors the Python `info` dict written to manifest.json.
@@ -43,11 +42,14 @@ type Manifest struct {
 	// HostPorts remembers the stable port `stackfork host <name>` picked for
 	// each name, so a host-run app keeps its port across runs (Routes only
 	// holds it while the app runs).
-	HostPorts    map[string]int    `json:"host_ports,omitempty"`
-	Files        []string          `json:"files"`
-	EnvFile      *string           `json:"env_file"`
-	Inputs       map[string]string `json:"inputs"`
-	ConfigSHA256 string            `json:"config_sha256"`
+	HostPorts map[string]int `json:"host_ports,omitempty"`
+	// HostProcs are the live host processes (`host start`, or a foreground
+	// `host`), keyed by name. Never trust an entry on its PID alone: see HostStatus.
+	HostProcs    map[string]HostProc `json:"host_procs,omitempty"`
+	Files        []string            `json:"files"`
+	EnvFile      *string             `json:"env_file"`
+	Inputs       map[string]string   `json:"inputs"`
+	ConfigSHA256 string              `json:"config_sha256"`
 	// SeedOnce is the command that seeds a fresh database (recorded from a
 	// sibling worktree's manifest when no knowledge file has one), run in
 	// SeedService after the first up that created the data volume. Seeded is
@@ -58,6 +60,15 @@ type Manifest struct {
 	SeedService string `json:"seed_service,omitempty"`
 	Seeded      *bool  `json:"seeded,omitempty"`
 	SeedPending bool   `json:"seed_pending,omitempty"`
+}
+
+// HostProc identifies a supervised host process. PID is the supervisor's.
+type HostProc struct {
+	PID       int      `json:"pid"`
+	StartedAt string   `json:"started_at"` // RFC3339 UTC, from ps lstart
+	Cmdline   []string `json:"cmdline"`    // the supervisor's own argv
+	Port      int      `json:"port"`
+	Log       string   `json:"log,omitempty"`
 }
 
 // PortAlloc is one (service, target port) -> stable host port allocation
@@ -187,33 +198,4 @@ func SHA256File(path string) (string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
-}
-
-// Lock is a held exclusive flock on a state directory's .lock file.
-type Lock struct {
-	file *os.File
-}
-
-// AcquireLock mirrors Python's `with (state / '.lock').open('a') as lock:
-// fcntl.flock(lock, fcntl.LOCK_EX)`. Blocks until the lock is available.
-func AcquireLock(path string) (*Lock, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		f.Close()
-		return nil, err
-	}
-	return &Lock{file: f}, nil
-}
-
-// Release unlocks and closes the lock file.
-func (l *Lock) Release() error {
-	unlockErr := syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
-	closeErr := l.file.Close()
-	if unlockErr != nil {
-		return unlockErr
-	}
-	return closeErr
 }
