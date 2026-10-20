@@ -251,6 +251,36 @@ error: duplicate key value violates unique constraint "users_email_key"</pre>
   </section>
 
   <section>
+    <div class="sec-head"><h2>Instances, grouped by project</h2><p>One card per app; each version (worktree or main checkout with a stack) is a nested card on surface-2. The branch is the label, the app name appears once, and a version shows at most one App chip. Example data.</p></div>
+    <div class="card" style="gap:10px">
+      <div class="card-top">
+        <span class="chev">▾</span><div class="av" style="background:var(--lane-2)">AW</div>
+        <span class="name">acme-web</span><span class="chip attention"><svg viewBox="0 0 10 10"><path d="M5 1 9.5 9h-9z" fill="currentColor"/></svg>1 partial</span><span class="sub" style="display:inline">3 versions</span>
+        <span class="spacer" style="flex:1"></span><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button>
+      </div>
+      <div style="background:var(--surface-2);border-radius:var(--r-md);padding:10px 12px;display:grid;gap:8px">
+        <div class="row"><span class="chev">▾</span><span class="pill" style="background:var(--lane-2)">feature-login</span><span class="chip attention"><svg viewBox="0 0 10 10"><path d="M5 1 9.5 9h-9z" fill="currentColor"/></svg>Partial</span><span class="spacer" style="flex:1"></span><button class="btn" type="button">Open App</button><button class="btn ghost" type="button">Stop</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div>
+        <div class="mono" style="color:var(--fg-muted);padding-left:36px">.worktrees/feature-login · acme-web-2ffa6841c75d.localhost</div>
+        <div class="links row" style="padding-left:36px"><a href="#repos">App ↗</a><a href="#repos">Mail inbox ↗</a></div>
+      </div>
+      <div style="background:var(--surface-2);border-radius:var(--r-md);padding:10px 12px;display:grid;gap:8px">
+        <div class="row"><span class="chev">▸</span><span class="pill" style="background:var(--lane-2)">main</span><span class="chip off"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>Stopped</span><span class="spacer" style="flex:1"></span><button class="btn" type="button">Start</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div>
+        <div class="mono" style="color:var(--fg-muted);padding-left:36px">main checkout · acme-web-9b21e07d4c3a.localhost</div>
+      </div>
+      <div style="background:var(--surface-2);border-radius:var(--r-md);padding:10px 12px;display:grid;gap:8px">
+        <div class="row"><span class="chev">▾</span><span class="pill" style="background:var(--lane-2)">docs-tooling</span><span class="chip ok"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="currentColor"/></svg>Running</span><span class="spacer" style="flex:1"></span><button class="btn" type="button">Open App</button><button class="btn ghost" type="button">Stop</button><button class="btn icon ghost" type="button" aria-label="More actions">⋯</button></div>
+        <div class="mono" style="color:var(--fg-muted);padding-left:36px">.worktrees/docs-tooling · acme-web-77a1b2c3d4e5.localhost</div>
+        <div class="links row" style="padding-left:36px"><span class="mono" style="color:var(--off);text-decoration:underline dotted" title="Not running on the host. Start it with npm run dev, then stackfork route add <name> <port>">App · on host</span><a href="#repos">DB admin ↗</a></div>
+      </div>
+    </div>
+    <div class="rules">
+      <div class="rule"><b>One App chip per version</b><p>Live: a link. Port pending: "App · port assigned on start". Stopped: "App" in grey. Host app known only from learn: "App · on host", with the command in the tooltip and the ⋯ menu.</p></div>
+      <div class="rule"><b>Sort and filter</b><p>Projects with a live version first, then activity, then name. Filter and Running only hide versions inside their project; the header keeps "3 versions · 2 hidden".</p></div>
+      <div class="rule"><b>No start-all</b><p>The project ⋯ offers Start a branch…, Show in Repos and Copy repo path. Starting or stopping stays one click per stack.</p></div>
+    </div>
+  </section>
+
+  <section>
     <div class="sec-head"><h2>State system</h2><p>Five states, always glyph + word. Red only for something broken or a button that deletes; a stopped stack is grey.</p></div>
     <div class="row">
       <span class="chip ok"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="currentColor"/></svg>ok · Running</span>

@@ -350,6 +350,58 @@ Toolbar left: filter input (`placeholder="Filter instances"`), `Running only` sw
 - 400 px: line 1 avatar + name + chip, line 2 branch pill + relative path, line 3 app strip, actions become `[Start] [⋯]` right-aligned on line 1; service rows become name + chip on line 1 and endpoints on line 2, actions in overflow only.
 - Empty: "No instances yet" with the two ways to get one (`Repos → Start` link, `stackfork prepare && stackfork up` command row). Loading: three skeleton cards (static blocks, no shimmer).
 
+### Instances: grouped by project
+
+Replaces the flat list of InstanceCards. One **ProjectCard** per app; every version of that app (a worktree or the main checkout that has a stack) is a **VersionCard** inside it. Figma: page "Instances — grouped" in the Berth file (components `ProjectCard`, `VersionCard`, frames 1440 dark/light, 400 dark, "States · Dark").
+
+```
+┌ ProjectCard ───────────────────────────────────────────────────────────────┐
+│ ⌄ [AW] acme-web  ▲ 1 PARTIAL  3 versions                                 ⋯ │
+│ ┌ VersionCard ───────────────────────────────────────────────────────────┐ │
+│ │ ⌄ [feature-login] ▲ PARTIAL                       [Open App] Stop  ⋯  │ │
+│ │   .worktrees/feature-login · acme-web-2ffa6841c75d.localhost          │ │
+│ │   App ↗  Mail inbox ↗                                                 │ │
+│ │   ⊘ Database seed failed …                               [Retry seed] │ │
+│ │   SERVICE        STATE        ENDPOINTS                               │ │
+│ │   web            ● Running    http://…:28928 ↗               Logs  ⋯  │ │
+│ ├ VersionCard ───────────────────────────────────────────────────────────┤ │
+│ │ › [main] ○ STOPPED                                         [Start] ⋯  │ │
+│ │   main checkout · acme-web-9b21e07d4c3a.localhost                     │ │
+│ └────────────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+**ProjectCard** (`surface-1`, 1 px `line`, radius `md`, 12 px 16 px padding, 10 px row gap). Header, left to right: toggle (icon button, `aria-expanded`) · LaneAvatar (initials, lane by app) · app name (`heading`, an `h2`) · summary chip · `n versions` (`small fg-muted`) · spacer · `⋯`. The summary chip uses the Repos STATUS vocabulary: `● 2 running` (ok), `◐ 1 partial` (attention), `○ Stopped` (off; every version stopped). When both running and partial exist, show both chips. The project `⋯` menu: `Start a branch…` (opens the Repos start popover for this repo), `Show in Repos`, `Copy repo path`. There is no start-all or stop-all: starting several stacks of one app at once is rare and heavy, and stopping all is the kind of action that should take one click per stack.
+
+Collapsed project: header plus one row of BranchPills in the app lane colour (running versions first). Collapse state is remembered per app (`stackfork:project-collapsed:<app>`, try/catch). Expanded is the default.
+
+**VersionCard** (`surface-2`, no border, radius `md`, 10 px 12 px padding, 8 px apart; the nested layer from Elevation). Content under line 1 is inset 36 px so it aligns with the pill, not the toggle.
+
+- Line 1: toggle (`aria-expanded`, controls the service table) · BranchPill in the app lane colour (the primary label; the app name is never repeated here) · state chip (`● Running`, `◐ Partial`, `○ Stopped`, `◔ Starting…`, `⊘ Checkout missing`) · `▲ Setup unverified` only when knowledge is `draft` or `stale` (verified is silent) · spacer · actions: `Open App` (secondary) when live and an app URL exists, `Start` (secondary) when stopped, `Stop` (ghost) when live, `⋯` with the existing instance menu.
+- Line 2 (`mono fg-muted`): relative path `· ` hostname. The main checkout reads `main checkout` instead of a path; that is how a worktree and the main checkout differ, together with the pill text.
+- App strip: shown when the version is live or expanded. **At most one App chip per version.** Other services keep their role labels (`Mail inbox`, `DB admin`, service name).
+- Callouts and the ServiceTable are unchanged from InstanceCard, inset 36 px. Chips, copy chips and inputs inside a VersionCard use `surface-3` so they stay visible on `surface-2`.
+- Collapsed version (stopped by default): lines 1 and 2 only. No app strip: on a stopped stack it is all `off` text and carries nothing.
+
+**App chip states** (one chip, the label names the state, colour is the third cue):
+
+| Condition | Chip |
+|---|---|
+| Live, URL known | `App ↗` link in `accent-text`, `title` shows the URL and the direct address |
+| Live, port not assigned yet | `App · port assigned on start` in `off`, no link |
+| Stack stopped | `App` in `off`, tooltip "Starts with the stack" |
+| Knowledge-only host app (no route, no service endpoint) | `App · on host` in `off` with a dotted underline; the tooltip and the version `⋯` item **How to run the host app** carry the command (`npm run dev`, then `stackfork route add <name> <port>`). Emitted once per version, never once per dev script. |
+
+**Sort.** Projects: any live (running or partial) version first, then most recent activity (manifest mtime of the newest version), then name. Inside a project: live versions first, then the main checkout, then branch name. The `RUNNING n` / `STOPPED n` section labels go away; the rail count and the toolbar `3 of 7 running` keep the totals.
+
+**Filter and Running only.** The filter matches the app name and each version's branch, path and hostname. A match on the app name shows the whole project. Otherwise only matching versions show, and a project with no match is hidden. `Running only` hides stopped versions and any project with nothing live left. In both cases the header keeps the totals and adds the hidden count: `3 versions · 2 hidden`.
+
+**States.** One version: the project card still wraps it (identity stays in one place). Many versions (6+): running first, stopped collapsed to two lines; the project toggle collapses the whole card to pills. All stopped: `○ Stopped` summary, every version collapsed. Callout: inside the version it belongs to, never at project level. Loading: static skeleton project cards (header blocks and two version blocks, no shimmer). Empty: the existing `No instances yet` EmptyState.
+
+**400 px.** Project header: name stacked over `n versions`, summary chip right-aligned before `⋯`. Version line 1: toggle · pill · spacer · `Start` or `Open App` · `⋯`; line 2: chips; line 3: path (wraps); app strip wraps. Service rows become two lines (name + image + chip + `⋯`, endpoint under), `Logs` and `Stop` move into `⋯`. Nothing scrolls horizontally.
+
+**Keyboard and semantics.** `main` holds a list of `section` elements (one per project), each labelled by its `h2`; versions are `h3`. Focus order follows the DOM: project toggle → project `⋯` → version toggle → version actions → app links → service rows. Toggles are buttons with `aria-expanded` and `aria-controls`; collapsing is instant (no animation, per Motion). Re-renders keep the keyed focus and open menus as today, with keys prefixed by the app (`<app>/toggle`, `<app>/<project>/...`).
+
 ### Repos view
 
 Toolbar left: search input (`placeholder="Search repos and branches"`), `Ready only` switch, **Rescan · 5 min ago** (ghost button with freshness; shows `busy` ring while scanning), result count `fg-subtle`. Right: system cluster.
@@ -448,7 +500,9 @@ Mapped against the 51 the earlier design system components. "Adapted" keeps the 
 | **StatusPill** | Toolbar system status: dot + word (+ port); click opens a popover with detail and command. |
 | **LaneAvatar** | 28 px square, lane fill, white initial, `sm` radius; used on cards and as the lane colour source. |
 | **BranchPill** | Mono branch name on a lane-tinted chip (12 % tint, 40 % line, text in `fg`); detached variant with ShortSha; icons for local/remote/detached. |
-| **InstanceCard** | See Layout → Instances. Collapsible; keyed re-render that preserves focus and open state. |
+| **InstanceCard** | See Layout → Instances. Collapsible; keyed re-render that preserves focus and open state. Superseded by ProjectCard + VersionCard once the grouped view ships. |
+| **ProjectCard** | One per app: LaneAvatar, name, summary chip, `n versions`, `⋯`; holds VersionCards or, collapsed, a row of BranchPills. See Layout → Instances: grouped by project. |
+| **VersionCard** | A worktree or main checkout with a stack, on `surface-2` inside a ProjectCard: BranchPill, state chip, actions, path · hostname, one App chip, callouts, ServiceTable. |
 | **ServiceRow** | A ServiceTable row with ServiceLogo (16 px mask icon in `fg-muted`), StatusChip, endpoint links, CopyChips and the actions cluster. |
 | **EndpointLink** | `accent-text` mono with an external-link icon; stopped variant is `off` text with no link. |
 | **CopyChip** | Mono value or label on `surface-2`, copy icon, 24 px; success flips the icon to a check for 1.2 s and toasts; password-bearing values fetch on click as today. |
@@ -533,6 +587,7 @@ For Figma (desktop 1440 × 900 and 400 × 860, dark and light each):
 6. Settings view.
 7. Overlays — overflow menu, Learn modal, log drawer, toast, StatusPill popover.
 8. Component sheet — buttons, chips, pills, bars, callouts, inputs, rail, toolbar.
+9. Instances — grouped by project (page "Instances — grouped"): 1440 dark and light, 400 dark, and a state sheet (one version, 7 versions expanded and collapsed, all stopped, attention callout, the four App chip states, loading, empty, filter active).
 
 ## Do's and Don'ts
 
