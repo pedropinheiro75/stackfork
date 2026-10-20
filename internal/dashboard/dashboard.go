@@ -13,6 +13,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -28,7 +29,7 @@ import (
 //go:embed static
 var staticFS embed.FS
 
-//go:embed templates/index.html.tmpl
+//go:embed templates/index.html.tmpl templates/instances.html.tmpl
 var indexTemplateSrc embed.FS
 
 // indexFuncs is the small set of view helpers the template needs beyond
@@ -49,10 +50,32 @@ var indexFuncs = template.FuncMap{
 	"isLive":          func(state string) bool { return isRunningState(state) },
 	"initial":         initials,
 	"appName":         appName,
+	"domID":           domID,
+	"hostHint":        hostHint,
 }
 
-var indexTemplate = template.Must(
-	template.New("index.html.tmpl").Funcs(indexFuncs).ParseFS(indexTemplateSrc, "templates/index.html.tmpl"))
+var indexTemplate = parseIndexTemplate()
+
+// parseIndexTemplate parses the page and the project/version cards. The
+// cards' source is written one element per line; app.js renders the same
+// markup with no whitespace between tags, so the line breaks and indents are
+// dropped here and first paint equals the first poll byte for byte.
+func parseIndexTemplate() *template.Template {
+	t := template.New("index.html.tmpl").Funcs(indexFuncs)
+	page, err := indexTemplateSrc.ReadFile("templates/index.html.tmpl")
+	if err != nil {
+		panic(err)
+	}
+	cards, err := indexTemplateSrc.ReadFile("templates/instances.html.tmpl")
+	if err != nil {
+		panic(err)
+	}
+	template.Must(t.Parse(string(page)))
+	template.Must(t.New("instances.html.tmpl").Parse(leadingBreaks.ReplaceAllString(string(cards), "")))
+	return t
+}
+
+var leadingBreaks = regexp.MustCompile(`\n[ \t]*`)
 
 // Server holds everything a request handler needs; every field is set once
 // at construction and read-only afterward except the inventory cache.
@@ -333,26 +356,118 @@ func isRunningState(state string) bool {
 	return state == inventory.StateRunning || state == inventory.StatePartial
 }
 
-func buildCards(instances []inventory.Instance) (running, stopped []cardData) {
-	for _, inst := range instances {
-		card := cardData{Instance: inst, Commands: cliCommands(inst), ColorIndex: stackColorIndex(appName(inst))}
-		if isRunningState(inst.State) {
-			running = append(running, card)
+// projectData is one app with every version (instance) of it: a ProjectCard
+// and its VersionCards. app.js's groupProjects must sort the same way.
+type projectData struct {
+	App        string
+	Root       string // the repo's main checkout, for the project menu
+	ColorIndex int
+	Versions   []cardData
+	Chips      []chipView
+}
+
+// repoRoot is the main checkout a version belongs to: the part of its root
+// before "/.worktrees/", else the root itself. app.js's repoRoot must match.
+func repoRoot(root string) string {
+	if i := strings.LastIndex(root, "/.worktrees/"); i > 0 {
+		return root[:i]
+	}
+	return root
+}
+
+// domID turns free text into an id fragment (anything outside [A-Za-z0-9_-]
+// becomes "-"). app.js's domId must match.
+func domID(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-') {
+			b.WriteRune(r)
 		} else {
-			stopped = append(stopped, card)
+			b.WriteByte('-')
 		}
 	}
-	less := func(cards []cardData) func(i, j int) bool {
-		return func(i, j int) bool {
-			if cards[i].Root != cards[j].Root {
-				return cards[i].Root < cards[j].Root
+	return b.String()
+}
+
+// hostHint is the "how to run the host app" sentence of a knowledge-only app
+// chip; the chip never prints it, only its tooltip and the menu item do.
+func hostHint(apps []inventory.AppLink) string {
+	for _, a := range apps {
+		if a.Source == "knowledge" && a.Hint != "" {
+			return a.Hint
+		}
+	}
+	return ""
+}
+
+func buildProjects(instances []inventory.Instance) []projectData {
+	byApp := map[string]*projectData{}
+	var order []*projectData
+	for _, inst := range instances {
+		app := appName(inst)
+		p := byApp[app]
+		if p == nil {
+			p = &projectData{App: app, Root: repoRoot(inst.Root), ColorIndex: stackColorIndex(app)}
+			byApp[app] = p
+			order = append(order, p)
+		}
+		p.Versions = append(p.Versions, cardData{Instance: inst, Commands: cliCommands(inst), ColorIndex: stackColorIndex(app)})
+	}
+	last := map[*projectData]int64{}
+	live := map[*projectData]bool{}
+	for _, p := range order {
+		running, partial := 0, 0
+		for _, v := range p.Versions {
+			switch v.State {
+			case inventory.StateRunning:
+				running++
+			case inventory.StatePartial:
+				partial++
 			}
-			return cards[i].Project < cards[j].Project
+			if ms := v.Used.UnixMilli(); ms > last[p] {
+				last[p] = ms
+			}
 		}
+		live[p] = running+partial > 0
+		if running > 0 {
+			p.Chips = append(p.Chips, chipView{Class: "ok", Glyph: glyphOK, Label: fmt.Sprintf("%d running", running)})
+		}
+		if partial > 0 {
+			p.Chips = append(p.Chips, chipView{Class: "attention", Glyph: glyphPartial, Label: fmt.Sprintf("%d partial", partial)})
+		}
+		if !live[p] {
+			p.Chips = append(p.Chips, chipView{Class: "off", Glyph: glyphOff, Label: "Stopped"})
+		}
+		sort.SliceStable(p.Versions, func(i, j int) bool {
+			a, b := p.Versions[i], p.Versions[j]
+			if al, bl := isRunningState(a.State), isRunningState(b.State); al != bl {
+				return al
+			}
+			if a.IsMain != b.IsMain {
+				return a.IsMain
+			}
+			if a.Branch != b.Branch {
+				return a.Branch < b.Branch
+			}
+			return a.Project < b.Project
+		})
 	}
-	sort.Slice(running, less(running))
-	sort.Slice(stopped, less(stopped))
-	return running, stopped
+	// Projects: any live version first, then the newest activity, then name.
+	sort.SliceStable(order, func(i, j int) bool {
+		a, b := order[i], order[j]
+		if live[a] != live[b] {
+			return live[a]
+		}
+		if last[a] != last[b] {
+			return last[a] > last[b]
+		}
+		return a.App < b.App
+	})
+	out := make([]projectData, len(order))
+	for i, p := range order {
+		out[i] = *p
+	}
+	return out
 }
 
 type pageData struct {
@@ -360,8 +475,7 @@ type pageData struct {
 	Token        string
 	Docker       inventory.DockerStatus
 	Proxy        inventory.ProxyStatus
-	Running      []cardData
-	Stopped      []cardData
+	Projects     []projectData
 	Total        int
 	RunningCount int
 	// Loading: the first inventory collection is still running; the page
@@ -390,10 +504,15 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, c.err.Error(), http.StatusInternalServerError)
 			return
 		}
-		running, stopped := buildCards(c.inv.Instances)
+		running := 0
+		for _, inst := range c.inv.Instances {
+			if isRunningState(inst.State) {
+				running++
+			}
+		}
 		data = pageData{
 			Version: s.Version, Token: s.Token, Docker: c.inv.Docker, Proxy: c.inv.Proxy,
-			Running: running, Stopped: stopped, Total: len(c.inv.Instances), RunningCount: len(running),
+			Projects: buildProjects(c.inv.Instances), Total: len(c.inv.Instances), RunningCount: running,
 		}
 	case <-time.After(IndexWait):
 		// Docker is slow: show the shell now (the collection keeps running

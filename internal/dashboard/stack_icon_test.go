@@ -52,7 +52,7 @@ func TestStackIconUsesAppName(t *testing.T) {
 	}
 	body := rec.Body.String()
 
-	if !strings.Contains(body, `class="avatar"`) || !strings.Contains(body, `class="stack lane-`) {
+	if !strings.Contains(body, `class="avatar"`) || !strings.Contains(body, `class="stack version lane-`) {
 		t.Fatalf("expected a lane avatar element:\n%s", body)
 	}
 	start := strings.Index(body, `class="avatar"`)
@@ -61,7 +61,10 @@ func TestStackIconUsesAppName(t *testing.T) {
 	if !strings.HasSuffix(iconElement, ">EU") {
 		t.Fatalf("expected the avatar initials EU (from the app folder export-user-portal), got element %q", iconElement)
 	}
-	if !strings.Contains(body, `<h3 class="stack-name" title="`+project+`">export-user-portal</h3>`) {
-		t.Fatalf("expected the card heading to be the app name:\n%s", body)
+	if !strings.Contains(body, `class="project-name" id="proj-export-user-portal-h">export-user-portal</h2>`) {
+		t.Fatalf("expected the project heading to be the app name:\n%s", body)
+	}
+	if strings.Count(body, ">export-user-portal<") != 1 {
+		t.Fatalf("the app name must appear once, not on every version:\n%s", body)
 	}
 }

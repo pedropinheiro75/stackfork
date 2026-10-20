@@ -144,7 +144,7 @@ func TestStoppedStateIsOffNotFailed(t *testing.T) {
 		t.Fatalf("a stopped instance reads Stopped in the off tone, got %v", chip)
 	}
 	card := body[strings.Index(body, `<article class="stack`):]
-	card = card[:strings.Index(card, `<div class="stack-body">`)]
+	card = card[:strings.Index(card, `<div class="stack-body"`)]
 	if strings.Contains(card, "chip-failed") {
 		t.Errorf("a stopped card shows no failed chip:\n%s", card)
 	}
