@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // Status is where a reference stands, never a value (D4).
@@ -43,6 +44,15 @@ func ValidateValue(value string) error {
 type Backend struct {
 	// GOOS overrides runtime.GOOS (tests).
 	GOOS string
+	// Security, SecretTool and OpPaths replace the fixed tool locations
+	// (tests point them at a recording helper; nothing else sets them).
+	Security, SecretTool string
+	OpPaths              []string
+	// ScannedRoots lists the repository roots a store tool must not live
+	// in. The CLI sets it from the config; nil means none.
+	ScannedRoots func() []string
+	// Timeout overrides the per-call timeout (tests).
+	Timeout time.Duration
 }
 
 // Default is the backend the package-level functions use.
@@ -111,11 +121,53 @@ func (b *Backend) Store(item, value string) error {
 
 var errNoBackend = errors.New("store backend not available")
 
+func (b *Backend) roots() []string {
+	if b.ScannedRoots == nil {
+		return nil
+	}
+	return b.ScannedRoots()
+}
+
+func (b *Backend) timeout(d time.Duration) time.Duration {
+	if b.Timeout > 0 {
+		return b.Timeout
+	}
+	return d
+}
+
+// keychainTool resolves the credential-store tool of this OS (D2).
+func (b *Backend) keychainTool() (string, error) {
+	switch b.goos() {
+	case "darwin":
+		return resolveTool(orPaths(b.Security, securityPaths), b.roots())
+	case "linux":
+		return resolveTool(orPaths(b.SecretTool, secretToolPaths), b.roots())
+	}
+	return "", fmt.Errorf("no credential store backend for %s", b.goos())
+}
+
+func (b *Backend) opTool() (string, error) {
+	if b.OpPaths != nil {
+		return resolveTool(b.OpPaths, b.roots())
+	}
+	return resolveTool(opPaths, b.roots())
+}
+
+func orPaths(override string, fixed []string) []string {
+	if override != "" {
+		return []string{override}
+	}
+	return fixed
+}
+
 func (b *Backend) readKeychain(item string, wantValue bool) (string, Status, error) {
 	return "", Unavailable, errNoBackend
 }
 
 func (b *Backend) readOP(ref string) (string, Status, error) {
+	if _, err := b.opTool(); err != nil {
+		return "", Unavailable, fmt.Errorf("1Password: %w", err)
+	}
 	return "", Unavailable, errNoBackend
 }
 
