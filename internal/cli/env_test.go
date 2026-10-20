@@ -234,3 +234,11 @@ func TestEnvFormatPowershell(t *testing.T) {
 		t.Fatalf("unknown format: code %d, %q", code, stderr)
 	}
 }
+
+func TestPowershellQuoteDoublesAllSingleQuotes(t *testing.T) {
+	for _, q := range []string{"'", "\u2018", "\u2019", "\u201a", "\u201b"} {
+		if got, want := powershellQuote("a"+q+"b"), "'a"+q+q+"b'"; got != want {
+			t.Errorf("powershellQuote(%q) = %q, want %q", q, got, want)
+		}
+	}
+}

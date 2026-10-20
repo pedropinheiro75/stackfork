@@ -25,7 +25,7 @@ func childProcAttr(supervise bool) *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setpgid: true}
 }
 
-func forwardSignal(p *os.Process, sig os.Signal, supervise bool) {
+func forwardSignal(p *os.Process, _ string, sig os.Signal, supervise bool) {
 	s, ok := sig.(syscall.Signal)
 	if !ok {
 		return

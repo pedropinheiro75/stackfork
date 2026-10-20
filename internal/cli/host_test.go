@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -154,5 +155,24 @@ func TestGuardAllowsHostRunPath(t *testing.T) {
 		if code, _ := cmdGuard(strings.NewReader(payload), &out, &errBuf, nil, t.TempDir(), t.TempDir()); code != 0 {
 			t.Errorf("%q must be allowed, got code %d: %s", command, code, errBuf.String())
 		}
+	}
+}
+
+func TestCheckBatchArgs(t *testing.T) {
+	cmdFile := func(string) (string, error) { return `C:\x\npm.CMD`, nil }
+	exeFile := func(string) (string, error) { return `C:\x\node.exe`, nil }
+	for _, bad := range []string{"a&b", "a|b", "a<b", "a>b", "a^b", "%PATH%", "hi!"} {
+		if checkBatchArgs([]string{"npm", "run", bad}, cmdFile) == nil {
+			t.Errorf("%q must be refused for a .cmd", bad)
+		}
+	}
+	if checkBatchArgs([]string{"npm", "run", "dev", "--port", "3000"}, cmdFile) != nil {
+		t.Error("plain arguments are fine")
+	}
+	if checkBatchArgs([]string{"node", "a&b"}, exeFile) != nil {
+		t.Error("an .exe is not a batch file")
+	}
+	if checkBatchArgs([]string{"nope", "a&b"}, func(string) (string, error) { return "", errors.New("x") }) != nil {
+		t.Error("unresolved commands are left to exec")
 	}
 }

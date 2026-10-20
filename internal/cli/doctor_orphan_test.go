@@ -44,7 +44,7 @@ func TestDoctorOrphanedHostApp(t *testing.T) {
 	base := t.TempDir()
 	writeHostManifest(t, base, dead)
 	got := orphanedHostApps(base)
-	if len(got) != 1 || !strings.Contains(got[0], "web") || !strings.Contains(got[0], "port") {
+	if len(got) != 1 || !strings.Contains(got[0], "web") || !strings.Contains(got[0], "something answers on port") {
 		t.Fatalf("answering port: %v", got)
 	}
 

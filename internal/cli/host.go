@@ -20,6 +20,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -126,6 +127,11 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		env = append(env, e+"="+p)
 	}
 
+	if runtime.GOOS == "windows" {
+		if err := checkBatchArgs(command, exec.LookPath); err != nil {
+			return 0, err
+		}
+	}
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Env = env
 	cmd.Dir = workDir
@@ -139,16 +145,35 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("could not start %q: %w", command[0], err)
 	}
+	started, _ := state.ProcStart(cmd.Process.Pid) // unreaped yet, so the pid is still ours
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	for {
 		select {
 		case sig := <-sigCh:
-			forwardSignal(cmd.Process, sig, supervise)
+			forwardSignal(cmd.Process, started, sig, supervise)
 		case err := <-done:
 			return exitCode(err)
 		}
 	}
+}
+
+// checkBatchArgs refuses, for a command that resolves to a .cmd or .bat file,
+// arguments cmd.exe would interpret (BatBadBut): & | < > ^ % !.
+func checkBatchArgs(argv []string, lookPath func(string) (string, error)) error {
+	p, err := lookPath(argv[0])
+	if err != nil {
+		return nil // exec reports it
+	}
+	if ext := strings.ToLower(filepath.Ext(p)); ext != ".cmd" && ext != ".bat" {
+		return nil
+	}
+	for _, a := range argv[1:] {
+		if strings.ContainsAny(a, "&|<>^%!") {
+			return fmt.Errorf("%s runs through cmd.exe, which would interpret %q; remove any of & | < > ^ %% ! from the arguments", argv[0], a)
+		}
+	}
+	return nil
 }
 
 // confinedDir resolves dir under root, symlinks included, and refuses a result outside root.

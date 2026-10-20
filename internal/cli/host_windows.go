@@ -28,14 +28,15 @@ func childProcAttr(supervise bool) *syscall.SysProcAttr {
 }
 
 // forwardSignal stops the command: the foreground form kills its whole tree
-// (taskkill /T /F); under the supervisor `host stop` already did, so kill
-// only the direct child.
-func forwardSignal(p *os.Process, _ os.Signal, supervise bool) {
-	if supervise {
+// (taskkill /T /F) after checking, through a handle that pins the PID, that
+// it is still the process started (creation time started); under the
+// supervisor `host stop` already did, so kill only the direct child.
+func forwardSignal(p *os.Process, started string, _ os.Signal, supervise bool) {
+	if supervise || started == "" {
 		p.Kill() //nolint:errcheck // it may have exited already
 		return
 	}
-	state.KillGroup(p.Pid, syscall.SIGKILL) //nolint:errcheck // the tree may be gone
+	state.KillHost(state.HostProc{PID: p.Pid, StartedAt: started}, syscall.SIGKILL) //nolint:errcheck // the tree may be gone
 }
 
 func exitCode(err error) (int, error) {

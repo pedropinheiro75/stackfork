@@ -15,13 +15,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/dockerdisk"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
-	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
@@ -72,7 +72,7 @@ func cmdDoctor(stdout io.Writer, subArgs []string, newStateBase string) (int, er
 	{
 		if orphans := orphanedHostApps(newStateBase); len(orphans) > 0 {
 			add("host apps", "warn", strings.Join(orphans, "; "),
-				"stop the process on that port (macOS/Linux: lsof -i :PORT; Windows: netstat -ano | findstr :PORT), then stackfork host start")
+				"it may be the old app or another program; stop the process on that port (macOS/Linux: lsof -i :PORT; Windows: netstat -ano | findstr :PORT), then stackfork host start")
 		} else {
 			add("host apps", "ok", "no orphaned host apps", "")
 		}
@@ -137,12 +137,22 @@ func orphanedHostApps(newStateBase string) []string {
 		sort.Strings(names)
 		for _, n := range names {
 			hp := m.HostProcs[n]
-			if hp.Port > 0 && !state.HostAlive(hp) && ports.Bound(hp.Port) {
-				out = append(out, fmt.Sprintf("%s %s: supervisor gone, port %d still answers", project, n, hp.Port))
+			if hp.Port > 0 && !state.HostAlive(hp) && portAnswers(hp.Port) {
+				out = append(out, fmt.Sprintf("%s %s: supervisor gone, something answers on port %d", project, n, hp.Port))
 			}
 		}
 	}
 	return out
+}
+
+// portAnswers dials the port instead of binding it, so doctor never takes a port.
+func portAnswers(port int) bool {
+	c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 300*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	c.Close()
+	return true
 }
 
 func dockerAvailable() bool {

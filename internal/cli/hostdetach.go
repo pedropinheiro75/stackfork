@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
@@ -134,8 +135,9 @@ func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, inst
 				return 0, fmt.Errorf("host process %s exited at start:\n%s", name, strings.TrimSpace(string(tail)))
 			default:
 			}
-			cmd.Process.Kill()         //nolint:errcheck // unreaped, so the pid is still ours
-			state.KillOrphanGroup(pid) //nolint:errcheck // a surviving group keeps the pid from being reused
+			if state.KillGroup(pid, syscall.SIGKILL) != nil { // unreaped, so the pid is still ours; the group (Windows: tree) dies with it
+				cmd.Process.Kill() //nolint:errcheck // not a group leader (yet): at least the process
+			}
 			tail, _ := os.ReadFile(logPath)
 			return 0, fmt.Errorf("host process %s did not report in 10s; see %s\n%s", name, logPath, strings.TrimSpace(string(tail)))
 		case <-time.After(50 * time.Millisecond):

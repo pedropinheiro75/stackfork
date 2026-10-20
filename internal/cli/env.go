@@ -17,6 +17,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 )
 
@@ -62,12 +63,10 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// powershellQuote wraps a value in a PowerShell single-quoted string, where
-// the only special character is the quote itself (doubled). $, backtick and
+// powershellQuote wraps a value in a PowerShell single-quoted string (every
+// single-quote lookalike doubled, see dashboard.PSQuote). $, backtick and
 // newlines stay literal.
-func powershellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
-}
+func powershellQuote(s string) string { return dashboard.PSQuote(s) }
 
 // dotenvQuote double-quotes a value for a plain KEY="value" line, escaping
 // the two characters that would otherwise break out of the quotes.
