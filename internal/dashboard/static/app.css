@@ -489,11 +489,21 @@ code.setting-value { display: inline-block; }
 .plan-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .plan-mode { display: inline-flex; align-items: center; gap: var(--space-2); }
 .plan-mode select { min-height: 28px; padding: 0 var(--space-2); border: 1px solid var(--line-control); border-radius: var(--radius-xs); background: var(--surface-1); color: var(--fg); font: inherit; }
-.plan-head, .plan-row { display: grid; grid-template-columns: minmax(80px, 140px) 90px minmax(0, 1fr) 120px; align-items: center; gap: var(--space-3); padding: 0 var(--space-2); }
+.plan-head, .plan-row { display: grid; grid-template-columns: minmax(80px, 140px) 90px minmax(0, 1fr) 150px; align-items: center; gap: var(--space-3); padding: 0 var(--space-2); }
 .plan-head { min-height: 24px; color: var(--fg-subtle); border-bottom: 1px solid var(--line); }
 .plan-row { min-height: 40px; border-bottom: 1px solid var(--line); }
 .plan-id, .plan-text { overflow-wrap: anywhere; }
 .plan-kind { color: var(--fg-muted); }
+.plan-state { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--space-2); }
+.plan-dur { color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
+.plan-dur[hidden] { display: none; }
+/* The current output line of the running step, under its row (DESIGN.md: mono-log, one line). */
+.plan-live { padding: 0 var(--space-2); color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-live:not(:empty) { padding: var(--space-1) var(--space-2) var(--space-1) var(--space-6); border-bottom: 1px solid var(--line); background: var(--surface-1); }
+/* busy: the ring pulses (1.2 s, opacity only); reduced motion keeps it static. */
+.chip-busy .chip-glyph { animation: sf-ring 1.2s linear infinite; }
+@keyframes sf-ring { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .chip-busy .chip-glyph { animation: none; } }
 .plan-skipped .plan-id, .plan-skipped .plan-kind, .plan-skipped .plan-text { color: var(--fg-subtle); }
 @media (max-width: 719px) {
   .plan-head { display: none; }

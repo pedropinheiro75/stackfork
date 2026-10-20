@@ -76,6 +76,7 @@
           <div class="plan-head micro" role="row"><span role="columnheader">Step</span><span role="columnheader">Kind</span><span role="columnheader">Command</span><span role="columnheader">State</span></div>
           {{range .Steps}}{{template "planrow" .}}{{end}}
           {{range .Skipped}}{{template "planrow" .}}{{end}}
+          <div class="plan-live mono" data-live-for="" aria-live="polite"></div>
         </div>
         {{if and .Diff (not .NeedsTrust)}}
         <div class="plan-note" data-trust-note>
@@ -170,7 +171,7 @@
 {{end}}
 {{end}}
 
-{{define "planrow"}}<div class="plan-row{{if .Skipped}} plan-skipped{{end}}" role="row" data-step="{{.ID}}"><span class="plan-id mono" role="cell">{{.ID}}</span><span class="plan-kind" role="cell">{{.Kind}}</span><span class="plan-text mono" role="cell">{{.Text}}</span><span class="plan-state" role="cell"><span class="chip chip-{{.Chip.Class}}"><span class="chip-glyph" aria-hidden="true">{{.Chip.Glyph}}</span>{{.Chip.Label}}</span></span></div>{{end}}
+{{define "planrow"}}<div class="plan-row{{if .Skipped}} plan-skipped{{end}}" role="row" data-step="{{.ID}}"><span class="plan-id mono" role="cell">{{.ID}}</span><span class="plan-kind" role="cell">{{.Kind}}</span><span class="plan-text mono" role="cell">{{.Text}}</span><span class="plan-state" role="cell"><span class="chip chip-{{.Chip.Class}}"><span class="chip-glyph" aria-hidden="true">{{.Chip.Glyph}}</span>{{.Chip.Label}}</span><span class="plan-dur small" hidden></span></span></div><div class="plan-live mono" data-live-for="{{.ID}}" aria-live="polite"></div>{{end}}
 
 {{define "aheadbehind"}}{{$t := aheadBehindText .Ahead .Behind .Upstream}}{{if eq .Upstream ""}}<span class="ab-none" title="this branch tracks no upstream">no upstream</span>
 {{else if and (eq .Ahead 0) (eq .Behind 0)}}<span class="ab-none" title="matches {{.Upstream}}">up to date</span>

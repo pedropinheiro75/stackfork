@@ -987,7 +987,8 @@
   // repo and branch name); this code only swaps it in, filters it, and posts
   // the actions. Branch and path values travel in data-* attributes.
 
-  var reposState = { tab: "instances", filter: "", readyOnly: false, autoShownSettings: false, errors: {}, open: {}, sort: "activity", group: false };
+  var reposState = { tab: "instances", filter: "", readyOnly: false, autoShownSettings: false, errors: {}, open: {}, sort: "activity", group: false,
+    runs: {}, starts: {} };
 
   // copyText writes to the clipboard and says so on the clicked element
   // itself (a button shows "Copied", anything else flashes), since the
@@ -1138,11 +1139,9 @@
   var lastRepos = null;
 
   function loadRepos() {
-    if (reposState.busy) return; // a Start is streaming progress into the rows
     fetch("/fragments/repos", { credentials: "same-origin" })
       .then(function (r) { if (!r.ok) throw new Error("status " + r.status); return r.text(); })
       .then(function (html) {
-        if (reposState.busy) return;
         var list = document.getElementById("repos-list");
         var meta = document.getElementById("repos-meta");
         if (html !== lastRepos) {
@@ -1156,6 +1155,8 @@
           list.querySelectorAll(".repo").forEach(function (d) { if (reposState.open[d.dataset.key]) setRepoOpen(d, true); });
           applyRepoView();
           applyRepoFilters();
+          paintRuns(); // the live run and the Starts in flight survive every render
+          paintStarts();
           if (menuKey) { var tr = keyedIn("#repos-list", menuKey); if (tr) openMenu(tr, false); }
           if (focusKey) {
             var again = keyedIn("#repos-list", focusKey);
@@ -1204,6 +1205,116 @@
   }
 
   function shq(v) { return "'" + String(v).replace(/'/g, "'\\''") + "'"; }
+
+  // --- the live run in the plan list (design.md D13) -------------------------
+  // reposState.runs[repoPath] holds the step states of the Start streaming
+  // from this page. paintRuns writes them onto the plan rows by data-step, in
+  // place (class and text of the chip), so a fragment render or a poll never
+  // erases them, never replaces a focused element and never moves focus.
+
+  var RUN_CHIP = {
+    running: ["busy", GLYPH.busy, "Running"], succeeded: ["ok", GLYPH.ok, "Succeeded"], failed: ["failed", GLYPH.failed, "Failed"],
+    skipped: ["off", GLYPH.off, "Skipped"], pending: ["off", GLYPH.off, "Pending"], interrupted: ["attention", GLYPH.attention, "Interrupted"],
+  };
+
+  function runChip(st, reason) {
+    var c = RUN_CHIP[st] || RUN_CHIP.pending;
+    return { cls: c[0], glyph: c[1], label: c[2], title: st === "skipped" && reason ? reason : "" };
+  }
+
+  // fmtDur must match the CLI's durText: 320 ms, 41 s, 1 m 5 s.
+  function fmtDur(ms) {
+    if (ms < 1000) return Math.round(ms) + " ms";
+    var s = Math.round(ms / 1000);
+    if (s < 60) return s + " s";
+    var m = Math.floor(s / 60);
+    return m + " m " + (s % 60) + " s";
+  }
+
+  function paintChip(chipEl, c) {
+    chipEl.className = "chip chip-" + c.cls;
+    if (c.title) chipEl.title = c.title; else chipEl.removeAttribute("title");
+    var g = chipEl.querySelector(".chip-glyph");
+    if (g.textContent !== c.glyph) g.textContent = c.glyph;
+    var t = g.nextSibling;
+    if (t && t.nodeType === 3) { if (t.nodeValue !== c.label) t.nodeValue = c.label; }
+    else chipEl.appendChild(document.createTextNode(c.label));
+  }
+
+  function paintRuns() {
+    Object.keys(reposState.runs).forEach(function (repo) {
+      var run = reposState.runs[repo];
+      var el = keyedIn("#repos-list", repo);
+      if (!el) return;
+      var shown = {};
+      el.querySelectorAll(".plan-row[data-step]").forEach(function (row) {
+        var st = run.steps[row.dataset.step];
+        if (!st) return;
+        shown[row.dataset.step] = true;
+        var c = runChip(st.state, st.reason);
+        var chipEl = row.querySelector(".plan-state .chip");
+        var sig = st.state + "|" + (st.reason || "");
+        if (chipEl && row.dataset.runSig !== sig) { paintChip(chipEl, c); row.dataset.runSig = sig; }
+        var dur = row.querySelector(".plan-dur");
+        if (dur) {
+          var txt = st.ms !== undefined ? fmtDur(st.ms) : "";
+          if (dur.textContent !== txt) dur.textContent = txt;
+          dur.hidden = !txt;
+        }
+      });
+      // the current line goes under the running step's row, else under the list
+      var live = shown[run.lineStep] ? run.lineStep : "";
+      el.querySelectorAll("[data-live-for]").forEach(function (l) {
+        var want = l.dataset.liveFor === live && run.steps[run.lineStep] && run.steps[run.lineStep].state === "running" ? run.line : "";
+        if (l.textContent !== want) l.textContent = want;
+      });
+      run.rowShown = !!shown[run.lineStep];
+    });
+  }
+
+  // onStreamObject applies one NDJSON object of a Start to reposState.runs.
+  function onStreamObject(repo, o) {
+    var run = reposState.runs[repo];
+    if (o.run && typeof o.run === "object") {
+      run = reposState.runs[repo] = { id: o.run.id, project: o.run.project, steps: {}, line: "", lineStep: "" };
+      (o.run.steps || []).forEach(function (s) { run.steps[s.id] = { state: s.state }; });
+    } else if (o.step && typeof o.step === "object" && run) {
+      var st = run.steps[o.step.id] || (run.steps[o.step.id] = {});
+      st.state = o.step.state;
+      if (o.step.reason) st.reason = o.step.reason; else delete st.reason;
+      if (st.state === "running") { st.t0 = Date.now(); delete st.ms; }
+      else if (st.state === "succeeded" || st.state === "failed") st.ms = st.t0 ? Date.now() - st.t0 : 0;
+      if (st.state !== "running" && run.lineStep === o.step.id) { run.line = ""; run.lineStep = ""; }
+    } else if (o.line !== undefined && run) {
+      if (o.step) { run.lineStep = o.step; run.line = progressText(o.line); }
+    }
+    paintRuns();
+  }
+
+  // Starts in flight, by the Start button's data-key: a render replaces the
+  // button and the floating progress text, so paintStarts puts them back.
+  function paintStarts() {
+    Object.keys(reposState.starts).forEach(function (key) {
+      var b = keyedIn("#repos-list", key);
+      if (!b) return;
+      var s = reposState.starts[key];
+      b.disabled = true;
+      if (!s.inMenu && b.textContent !== "Starting\u2026") b.textContent = "Starting\u2026";
+      var anchor = s.inMenu ? b.closest(".menu-anchor") : b;
+      var p = anchor.previousElementSibling;
+      if (!p || !p.classList.contains("row-progress")) {
+        p = document.createElement("span");
+        p.className = "row-progress";
+        p.setAttribute("aria-live", "polite");
+        anchor.insertAdjacentElement("beforebegin", p);
+      }
+      var run = reposState.runs[s.repo];
+      // with a plan row showing the line, the floating text stays out
+      var hide = !!(run && run.rowShown && run.lineStep);
+      p.hidden = hide;
+      if (p.textContent !== s.text) p.textContent = s.text;
+    });
+  }
 
   // A failed start / worktree-add stays on its repo row (not only in the
   // activity log) with the exact CLI command to retry it; it survives the
@@ -1300,13 +1411,21 @@
     if (!inMenu) btn.textContent = d.repoAction === "start" ? "Starting\u2026" : btnText + "\u2026";
     // The latest progress line shows next to the button: a start can take
     // minutes (installs, health checks) and the log is at the page bottom.
+    // With a live plan row it moves under that row (paintRuns).
     var progress = document.createElement("span");
     progress.className = "row-progress";
     progress.setAttribute("aria-live", "polite");
     progress.textContent = "starting\u2026";
     anchor.insertAdjacentElement("beforebegin", progress);
+    var startKey = btn.dataset.key || "";
+    if (startKey) reposState.starts[startKey] = { inMenu: inMenu, repo: d.repo, text: progress.textContent };
     reposState.busy = (reposState.busy || 0) + 1;
     delete reposState.errors[d.repo];
+    if (d.repoAction === "start" && reposState.runs[d.repo]) { // a new Start replaces the previous run's states
+      delete reposState.runs[d.repo];
+      lastRepos = null;
+      loadRepos();
+    }
     log(label + ": started");
     post("/api/actions", body)
       .then(function (r) {
@@ -1326,11 +1445,18 @@
           if (o.line !== undefined) {
             log(label + ": " + o.line);
             progress.textContent = progressText(o.line);
+            if (reposState.starts[startKey]) reposState.starts[startKey].text = progress.textContent;
             if (o.line.indexOf("created ") === 0) created = o.line.slice(8).split(" (copied")[0];
+            onStreamObject(d.repo, o);
+            paintStarts();
+          } else if (o.ok === undefined) { // run and step objects (design.md D12)
+            onStreamObject(d.repo, o);
+            paintStarts();
           } else {
             log(label + ": " + (o.ok ? "done - " : "failed - ") + o.message);
             if (!o.ok) fail(o.message);
-            toast(o.ok ? "ok" : "failed", label + ": " + o.message);
+            // the callout and the step log hold the detail; the toast names the step
+            toast(o.ok ? "ok" : "failed", o.ok || !o.failed_step ? label + ": " + o.message : label + " failed at step " + o.failed_step);
           }
         }
         function pump() {
@@ -1346,8 +1472,14 @@
       })
       .catch(function (e) { log(label + ": " + e.message); fail(e.message); toast("failed", label + ": " + e.message); })
       .then(function () {
-        btn.disabled = false;
-        if (!inMenu) btn.textContent = btnText;
+        delete reposState.starts[startKey];
+        var live = startKey && keyedIn("#repos-list", startKey);
+        [btn, live].forEach(function (b) {
+          if (!b) return;
+          b.disabled = false;
+          if (!inMenu) b.textContent = btnText;
+        });
+        if (!Object.keys(reposState.starts).length) document.querySelectorAll("#repos-list .row-progress").forEach(function (p) { p.remove(); });
         progress.remove();
         reposState.busy--;
         loadRepos();
@@ -1461,7 +1593,7 @@
     setView(viewFromHash());
     loadRepos(); // fills the rail count even when another view is open
     setInterval(function () {
-      if (document.visibilityState === "visible" && reposState.tab === "repos" && !reposState.busy) loadRepos();
+      if (document.visibilityState === "visible" && reposState.tab === "repos") loadRepos();
     }, 3000);
   }
 
@@ -1613,6 +1745,12 @@
     setInterval(function () {
       if (document.visibilityState === "visible") loadDisk();
     }, 60000);
+  }
+
+  // The script tests (appscript_runs_test.go) load this file in Node and ask
+  // for the functions they exercise; a browser never defines __sfExport.
+  if (typeof window.__sfExport === "function") {
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip });
   }
 
   if (document.readyState === "loading") {
