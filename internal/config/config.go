@@ -29,6 +29,9 @@ type Config struct {
 	// it per repo, keyed by the resolved absolute main-checkout path.
 	Mode  string            `json:"mode,omitempty"`
 	Modes map[string]string `json:"modes,omitempty"`
+	// Secrets maps, per resolved main-checkout path, a secret name to a
+	// reference (add-secret-vault D5). Only `secret map|unmap` write it.
+	Secrets map[string]map[string]string `json:"secrets,omitempty"`
 
 	extra map[string]json.RawMessage
 }
@@ -62,8 +65,11 @@ func Load() (*Config, error) {
 	if err := json.Unmarshal(data, &c.extra); err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
-	for _, k := range []string{"roots", "exclude", "maxDepth", "mode", "modes"} {
+	for _, k := range []string{"roots", "exclude", "maxDepth", "mode", "modes", "secrets"} {
 		delete(c.extra, k)
+	}
+	if err := c.validateSecrets(); err != nil {
+		return nil, fmt.Errorf("%s: %w", p, err)
 	}
 	return c, nil
 }
@@ -91,6 +97,9 @@ func (c *Config) Save() error {
 	}
 	if len(c.Modes) > 0 {
 		out["modes"] = c.Modes
+	}
+	if len(c.Secrets) > 0 {
+		out["secrets"] = c.Secrets
 	}
 	return state.WritePrivate(p, out)
 }
