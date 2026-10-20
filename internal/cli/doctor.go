@@ -12,13 +12,18 @@ import (
 	"math/rand"
 	"net"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/dockerdisk"
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 type doctorCheck struct {
@@ -64,6 +69,14 @@ func cmdDoctor(stdout io.Writer, subArgs []string, newStateBase string) (int, er
 		status, message, hint := checkProxyRunning(newStateBase)
 		add("proxy running", status, message, hint)
 	}
+	{
+		if orphans := orphanedHostApps(newStateBase); len(orphans) > 0 {
+			add("host apps", "warn", strings.Join(orphans, "; "),
+				"stop the process on that port (macOS/Linux: lsof -i :PORT; Windows: netstat -ano | findstr :PORT), then stackfork host start")
+		} else {
+			add("host apps", "ok", "no orphaned host apps", "")
+		}
+	}
 	if dockerAvailable() {
 		status, message, hint := checkDockerDisk()
 		add("docker disk", status, message, hint)
@@ -103,6 +116,33 @@ func cmdDoctor(stdout io.Writer, subArgs []string, newStateBase string) (int, er
 		return 1, nil
 	}
 	return 0, nil
+}
+
+// orphanedHostApps lists host apps whose supervisor is dead while the
+// recorded port still answers. A dead entry with a closed port is a normal
+// exited row, not an orphan.
+func orphanedHostApps(newStateBase string) []string {
+	paths, _ := state.Manifests(newStateBase, identity.Prefix)
+	var out []string
+	for _, p := range paths {
+		m, err := state.ReadManifest(p)
+		if err != nil || m == nil {
+			continue
+		}
+		project := filepath.Base(filepath.Dir(p))
+		names := make([]string, 0, len(m.HostProcs))
+		for n := range m.HostProcs {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			hp := m.HostProcs[n]
+			if hp.Port > 0 && !state.HostAlive(hp) && ports.Bound(hp.Port) {
+				out = append(out, fmt.Sprintf("%s %s: supervisor gone, port %d still answers", project, n, hp.Port))
+			}
+		}
+	}
+	return out
 }
 
 func dockerAvailable() bool {
