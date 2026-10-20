@@ -190,7 +190,7 @@ func TestReposTabShowsReadOnlyRecipe(t *testing.T) {
 	}
 	// a recorded decision is shown, never changed from the page
 	os.MkdirAll(filepath.Join(repo, ".stackfork"), 0o755)
-	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Recipe: knowledge.Recipe{SeedOnce: "none"}}
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Plan: knowledge.Plan{Status: knowledge.PlanRecorded}}
 	k.Save(filepath.Join(repo, ".stackfork", "knowledge.json"))
 	if frag := e.get("/fragments/repos").Body.String(); !strings.Contains(frag, "never") {
 		t.Errorf("never not shown:\n%s", frag)

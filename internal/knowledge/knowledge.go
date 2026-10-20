@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -70,11 +69,6 @@ type Knowledge struct {
 
 	// Plan is the ordered startup sequence (schema 2).
 	Plan Plan `json:"plan"`
-
-	// Recipe is the transitional schema 1 view of Plan, kept so today's
-	// readers compile; Load fills it from Plan on schema 2 and Save writes
-	// it. Removed once those readers move to Plan.
-	Recipe Recipe `json:"recipe"`
 
 	// Answers and Gotchas accumulate across a (possibly resumed) learn
 	// session (task 13.5/13.8); empty on a fresh scan.
@@ -194,19 +188,19 @@ func Load(path string) (*Knowledge, error) {
 	if err != nil {
 		return nil, err
 	}
-	var k Knowledge
-	if err := json.Unmarshal(data, &k); err != nil {
+	// Schema 1 carried a free-text recipe; it is read only to convert.
+	var raw struct {
+		Knowledge
+		Legacy Recipe `json:"recipe"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	k := raw.Knowledge
 	switch k.Schema {
 	case 1:
-		k.Plan = FromRecipe(k.Recipe)
+		k.Plan = FromRecipe(raw.Legacy)
 	case CurrentSchema:
-		// ToRecipe is lossy ("none" seed, free-text commands), so a recipe
-		// Save already wrote beside the plan is kept as is.
-		if reflect.DeepEqual(k.Recipe, Recipe{}) {
-			k.Recipe = ToRecipe(k.Plan)
-		}
 	default:
 		return nil, fmt.Errorf("%s: schema %d is not supported (this build understands schemas 1 and %d); upgrade stackfork or re-run learn", path, k.Schema, CurrentSchema)
 	}
@@ -219,15 +213,6 @@ func Load(path string) (*Knowledge, error) {
 // Save writes knowledge.json atomically (temp file + rename) as schema 2.
 func (k *Knowledge) Save(path string) error {
 	k.Schema = CurrentSchema
-	// Transitional: readers that still edit Recipe leave Plan stale; a
-	// non-zero Recipe that differs from the plan's view wins.
-	if cur := ToRecipe(k.Plan); !reflect.DeepEqual(k.Recipe, cur) {
-		if !reflect.DeepEqual(k.Recipe, Recipe{}) {
-			k.Plan = FromRecipe(k.Recipe)
-		} else {
-			k.Recipe = cur
-		}
-	}
 	if err := ValidatePlan(k.Plan); err != nil {
 		return err
 	}

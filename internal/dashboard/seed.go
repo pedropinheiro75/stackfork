@@ -1,6 +1,9 @@
 package dashboard
 
 import (
+	"path/filepath"
+
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/learn"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 )
@@ -21,6 +24,11 @@ func (s *Server) repoRecipe(repo repos.Repo) recipeView {
 	v := recipeView{Migrate: migrate, Detected: detected, State: "none"}
 	if detected != "" {
 		v.State = "auto"
+	}
+	if k, err := knowledge.Load(filepath.Join(repo.Path, ".stackfork", "knowledge.json")); err == nil {
+		if m := k.Plan.MigrateStep(); m != nil {
+			v.Migrate = m.Cmd
+		}
 	}
 	decided, cmd, _ := learn.SeedDecision([]string{repo.Path}, nil)
 	for _, wt := range repo.Worktrees {

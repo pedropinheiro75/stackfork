@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/learn"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -166,23 +167,24 @@ func seedScriptRoot(t *testing.T) string {
 	return root
 }
 
-func TestLearnPrefillsPendingSeedAndVerifyOnlyWarns(t *testing.T) {
+func TestLearnProposesSeedAndRecordNoneRemovesIt(t *testing.T) {
 	root := seedScriptRoot(t)
 	if _, stderr, code := runCLI(t, "--root", root, "learn"); code != 0 {
 		t.Fatalf("learn: %s", stderr)
 	}
 	k, err := knowledge.Load(filepath.Join(root, ".stackfork", "knowledge.json"))
-	if err != nil || k.Recipe.Migrate != "npm run db:migrate" || k.Recipe.SeedOnce != "npm run db:seed" || !k.Recipe.SeedPending {
-		t.Fatalf("recipe %+v err %v", k.Recipe, err)
+	if err != nil || k.Plan.MigrateStep() == nil || k.Plan.MigrateStep().Cmd != "npm run db:migrate" || k.Plan.SeedStep() == nil || k.Plan.SeedStep().Cmd != "npm run db:seed" || k.Plan.Status != knowledge.PlanProposed {
+		t.Fatalf("plan %+v err %v", k.Plan, err)
 	}
-	runCLI(t, "--root", root, "learn", "record", "recipe", "--prepare", "p", "--up", "u")
-	out, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "yes")
-	if code != 0 || !strings.Contains(out, "seeded with it automatically") {
-		t.Fatalf("verify must pass with a warning: %d %s %s", code, out, stderr)
+	if _, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "yes"); code == 0 || !strings.Contains(stderr, "learn record step") {
+		t.Fatalf("a proposed plan must not verify: %d %s", code, stderr)
 	}
 	runCLI(t, "--root", root, "learn", "record", "recipe", "--seed-once", "none")
-	if k, _ := knowledge.Load(filepath.Join(root, ".stackfork", "knowledge.json")); k.Recipe.SeedOnce != "none" || k.Recipe.SeedPending {
-		t.Fatalf("recipe %+v", k.Recipe)
+	if k, _ := knowledge.Load(filepath.Join(root, ".stackfork", "knowledge.json")); k.Plan.SeedStep() != nil || k.Plan.Status != knowledge.PlanRecorded {
+		t.Fatalf("plan %+v", k.Plan)
+	}
+	if decided, c, _ := learn.SeedDecision([]string{root}, nil); !decided || learn.SeedActive(c) {
+		t.Fatalf("none must read back as never: %v %q", decided, c)
 	}
 }
 
@@ -297,5 +299,21 @@ func TestSeedAcceptsInstanceFlag(t *testing.T) {
 	_, stderr, _ := runCLI(t, "--state-dir", stateDir, "--instance", w.Project, "seed")
 	if strings.Contains(stderr, "not supported") {
 		t.Fatal(stderr)
+	}
+}
+
+func TestUpMigratesThenSeedsFromPlan(t *testing.T) {
+	root, stateDir, log := seedFixture(t)
+	k := `{"schema":2,"plan":{"status":"recorded","steps":[{"id":"up","kind":"compose-up"},{"id":"migrate","kind":"exec","cmd":"m","once":"schema"},{"id":"seed","kind":"exec","service":"db","cmd":"bun run db:seed","once":"data"}]}}`
+	if err := os.WriteFile(filepath.Join(root, ".stackfork", "knowledge.json"), []byte(k), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "up"); code != 0 {
+		t.Fatalf("up: %s", stderr)
+	}
+	b, _ := os.ReadFile(log)
+	if !strings.Contains(string(b), "m && bun run db:seed") {
+		t.Fatalf("expected the migrate then seed exec, log:\n%s", b)
 	}
 }

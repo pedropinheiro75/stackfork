@@ -190,8 +190,8 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 		}
 	}
 
-	k.Recipe.Migrate, k.Recipe.SeedOnce = DetectSeed(root)
-	k.Recipe.SeedPending = k.Recipe.SeedOnce != ""
+	migrate, seed := DetectSeed(root)
+	k.Plan = knowledge.Proposed(migrate, seed)
 
 	k.Risks = detectRisks(root)
 	for _, rel := range findByPredicate(root, isEntrypointName) {

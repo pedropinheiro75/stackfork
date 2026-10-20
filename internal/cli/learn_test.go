@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -65,11 +66,17 @@ func TestLearnRecordAnswerGotchaRecipe(t *testing.T) {
 	if len(k.Gotchas) != 1 || k.Gotchas[0].Problem != "db never came up" {
 		t.Fatalf("unexpected gotchas: %+v", k.Gotchas)
 	}
-	if k.Recipe.Prepare != "stackfork prepare -f compose.yaml" || k.Recipe.Up != "stackfork up" {
-		t.Fatalf("unexpected recipe: %+v", k.Recipe)
+	if !reflect.DeepEqual(stepArgs(k, knowledge.KindPrepare), []string{"-f", "compose.yaml"}) || k.Plan.Status != knowledge.PlanRecorded {
+		t.Fatalf("unexpected plan: %+v", k.Plan)
 	}
-	if len(k.Recipe.Login) != 2 {
-		t.Fatalf("unexpected login steps: %+v", k.Recipe.Login)
+	notes := 0
+	for _, s := range k.Plan.Steps {
+		if s.Kind == knowledge.KindNote {
+			notes++
+		}
+	}
+	if notes != 2 {
+		t.Fatalf("unexpected login notes: %+v", k.Plan.Steps)
 	}
 	if k.Status != knowledge.StatusDraft {
 		t.Fatalf("expected recording to leave status as draft, got %q", k.Status)
@@ -85,6 +92,10 @@ func TestLearnScanResumesDraft(t *testing.T) {
 	runCLI(t, "--root", root, "learn")
 	runCLI(t, "--root", root, "learn", "record", "answer", "q", "a")
 	runCLI(t, "--root", root, "learn", "record", "recipe", "--prepare", "p", "--up", "u")
+	before, err := knowledge.Load(filepath.Join(root, ".stackfork", "knowledge.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	out, stderr, code := runCLI(t, "--root", root, "learn")
 	if code != 0 {
@@ -102,20 +113,137 @@ func TestLearnScanResumesDraft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(k.Answers) != 1 || k.Recipe.Prepare != "p" {
-		t.Fatalf("expected the recorded answer/recipe to survive a re-scan, got answers=%+v recipe=%+v", k.Answers, k.Recipe)
+	if len(k.Answers) != 1 || k.Plan.Status != knowledge.PlanRecorded {
+		t.Fatalf("expected the recorded answer/plan to survive a re-scan, got answers=%+v plan=%+v", k.Answers, k.Plan)
+	}
+	if !reflect.DeepEqual(k.Plan, before.Plan) {
+		t.Fatalf("recorded plan changed by re-scan:\nbefore %+v\nafter  %+v", before.Plan, k.Plan)
 	}
 }
 
-// TestLearnVerifyRequiresRecordedRecipe covers task 13.6's refusal.
-func TestLearnVerifyRequiresRecordedRecipe(t *testing.T) {
+// A proposed plan is replaced by the fresh proposal on re-scan.
+func TestLearnScanReplacesProposedPlan(t *testing.T) {
+	testsupport.RequireCompose(t)
+	root := learnFixtureRoot(t)
+	runCLI(t, "--root", root, "learn")
+	path := filepath.Join(root, ".stackfork", "knowledge.json")
+	k, _ := knowledge.Load(path)
+	k.Plan.Steps = append(k.Plan.Steps, knowledge.Step{ID: "stale", Kind: knowledge.KindNote, Text: "x"})
+	if err := k.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	runCLI(t, "--root", root, "learn")
+	k, _ = knowledge.Load(path)
+	for _, s := range k.Plan.Steps {
+		if s.ID == "stale" {
+			t.Fatal("a proposed plan must be replaced by the fresh proposal")
+		}
+	}
+}
+
+func stepArgs(k *knowledge.Knowledge, kind string) []string {
+	for _, s := range k.Plan.Steps {
+		if s.Kind == kind {
+			return s.Args
+		}
+	}
+	return nil
+}
+
+func TestLearnRecordStepUpsertsAndSetsRecorded(t *testing.T) {
+	testsupport.RequireCompose(t)
+	root := learnFixtureRoot(t)
+	runCLI(t, "--root", root, "learn")
+	load := func() *knowledge.Knowledge {
+		k, err := knowledge.Load(filepath.Join(root, ".stackfork", "knowledge.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	find := func(k *knowledge.Knowledge, id string) (n int, s knowledge.Step) {
+		for _, x := range k.Plan.Steps {
+			if x.ID == id {
+				n++
+				s = x
+			}
+		}
+		return
+	}
+	if _, stderr, code := runCLI(t, "--root", root, "learn", "record", "step", "--id", "app", "--kind", "host", "--cmd", "bun run dev", "--modes", "hybrid", "--name", "app"); code != 0 {
+		t.Fatalf("step: %s", stderr)
+	}
+	if _, stderr, code := runCLI(t, "--root", root, "learn", "record", "step", "--id", "app", "--kind", "host", "--cmd", "bun run dev --port 3000"); code != 0 {
+		t.Fatalf("step: %s", stderr)
+	}
+	k := load()
+	if n, s := find(k, "app"); n != 1 || s.Cmd != "bun run dev --port 3000" || k.Plan.Status != knowledge.PlanRecorded {
+		t.Fatalf("upsert: %d %+v %s", n, s, k.Plan.Status)
+	}
+	if _, stderr, code := runCLI(t, "--root", root, "learn", "record", "step", "--remove", "app"); code != 0 {
+		t.Fatalf("remove: %s", stderr)
+	}
+	if n, _ := find(load(), "app"); n != 0 {
+		t.Fatal("remove failed")
+	}
+	if _, stderr, code := runCLI(t, "--root", root, "learn", "record", "step", "--id", "first", "--kind", "note", "--text", "hi", "--before", "up"); code != 0 {
+		t.Fatalf("before: %s", stderr)
+	}
+	ids := []string{}
+	for _, s := range load().Plan.Steps {
+		ids = append(ids, s.ID)
+	}
+	fi, ui := -1, -1
+	for i, id := range ids {
+		if id == "first" {
+			fi = i
+		}
+		if id == "up" {
+			ui = i
+		}
+	}
+	if fi < 0 || fi+1 != ui {
+		t.Fatalf("--before up: %v", ids)
+	}
+	_, stderr, code := runCLI(t, "--root", root, "learn", "record", "step", "--id", "w", "--kind", "wait-http")
+	if code != 1 || !strings.Contains(stderr, "wait-http") {
+		t.Fatalf("wait-http: %d %s", code, stderr)
+	}
+}
+
+func TestLearnRecordRecipeAliasWritesSteps(t *testing.T) {
+	testsupport.RequireCompose(t)
+	root := learnFixtureRoot(t)
+	runCLI(t, "--root", root, "learn")
+	if _, stderr, code := runCLI(t, "--root", root, "learn", "record", "recipe", "--migrate", "m", "--seed-once", "s", "--seed-service", "web"); code != 0 {
+		t.Fatalf("recipe: %s", stderr)
+	}
+	k, _ := knowledge.Load(filepath.Join(root, ".stackfork", "knowledge.json"))
+	if m := k.Plan.MigrateStep(); m == nil || m.Cmd != "m" {
+		t.Fatalf("migrate %+v", m)
+	}
+	if s := k.Plan.SeedStep(); s == nil || s.Cmd != "s" || s.Service != "web" {
+		t.Fatalf("seed %+v", s)
+	}
+}
+
+// TestLearnVerifyRequiresRecordedPlan covers task 13.6's refusal.
+func TestLearnVerifyRequiresRecordedPlan(t *testing.T) {
 	testsupport.RequireCompose(t)
 	root := learnFixtureRoot(t)
 	runCLI(t, "--root", root, "learn")
 
 	_, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "db up", "--confirm", "it works")
-	if code == 0 || !strings.Contains(stderr, "recipe is incomplete") {
-		t.Fatalf("expected a refusal for an unrecorded recipe: code=%d stderr=%s", code, stderr)
+	if code == 0 || !strings.Contains(stderr, "learn record step") {
+		t.Fatalf("expected a refusal for a proposed plan: code=%d stderr=%s", code, stderr)
+	}
+	runCLI(t, "--root", root, "learn", "record", "step", "--id", "n", "--kind", "note", "--text", "x")
+	if _, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "y"); code != 0 {
+		t.Fatalf("recorded plan with compose-up must verify: %s", stderr)
+	}
+	runCLI(t, "--root", root, "learn", "record", "step", "--remove", "up")
+	if _, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "y"); code == 0 || !strings.Contains(stderr, "compose-up") {
+		t.Fatalf("no compose-up must fail: %d %s", code, stderr)
 	}
 }
 

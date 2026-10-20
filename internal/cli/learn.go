@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
@@ -55,7 +56,7 @@ func knowledgePath(root string) string {
 // .stackfork/knowledge.json, .stackfork/knowledge.md and
 // .stackfork/.gitignore. Resuming a draft, or re-scanning stale knowledge
 // (task 13.5/13.7), carries the existing file's recorded Answers/Gotchas/
-// Recipe/AdapterFiles/Verification/Status forward onto the fresh scan -
+// Plan/AdapterFiles/Verification/Status forward onto the fresh scan -
 // only Facts/Refusals/Risks/EnvKeys/Inputs are ever replaced, since those
 // are exactly what the scan is authoritative for; a session's own
 // progress must never be silently discarded by re-running learn.
@@ -91,13 +92,10 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 	changedInputs = existing.StaleInputs(root)
 	fresh.Status = existing.Status
 	fresh.AdapterFiles = existing.AdapterFiles
-	proposed := fresh.Recipe
-	fresh.Recipe = existing.Recipe
-	if fresh.Recipe.Migrate == "" {
-		fresh.Recipe.Migrate = proposed.Migrate
-	}
-	if fresh.Recipe.SeedOnce == "" {
-		fresh.Recipe.SeedOnce, fresh.Recipe.SeedPending = proposed.SeedOnce, proposed.SeedPending
+	// A recorded plan is a decision and survives a re-scan; a proposed one
+	// is replaced by the fresh proposal.
+	if existing.Plan.Status == knowledge.PlanRecorded {
+		fresh.Plan = existing.Plan
 	}
 	fresh.Answers = existing.Answers
 	fresh.Gotchas = existing.Gotchas
@@ -110,7 +108,7 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 // prior `stackfork learn`.
 func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 	if len(subArgs) == 0 {
-		return errors.New("learn record requires a kind (answer, gotcha, recipe)")
+		return errors.New("learn record requires a kind (answer, gotcha, recipe, step)")
 	}
 	path := knowledgePath(root)
 	k, err := knowledge.Load(path)
@@ -150,42 +148,26 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 		if err := fs.Parse(rest); err != nil {
 			return parseFailureErr(fs, err)
 		}
-		if *prepare != "" {
-			k.Recipe.Prepare = *prepare
-		}
-		if *up != "" {
-			k.Recipe.Up = *up
-		}
-		if *migrate != "" {
-			k.Recipe.Migrate = *migrate
-		}
-		if *seedOnce != "" {
-			k.Recipe.SeedOnce, k.Recipe.SeedPending = *seedOnce, false
-		}
-		if *seedService != "" {
-			k.Recipe.SeedService = *seedService
-		}
-		if len(login) > 0 {
-			k.Recipe.Login = login
-		}
+		applyRecipeFlags(&k.Plan, *prepare, *up, *migrate, *seedOnce, *seedService, login)
+	case "step":
+		return cmdLearnRecordStep(stdout, rest, root)
 	default:
-		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha or recipe)", kind)
+		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha, recipe or step)", kind)
 	}
 
 	if err := learn.WriteKnowledge(root, k); err != nil {
 		return err
 	}
 	return printJSON(stdout, map[string]interface{}{
-		"recorded": kind, "answers": len(k.Answers), "gotchas": len(k.Gotchas), "recipe": k.Recipe,
+		"recorded": kind, "answers": len(k.Answers), "gotchas": len(k.Gotchas), "plan": k.Plan,
 	})
 }
 
 // cmdLearnVerify moves knowledge from draft to verified (task 13.6): a
 // date, the checks that were actually run, and the user's own confirmation
 // quoted verbatim - never self-verified, this is only ever a record of
-// what the user said. Refuses if the recipe's own core steps (prepare, up)
-// were never recorded: verifying a recipe nobody wrote down defeats the
-// point of recording one.
+// what the user said. Refuses unless the plan is recorded and has a
+// compose-up step: verifying a plan nobody decided defeats the point.
 func cmdLearnVerify(stdout io.Writer, subArgs []string, root string) error {
 	fs := newFlagSet(stdout, "learn verify")
 	var checks stringList
@@ -206,15 +188,15 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root string) error {
 	if err != nil {
 		return fmt.Errorf("no knowledge to verify; run `stackfork learn` first: %w", err)
 	}
-	if k.Recipe.Prepare == "" || k.Recipe.Up == "" {
-		return errors.New("recipe is incomplete (prepare/up not recorded); run `learn record recipe` before verifying")
+	if k.Plan.Status != knowledge.PlanRecorded {
+		return errors.New("plan is proposed, not recorded; record it with `learn record step` (or `learn record recipe`) before verifying")
 	}
-
-	// No seed decision is fine: the default is to seed a new database with
-	// the detected script. Say so, so the agent confirms it with the user.
-	var warning string
-	if _, seed := learn.DetectSeed(root); seed != "" && (k.Recipe.SeedOnce == "" || k.Recipe.SeedPending) {
-		warning = fmt.Sprintf("seed script %q has no recorded decision: new databases will be seeded with it automatically; record `learn record recipe --seed-once none` to disable", seed)
+	hasUp := false
+	for _, st := range k.Plan.Steps {
+		hasUp = hasUp || st.Kind == knowledge.KindComposeUp
+	}
+	if !hasUp {
+		return errors.New("plan has no compose-up step; record one with `learn record step --id up --kind compose-up` before verifying")
 	}
 
 	k.Status = knowledge.StatusVerified
@@ -225,8 +207,122 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root string) error {
 		return err
 	}
 	out := map[string]interface{}{"status": k.Status, "verification": k.Verification}
-	if warning != "" {
-		out["warning"] = warning
-	}
 	return printJSON(stdout, out)
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// applyRecipeFlags is the `learn record recipe` alias: it maps the schema 1
+// flags onto steps and marks the plan recorded. seedOnce "none" removes the
+// data step (a recorded plan without one means never seed).
+func applyRecipeFlags(p *knowledge.Plan, prepare, up, migrate, seedOnce, seedService string, login []string) {
+	if prepare != "" {
+		p.Upsert(knowledge.Step{ID: "prepare", Kind: knowledge.KindPrepare, Args: recipePrepareArgs(prepare)}, "")
+	}
+	if up != "" {
+		has := false
+		for _, s := range p.Steps {
+			has = has || s.Kind == knowledge.KindComposeUp
+		}
+		if !has {
+			p.Upsert(knowledge.Step{ID: "up", Kind: knowledge.KindComposeUp}, "")
+		}
+	}
+	if migrate != "" {
+		st := knowledge.Step{ID: "migrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema}
+		if m := p.MigrateStep(); m != nil {
+			st = *m
+		}
+		st.Cmd = migrate
+		p.Upsert(st, "")
+	}
+	if seedOnce != "" {
+		for s := p.SeedStep(); s != nil; s = p.SeedStep() {
+			p.Remove(s.ID)
+		}
+		if seedOnce != learn.SeedNone {
+			p.Upsert(knowledge.Step{ID: "seed", Kind: knowledge.KindExec, Cmd: seedOnce, Once: knowledge.OnceData, Service: seedService}, "")
+		}
+	} else if seedService != "" {
+		if s := p.SeedStep(); s != nil {
+			s.Service = seedService
+			p.Upsert(*s, "")
+		}
+	}
+	if len(login) > 0 {
+		var keep []knowledge.Step
+		for _, s := range p.Steps {
+			if !(s.Kind == knowledge.KindNote && strings.HasPrefix(s.ID, "login")) {
+				keep = append(keep, s)
+			}
+		}
+		p.Steps = keep
+		for i, l := range login {
+			id := "login"
+			if i > 0 {
+				id = fmt.Sprintf("login-%d", i+1)
+			}
+			p.Upsert(knowledge.Step{ID: id, Kind: knowledge.KindNote, Text: l}, "")
+		}
+	}
+	p.Status = knowledge.PlanRecorded
+}
+
+// cmdLearnRecordStep is `learn record step`: upsert one step by id (or
+// remove one with --remove) and mark the plan recorded.
+func cmdLearnRecordStep(stdout io.Writer, rest []string, root string) error {
+	fs := newFlagSet(stdout, "learn record step")
+	id := fs.String("id", "", "")
+	kind := fs.String("kind", "", "")
+	cmd := fs.String("cmd", "", "")
+	service := fs.String("service", "", "")
+	once := fs.String("once", "", "")
+	modes := fs.String("modes", "", "")
+	exclude := fs.String("exclude", "", "")
+	name := fs.String("name", "", "")
+	dir := fs.String("dir", "", "")
+	portEnv := fs.String("port-env", "", "")
+	text := fs.String("text", "", "")
+	before := fs.String("before", "", "")
+	remove := fs.String("remove", "", "")
+	if err := fs.Parse(rest); err != nil {
+		return parseFailureErr(fs, err)
+	}
+	path := knowledgePath(root)
+	k, err := knowledge.Load(path)
+	if err != nil {
+		return fmt.Errorf("no knowledge to record into; run `stackfork learn` first: %w", err)
+	}
+	if *remove != "" {
+		if !k.Plan.Remove(*remove) {
+			return fmt.Errorf("no step %q in the plan", *remove)
+		}
+	} else {
+		if *id == "" || *kind == "" {
+			return errors.New("usage: learn record step --id ID --kind K [--cmd C] [--service S] [--once data|schema|none] [--modes a,b] [--exclude a,b] [--name N] [--dir D] [--port-env A,B] [--text T] [--before ID] | --remove ID")
+		}
+		st := knowledge.Step{ID: *id, Kind: *kind, Cmd: *cmd, Service: *service, Once: *once,
+			Modes: splitList(*modes), Exclude: splitList(*exclude), Name: *name, Dir: *dir,
+			PortEnv: splitList(*portEnv), Text: *text}
+		if st.Once == "none" {
+			st.Once = ""
+		}
+		k.Plan.Upsert(st, *before)
+	}
+	k.Plan.Status = knowledge.PlanRecorded
+	if err := knowledge.ValidatePlan(k.Plan); err != nil {
+		return err
+	}
+	if err := learn.WriteKnowledge(root, k); err != nil {
+		return err
+	}
+	return printJSON(stdout, map[string]interface{}{"recorded": "step", "plan": k.Plan})
 }

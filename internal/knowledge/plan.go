@@ -300,30 +300,6 @@ func FromRecipe(r Recipe) Plan {
 	return p
 }
 
-// ToRecipe is the transitional inverse of FromRecipe so today's readers keep
-// working until the recipe is removed.
-func ToRecipe(p Plan) Recipe {
-	var r Recipe
-	for _, s := range p.Steps {
-		switch {
-		case s.Kind == KindPrepare && r.Prepare == "":
-			r.Prepare = strings.Join(append([]string{"stackfork", "prepare"}, s.Args...), " ")
-		case s.Kind == KindComposeUp && r.Up == "":
-			r.Up = "stackfork up"
-		case s.Kind == KindNote:
-			r.Login = append(r.Login, s.Text)
-		}
-	}
-	if m := p.MigrateStep(); m != nil {
-		r.Migrate = m.Cmd
-	}
-	if s := p.SeedStep(); s != nil {
-		r.SeedOnce, r.SeedService = s.Cmd, s.Service
-		r.SeedPending = p.Status == PlanProposed
-	}
-	return r
-}
-
 // detail is the one-line summary Markdown shows for a step.
 func (s Step) detail() string {
 	var parts []string
@@ -351,4 +327,12 @@ func (s Step) detail() string {
 		parts = append(parts, s.Text)
 	}
 	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
+// Proposed is the plan a scan proposes from the detected migrate and seed
+// commands; nobody has decided on it yet.
+func Proposed(migrate, seed string) Plan {
+	p := FromRecipe(Recipe{Migrate: migrate, SeedOnce: seed})
+	p.Status = PlanProposed
+	return p
 }

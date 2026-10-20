@@ -1,0 +1,17 @@
+{
+  "schema": 2,
+  "status": "draft",
+  "facts": {},
+  "plan": {
+    "modes": ["container", "hybrid"],
+    "app_service": "web",
+    "status": "proposed",
+    "steps": [
+      {"id": "prepare", "kind": "prepare", "args": ["-f", ".stackfork/dev.compose.yaml"]},
+      {"id": "up", "kind": "compose-up", "modes": ["container"]},
+      {"id": "up-deps", "kind": "compose-up", "modes": ["hybrid"], "exclude": ["web"]},
+      {"id": "migrate", "kind": "exec", "service": "web", "cmd": "bun run db:migrate", "once": "schema"},
+      {"id": "app", "kind": "host", "modes": ["hybrid"], "name": "app", "cmd": "bun run dev", "dir": ".", "port_env": ["PORT"]}
+    ]
+  }
+}

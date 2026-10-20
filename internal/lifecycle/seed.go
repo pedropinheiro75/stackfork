@@ -95,9 +95,11 @@ func SeedRecipe(root, main, instanceDir string) (cmd, service string) {
 func withMigrate(root, main, seed string) string {
 	migrate := ""
 	for _, d := range []string{root, main} {
-		if k, err := knowledge.Load(filepath.Join(d, ".stackfork", "knowledge.json")); err == nil && k.Recipe.Migrate != "" {
-			migrate = k.Recipe.Migrate
-			break
+		if k, err := knowledge.Load(filepath.Join(d, ".stackfork", "knowledge.json")); err == nil {
+			if m := k.Plan.MigrateStep(); m != nil {
+				migrate = m.Cmd
+				break
+			}
 		}
 	}
 	if migrate == "" {

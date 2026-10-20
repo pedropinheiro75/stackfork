@@ -52,7 +52,7 @@ func TestSeedDecisionPrecedence(t *testing.T) {
 	if d, _, _ := SeedDecision([]string{root}, nil); d {
 		t.Fatal("nothing recorded is undecided")
 	}
-	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Recipe: knowledge.Recipe{SeedOnce: "make seed", SeedPending: true}}
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Plan: knowledge.Plan{Status: knowledge.PlanProposed, Steps: []knowledge.Step{{ID: "seed", Kind: knowledge.KindExec, Cmd: "make seed", Once: knowledge.OnceData}}}}
 	if err := WriteKnowledge(root, k); err != nil {
 		t.Fatal(err)
 	}
@@ -62,11 +62,18 @@ func TestSeedDecisionPrecedence(t *testing.T) {
 	if d, c, _ := SeedDecision([]string{root}, &state.Manifest{SeedOnce: SeedNone}); !d || SeedActive(c) {
 		t.Fatalf("manifest 'none' = decided, never: %v %q", d, c)
 	}
-	k.Recipe.SeedPending = false
+	k.Plan.Status = knowledge.PlanRecorded
 	if err := WriteKnowledge(root, k); err != nil {
 		t.Fatal(err)
 	}
 	if d, c, _ := SeedDecision([]string{root}, &state.Manifest{SeedOnce: SeedNone}); !d || c != "make seed" {
 		t.Fatalf("knowledge wins: %v %q", d, c)
+	}
+	k.Plan.Remove("seed")
+	if err := WriteKnowledge(root, k); err != nil {
+		t.Fatal(err)
+	}
+	if d, c, _ := SeedDecision([]string{root}, &state.Manifest{SeedOnce: "make other"}); !d || SeedActive(c) {
+		t.Fatalf("recorded plan without a data step means never: %v %q", d, c)
 	}
 }

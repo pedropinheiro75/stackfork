@@ -30,9 +30,6 @@ func TestRoundTrip(t *testing.T) {
 	if reloaded.Schema != CurrentSchema || !reflect.DeepEqual(k.Plan, reloaded.Plan) {
 		t.Fatalf("round trip changed the plan:\nbefore: %+v\nafter:  %+v", k.Plan, reloaded.Plan)
 	}
-	if reloaded.Recipe.Up == "" || reloaded.Recipe.SeedOnce != "bun run db:seed" {
-		t.Fatalf("transitional recipe not filled: %+v", reloaded.Recipe)
-	}
 }
 
 func TestLoadConvertsSchema1(t *testing.T) {
@@ -48,8 +45,14 @@ func TestLoadConvertsSchema1(t *testing.T) {
 	if k.Status != StatusVerified || len(k.Facts.Services) != 2 {
 		t.Fatalf("unexpected load: %+v", k.Status)
 	}
-	if want := FromRecipe(k.Recipe); !reflect.DeepEqual(k.Plan, want) {
-		t.Fatalf("plan %+v, want %+v", k.Plan, want)
+	if m := k.Plan.MigrateStep(); m == nil || m.Cmd != "stackfork exec app bun run db:migrate" {
+		t.Fatalf("migrate step %+v", m)
+	}
+	if s := k.Plan.SeedStep(); s == nil || s.Cmd != "stackfork exec app bun run db:seed" {
+		t.Fatalf("seed step %+v", s)
+	}
+	if n := len(k.Plan.Steps); n != 6 || k.Plan.Steps[5].Kind != KindNote {
+		t.Fatalf("steps %+v", k.Plan.Steps)
 	}
 	if k.Plan.MigrateStep() == nil {
 		t.Fatal("migrate step missing")
@@ -119,4 +122,36 @@ func TestMarkdownHasNoValues(t *testing.T) {
 	}
 	// EnvKeys only ever holds names; nothing resembling a value is in the
 	// struct to begin with, so the markdown can't leak one either.
+}
+
+// A plan edit must survive Save and Load: the plan is the only source of
+// truth on schema 2.
+func TestSchema2EditSurvivesSaveLoad(t *testing.T) {
+	k, err := Load(filepath.Join("testdata", "knowledge2.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	k.Plan.Upsert(Step{ID: "migrate", Kind: KindExec, Service: "web", Cmd: "bun run db:migrate:v2", Once: OnceSchema}, "")
+	k.Plan.Status = PlanRecorded
+	out := filepath.Join(t.TempDir(), "knowledge.json")
+	if err := k.Save(out); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Load(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Plan.Status != PlanRecorded || r.Plan.AppService != "web" || !reflect.DeepEqual(r.Plan.Modes, []string{ModeContainer, ModeHybrid}) {
+		t.Fatalf("plan header lost: %+v", r.Plan)
+	}
+	if m := r.Plan.MigrateStep(); m == nil || m.Cmd != "bun run db:migrate:v2" {
+		t.Fatalf("migrate edit lost: %+v", m)
+	}
+	h := r.Plan.HostSteps()
+	if len(h) != 1 || h[0].Cmd != "bun run dev" || !reflect.DeepEqual(h[0].Modes, []string{ModeHybrid}) {
+		t.Fatalf("host step lost: %+v", h)
+	}
+	if b, _ := os.ReadFile(out); strings.Contains(string(b), `"recipe"`) {
+		t.Fatal("schema 2 must not write a recipe key")
+	}
 }

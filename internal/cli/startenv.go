@@ -170,8 +170,10 @@ func prepareArgs(root, main, instanceDir string) ([]string, error) {
 		}
 	}
 	if k != nil {
-		if args := recipePrepareArgs(k.Recipe.Prepare); len(args) > 0 {
-			return args, nil
+		for _, st := range k.Plan.Steps {
+			if st.Kind == knowledge.KindPrepare && len(st.Args) > 0 {
+				return st.Args, nil
+			}
 		}
 		var files []string
 		for _, f := range k.AdapterFiles {

@@ -70,16 +70,20 @@ func DetectSeed(root string) (migrate, seed string) {
 	return migrate, seed
 }
 
-// SeedDecision looks for a recorded decision about seeding: a decided
-// knowledge recipe in any of dirs (first wins), else the manifest's. cmd is
+// SeedDecision looks for a recorded decision about seeding: a recorded
+// knowledge plan in any of dirs (first wins), else the manifest's. cmd is
 // SeedNone for "never".
 func SeedDecision(dirs []string, m *state.Manifest) (decided bool, cmd, service string) {
 	for _, d := range dirs {
 		if d == "" {
 			continue
 		}
-		if k, err := knowledge.Load(filepath.Join(d, ".stackfork", "knowledge.json")); err == nil && k.Recipe.SeedOnce != "" && !k.Recipe.SeedPending {
-			return true, k.Recipe.SeedOnce, k.Recipe.SeedService
+		if k, err := knowledge.Load(filepath.Join(d, ".stackfork", "knowledge.json")); err == nil && k.Plan.Status == knowledge.PlanRecorded {
+			// A recorded plan without a data step means "never seed".
+			if s := k.Plan.SeedStep(); s != nil {
+				return true, s.Cmd, s.Service
+			}
+			return true, SeedNone, ""
 		}
 	}
 	if m != nil && m.SeedOnce != "" {
