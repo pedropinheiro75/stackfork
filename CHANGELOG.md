@@ -7,6 +7,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Plan runs (`add-plan-runs`): each `start-env`, dashboard Start, `up` and `seed` is recorded as a run with its steps, states and step logs under the instance's `runs/` directory, the last 20 kept. `stackfork runs` and `runs show [ID] [--step STEP]` read them. The dashboard's Repos list shows the live plan of a start, each instance card shows its last run, and the log drawer reads any step of a run.
 - Startup plan (`add-learn-plan`): `learn` records an ordered plan of steps (prepare, compose-up,
   exec, host, note) instead of a flat recipe. Check it with `stackfork plan [--mode] [--json]`.
   Hybrid mode (`config set mode hybrid`, `config set-mode REPO hybrid`, `start-env --mode`) runs
@@ -98,6 +99,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `.sql`, `.sql.gz`, or Postgres custom-format dump, streamed directly into
   the container (never a temp copy on disk). Postgres supports all three
   forms; MySQL/MariaDB gets plain SQL.
+
+### Changed
+
+- The seed is a step of its run: `seed.log` is no longer written, and the seed's output is the seed step's log. A failed seed now stops `start-env`.
 
 ### Fixed
 

@@ -75,6 +75,10 @@ Known limits:
 - If you kill a host supervisor with `kill -9`, its app keeps running. `doctor` reports it (the `host apps` check) when its port still answers.
 - A foreground `host NAME` command that ignores SIGTERM is orphaned after its stackfork gets SIGKILL.
 
+## Run logs
+
+A run's step logs (`runs/<id>/<step>.log` in the instance directory) hold the output of Compose, the seed and host steps. Values of 8 or more characters that stackfork knows as secrets are redacted before they are written, as they are on the terminal and in the dashboard stream. Shorter values are not matched (`internal/redact`). Run files and step logs are created 0600, in directories 0700, as the other state files are.
+
 ## Windows
 
 The Windows runtime is built and vetted (`GOOS=windows go vet`), but it has not run on a Windows machine. Its ceilings:

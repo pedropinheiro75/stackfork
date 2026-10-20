@@ -106,6 +106,10 @@ stackfork isolates checkouts from each other. It is not a sandbox. It does not p
 
 Read [SECURITY.md](SECURITY.md) for the full boundary, the known limits and how to report a vulnerability.
 
+## Runs
+
+Each Start (`start-env`, the dashboard's Start button, `up` and `seed`) is a run. stackfork records the steps of a run, their states and output under the instance's `runs/` directory and keeps the last 20 runs. After a failed start, run `stackfork runs show` to see which step failed, and `stackfork runs show --step <step>` for its log (secret values are redacted). While a start is in progress, the dashboard's Repos list shows its plan as it runs, and each instance card shows the last run.
+
 ## Agent skill
 
 The repository ships an agent skill (`SKILL.md` and `references/`). It teaches an agent the flow: discover, prepare, up, verify, down. Link a checkout of this repository into your agent's skill directory. Run these commands from the root of your clone.
