@@ -39,3 +39,9 @@ func TestRunLogDrawerStepSelector(t *testing.T) {
 func TestRunCalloutIsNotAClickTarget(t *testing.T) {
 	runAppJS(t, "run_callout.case.js")
 }
+
+// A finished Start removes only its own progress text, and a card's Retry
+// stays disabled while its Start is in flight.
+func TestStartsKeepOwnProgressAndDisabledRetry(t *testing.T) {
+	runAppJS(t, "starts.case.js")
+}

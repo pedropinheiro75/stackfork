@@ -670,6 +670,7 @@
     var menuKey = menu ? menu.dataset.key : "";
     var scrollY = window.scrollY;
     document.getElementById("projects").innerHTML = html;
+    paintStarts(); // a Retry of a Start in flight stays disabled
     Object.keys(inFlight).forEach(function (k) {
       var el = keyed(k);
       if (el) markRunning(el);
@@ -1453,9 +1454,25 @@
 
   // Starts in flight, by the Start button's data-key: a render replaces the
   // button and the floating progress text, so paintStarts puts them back.
+  // startEl finds a Start's button: in the Repos list, or the card's Retry.
+  function startEl(key) { return keyedIn("#repos-list", key) || keyedIn("#view-instances", key); }
+
+  // finishStart forgets one Start and removes only its own progress text; the
+  // others in flight keep theirs. It returns the Start's current button.
+  function finishStart(key) {
+    var s = reposState.starts[key];
+    if (!s) return null;
+    delete reposState.starts[key];
+    var b = startEl(key);
+    var anchor = b && (s.inMenu ? b.closest(".menu-anchor") : b);
+    var p = anchor && anchor.previousElementSibling;
+    if (p && p.classList.contains("row-progress")) p.remove();
+    return b;
+  }
+
   function paintStarts() {
     Object.keys(reposState.starts).forEach(function (key) {
-      var b = keyedIn("#repos-list", key);
+      var b = startEl(key);
       if (!b) return;
       var s = reposState.starts[key];
       b.disabled = true;
@@ -1648,14 +1665,12 @@
       })
       .catch(function (e) { log(label + ": " + e.message); fail(e.message); toast("failed", label + ": " + e.message); })
       .then(function () {
-        delete reposState.starts[startKey];
-        var live = startKey && keyedIn("#repos-list", startKey);
+        var live = startKey && finishStart(startKey);
         [btn, live].forEach(function (b) {
           if (!b) return;
           b.disabled = false;
           if (!inMenu) b.textContent = btnText;
         });
-        if (!Object.keys(reposState.starts).length) document.querySelectorAll("#repos-list .row-progress").forEach(function (p) { p.remove(); });
         progress.remove();
         reposState.busy--;
         loadRepos();
@@ -1928,7 +1943,7 @@
   // The script tests (appscript_runs_test.go) load this file in Node and ask
   // for the functions they exercise; a browser never defines __sfExport.
   if (typeof window.__sfExport === "function") {
-    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml });
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, finishStart: finishStart });
   }
 
   if (document.readyState === "loading") {
