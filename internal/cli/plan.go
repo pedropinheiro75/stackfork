@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
@@ -23,6 +24,7 @@ type planStepOut struct {
 	PortEnv []string `json:"port_env,omitempty"`
 	Port    int      `json:"port,omitempty"`
 	Once    string   `json:"once,omitempty"`
+	Text    string   `json:"text,omitempty"`
 	Modes   []string `json:"modes,omitempty"`
 	State   string   `json:"state"`
 	Trust   string   `json:"trust"`
@@ -94,7 +96,7 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 		out := []planStepOut{}
 		for _, s := range in {
 			o := planStepOut{ID: s.ID, Kind: s.Kind, Cmd: s.Cmd, Service: s.Service, Args: s.Args, Exclude: s.Exclude,
-				Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, Modes: s.Modes, State: state}
+				Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, Text: s.Text, Modes: s.Modes, State: state}
 			if s.Kind == knowledge.KindHost || s.Kind == knowledge.KindPrepare {
 				o.Trust = "untrusted"
 				if trusted {
@@ -130,29 +132,32 @@ func orDash(s string) string {
 	return s
 }
 
-// stepBlock lists every field the trust hash covers that is set, one per
-// line, so a person sees exactly what they approve.
+// stepBlock lists every non-empty field of the step (derived from the Step
+// struct, so a future field cannot be left out), which is what the trust
+// hash covers, one per line.
 func stepBlock(s knowledge.Step) []string {
 	l := []string{s.ID + " [" + s.Kind + "]"}
-	add := func(k, v string) {
-		if v != "" {
-			l = append(l, "    "+k+": "+v)
+	v, t := reflect.ValueOf(s), reflect.TypeOf(s)
+	for i := 0; i < t.NumField(); i++ {
+		key, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		if key == "id" || key == "kind" || v.Field(i).IsZero() {
+			continue
 		}
+		val := ""
+		switch f := v.Field(i).Interface().(type) {
+		case []string:
+			val = strings.Join(f, ", ")
+		default:
+			val = fmt.Sprint(f)
+		}
+		l = append(l, "    "+key+": "+val)
 	}
-	add("name", s.Name)
-	add("cmd", s.Cmd)
-	add("args", strings.Join(s.Args, " "))
-	add("dir", s.Dir)
-	add("port_env", strings.Join(s.PortEnv, ", "))
-	if s.Port > 0 {
-		add("port", fmt.Sprint(s.Port))
-	}
-	add("modes", strings.Join(s.Modes, ", "))
 	return l
 }
 
 func planLine(s planStepOut) string {
-	st := knowledge.Step{ID: s.ID, Kind: s.Kind, Cmd: s.Cmd, Args: s.Args, Name: s.Name, Port: s.Port, Modes: s.Modes}
+	st := knowledge.Step{ID: s.ID, Kind: s.Kind, Modes: s.Modes, Args: s.Args, Exclude: s.Exclude, Service: s.Service, Cmd: s.Cmd,
+		Once: s.Once, Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Text: s.Text}
 	suffix := " - " + s.State
 	if s.Trust != "" {
 		suffix += ", " + s.Trust
@@ -170,7 +175,6 @@ func planLine(s planStepOut) string {
 		}
 		return l + suffix
 	}
-	st.Dir, st.PortEnv = s.Dir, s.PortEnv
 	b := stepBlock(st)
 	if s.Kind == knowledge.KindHost && s.Port == 0 {
 		b = append(b, "    port: unknown")

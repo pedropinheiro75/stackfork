@@ -87,13 +87,16 @@ func TestPlanTrustRefusedWithoutHostStep(t *testing.T) {
 func TestPlanTrustShowsAllHashedFieldsAndRejectsBadMode(t *testing.T) {
 	root := planFixture(t)
 	k, _ := knowledge.Load(knowledgePath(root))
+	k.Plan.Steps[2].Text = "starts the web app"
+	k.Plan.Steps[2].Service = "web-svc"
 	k.Plan.Steps[2].Dir = "web"
 	k.Plan.Steps[2].PortEnv = []string{"PORT", "NUXT_PORT"}
 	if err := k.Save(knowledgePath(root)); err != nil {
 		t.Fatal(err)
 	}
 	out, _, code := runCLI(t, "--root", root, "--state-dir", t.TempDir(), "plan", "--trust")
-	if code != 0 || !strings.Contains(out, "dir: web") || !strings.Contains(out, "NUXT_PORT") {
+	if code != 0 || !strings.Contains(out, "dir: web") || !strings.Contains(out, "NUXT_PORT") ||
+		!strings.Contains(out, "starts the web app") || !strings.Contains(out, "web-svc") {
 		t.Fatalf("code=%d\n%s", code, out)
 	}
 	out, _, _ = runCLI(t, "--root", root, "plan", "--mode", "hybrid")
