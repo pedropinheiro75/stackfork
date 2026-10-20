@@ -55,7 +55,7 @@ func Decide(command, cwd string, managed func(dir string) bool) (block bool) {
 	if os.Getenv(HostRunEnv) != "" {
 		return false
 	}
-	for _, seg := range Segments(command, cwd) {
+	for _, seg := range guardSegments(command, cwd) {
 		if seg.Dir == "" || !startsServer(seg.Words) {
 			continue
 		}
@@ -68,10 +68,22 @@ func Decide(command, cwd string, managed func(dir string) bool) (block bool) {
 
 // Segments splits command into simple commands, tracking `cd X` so each one
 // knows its directory, and recursing into `sh -c "..."`.
-func Segments(command, cwd string) []Segment {
+func Segments(command, cwd string) []Segment { return segmentsFor(command, cwd, windowsSplit) }
+
+// guardSegments is what the deny guards look at. On Windows the command may
+// run under Git Bash (backslash escapes) or under cmd/PowerShell, so both
+// splits count and a block by either wins. Elsewhere it is Segments.
+func guardSegments(command, cwd string) []Segment {
+	if !windowsSplit {
+		return Segments(command, cwd)
+	}
+	return append(segmentsFor(command, cwd, false), segmentsFor(command, cwd, true)...)
+}
+
+func segmentsFor(command, cwd string, windows bool) []Segment {
 	var out []Segment
 	dir := cwd
-	for _, words := range splitCommands(command) {
+	for _, words := range splitCommandsFor(command, windows) {
 		words = stripPrefixes(words)
 		if len(words) == 0 {
 			continue
@@ -82,7 +94,7 @@ func Segments(command, cwd string) []Segment {
 			continue
 		}
 		if inner, ok := shellDashC(words); ok {
-			for _, s := range Segments(inner, dir) {
+			for _, s := range segmentsFor(inner, dir, windows) {
 				out = append(out, s)
 			}
 			continue
@@ -118,14 +130,17 @@ func changeDir(dir string, words []string) string {
 func shellDashC(words []string) (string, bool) {
 	switch progBase(words[0]) {
 	case "bash", "sh", "zsh", "dash":
-	case "cmd", "powershell", "pwsh":
-		for i := 1; i < len(words)-1; i++ {
-			switch strings.ToLower(words[i]) {
-			case "/c", "/k", "-c", "-command":
-				return strings.Join(words[i+1:], " "), true
+	case "cmd":
+		for i := 1; i < len(words); i++ {
+			w := strings.ToLower(words[i])
+			if len(w) >= 2 && (w[:2] == "/c" || w[:2] == "/k") {
+				// "/c" then the command words, or `/c"..."` glued into one word.
+				return strings.TrimSpace(words[i][2:] + " " + strings.Join(words[i+1:], " ")), true
 			}
 		}
 		return "", false
+	case "powershell", "pwsh":
+		return powershellCommand(words[1:])
 	default:
 		return "", false
 	}
@@ -138,13 +153,44 @@ func shellDashC(words []string) (string, bool) {
 	return "", false
 }
 
-// splitCommands tokenizes command into simple commands split on unquoted
+// psFlagIs reports whether w is -name, abbreviated to at least two characters.
+func psFlagIs(w, name string) bool {
+	w = strings.ToLower(w)
+	return len(w) >= 2 && w[0] == '-' && strings.HasPrefix(name, w[1:])
+}
+
+// powershellCommand finds the command in powershell's arguments: what follows
+// -Command (or any abbreviation, -c included), else the first argument that
+// is not a flag.
+func powershellCommand(args []string) (string, bool) {
+	for i := 0; i < len(args); i++ {
+		w := args[i]
+		switch {
+		case psFlagIs(w, "command"):
+			if i+1 < len(args) {
+				return strings.Join(args[i+1:], " "), true
+			}
+			return "", false
+		case psFlagIs(w, "file"):
+			return "", false
+		case psFlagIs(w, "executionpolicy"), psFlagIs(w, "windowstyle"), psFlagIs(w, "workingdirectory"),
+			psFlagIs(w, "inputformat"), psFlagIs(w, "outputformat"), psFlagIs(w, "version"), psFlagIs(w, "configurationname"):
+			i++ // takes a value
+		case strings.HasPrefix(w, "-"):
+		default:
+			return strings.Join(args[i:], " "), true
+		}
+	}
+	return "", false
+}
+
+// splitCommandsFor tokenizes command into simple commands split on unquoted
 // && || ; | & and newlines, honoring single and double quotes and
 // backslash escapes. Quotes are removed from the words.
-func splitCommands(command string) [][]string { return splitCommandsFor(command, windowsSplit) }
 
 // splitCommandsFor is splitCommands with the syntax chosen: with windows a
-// backslash is a literal character (paths), and only quotes group.
+// backslash is a literal character (paths), ` and ^ (PowerShell and cmd
+// escapes) are dropped keeping the next character, and only quotes group.
 func splitCommandsFor(command string, windows bool) [][]string {
 	var cmds [][]string
 	var words []string
@@ -180,6 +226,10 @@ func splitCommandsFor(command string, windows bool) [][]string {
 			}
 		case r == '\'' || r == '"':
 			quote = r
+			inWord = true
+		case windows && (r == '`' || r == '^') && i+1 < len(rs):
+			i++
+			cur.WriteRune(rs[i])
 			inWord = true
 		case !windows && r == '\\' && i+1 < len(rs):
 			i++
@@ -366,7 +416,7 @@ func Destructive(command, cwd string) bool {
 	if bypassesConfirmation(command) {
 		return true
 	}
-	for _, seg := range Segments(command, cwd) {
+	for _, seg := range guardSegments(command, cwd) {
 		w := seg.Words
 		if progBase(w[0]) != "stackfork" {
 			continue
@@ -410,7 +460,7 @@ func bypassesConfirmation(command string) bool {
 	// mentions them (sed, grep, an editor) must stay allowed.
 	httpClients := map[string]bool{"curl": true, "wget": true, "http": true, "https": true, "xh": true,
 		"python": true, "python3": true, "node": true, "bun": true, "deno": true, "ruby": true, "perl": true}
-	for _, seg := range Segments(command, "") {
+	for _, seg := range guardSegments(command, "") {
 		if !httpClients[progBase(seg.Words[0])] {
 			continue
 		}

@@ -325,3 +325,37 @@ func TestExeSuffixTightensOnlyOnUnix(t *testing.T) {
 		t.Error("on Unix a backslash is not a path separator")
 	}
 }
+
+func TestWindowsGuardBypassesBlocked(t *testing.T) {
+	old := windowsSplit
+	windowsSplit = true
+	t.Cleanup(func() { windowsSplit = old })
+	for _, cmd := range []string{
+		`st\ackfork prune --all`,
+		`stackfork prune --a\ll`,
+		"stackfork prune --a`ll",
+		`stackfork prune --a^ll`,
+		`powershell stackfork prune --all`,
+		`powershell -NoProfile stackfork prune --all`,
+		`powershell -ExecutionPolicy Bypass stackfork prune --all`,
+		`powershell -Com "stackfork prune --all"`,
+		`powershell -c "stackfork prune --all"`,
+		`pwsh -COMMAND "stackfork prune --all"`,
+		`cmd /c"stackfork prune --all"`,
+		`cmd /K"stackfork prune --all"`,
+		`cmd /C stackfork prune --all`,
+	} {
+		if !Destructive(cmd, `C:\repo`) {
+			t.Errorf("%q must be blocked", cmd)
+		}
+	}
+	if Destructive(`powershell -File x.ps1`, `C:\repo`) || Destructive(`echo st\ackfork prune --all`, `C:\repo`) {
+		t.Error("harmless commands must stay allowed")
+	}
+}
+
+func TestUnixDoesNotUnwrapWindowsEscapes(t *testing.T) {
+	if Destructive("stackfork prune --a^ll", "/repo") || Destructive("stackfork prune --a`ll", "/repo") {
+		t.Error("^ and backtick are not escapes in the Unix split")
+	}
+}
