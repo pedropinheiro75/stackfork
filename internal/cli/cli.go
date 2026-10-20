@@ -769,7 +769,7 @@ func cmdStatusURLs(stdout, stderr io.Writer, action string, subArgs []string, ro
 	command := []string{"compose", "-p", project, "--project-directory", root,
 		"--env-file", os.DevNull, "-f", configPath, "--profile", "*", "ps", "--all", "--format", "json"}
 	cmd := exec.Command("docker", command...)
-	cmd.Env = compose.DockerEnv()
+	cmd.Env = compose.DockerEnv(nil)
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
@@ -902,6 +902,9 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		if inRun && !inRunHere(instanceDir) {
 			return 2, errors.New("--in-run is internal: only start-env's own up may use it")
 		}
+		if inRun { // the enclosing Start's preflight already resolved them
+			opts.Secrets = startValues(instanceDir)
+		}
 		if err := fs.Parse(subArgs); err != nil {
 			return parseFailure(fs, err)
 		}
@@ -964,7 +967,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 		rec.SetRetry("stackfork --instance " + project + " up")
 		defer func() { rec.Finish(runErr) }()
-		if _, runErr = lifecycle.InstancePreflight(rec, stdout, root, instanceDir, envTrigger() == "dashboard"); runErr != nil {
+		if opts.Secrets, runErr = lifecycle.InstancePreflight(rec, stdout, root, instanceDir, envTrigger() == "dashboard"); runErr != nil {
 			return 0, runErr
 		}
 	}
@@ -1018,6 +1021,17 @@ func markInRun(instanceDir string) (done func()) {
 	k := inRunKey(instanceDir)
 	inRunDirs.Store(k, true)
 	return func() { inRunDirs.Delete(k) }
+}
+
+// runValues are the secret values the preflight of each Start in this
+// process resolved, by instance: its inner up uses them instead of
+// resolving again (design D9). Memory only.
+var runValues sync.Map
+
+func startValues(instanceDir string) lifecycle.SecretValues {
+	v, _ := runValues.Load(inRunKey(instanceDir))
+	vals, _ := v.(lifecycle.SecretValues)
+	return vals
 }
 
 func inRunHere(instanceDir string) bool {

@@ -140,7 +140,8 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	if err != nil {
 		return err
 	}
-	_ = vals
+	runValues.Store(inRunKey(instanceDir), vals)
+	defer runValues.Delete(inRunKey(instanceDir))
 
 	prepare := func(out io.Writer, _ []string) error {
 		if !needsPrepare(instanceDir, root, branch, project) {

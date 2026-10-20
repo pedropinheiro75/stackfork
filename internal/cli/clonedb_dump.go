@@ -260,7 +260,7 @@ func (e *composeExec) run(stdin io.Reader, args ...string) ([]byte, error) {
 	full := append([]string{"compose", "-p", e.project, "--project-directory", e.root,
 		"--env-file", os.DevNull, "-f", e.configPath, "exec", "-T", e.service}, args...)
 	cmd := exec.Command("docker", full...)
-	cmd.Env = compose.DockerEnv()
+	cmd.Env = compose.DockerEnv(nil)
 	cmd.Stdin = stdin
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out

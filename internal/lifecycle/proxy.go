@@ -182,7 +182,7 @@ func instancePsRows(project, root, instanceDir string) ([]compose.StatusRow, boo
 	}
 	cmd := exec.Command("docker", "compose", "-p", project, "--project-directory", root,
 		"--env-file", os.DevNull, "-f", configPath, "--profile", "*", "ps", "--all", "--format", "json")
-	cmd.Env = compose.DockerEnv()
+	cmd.Env = compose.DockerEnv(nil)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {

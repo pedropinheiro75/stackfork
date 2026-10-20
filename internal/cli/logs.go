@@ -64,7 +64,7 @@ func cmdLogs(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 
 	cmd := exec.Command("docker", dockerArgs...)
-	cmd.Env = compose.DockerEnv()
+	cmd.Env = compose.DockerEnv(nil)
 	redactedStdout := lifecycle.NewRedactedWriter(stdout, info)
 	defer redactedStdout.Close()
 	cmd.Stdout = redactedStdout

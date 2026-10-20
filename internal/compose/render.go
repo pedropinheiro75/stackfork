@@ -13,8 +13,9 @@ import (
 )
 
 // DockerEnv mirrors Python's docker_env(): never inherit a different
-// project's Compose selection or implicit .env.
-func DockerEnv() []string {
+// project's Compose selection or implicit .env. values maps a secret's
+// manifest name to its value; nil for a child that needs no secret.
+func DockerEnv(values map[string]string) []string {
 	env := make([]string, 0, len(os.Environ())+1)
 	for _, kv := range os.Environ() {
 		key := kv
@@ -27,6 +28,18 @@ func DockerEnv() []string {
 		env = append(env, kv)
 	}
 	env = append(env, "COMPOSE_DISABLE_ENV_FILE=1")
+	// Secret values go only to this child (design D9), under every alias of
+	// the name; they are never set in stackfork's own environment.
+	names := make([]string, 0, len(values))
+	for n := range values {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		for _, alias := range SecretEnvAliases(n) {
+			env = append(env, alias+"="+values[n])
+		}
+	}
 	return env
 }
 
@@ -135,7 +148,7 @@ func unresolvedVarNames(stderrText string) []string {
 //
 // Security fix (design.md D6, verified 2026-09-28 on Compose v5.1.2): the
 // subprocess's environment is NOT the calling process's ambient environment
-// (unlike DockerEnv(), used by up/run/etc where that's the whole point -
+// (unlike DockerEnv(nil), used by up/run/etc where that's the whole point -
 // see its doc comment). It is a minimal, explicit allowlist instead
 // (renderEnv): only what Docker/Compose need to function at all (PATH,
 // HOME/USERPROFILE, TMPDIR-family, anything DOCKER_*), plus DEV_HOSTNAME/

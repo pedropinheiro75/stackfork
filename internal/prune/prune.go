@@ -343,7 +343,7 @@ func run(timeout time.Duration, args ...string) ([]byte, error) {
 		defer cancel()
 	}
 	cmd := exec.CommandContext(ctx, "docker", args...)
-	cmd.Env = compose.DockerEnv()
+	cmd.Env = compose.DockerEnv(nil)
 	var out, errBuf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errBuf
 	if err := cmd.Run(); err != nil {

@@ -77,3 +77,29 @@ func TestResolveSecretNpmrcAnyHostWithVarIndirection(t *testing.T) {
 		t.Fatal("accepted a malformed npmrc reference missing #HOST")
 	}
 }
+
+func TestDockerEnvAddsValuesUnderEveryAliasOnly(t *testing.T) {
+	t.Setenv("COMPOSE_PROJECT_NAME", "other")
+	env := DockerEnv(map[string]string{"npm_token": "v1", "STRIPE": "v2"})
+	has := func(kv string) bool {
+		for _, e := range env {
+			if e == kv {
+				return true
+			}
+		}
+		return false
+	}
+	for _, kv := range []string{"npm_token=v1", "NPM_TOKEN=v1", "STRIPE=v2", "COMPOSE_DISABLE_ENV_FILE=1"} {
+		if !has(kv) {
+			t.Errorf("missing %s", strings.SplitN(kv, "=", 2)[0])
+		}
+	}
+	if has("COMPOSE_PROJECT_NAME=other") {
+		t.Error("a COMPOSE_ variable was inherited")
+	}
+	for _, e := range DockerEnv(nil) {
+		if strings.Contains(e, "v1") || strings.HasPrefix(e, "STRIPE=") {
+			t.Error("nil values must add nothing")
+		}
+	}
+}

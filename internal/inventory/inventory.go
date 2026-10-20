@@ -691,7 +691,7 @@ var healthPattern = regexp.MustCompile(`\((healthy|unhealthy|health: starting)\)
 // way.
 func listContainers() ([]containerRow, error) {
 	cmd := exec.Command("docker", "ps", "--all", "--format", "json")
-	cmd.Env = compose.DockerEnv()
+	cmd.Env = compose.DockerEnv(nil)
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
@@ -761,7 +761,7 @@ func fillHealthDetails(rows []containerRow) {
 	}
 	args := append([]string{"inspect", "--format", `{{.Id}} {{json .State.Health.Log}}`}, ids...)
 	cmd := exec.Command("docker", args...)
-	cmd.Env = compose.DockerEnv()
+	cmd.Env = compose.DockerEnv(nil)
 	out, _ := cmd.Output() // best effort: a missing detail only shortens the warning
 	lines := map[string]string{}
 	for _, l := range strings.Split(string(out), "\n") {

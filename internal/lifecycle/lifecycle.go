@@ -35,6 +35,9 @@ type Options struct {
 	Service     string   // restart/start/stop/run/exec
 	Targets     []string // restart/start/stop: several services at once (Service is the first)
 	Command     []string // run/exec
+	// Secrets are the values the run's preflight resolved, by manifest
+	// name. Execute resolves any effective reference missing from it.
+	Secrets SecretValues
 }
 
 // ProjectNameForInstance recomputes the expected project name for root and
@@ -161,12 +164,14 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		return 0, err
 	}
 
+	var secretEnv map[string]string // for the one docker compose child (design D9)
 	if action == "up" || action == "run" {
 		// Named secrets (task 6.1, design.md D6): resolve each reference
 		// into its value now, not at prepare, so a rotated env var or
-		// npmrc token is picked up without re-preparing. Only the value
-		// goes into the process env passed to `docker compose`; it is
-		// never written to the manifest or the snapshot. Set under every
+		// npmrc token is picked up without re-preparing. The value goes
+		// only into the environment of the docker compose child (never
+		// stackfork's own) and is never written to the manifest or the
+		// snapshot. Set under every
 		// compose.SecretEnvAliases name (not just the secret's own manifest
 		// name), so a service that references it directly as `${NPM_TOKEN}`
 		// (253fb81's regression) resolves for real here, matching the same
@@ -179,14 +184,16 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		if len(unprepared) > 0 {
 			return 0, UnpreparedError(unprepared[0])
 		}
+		secretEnv = map[string]string{}
 		for name, ref := range refs {
-			value, err := compose.ResolveSecret(name, ref)
-			if err != nil {
-				return 0, err
+			value, ok := opts.Secrets[name]
+			if !ok {
+				var err error
+				if value, err = compose.ResolveSecret(name, ref); err != nil {
+					return 0, err
+				}
 			}
-			for _, alias := range compose.SecretEnvAliases(name) {
-				os.Setenv(alias, value)
-			}
+			secretEnv[name] = value
 		}
 		// D2: another branch stack from this checkout must be refused
 		// whether it was labelled under the current namespace or the
@@ -275,7 +282,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 	}
 
 	cmd := exec.Command("docker", dockerCommand...)
-	cmd.Env = compose.DockerEnv()
+	cmd.Env = compose.DockerEnv(secretEnv)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if action == "run" || action == "exec" || action == "up" {

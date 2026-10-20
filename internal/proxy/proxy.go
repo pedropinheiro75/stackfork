@@ -289,7 +289,7 @@ func Up(stateBase string, port int, mode string) error {
 	}
 	args = append(args, "-v", CaddyfilePath(stateBase)+":/etc/caddy/Caddyfile:ro", Image)
 	cmd := exec.Command("docker", args...)
-	cmd.Env = compose.DockerEnv()
+	cmd.Env = compose.DockerEnv(nil)
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {

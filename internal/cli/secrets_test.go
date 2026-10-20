@@ -58,6 +58,7 @@ func TestSecretEnvReferenceResolvedAtUp(t *testing.T) {
 	}
 
 	os.Truncate(log, 0)
+	os.Remove(log + ".env")
 	_, stderr, code = runCLI(t, "--root", root, "--state-dir", stateDir, "up", "--wait-timeout", "10")
 	if code != 0 {
 		t.Fatalf("up failed: %s", stderr)
@@ -66,8 +67,18 @@ func TestSecretEnvReferenceResolvedAtUp(t *testing.T) {
 	if strings.Contains(string(logData), canary) {
 		t.Fatal("docker invocation log leaked the secret value")
 	}
-	if os.Getenv("npm_token") != canary {
-		t.Fatalf("expected the resolved value in the process env passed to docker compose, got %q", os.Getenv("npm_token"))
+	// design D9: the value reaches the docker compose child only, under the
+	// name and its alias, and never stackfork's own environment.
+	env := dockerEnvLog(log)
+	for _, kv := range []string{"npm_token=" + canary, "NPM_TOKEN=" + canary} {
+		if !strings.Contains(env, kv[:strings.Index(kv, "=")+1]) || !strings.Contains(env, "\n"+kv+"\n") {
+			t.Fatalf("the compose child did not receive %s", kv[:strings.Index(kv, "=")])
+		}
+	}
+	for _, name := range []string{"npm_token", "NPM_TOKEN"} {
+		if v := os.Getenv(name); v != "" {
+			t.Fatalf("%s leaked into stackfork's own environment", name)
+		}
 	}
 }
 

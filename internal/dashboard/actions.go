@@ -158,7 +158,8 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 				return actionResponse{Message: berr.Error()}
 			}
 			rec.SetRetry("stackfork --instance " + req.Project + " up")
-			if _, perr := lifecycle.InstancePreflight(rec, &out, root, instanceDir, true); perr != nil {
+			var perr error
+			if opts.Secrets, perr = lifecycle.InstancePreflight(rec, &out, root, instanceDir, true); perr != nil {
 				rec.Finish(perr)
 				return actionResponse{Message: out.String() + perr.Error()}
 			}
@@ -396,7 +397,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cmd := exec.CommandContext(r.Context(), "docker", args...)
-	cmd.Env = compose.DockerEnv()
+	cmd.Env = compose.DockerEnv(nil)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
