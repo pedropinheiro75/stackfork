@@ -11,6 +11,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 // hybridPlan records a hybrid plan (a host step) in a ready repo.
@@ -366,5 +367,38 @@ func TestOverLongPlanOffersNoApprovalDialog(t *testing.T) {
 	}
 	if _, err := os.Stat(trustFile(e, repo)); err == nil {
 		t.Fatal("trust file written for an unseen plan")
+	}
+}
+
+// The card's Start on a hybrid instance runs the plan (StartEnv), not a
+// plain compose up that would start the app container too.
+func TestCardStartOnHybridRunsThePlan(t *testing.T) {
+	for _, mode := range []string{"hybrid", "container"} {
+		t.Run(mode, func(t *testing.T) {
+			e := newBrowserEnv(t)
+			repo := e.readyRepo("svc")
+			hybridPlan(t, repo, "app")
+			cfg, _ := config.Load()
+			cfg.SetRepoMode(repo, mode)
+			cfg.Save()
+			project := "sf-card-start"
+			os.MkdirAll(filepath.Join(e.newDir, project), 0o700)
+			m := &state.Manifest{Project: project, Root: repo, Branch: "main"}
+			if err := state.WritePrivate(filepath.Join(e.newDir, project, "manifest.json"), m); err != nil {
+				t.Fatal(err)
+			}
+			e.post("/api/actions", map[string]string{"action": "up", "project": project}, reqOpts{})
+			got := e.started()
+			if ran := len(got) == 1 && got[0] == repo; ran != (mode == "hybrid") {
+				t.Fatalf("mode %s: StartEnv calls %v", mode, got)
+			}
+			if mode == "hybrid" { // another branch checked out: refused, nothing started
+				gitIn(t, repo, "checkout", "-q", "-b", "other")
+				e.post("/api/actions", map[string]string{"action": "up", "project": project}, reqOpts{})
+				if n := len(e.started()); n != 1 {
+					t.Fatalf("started another branch: %v", e.started())
+				}
+			}
+		})
 	}
 }

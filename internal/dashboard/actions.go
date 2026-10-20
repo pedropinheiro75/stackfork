@@ -13,7 +13,9 @@ import (
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
+	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
@@ -126,6 +128,17 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 		case "service-stop":
 			lifecycleAction, opts.Service = "stop", req.Service
 		}
+		if req.Action == "up" && s.StartEnv != nil && planRunsHost(root) {
+			// lifecycle.Execute only knows compose; a hybrid up runs the plan.
+			// StartEnv starts the checkout's current branch: it must be this card's.
+			if cur, _ := exec.Command("git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD").Output(); strings.TrimSpace(string(cur)) != branch {
+				return actionResponse{Message: fmt.Sprintf("%s is now on %s, not %s; switch back or start it from Repos", root, strings.TrimSpace(string(cur)), branch)}
+			}
+			if err := s.StartEnv(&out, &out, root); err != nil {
+				return actionResponse{Message: err.Error()}
+			}
+			return actionResponse{OK: true, Message: "up complete"}
+		}
 		main := repos.MainRepoOf(root)
 		seedNow := lifecycleAction == "up" && lifecycle.PlanSeed(root, main, instanceDir)
 		code, err := lifecycle.Execute(&out, &out, lifecycleAction, root, branch, req.Project, instanceDir,
@@ -160,6 +173,30 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 	default:
 		return actionResponse{Message: "unknown action"}
 	}
+}
+
+// planRunsHost reports whether the checkout's plan, in this machine's mode
+// for the repo, has a host step.
+func planRunsHost(root string) bool {
+	main := repos.MainRepoOf(root)
+	if main == "" {
+		main = root
+	}
+	k, err := knowledge.LoadFirst(root, main)
+	if err != nil || k == nil {
+		return false
+	}
+	mode := knowledge.ModeContainer
+	if cfg, err := config.Load(); err == nil {
+		mode, _ = cfg.ModeForPlan(main, k.Plan)
+	}
+	run, _ := k.Plan.ForMode(mode)
+	for _, st := range run {
+		if st.Kind == knowledge.KindHost {
+			return true
+		}
+	}
+	return false
 }
 
 // hostName reports whether service is a host process row ("host:NAME" with
