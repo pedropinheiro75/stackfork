@@ -11,6 +11,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 )
 
 // HostStart starts one host step. The cli package sets the real one (`host start`); tests stub it.
@@ -19,14 +20,21 @@ var HostStart = func(out, errOut io.Writer, base []string, root, instanceDir str
 	return errors.New("host steps are not implemented yet")
 }
 
-// PlanRunner runs the startup plan of one checkout in one mode.
+// ErrAlreadyPrepared is what a Prepare function may return to say it had
+// nothing to do; the runner then records the step as skipped.
+var ErrAlreadyPrepared = errors.New("already prepared")
+
+// PlanRunner runs the startup plan of one checkout in one mode. The funcs
+// write to w, the writer of the step that calls them.
 type PlanRunner struct {
 	Out, Err                                                            io.Writer
 	Root, Main, Branch, Project, InstanceDir, NewBase, LegacyBase, Mode string
 	Plan                                                                knowledge.Plan
-	Prepare                                                             func(args []string) error     // the CLI's prepare path; decides itself whether it is needed
-	Up                                                                  func(services []string) error // the CLI's `up` path (keeps PlanSeed/RunSeed inside up)
-	Host                                                                func(step knowledge.Step) error
+	Run                                                                 *runs.Run                                  // nil: nothing is recorded
+	Prepared                                                            func() bool                                // true when a prepare step has nothing to do
+	Prepare                                                             func(w io.Writer, args []string) error     // the CLI's prepare path; decides itself whether it is needed
+	Up                                                                  func(w io.Writer, services []string) error // the CLI's `up --in-run` path
+	Host                                                                func(w io.Writer, step knowledge.Step) error
 }
 
 // Check refuses an untrusted host step and an unsupported mode; it touches nothing.
@@ -58,8 +66,8 @@ func (r PlanRunner) Check() error {
 	return nil
 }
 
-// Run checks, then runs the steps in list order, no retries.
-func (r PlanRunner) Run() error {
+// Execute checks, then runs the steps in list order, no retries.
+func (r PlanRunner) Execute() error {
 	if err := r.Check(); err != nil {
 		return err
 	}
@@ -71,33 +79,43 @@ func (r PlanRunner) Run() error {
 	if !hasUp { // a plan without compose-up (e.g. none recorded) still starts the stack
 		steps = append(steps, knowledge.Step{ID: "up", Kind: knowledge.KindComposeUp})
 	}
+	r.declare(steps)
 	prepared, seeded := false, false
-	prepare := func(args []string) error {
-		if prepared {
-			return nil
-		}
-		prepared = true
-		return r.Prepare(args)
-	}
 	for _, s := range steps {
 		var err error
 		switch s.Kind {
 		case knowledge.KindPrepare:
-			err = prepare(s.Args)
+			switch {
+			case prepared || (r.Prepared != nil && r.Prepared()):
+				prepared = true
+				fmt.Fprintf(r.Out, "%s is already prepared\n", r.Project)
+				r.skip(s, "already prepared")
+			default:
+				prepared = true
+				err = r.step(s, func(w io.Writer) (int, error) { return 0, r.prepare(w, s.Args) })
+			}
 		case knowledge.KindComposeUp:
-			if err = prepare(nil); err == nil {
+			if !prepared {
+				prepared = true
+				err = r.prepare(r.Out, nil)
+			}
+			if err == nil {
 				var sd bool
 				sd, err = r.composeUp(s)
 				seeded = seeded || sd
 			}
 		case knowledge.KindExec:
-			if s.Once != knowledge.OnceData { // the data seed runs inside Up
-				err = r.exec(s, seeded)
+			switch {
+			case s.Once == knowledge.OnceData: // the data seed runs with its compose-up
+			case s.Once == knowledge.OnceSchema && seeded: // the seed prefix (migrate && seed) already ran it
+				r.skip(s, "ran with the seed")
+			default:
+				err = r.step(s, func(w io.Writer) (int, error) { return r.exec(w, s) })
 			}
 		case knowledge.KindHost:
-			err = r.Host(s)
+			err = r.step(s, func(w io.Writer) (int, error) { return 0, r.Host(w, s) })
 		case knowledge.KindNote:
-			fmt.Fprintf(r.Out, "note: %s\n", s.Text)
+			err = r.step(s, func(w io.Writer) (int, error) { fmt.Fprintf(w, "note: %s\n", s.Text); return 0, nil })
 		}
 		if err != nil {
 			var se stepError
@@ -110,26 +128,75 @@ func (r PlanRunner) Run() error {
 	return nil
 }
 
+// prepare runs the Prepare func; "already prepared" is not an error.
+func (r PlanRunner) prepare(w io.Writer, args []string) error {
+	if err := r.Prepare(w, args); err != nil && !errors.Is(err, ErrAlreadyPrepared) {
+		return err
+	}
+	return nil
+}
+
+// declare lists every step of the run as pending. The seed entry follows the
+// first compose-up (design.md D9), so the plan's own data step is not listed
+// at its place in the plan.
+func (r PlanRunner) declare(steps []knowledge.Step) {
+	if r.Run == nil {
+		return
+	}
+	seed, hasSeed := SeedEntry(r.Root, r.Main, r.InstanceDir, r.Plan, r.Mode)
+	for _, s := range steps {
+		if s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData {
+			continue
+		}
+		r.Run.Step(s.ID, s.Kind, StepText(s))
+		if s.Kind == knowledge.KindComposeUp && hasSeed {
+			r.Run.Step(seed.ID, knowledge.KindExec, StepText(seed))
+			hasSeed = false
+		}
+	}
+}
+
+// step runs fn as the step s: its writer is the step's writer, its result the step's.
+func (r PlanRunner) step(s knowledge.Step, fn func(w io.Writer) (int, error)) error {
+	if r.Run == nil {
+		_, err := fn(r.Out)
+		return err
+	}
+	rs := r.Run.Step(s.ID, s.Kind, StepText(s))
+	code, err := fn(rs.Start())
+	rs.End(err, code)
+	return err
+}
+
+func (r PlanRunner) skip(s knowledge.Step, reason string) {
+	if r.Run != nil {
+		r.Run.Step(s.ID, s.Kind, StepText(s)).Skip(reason)
+	}
+}
+
 // composeUp runs Up as the compose-up step and, when that up creates the
 // data, the seed (UpAndSeed), and reports whether the seed ran. The inner up
 // runs with --in-run: it neither records nor seeds, this call does both.
 func (r PlanRunner) composeUp(s knowledge.Step) (seeded bool, err error) {
 	res := UpAndSeed(r.Out, r.Err, UpSeed{
-		Root: r.Root, Main: r.Main, Branch: r.Branch, Project: r.Project, InstanceDir: r.InstanceDir,
+		Run: r.Run, Root: r.Root, Main: r.Main, Branch: r.Branch, Project: r.Project, InstanceDir: r.InstanceDir,
 		NewBase: r.NewBase, LegacyBase: r.LegacyBase, Mode: r.Mode, Plan: r.Plan,
 		UpID: s.ID, UpText: StepText(s), Seed: true, Lock: true,
 		Compose: func(stdout, stderr io.Writer) (int, error) {
-			services, err := r.upServices(s)
+			services, err := r.upServices(stdout, s)
 			if err != nil {
 				return 0, err
 			}
-			return 0, r.Up(services)
+			return 0, r.Up(stdout, services)
 		},
 	})
 	if res.Err != nil {
 		return false, res.Err
 	}
 	if res.SeedErr != nil {
+		if r.Run != nil {
+			r.Run.SetRetry("stackfork --instance " + r.Project + " seed")
+		}
 		return false, seedFailure(r.Plan, r.Root, r.Main, r.InstanceDir, r.Mode, res.SeedErr)
 	}
 	return res.Seeded, nil
@@ -149,7 +216,7 @@ func seedFailure(plan knowledge.Plan, root, main, instanceDir, mode string, err 
 
 // upServices is the service list of a compose-up step: nil for all, else all
 // but the excluded ones and whatever depends on them.
-func (r PlanRunner) upServices(s knowledge.Step) ([]string, error) {
+func (r PlanRunner) upServices(w io.Writer, s knowledge.Step) ([]string, error) {
 	var services []string
 	if len(s.Exclude) > 0 {
 		data, err := os.ReadFile(filepath.Join(r.InstanceDir, "compose.json"))
@@ -197,28 +264,25 @@ func (r PlanRunner) upServices(s knowledge.Step) ([]string, error) {
 			return nil, fmt.Errorf("step %s: exclude leaves no services to start", s.ID)
 		}
 		if len(dependents) > 0 {
-			fmt.Fprintf(r.Out, "hybrid: not starting %s (they depend on %s)\n", strings.Join(dependents, ", "), strings.Join(s.Exclude, ", "))
+			fmt.Fprintf(w, "hybrid: not starting %s (they depend on %s)\n", strings.Join(dependents, ", "), strings.Join(s.Exclude, ", "))
 		}
 	}
 	return services, nil
 }
 
-// exec runs a schema (or plain) exec step in its service.
-func (r PlanRunner) exec(s knowledge.Step, seeded bool) error {
-	if s.Once == knowledge.OnceSchema && seeded {
-		return nil // the seed prefix (migrate && seed) already ran it
-	}
+// exec runs an exec step in its service and returns the command's exit status.
+func (r PlanRunner) exec(w io.Writer, s knowledge.Step) (int, error) {
 	svc := ResolveExecService(r.InstanceDir, s, r.Plan)
-	fmt.Fprintf(r.Out, "running %s: %s\n", s.ID, s.Cmd)
-	code, err := Execute(r.Out, r.Err, "exec", r.Root, r.Branch, r.Project, r.InstanceDir, r.NewBase, r.LegacyBase,
+	fmt.Fprintf(w, "running %s: %s\n", s.ID, s.Cmd)
+	code, err := Execute(w, w, "exec", r.Root, r.Branch, r.Project, r.InstanceDir, r.NewBase, r.LegacyBase,
 		Options{Service: svc, Command: []string{"sh", "-c", s.Cmd}})
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if code != 0 {
-		return fmt.Errorf("exited with status %d", code)
+		return code, fmt.Errorf("exited with status %d", code)
 	}
-	return nil
+	return 0, nil
 }
 
 // excludedServices are the services the steps' compose-up leave out.

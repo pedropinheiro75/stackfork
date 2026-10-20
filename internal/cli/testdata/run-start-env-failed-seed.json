@@ -1,0 +1,51 @@
+{
+  "branch": "BRANCH",
+  "command": "start-env",
+  "ended_at": "TIME",
+  "error": "step seed failed: exited with status 1; retry with stackfork seed",
+  "id": 1,
+  "mode": "container",
+  "outcome": "failed",
+  "pid": 0,
+  "project": "PROJECT",
+  "retry": "stackfork --instance PROJECT seed",
+  "schema": 1,
+  "started_at": "TIME",
+  "steps": [
+    {
+      "ended_at": "TIME",
+      "id": "prepare",
+      "kind": "prepare",
+      "log": "1/prepare.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "prepare -f .agent-dev/app.compose.yaml"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "up-all",
+      "kind": "compose-up",
+      "log": "1/up-all.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "compose up"
+    },
+    {
+      "ended_at": "TIME",
+      "exit_code": 1,
+      "id": "seed",
+      "kind": "exec",
+      "log": "1/seed.log",
+      "started_at": "TIME",
+      "state": "failed",
+      "text": "s  in db"
+    },
+    {
+      "id": "migrate",
+      "kind": "exec",
+      "state": "pending",
+      "text": "m  in db"
+    }
+  ],
+  "trigger": "cli"
+}

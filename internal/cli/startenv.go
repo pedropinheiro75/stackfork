@@ -10,13 +10,16 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/learn"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/redact"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -28,14 +31,16 @@ type StartOptions struct {
 	LegacyStateBase string
 	Global          []string // extra global flags (--npmrc, --secret) to forward
 	ProfileDirs     []string
-	Force           bool   // start a project without verified knowledge (CLI only)
-	Mode            string // container or hybrid; empty = the machine's configured mode
+	Force           bool             // start a project without verified knowledge (CLI only)
+	Mode            string           // container or hybrid; empty = the machine's configured mode
+	Trigger         string           // who started it: cli (default) or dashboard; recorded in the run
+	Observer        func(runs.Event) // receives the run's state changes, may be nil
 }
 
 // StartEnv prepares (only when needed) and starts the instance of one
 // checkout, writing progress lines to out. It refuses a project stackfork
 // does not know how to run (design.md D3/D6).
-func StartEnv(out, errOut io.Writer, o StartOptions) error {
+func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	toplevel, err := gitToplevel(o.Checkout)
 	if err != nil {
 		return fmt.Errorf("%s is not a git checkout", o.Checkout)
@@ -92,10 +97,27 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 		}
 	}
 
-	prepare := func([]string) error {
+	trigger := o.Trigger
+	if trigger == "" {
+		trigger = "cli"
+	}
+	secrets := func() []redact.Secret { return runSecrets(instanceDir, o.Global) }
+	rec, err := runs.Begin(instanceDir, runs.Meta{Command: "start-env", Trigger: trigger, Mode: mode, Project: project, Branch: branch,
+		Out: out, Secrets: secrets, Observer: o.Observer})
+	if err != nil {
+		return err
+	}
+	defer func() { // the run ends with the command, whatever path returned
+		if retErr != nil && rec.Retry == "" {
+			rec.SetRetry("stackfork --root " + root + " start-env")
+		}
+		rec.Finish(retErr)
+	}()
+
+	prepare := func(out io.Writer, _ []string) error {
 		if !needsPrepare(instanceDir, root, branch, project) {
 			fmt.Fprintf(out, "%s is already prepared\n", project)
-			return nil
+			return lifecycle.ErrAlreadyPrepared
 		}
 		args, err := prepareArgs(root, main, instanceDir)
 		pbase := base
@@ -144,14 +166,14 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 		}
 		return nil
 	}
-	up := func(services []string) error {
+	up := func(out io.Writer, services []string) error {
 		fmt.Fprintf(out, "starting %s\n", project)
 		args := append([]string{}, base...)
 		args = append(args, "up", "--in-run", "--mode", mode)
 		for _, s := range services {
 			args = append(args, "--service", s)
 		}
-		code, err := run(args, out, errOut)
+		code, err := run(args, out, out)
 		if err != nil {
 			return err
 		}
@@ -163,10 +185,11 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 
 	runner.Out, runner.Err, runner.Root, runner.Branch, runner.Project = out, errOut, root, branch, project
 	runner.InstanceDir, runner.LegacyBase, runner.Prepare, runner.Up = instanceDir, o.LegacyStateBase, prepare, up
-	runner.Host = func(step knowledge.Step) error {
-		return lifecycle.HostStart(out, errOut, base, root, instanceDir, step)
+	runner.Host = func(w io.Writer, step knowledge.Step) error {
+		return lifecycle.HostStart(w, w, base, root, instanceDir, step)
 	}
-	if err := runner.Run(); err != nil {
+	runner.Run, runner.Prepared = rec, func() bool { return !needsPrepare(instanceDir, root, branch, project) }
+	if err := runner.Execute(); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "started %s; see `stackfork --root %s urls`\n", project, root)
@@ -399,4 +422,25 @@ func recordSeedRecipe(instanceDir, cmd, svc string) {
 		m.SeedOnce, m.SeedService = cmd, svc
 		_ = state.WritePrivate(path, m)
 	}
+}
+
+// runSecrets are the values a run must redact: the instance's secret
+// references, and the --secret references of the command (which prepare is
+// about to record in the manifest).
+func runSecrets(instanceDir string, global []string) []redact.Secret {
+	var secrets []redact.Secret
+	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
+		secrets = lifecycle.SecretsForRedaction(m)
+	}
+	for i := 0; i+1 < len(global); i++ {
+		if global[i] != "--secret" {
+			continue
+		}
+		if name, ref, ok := strings.Cut(global[i+1], "="); ok {
+			if v, err := compose.ResolveSecret(name, ref); err == nil {
+				secrets = append(secrets, redact.Secret{Name: name, Value: v})
+			}
+		}
+	}
+	return secrets
 }

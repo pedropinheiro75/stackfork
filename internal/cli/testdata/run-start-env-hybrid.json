@@ -1,0 +1,60 @@
+{
+  "branch": "BRANCH",
+  "command": "start-env",
+  "ended_at": "TIME",
+  "id": 1,
+  "mode": "hybrid",
+  "outcome": "succeeded",
+  "pid": 0,
+  "project": "PROJECT",
+  "schema": 1,
+  "started_at": "TIME",
+  "steps": [
+    {
+      "ended_at": "TIME",
+      "id": "prepare",
+      "kind": "prepare",
+      "log": "1/prepare.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "prepare -f .agent-dev/app.compose.yaml"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "up-deps",
+      "kind": "compose-up",
+      "log": "1/up-deps.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "compose up  without web"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "seed",
+      "kind": "exec",
+      "log": "1/seed.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "s  in db"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "migrate",
+      "kind": "exec",
+      "reason": "ran with the seed",
+      "started_at": "TIME",
+      "state": "skipped",
+      "text": "m  in db"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "app",
+      "kind": "host",
+      "log": "1/app.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "npm run dev  port 3000"
+    }
+  ],
+  "trigger": "cli"
+}
