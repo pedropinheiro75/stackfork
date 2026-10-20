@@ -178,6 +178,10 @@ func TestAppsFromKnowledgeOnlyWhenNothingElseQualifies(t *testing.T) {
 		Schema: knowledge.CurrentSchema, Status: knowledge.StatusDraft,
 		Facts: knowledge.Facts{Scripts: []knowledge.Script{
 			{Role: "dev", Name: "dev", Source: "package.json", Command: "npm run dev"},
+			{Role: "dev", Name: "dev:web", Source: "package.json", Command: "npm run dev:web"},
+			{Role: "dev", Name: "dev:api", Source: "package.json", Command: "npm run dev:api"},
+			{Role: "dev", Name: "dev:docs", Source: "package.json", Command: "npm run dev:docs"},
+			{Role: "dev", Name: "dev:ui", Source: "package.json", Command: "npm run dev:ui"},
 		}},
 	}
 	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
@@ -195,7 +199,10 @@ func TestAppsFromKnowledgeOnlyWhenNothingElseQualifies(t *testing.T) {
 		}
 	}
 	if len(inst.Apps) != 1 {
-		t.Fatalf("expected 1 knowledge-derived app hint, got %+v", inst.Apps)
+		t.Fatalf("expected exactly 1 knowledge-derived app hint for 5 dev scripts, got %+v", inst.Apps)
+	}
+	if !inst.IsMain || inst.Used.IsZero() {
+		t.Errorf("want IsMain and a Used time, got IsMain=%v Used=%v", inst.IsMain, inst.Used)
 	}
 	app := inst.Apps[0]
 	if app.Source != "knowledge" || app.Running {

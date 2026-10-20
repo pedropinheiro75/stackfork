@@ -163,7 +163,9 @@ type Instance struct {
 	RelRoot string `json:"rel_root,omitempty"`
 	// App is the folder name of the repo's main checkout (for a worktree,
 	// the main repo it belongs to), empty when Root is not a git checkout.
-	App    string `json:"app,omitempty"`
+	App string `json:"app,omitempty"`
+	// IsMain marks a repo's own checkout (RelRoot "main checkout").
+	IsMain bool   `json:"is_main,omitempty"`
 	Legacy bool   `json:"legacy"`
 	State  string `json:"state"`
 
@@ -205,7 +207,8 @@ type Instance struct {
 	// worktree's recipe is derived from them (add-repo-browser D6a).
 	EnvFile string            `json:"-"`
 	Secrets map[string]string `json:"-"` // references only, never values
-	Used    time.Time         `json:"-"` // manifest mtime
+	// Used is the manifest mtime: the last activity the dashboard sorts by.
+	Used time.Time `json:"used"`
 	// SeedOnce/SeedService are the manifest's recorded seed recipe.
 	SeedOnce    string `json:"-"`
 	SeedService string `json:"-"`
@@ -315,6 +318,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 	if info.EnvFile != nil {
 		inst.EnvFile = *info.EnvFile
 	}
+	inst.IsMain = inst.RelRoot == "main checkout"
 	inst.SeedOnce, inst.SeedService = info.SeedOnce, info.SeedService
 	fillSeed(&inst, info, filepath.Dir(manifestPath))
 	if fi, err := os.Stat(manifestPath); err == nil {

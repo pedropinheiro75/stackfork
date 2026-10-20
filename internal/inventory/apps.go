@@ -124,6 +124,8 @@ func appendRouteAndKnowledgeApps(apps []AppLink, info *state.Manifest) []AppLink
 	if err != nil {
 		return apps
 	}
+	// At most one chip per instance, however many dev scripts are learned;
+	// the first one names the command in the hint.
 	for _, s := range k.Facts.Scripts {
 		if s.Role != "dev" {
 			continue
@@ -132,7 +134,7 @@ func appendRouteAndKnowledgeApps(apps []AppLink, info *state.Manifest) []AppLink
 		if cmd == "" {
 			cmd = s.Name
 		}
-		apps = append(apps, AppLink{
+		return append(apps, AppLink{
 			Label:  "App",
 			Source: "knowledge",
 			Hint: fmt.Sprintf("host app: not running — start with `%s`, then `stackfork route add <name> <port>`",
