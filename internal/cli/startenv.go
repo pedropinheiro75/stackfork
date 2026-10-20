@@ -163,8 +163,8 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	// from the next start.
 	sync := rec.Step("sync", "sync", "fetch the upstream; fast-forward when clean")
 	res := syncRepo(root, 15*time.Second, true)
-	if res.Msg != "" {
-		fmt.Fprintln(sync.Start(), res.Msg)
+	if res.Line != "" {
+		fmt.Fprintln(sync.Start(), res.Line)
 	} else {
 		sync.Start()
 	}

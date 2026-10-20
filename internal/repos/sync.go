@@ -10,58 +10,75 @@ import (
 	"time"
 )
 
-// SyncUpstream fetches the checkout's upstream and, when the checkout is
-// behind it, fast-forwards only when that cannot lose or rewrite anything (no
-// uncommitted changes, no local commits). Otherwise it touches nothing and
-// returns a warning with the command to update. It returns one line to show,
-// or "" when there is nothing to say (up to date, or no upstream). A fetch
-// that fails or times out is a note: the start goes on with what is here.
-func SyncUpstream(checkout string, timeout time.Duration) string {
-	return Sync(checkout, timeout, true).Msg
+// SyncResult is what Sync found and did. Behind and Ahead are the counts
+// before any fast-forward. Line is what SyncUpstream returns.
+type SyncResult struct {
+	Updated     bool   // the checkout was fast-forwarded
+	Behind      int    // commits on the upstream the checkout lacked
+	Ahead       int    // local commits not on the upstream
+	Dirty       bool   // uncommitted changes to tracked files
+	Line        string // one line to show, "" when there is nothing to say
+	Upstream    string // e.g. origin/feature-login, "" when the branch has none
+	UpstreamSHA string // the upstream commit after the fetch ("" when unknown)
+	FetchFailed bool   // the fetch failed or timed out (Line holds the note)
+	Blocked     bool   // behind the upstream and not safe to fast-forward (Line holds the warning)
 }
 
-// SyncResult is what Sync found: the line to show, and whether the checkout
-// is behind its upstream and cannot be fast-forwarded safely.
-type SyncResult struct {
-	Msg     string
-	Blocked bool
+// SyncUpstream is Sync's Line. It fetches the checkout's upstream and, when
+// the checkout is behind it, fast-forwards only when that cannot lose or
+// rewrite anything (no uncommitted changes, no local commits). Otherwise it
+// touches nothing and returns a warning with the command to update. It
+// returns "" when there is nothing to say (up to date, or no upstream). A
+// fetch that fails or times out is a note: the start goes on with what is
+// here.
+func SyncUpstream(checkout string, timeout time.Duration) string {
+	return Sync(checkout, timeout, true).Line
 }
 
 // Sync is SyncUpstream with a structured result. With apply false it only
 // fetches and reports: it never merges, so it is a check.
 func Sync(checkout string, timeout time.Duration, apply bool) SyncResult {
+	var res SyncResult
 	upstream, err := gitIn(context.Background(), checkout, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
 	if err != nil || upstream == "" {
-		return SyncResult{}
+		return res
 	}
 	branch, _ := gitIn(context.Background(), checkout, "rev-parse", "--abbrev-ref", "HEAD")
 	remote, remoteBranch, ok := strings.Cut(upstream, "/")
 	if !ok {
-		return SyncResult{}
+		return res
 	}
+	res.Upstream = upstream
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	if _, err := gitIn(ctx, checkout, "fetch", "--quiet", "--no-tags", remote, remoteBranch); err != nil {
-		return SyncResult{Msg: fmt.Sprintf("note: could not fetch %s; starting with what is checked out", upstream)}
+		res.FetchFailed = true
+		res.Line = fmt.Sprintf("note: could not fetch %s; starting with what is checked out", upstream)
+		return res
 	}
+	res.UpstreamSHA, _ = gitIn(context.Background(), checkout, "rev-parse", "@{u}")
 	counts, err := gitIn(context.Background(), checkout, "rev-list", "--left-right", "--count", "@{u}...HEAD")
 	f := strings.Fields(counts)
 	if err != nil || len(f) != 2 {
-		return SyncResult{}
+		return res
 	}
 	behind, _ := strconv.Atoi(f[0])
 	ahead, _ := strconv.Atoi(f[1])
+	res.Behind, res.Ahead = behind, ahead
 	if behind == 0 {
-		return SyncResult{}
+		return res
 	}
 	status, _ := gitIn(context.Background(), checkout, "status", "--porcelain", "--untracked-files=no")
 	dirty := status != ""
+	res.Dirty = dirty
 	if !dirty && ahead == 0 {
 		if !apply {
-			return SyncResult{}
+			return res
 		}
 		if _, err := gitIn(context.Background(), checkout, "merge", "--ff-only", "--quiet", "@{u}"); err == nil {
-			return SyncResult{Msg: fmt.Sprintf("updated %s to %s (%s)", branch, upstream, plural(behind, "new commit"))}
+			res.Updated = true
+			res.Line = fmt.Sprintf("updated %s to %s (%s)", branch, upstream, plural(behind, "new commit"))
+			return res
 		}
 	}
 	var why, how string
@@ -76,8 +93,10 @@ func Sync(checkout string, timeout time.Duration, apply bool) SyncResult {
 		why = plural(ahead, "local commit")
 		how = "git -C " + shellArg(checkout) + " pull --rebase"
 	}
-	return SyncResult{Blocked: true, Msg: fmt.Sprintf("warning: %s is %s behind %s; stackfork did not update it because it has %s. Update it soon: %s",
-		branch, plural(behind, "commit"), upstream, why, how)}
+	res.Blocked = true
+	res.Line = fmt.Sprintf("warning: %s is %s behind %s; stackfork did not update it because it has %s. Update it soon: %s",
+		branch, plural(behind, "commit"), upstream, why, how)
+	return res
 }
 
 func plural(n int, word string) string {

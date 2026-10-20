@@ -58,7 +58,7 @@ func PreviewReset(checkout, newBase, legacyBase string) (ResetPreview, error) {
 	}
 	p := ResetPreview{Project: project, Branch: branch, Root: root, Volumes: []string{}}
 	if res := syncRepo(root, 15*time.Second, false); res.Blocked {
-		p.Blocked, p.Note = true, res.Msg
+		p.Blocked, p.Note = true, res.Line
 	}
 	// Docker's label filter is exact on the value, and the project name is unique to the instance.
 	out, err := exec.Command("docker", "volume", "ls", "--filter", "label=com.docker.compose.project="+project, "--format", "{{.Name}}").Output()

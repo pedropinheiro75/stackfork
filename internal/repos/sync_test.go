@@ -89,18 +89,70 @@ func TestSyncUpstream(t *testing.T) {
 	})
 }
 
+func TestSyncResult(t *testing.T) {
+	d := 10 * time.Second
+	t.Run("clean behind: updated", func(t *testing.T) {
+		repo, origin := mkWithOrigin(t)
+		pushAhead(t, origin, 2)
+		r := Sync(repo, d, true)
+		if !r.Updated || r.Behind != 2 || r.Ahead != 0 || r.Dirty || r.FetchFailed || r.Upstream != "origin/main" ||
+			r.UpstreamSHA != strings.TrimSpace(git(t, repo, "rev-parse", "HEAD")) || !strings.Contains(r.Line, "updated main") {
+			t.Fatalf("%+v", r)
+		}
+	})
+	t.Run("up to date", func(t *testing.T) {
+		repo, _ := mkWithOrigin(t)
+		if r := Sync(repo, d, true); r.Updated || r.Behind != 0 || r.Line != "" || r.Upstream != "origin/main" {
+			t.Fatalf("%+v", r)
+		}
+	})
+	t.Run("dirty", func(t *testing.T) {
+		repo, origin := mkWithOrigin(t)
+		pushAhead(t, origin, 3)
+		os.WriteFile(filepath.Join(repo, "f"), []byte("edit"), 0o644)
+		r := Sync(repo, d, true)
+		if r.Updated || !r.Dirty || r.Behind != 3 || r.Ahead != 0 || !strings.HasPrefix(r.Line, "warning:") {
+			t.Fatalf("%+v", r)
+		}
+	})
+	t.Run("local commits", func(t *testing.T) {
+		repo, origin := mkWithOrigin(t)
+		pushAhead(t, origin, 1)
+		os.WriteFile(filepath.Join(repo, "mine"), []byte("m"), 0o644)
+		git(t, repo, "add", "mine")
+		git(t, repo, "commit", "-q", "-m", "mine")
+		r := Sync(repo, d, true)
+		if r.Updated || r.Dirty || r.Behind != 1 || r.Ahead != 1 {
+			t.Fatalf("%+v", r)
+		}
+	})
+	t.Run("no upstream", func(t *testing.T) {
+		repo := mkRepo(t, filepath.Join(tempRoot(t), "solo"))
+		if r := Sync(repo, d, true); r != (SyncResult{}) {
+			t.Fatalf("%+v", r)
+		}
+	})
+	t.Run("fetch failed", func(t *testing.T) {
+		repo, origin := mkWithOrigin(t)
+		os.RemoveAll(origin)
+		if r := Sync(repo, d, true); !r.FetchFailed || r.Updated || r.Upstream != "origin/main" {
+			t.Fatalf("%+v", r)
+		}
+	})
+}
+
 func TestSyncBlocked(t *testing.T) {
 	t.Run("clean and behind is not blocked; a check does not merge", func(t *testing.T) {
 		repo, origin := mkWithOrigin(t)
 		pushAhead(t, origin, 1)
 		head := git(t, repo, "rev-parse", "HEAD")
-		if r := Sync(repo, 10*time.Second, false); r.Blocked || r.Msg != "" {
+		if r := Sync(repo, 10*time.Second, false); r.Blocked || r.Line != "" {
 			t.Fatalf("got %+v", r)
 		}
 		if git(t, repo, "rev-parse", "HEAD") != head {
 			t.Error("a check moved HEAD")
 		}
-		if r := Sync(repo, 10*time.Second, true); r.Blocked || !strings.Contains(r.Msg, "updated main") {
+		if r := Sync(repo, 10*time.Second, true); r.Blocked || !strings.Contains(r.Line, "updated main") {
 			t.Fatalf("got %+v", r)
 		}
 	})
@@ -109,7 +161,7 @@ func TestSyncBlocked(t *testing.T) {
 		pushAhead(t, origin, 1)
 		os.WriteFile(filepath.Join(repo, "f"), []byte("local edit"), 0o644)
 		for _, apply := range []bool{false, true} {
-			if r := Sync(repo, 10*time.Second, apply); !r.Blocked || !strings.Contains(r.Msg, "warning:") {
+			if r := Sync(repo, 10*time.Second, apply); !r.Blocked || !strings.Contains(r.Line, "warning:") {
 				t.Fatalf("apply=%v: %+v", apply, r)
 			}
 		}
@@ -120,7 +172,7 @@ func TestSyncBlocked(t *testing.T) {
 			t.Fatalf("%+v", r)
 		}
 		os.RemoveAll(origin)
-		if r := Sync(repo, 10*time.Second, true); r.Blocked || r.Msg == "" {
+		if r := Sync(repo, 10*time.Second, true); r.Blocked || r.Line == "" {
 			t.Fatalf("%+v", r)
 		}
 	})
