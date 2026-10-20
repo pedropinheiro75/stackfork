@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -106,5 +107,25 @@ func TestPlanTrustShowsAllHashedFieldsAndRejectsBadMode(t *testing.T) {
 	_, stderr, code := runCLI(t, "--root", root, "plan", "--mode", "bogus")
 	if code != 1 || !strings.Contains(stderr, "container") || !strings.Contains(stderr, "hybrid") {
 		t.Fatalf("code=%d %s", code, stderr)
+	}
+}
+
+// A Step with every field set must print one line per field except id and
+// kind (the header), so a future Step field shows up without touching plan.go.
+func TestStepBlockPrintsEveryStepField(t *testing.T) {
+	var s knowledge.Step
+	v := reflect.ValueOf(&s).Elem()
+	for i := 0; i < v.NumField(); i++ {
+		switch f := v.Field(i); f.Kind() {
+		case reflect.String:
+			f.SetString("x")
+		case reflect.Int:
+			f.SetInt(7)
+		case reflect.Slice:
+			f.Set(reflect.ValueOf([]string{"a", "b"}))
+		}
+	}
+	if got, want := len(stepBlock(s)), 1+v.NumField()-2; got != want {
+		t.Fatalf("stepBlock printed %d lines, want %d:\n%s", got, want, strings.Join(stepBlock(s), "\n"))
 	}
 }

@@ -13,21 +13,22 @@ import (
 )
 
 type planStepOut struct {
-	ID      string   `json:"id"`
-	Kind    string   `json:"kind"`
-	Cmd     string   `json:"cmd,omitempty"`
-	Service string   `json:"service,omitempty"`
-	Args    []string `json:"args,omitempty"`
-	Exclude []string `json:"exclude,omitempty"`
-	Name    string   `json:"name,omitempty"`
-	Dir     string   `json:"dir,omitempty"`
-	PortEnv []string `json:"port_env,omitempty"`
-	Port    int      `json:"port,omitempty"`
-	Once    string   `json:"once,omitempty"`
-	Text    string   `json:"text,omitempty"`
-	Modes   []string `json:"modes,omitempty"`
-	State   string   `json:"state"`
-	Trust   string   `json:"trust"`
+	ID      string         `json:"id"`
+	Kind    string         `json:"kind"`
+	Cmd     string         `json:"cmd,omitempty"`
+	Service string         `json:"service,omitempty"`
+	Args    []string       `json:"args,omitempty"`
+	Exclude []string       `json:"exclude,omitempty"`
+	Name    string         `json:"name,omitempty"`
+	Dir     string         `json:"dir,omitempty"`
+	PortEnv []string       `json:"port_env,omitempty"`
+	Port    int            `json:"port,omitempty"`
+	Once    string         `json:"once,omitempty"`
+	Text    string         `json:"text,omitempty"`
+	Modes   []string       `json:"modes,omitempty"`
+	State   string         `json:"state"`
+	step    knowledge.Step // the original, for stepBlock
+	Trust   string         `json:"trust"`
 }
 
 type planOut struct {
@@ -96,7 +97,7 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 		out := []planStepOut{}
 		for _, s := range in {
 			o := planStepOut{ID: s.ID, Kind: s.Kind, Cmd: s.Cmd, Service: s.Service, Args: s.Args, Exclude: s.Exclude,
-				Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, Text: s.Text, Modes: s.Modes, State: state}
+				Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, Text: s.Text, Modes: s.Modes, State: state, step: s}
 			if s.Kind == knowledge.KindHost || s.Kind == knowledge.KindPrepare {
 				o.Trust = "untrusted"
 				if trusted {
@@ -140,13 +141,18 @@ func stepBlock(s knowledge.Step) []string {
 	v, t := reflect.ValueOf(s), reflect.TypeOf(s)
 	for i := 0; i < t.NumField(); i++ {
 		key, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
-		if key == "id" || key == "kind" || v.Field(i).IsZero() {
+		if !t.Field(i).IsExported() || key == "id" || key == "kind" || v.Field(i).IsZero() ||
+			(v.Field(i).Kind() == reflect.Slice && v.Field(i).Len() == 0) {
 			continue
 		}
 		val := ""
 		switch f := v.Field(i).Interface().(type) {
 		case []string:
-			val = strings.Join(f, ", ")
+			sep := ", "
+			if key == "args" {
+				sep = " "
+			}
+			val = strings.Join(f, sep)
 		default:
 			val = fmt.Sprint(f)
 		}
@@ -156,8 +162,6 @@ func stepBlock(s knowledge.Step) []string {
 }
 
 func planLine(s planStepOut) string {
-	st := knowledge.Step{ID: s.ID, Kind: s.Kind, Modes: s.Modes, Args: s.Args, Exclude: s.Exclude, Service: s.Service, Cmd: s.Cmd,
-		Once: s.Once, Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Text: s.Text}
 	suffix := " - " + s.State
 	if s.Trust != "" {
 		suffix += ", " + s.Trust
@@ -175,7 +179,7 @@ func planLine(s planStepOut) string {
 		}
 		return l + suffix
 	}
-	b := stepBlock(st)
+	b := stepBlock(s.step)
 	if s.Kind == knowledge.KindHost && s.Port == 0 {
 		b = append(b, "    port: unknown")
 	}
