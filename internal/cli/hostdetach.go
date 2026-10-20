@@ -43,11 +43,27 @@ func init() {
 		if err != nil || len(argv) == 0 {
 			return fmt.Errorf("host step %s: cannot read its command %q", step.ID, step.Cmd)
 		}
+		flags := hostFlagArgs(step.Port, step.Dir, strings.Join(step.PortEnv, ","))
+		// A start is idempotent: the same app already running is success.
+		if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
+			if proc, ok := m.HostProcs[step.Name]; ok && state.HostIdentity(proc) {
+				want := append(append(append([]string{"--supervise", step.Name}, flags...), "--"), argv...)
+				i := 0
+				for i < len(proc.Cmdline) && proc.Cmdline[i] != "--supervise" {
+					i++
+				}
+				if strings.Join(proc.Cmdline[i:], "\x00") != strings.Join(want, "\x00") {
+					return fmt.Errorf("host app %s is already running (pid %d) with a different command; run `stackfork host restart %s` or stop it", step.Name, proc.PID, step.Name)
+				}
+				fmt.Fprintf(out, "host app %s already running (pid %d)\n", step.Name, proc.PID)
+				return nil
+			}
+		}
 		args := append([]string{}, base...)
 		if len(args) == 0 {
 			args = []string{"--root", root}
 		}
-		args = append(append(args, "host", "start", step.Name), hostFlagArgs(step.Port, step.Dir, strings.Join(step.PortEnv, ","))...)
+		args = append(append(args, "host", "start", step.Name), flags...)
 		code, err := run(append(append(args, "--"), argv...), out, errOut)
 		if err == nil && code != 0 {
 			err = fmt.Errorf("host start %s exited with status %d", step.Name, code)

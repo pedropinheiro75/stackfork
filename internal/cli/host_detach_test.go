@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -320,5 +322,31 @@ func TestHostRefusesSecondRunAndOutsideDir(t *testing.T) {
 		if _, stderr, code := runCLI(t, append(g, "host", "other", "--dir", d, "--", "true")...); code == 0 || !strings.Contains(stderr, "outside the checkout") && !strings.Contains(stderr, "--dir") {
 			t.Errorf("--dir %s must be refused: %d %s", d, code, stderr)
 		}
+	}
+}
+
+// A second start of the same host step succeeds without spawning; a changed
+// command is refused with the way out.
+func TestHostStartHookIsIdempotent(t *testing.T) {
+	root, stateDir, project := hostEnv(t)
+	base := []string{"--root", root, "--state-dir", stateDir}
+	instanceDir := filepath.Join(stateDir, project)
+	step := knowledge.Step{ID: "app", Kind: knowledge.KindHost, Name: "app", Cmd: "sleep 30"}
+	var out, errOut bytes.Buffer
+	if err := lifecycle.HostStart(&out, &errOut, base, root, instanceDir, step); err != nil {
+		t.Fatalf("first: %v %s", err, errOut.String())
+	}
+	pid := readManifestAt(t, stateDir, project).HostProcs["app"].PID
+	out.Reset()
+	if err := lifecycle.HostStart(&out, &errOut, base, root, instanceDir, step); err != nil {
+		t.Fatalf("second start must succeed: %v", err)
+	}
+	if !strings.Contains(out.String(), "host app app already running (pid "+strconv.Itoa(pid)+")") ||
+		readManifestAt(t, stateDir, project).HostProcs["app"].PID != pid {
+		t.Fatalf("respawned or silent: %q", out.String())
+	}
+	step.Cmd = "sleep 31"
+	if err := lifecycle.HostStart(&out, &errOut, base, root, instanceDir, step); err == nil || !strings.Contains(err.Error(), "stackfork host restart app") {
+		t.Fatalf("a different command must be refused: %v", err)
 	}
 }
