@@ -81,7 +81,7 @@ func newBrowserEnv(t *testing.T) *browserEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv.StartEnv = func(out, errOut io.Writer, checkout string) error {
+	srv.StartEnv = func(out, errOut io.Writer, checkout, _ string) error {
 		e.mu.Lock()
 		e.starts = append(e.starts, checkout)
 		e.mu.Unlock()

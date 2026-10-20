@@ -86,9 +86,9 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 		return 0, err
 	}
 	srv.ProfileDirs = profiles
-	srv.StartEnv = func(out, errOut io.Writer, checkout string) error {
+	srv.StartEnv = func(out, errOut io.Writer, checkout, trigger string) error {
 		return StartEnv(out, errOut, StartOptions{
-			Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles,
+			Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles, Trigger: trigger,
 		})
 	}
 	addr := fmt.Sprintf("127.0.0.1:%d", port)

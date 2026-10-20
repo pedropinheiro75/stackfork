@@ -271,8 +271,13 @@ var reposTemplate = template.Must(
 
 // StartFunc starts the instance of one checkout, writing progress lines to
 // out. The CLI supplies it (cli.StartEnv), so the page and the command run
-// the same code and the dashboard never imports the CLI.
-type StartFunc func(out, errOut io.Writer, checkout string) error
+// the same code and the dashboard never imports the CLI. trigger is the
+// label the run records (always TriggerDashboard here).
+type StartFunc func(out, errOut io.Writer, checkout, trigger string) error
+
+// TriggerDashboard is the trigger of every run the dashboard starts, directly
+// or through the commands of /api/run (STACKFORK_TRIGGER).
+const TriggerDashboard = "dashboard"
 
 // reposState is the in-memory scan the page and the actions work from.
 type reposState struct {
@@ -682,7 +687,7 @@ func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, 
 		fmt.Fprintf(lw, "created %s%s\n", wt.Path, copiedNote(wt))
 		checkout = wt.Path
 	}
-	finish(s.StartEnv(lw, lw, checkout))
+	finish(s.StartEnv(lw, lw, checkout, TriggerDashboard))
 }
 
 func flush(w http.ResponseWriter) {

@@ -982,7 +982,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 			},
 		})
 		if rec != nil {
-			runErr = upRunError(res, rec, project)
+			runErr = res.RunError(rec, project)
 		}
 		return res.Code, res.Err
 	}
@@ -997,24 +997,6 @@ func envTrigger() string {
 		return "dashboard"
 	}
 	return "cli"
-}
-
-// upRunError is the run's error for an `up` and sets its retry command: a
-// failed seed is retried by `seed`, anything else by `up`.
-func upRunError(res lifecycle.UpOutcome, rec *runs.Run, project string) error {
-	cmd := "stackfork --instance " + project + " "
-	switch {
-	case res.Err != nil:
-		rec.SetRetry(cmd + "up")
-		return res.Err
-	case res.Code != 0:
-		rec.SetRetry(cmd + "up")
-		return fmt.Errorf("up exited with status %d", res.Code)
-	case res.SeedErr != nil:
-		rec.SetRetry(cmd + "seed")
-		return fmt.Errorf("seed failed: %v; retry with stackfork seed", res.SeedErr)
-	}
-	return nil
 }
 
 // --- output ------------------------------------------------------------

@@ -98,3 +98,25 @@ func TestSeedMarkDoneAndNothingToRunWriteNoRun(t *testing.T) {
 		t.Fatalf("runs: %v", files)
 	}
 }
+
+// The dashboard's /api/run children carry STACKFORK_TRIGGER=dashboard.
+func TestUpAndSeedTriggerFromEnvironment(t *testing.T) {
+	root, stateDir, _ := seedFixture(t)
+	t.Setenv("STACKFORK_TRIGGER", "dashboard")
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	t.Setenv("DOCKER_FAKE_EXEC_EXIT", "1")
+	args := []string{"--root", root, "--state-dir", stateDir}
+	runCLI(t, append(args, "up")...)
+	t.Setenv("DOCKER_FAKE_EXEC_EXIT", "0")
+	runCLI(t, append(args, "seed")...)
+	for id := 1; id <= 2; id++ {
+		if r, err := runs.Get(onlyRunDir(t, stateDir), id); err != nil || r.Trigger != "dashboard" {
+			t.Fatalf("run %d: %+v %v", id, r, err)
+		}
+	}
+	t.Setenv("STACKFORK_TRIGGER", "anything else")
+	runCLI(t, append(args, "up")...)
+	if r, _ := runs.Get(onlyRunDir(t, stateDir), 3); r.Trigger != "cli" {
+		t.Fatalf("%s", r.Trigger)
+	}
+}

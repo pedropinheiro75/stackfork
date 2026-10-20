@@ -18,7 +18,9 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
+	"github.com/pedropinheiro75/stackfork/internal/redact"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -134,7 +136,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 			if cur, _ := exec.Command("git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD").Output(); strings.TrimSpace(string(cur)) != branch {
 				return actionResponse{Message: fmt.Sprintf("%s is now on %s, not %s; switch back or start it from Repos", root, strings.TrimSpace(string(cur)), branch)}
 			}
-			if err := s.StartEnv(&out, &out, root); err != nil {
+			if err := s.StartEnv(&out, &out, root, TriggerDashboard); err != nil {
 				return actionResponse{Message: err.Error()}
 			}
 			return actionResponse{OK: true, Message: "up complete"}
@@ -146,11 +148,18 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 		}
 		var code int
 		if lifecycleAction == "up" { // a failed up leaves seeded:false for the next up
+			mode := lifecycle.PlanMode(root, main)
+			rec, berr := runs.Begin(instanceDir, runs.Meta{Command: "up", Trigger: TriggerDashboard, Mode: mode, Project: req.Project,
+				Branch: branch, Out: &out, Secrets: func() []redact.Secret { return lifecycle.SecretsForRedaction(info) }})
+			if berr != nil { // another run owns the instance: nothing runs
+				return actionResponse{Message: berr.Error()}
+			}
 			res := lifecycle.UpAndSeed(&out, &out, lifecycle.UpSeed{
-				Root: root, Main: main, Branch: branch, Project: req.Project, InstanceDir: instanceDir,
-				NewBase: s.NewStateBase, LegacyBase: s.LegacyStateBase, Mode: lifecycle.PlanMode(root, main),
+				Run: rec, Root: root, Main: main, Branch: branch, Project: req.Project, InstanceDir: instanceDir,
+				NewBase: s.NewStateBase, LegacyBase: s.LegacyStateBase, Mode: mode,
 				Plan: lifecycle.LoadPlan(root, main), Seed: true, Compose: compose,
 			})
+			rec.Finish(res.RunError(rec, req.Project))
 			code, err = res.Code, res.Err
 		} else {
 			code, err = compose(&out, &out)

@@ -118,3 +118,21 @@ func UpAndSeed(out, errOut io.Writer, a UpSeed) UpOutcome {
 	res.Seeded = res.SeedErr == nil
 	return res
 }
+
+// RunError is the error the run of an `up` ends with. It also sets the run's
+// retry command: a failed seed is retried by `seed`, anything else by `up`.
+func (o UpOutcome) RunError(rec *runs.Run, project string) error {
+	cmd := "stackfork --instance " + project + " "
+	switch {
+	case o.Err != nil:
+		rec.SetRetry(cmd + "up")
+		return o.Err
+	case o.Code != 0:
+		rec.SetRetry(cmd + "up")
+		return fmt.Errorf("up exited with status %d", o.Code)
+	case o.SeedErr != nil:
+		rec.SetRetry(cmd + "seed")
+		return fmt.Errorf("seed failed: %v; retry with stackfork seed", o.SeedErr)
+	}
+	return nil
+}

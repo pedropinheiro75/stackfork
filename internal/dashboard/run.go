@@ -225,6 +225,15 @@ func (s *Server) planStackfork(args []string, root string) (*runPlan, error) {
 	return p, nil
 }
 
+// childEnv is the environment of a command /api/run starts: nil (inherit) for
+// git and docker, and for stackfork the label that makes its runs the dashboard's.
+func childEnv(name string) []string {
+	if name != "stackfork" {
+		return nil
+	}
+	return append(os.Environ(), "STACKFORK_TRIGGER="+TriggerDashboard)
+}
+
 func (s *Server) execPlan(ctx context.Context, name string, args []string) (string, error) {
 	bin := name
 	if name == "stackfork" {
@@ -238,6 +247,7 @@ func (s *Server) execPlan(ctx context.Context, name string, args []string) (stri
 	var out bytes.Buffer
 	c := exec.CommandContext(ctx, bin, args...)
 	c.Stdout, c.Stderr = &out, &out
+	c.Env = childEnv(name)
 	err := c.Run()
 	return strings.TrimSpace(out.String()), err
 }

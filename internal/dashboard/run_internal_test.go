@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -83,5 +84,14 @@ func TestPlanRunRefusesDirtyWorktreeBeforeAsking(t *testing.T) {
 	wt := func(repo, path string) (bool, string) { return true, "" }
 	if _, err := (&Server{}).planRun("git -C /r worktree remove /r/.worktrees/a", "", wt); err == nil || !strings.Contains(err.Error(), "uncommitted") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRunChildrenCarryTheDashboardTrigger(t *testing.T) {
+	if env := childEnv("stackfork"); !slices.Contains(env, "STACKFORK_TRIGGER=dashboard") {
+		t.Fatalf("stackfork child env lacks the trigger")
+	}
+	if childEnv("git") != nil || childEnv("docker") != nil {
+		t.Fatal("only stackfork children get the trigger")
 	}
 }
