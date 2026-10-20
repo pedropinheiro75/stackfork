@@ -79,6 +79,7 @@ func (r PlanRunner) Execute() error {
 	if !hasUp { // a plan without compose-up (e.g. none recorded) still starts the stack
 		steps = append(steps, knowledge.Step{ID: "up", Kind: knowledge.KindComposeUp})
 	}
+	steps = withImplicitPrepare(steps)
 	r.declare(steps)
 	prepared, seeded := false, false
 	for _, s := range steps {
@@ -95,15 +96,9 @@ func (r PlanRunner) Execute() error {
 				err = r.step(s, func(w io.Writer) (int, error) { return 0, r.prepare(w, s.Args) })
 			}
 		case knowledge.KindComposeUp:
-			if !prepared {
-				prepared = true
-				err = r.prepare(r.Out, nil)
-			}
-			if err == nil {
-				var sd bool
-				sd, err = r.composeUp(s)
-				seeded = seeded || sd
-			}
+			var sd bool
+			sd, err = r.composeUp(s)
+			seeded = seeded || sd
 		case knowledge.KindExec:
 			switch {
 			case s.Once == knowledge.OnceData: // the data seed runs with its compose-up
@@ -126,6 +121,29 @@ func (r PlanRunner) Execute() error {
 		}
 	}
 	return nil
+}
+
+// withImplicitPrepare puts a prepare step before the first compose-up unless
+// a prepare step already comes first: an up always needs a prepared instance,
+// so that work is a step of the run too (logged, redacted, able to fail).
+func withImplicitPrepare(steps []knowledge.Step) []knowledge.Step {
+	id := "prepare"
+	for _, s := range steps {
+		if s.ID == id { // a later prepare step of the plan keeps its id
+			id = "implicit-prepare"
+		}
+	}
+	for i, s := range steps {
+		switch s.Kind {
+		case knowledge.KindPrepare:
+			return steps
+		case knowledge.KindComposeUp:
+			out := append([]knowledge.Step{}, steps[:i]...)
+			out = append(out, knowledge.Step{ID: id, Kind: knowledge.KindPrepare})
+			return append(out, steps[i:]...)
+		}
+	}
+	return steps
 }
 
 // prepare runs the Prepare func; "already prepared" is not an error.
