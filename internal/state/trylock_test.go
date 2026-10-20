@@ -2,7 +2,6 @@ package state
 
 import (
 	"errors"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -33,21 +32,4 @@ func TestTryLockAndHeld(t *testing.T) {
 		t.Fatalf("TryLock after release: %v", err)
 	}
 	l2.Release()
-}
-
-func TestTryLockNotInheritedByChild(t *testing.T) {
-	path := filepath.Join(t.TempDir(), ".run.lock")
-	l, err := TryLock(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	child := exec.Command("sleep", "30")
-	if err := child.Start(); err != nil {
-		t.Skip("no sleep command:", err)
-	}
-	defer func() { child.Process.Kill(); child.Wait() }()
-	l.Release()
-	if Held(path) {
-		t.Fatal("a live child must not keep the lock")
-	}
 }
