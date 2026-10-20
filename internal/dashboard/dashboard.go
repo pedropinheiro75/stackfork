@@ -163,6 +163,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/agents", s.handleAgents)
 	mux.HandleFunc("POST /api/learn", s.handleLearn)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
+	mux.HandleFunc("GET /api/runs", s.handleRuns)
+	mux.HandleFunc("GET /api/runs/log", s.handleRunLog)
 	mux.HandleFunc("POST /api/actions", s.handleActions)
 	mux.HandleFunc("POST /api/copy", s.handleCopy)
 	mux.HandleFunc("GET /static/", s.handleStatic)
