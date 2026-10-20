@@ -40,6 +40,9 @@ type actionRequest struct {
 type actionResponse struct {
 	OK      bool   `json:"ok"`
 	Message string `json:"message"`
+	// Run and FailedStep end a streamed Start (design.md D12).
+	Run        int    `json:"run,omitempty"`
+	FailedStep string `json:"failed_step,omitempty"`
 }
 
 // validActions is design.md D4's whole action set. Nothing outside this
@@ -136,7 +139,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 			if cur, _ := exec.Command("git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD").Output(); strings.TrimSpace(string(cur)) != branch {
 				return actionResponse{Message: fmt.Sprintf("%s is now on %s, not %s; switch back or start it from Repos", root, strings.TrimSpace(string(cur)), branch)}
 			}
-			if err := s.StartEnv(&out, &out, root, TriggerDashboard); err != nil {
+			if err := s.StartEnv(&out, &out, root, TriggerDashboard, nil); err != nil {
 				return actionResponse{Message: err.Error()}
 			}
 			return actionResponse{OK: true, Message: "up complete"}

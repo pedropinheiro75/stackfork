@@ -16,6 +16,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/cli"
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 )
 
 const reposPort = 55301
@@ -81,7 +82,7 @@ func newBrowserEnv(t *testing.T) *browserEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv.StartEnv = func(out, errOut io.Writer, checkout, _ string) error {
+	srv.StartEnv = func(out, errOut io.Writer, checkout, _ string, _ func(runs.Event)) error {
 		e.mu.Lock()
 		e.starts = append(e.starts, checkout)
 		e.mu.Unlock()

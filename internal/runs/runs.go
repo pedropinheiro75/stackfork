@@ -61,10 +61,12 @@ type Meta struct {
 
 // Event describes one state change. Step is empty for a run-level change.
 type Event struct {
-	Run    int
-	Step   string
-	State  string // step state, or the run outcome when Step is empty
-	Reason string
+	Run     int
+	Project string
+	Step    string
+	Kind    string // step kind, set on the pending event that declares the step
+	State   string // step state, or the run outcome when Step is empty
+	Reason  string
 }
 
 // Run is one execution of a plan, as stored in runs/<id>.json.
@@ -143,6 +145,7 @@ func (r *Run) update(ev Event, fn func()) {
 	r.save() // ponytail: write errors are dropped on purpose, see package doc
 	r.mu.Unlock()
 	if r.meta.Observer != nil {
+		ev.Project = r.Project
 		r.meta.Observer(ev)
 	}
 }
@@ -166,7 +169,7 @@ func (r *Run) Step(id, kind, text string) *Step {
 	r.save()
 	r.mu.Unlock()
 	if r.meta.Observer != nil {
-		r.meta.Observer(Event{Run: r.ID, Step: id, State: Pending})
+		r.meta.Observer(Event{Run: r.ID, Project: r.Project, Step: id, Kind: kind, State: Pending})
 	}
 	return s
 }

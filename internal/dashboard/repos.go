@@ -23,6 +23,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 )
 
 //go:embed templates/repos.html.tmpl
@@ -273,7 +274,8 @@ var reposTemplate = template.Must(
 // out. The CLI supplies it (cli.StartEnv), so the page and the command run
 // the same code and the dashboard never imports the CLI. trigger is the
 // label the run records (always TriggerDashboard here).
-type StartFunc func(out, errOut io.Writer, checkout, trigger string) error
+// obs receives the run's state changes for the stream (nil: none wanted).
+type StartFunc func(out, errOut io.Writer, checkout, trigger string, obs func(runs.Event)) error
 
 // TriggerDashboard is the trigger of every run the dashboard starts, directly
 // or through the commands of /api/run (STACKFORK_TRIGGER).
@@ -633,6 +635,7 @@ func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, 
 	finish := func(err error) {
 		lw.flushPartial()
 		resp := actionResponse{OK: err == nil, Message: "started " + repo.Name}
+		resp.Run, resp.FailedStep = lw.runInfo()
 		if err != nil {
 			resp.Message = err.Error()
 		}
@@ -687,7 +690,7 @@ func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, 
 		fmt.Fprintf(lw, "created %s%s\n", wt.Path, copiedNote(wt))
 		checkout = wt.Path
 	}
-	finish(s.StartEnv(lw, lw, checkout, TriggerDashboard))
+	finish(s.StartEnv(lw, lw, checkout, TriggerDashboard, lw.observe))
 }
 
 func flush(w http.ResponseWriter) {
@@ -696,11 +699,27 @@ func flush(w http.ResponseWriter) {
 	}
 }
 
-// lineWriter turns written text into one {"line": ...} JSON object per line.
+// lineWriter turns written text into one {"line": ...} JSON object per line,
+// tagged with the step that is running. Observe feeds it the run's state
+// changes, which it sends as {"run": ...} once and {"step": ...} per change
+// (design.md D12). Lines reach it already redacted by the run's step writers.
 type lineWriter struct {
 	w   http.ResponseWriter
 	mu  sync.Mutex
 	buf []byte
+
+	step     string // running step: tags the lines; "" between steps
+	run      int
+	project  string
+	steps    []streamStep
+	announce bool
+	failed   string // first failed step
+}
+
+type streamStep struct {
+	ID    string `json:"id"`
+	Kind  string `json:"kind"`
+	State string `json:"state"`
 }
 
 func (l *lineWriter) Write(p []byte) (int, error) {
@@ -721,6 +740,10 @@ func (l *lineWriter) Write(p []byte) (int, error) {
 func (l *lineWriter) flushPartial() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.flushLocked()
+}
+
+func (l *lineWriter) flushLocked() {
 	if len(l.buf) > 0 {
 		l.emit(string(l.buf))
 		l.buf = nil
@@ -731,7 +754,55 @@ func (l *lineWriter) emit(line string) {
 	if line = strings.TrimRight(line, "\r"); strings.TrimSpace(line) == "" {
 		return
 	}
-	b, _ := json.Marshal(map[string]string{"line": line})
+	o := map[string]string{"line": line}
+	if l.step != "" {
+		o["step"] = l.step
+	}
+	l.send(o)
+}
+
+func (l *lineWriter) send(o any) {
+	b, _ := json.Marshal(o)
 	l.w.Write(append(b, '\n')) //nolint:errcheck // client gone
 	flush(l.w)
+}
+
+// runInfo is the run id and the first failed step, for the final object.
+func (l *lineWriter) runInfo() (int, string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.run, l.failed
+}
+
+// observe turns one run event into stream objects. Pending events only
+// collect the step list; the run object goes out before the first step
+// moves, so it names every step of the run.
+func (l *lineWriter) observe(ev runs.Event) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.run, l.project = ev.Run, ev.Project
+	if ev.Step == "" {
+		return
+	}
+	if ev.State == runs.Pending {
+		l.steps = append(l.steps, streamStep{ID: ev.Step, Kind: ev.Kind, State: runs.Pending})
+		return
+	}
+	l.flushLocked() // output so far belongs to the previous step
+	if !l.announce {
+		l.announce = true
+		l.send(map[string]any{"run": map[string]any{"id": l.run, "project": l.project, "steps": l.steps}})
+	}
+	step := map[string]string{"id": ev.Step, "state": ev.State}
+	if ev.Reason != "" {
+		step["reason"] = ev.Reason
+	}
+	l.send(map[string]any{"step": step})
+	l.step = ""
+	if ev.State == runs.StepRunning {
+		l.step = ev.Step
+	}
+	if ev.State == runs.Failed && l.failed == "" {
+		l.failed = ev.Step
+	}
 }

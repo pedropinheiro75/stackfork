@@ -24,8 +24,8 @@ func (e *browserEnv) realStartEnv() {
 	// newBrowserEnv points HOME at a temp dir; the real `docker compose config`
 	// the fake delegates to needs the real one to find its plugin.
 	e.t.Setenv("HOME", realHome)
-	e.srv.StartEnv = func(out, errOut io.Writer, checkout, trigger string) error {
-		return cli.StartEnv(out, errOut, cli.StartOptions{Checkout: checkout, NewStateBase: e.newDir, LegacyStateBase: e.t.TempDir(), Trigger: trigger})
+	e.srv.StartEnv = func(out, errOut io.Writer, checkout, trigger string, obs func(runs.Event)) error {
+		return cli.StartEnv(out, errOut, cli.StartOptions{Checkout: checkout, NewStateBase: e.newDir, LegacyStateBase: e.t.TempDir(), Trigger: trigger, Observer: obs})
 	}
 }
 

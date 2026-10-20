@@ -28,6 +28,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 )
 
 func dashboardStateDir(stateBase string) string { return filepath.Join(stateBase, "dashboard") }
@@ -86,9 +87,9 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 		return 0, err
 	}
 	srv.ProfileDirs = profiles
-	srv.StartEnv = func(out, errOut io.Writer, checkout, trigger string) error {
+	srv.StartEnv = func(out, errOut io.Writer, checkout, trigger string, obs func(runs.Event)) error {
 		return StartEnv(out, errOut, StartOptions{
-			Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles, Trigger: trigger,
+			Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles, Trigger: trigger, Observer: obs,
 		})
 	}
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
