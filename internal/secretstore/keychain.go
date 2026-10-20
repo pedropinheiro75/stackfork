@@ -83,8 +83,62 @@ func (b *Backend) macStore(tool, item, value string) error {
 	return nil
 }
 
-func (b *Backend) linuxRead(tool, item string, wantValue bool) (string, Status, error) {
-	return "", Unavailable, errNoBackend
+// noSecretService matches the secret-tool messages for a missing session
+// bus or Secret Service provider.
+func noSecretService(stderr string) bool {
+	for _, m := range []string{"autolaunch D-Bus", "org.freedesktop.secrets", "Could not connect", "ServiceUnknown", "No such interface"} {
+		if strings.Contains(stderr, m) {
+			return true
+		}
+	}
+	return false
 }
 
-func (b *Backend) linuxStore(tool, item, value string) error { return errNoBackend }
+func linuxStatus(r toolResult, item string) (Status, error) {
+	switch {
+	case r.err != nil:
+		return Error, fmt.Errorf("secret-tool: %v", r.err)
+	case noSecretService(r.stderr):
+		return Unavailable, fmt.Errorf("no Secret Service on the session bus (is a keyring running?)")
+	case strings.Contains(strings.ToLower(r.stderr), "locked"):
+		return Locked, fmt.Errorf("the keyring is locked")
+	case r.exit == 1 && strings.TrimSpace(r.stderr) == "":
+		return Missing, fmt.Errorf("keychain item %s not found", item)
+	case r.exit != 0:
+		return Error, fmt.Errorf("secret-tool exited %d: %s", r.exit, firstLine(r.stderr))
+	}
+	return Resolves, nil
+}
+
+// linuxRead uses `lookup` for a value and `search` for existence. search
+// prints attributes (and may print the secret), so its output is dropped.
+func (b *Backend) linuxRead(tool, item string, wantValue bool) (string, Status, error) {
+	verb := "search"
+	if wantValue {
+		verb = "lookup"
+	}
+	r := runTool(tool, []string{verb, "service", Service, "account", item}, "", toolEnv("linux", false), b.timeout(shortTimeout))
+	if st, err := linuxStatus(r, item); st != Resolves {
+		return "", st, err
+	}
+	if !wantValue {
+		return "", Resolves, nil
+	}
+	value := strings.TrimSuffix(r.stdout, "\n")
+	if value == "" {
+		return "", Missing, fmt.Errorf("keychain item %s is empty", item)
+	}
+	return value, Resolves, nil
+}
+
+func (b *Backend) linuxStore(tool, item, value string) error {
+	args := []string{"store", "--label", Service + " " + item, "service", Service, "account", item}
+	r := runTool(tool, args, value, toolEnv("linux", false), b.timeout(shortTimeout))
+	if r.err == nil && r.exit == 0 {
+		return nil
+	}
+	if st, err := linuxStatus(r, item); st != Resolves && st != Missing {
+		return fmt.Errorf("secret-tool store: %s: %v", st, err)
+	}
+	return fmt.Errorf("secret-tool store failed (exit %d): %s", r.exit, firstLine(r.stderr))
+}
