@@ -77,3 +77,25 @@ func Log(dir string, id int, step string) ([]byte, error) {
 	}
 	return nil, ErrNotFound
 }
+
+// FailedStep is the id of the first failed step, "" when none failed. For an
+// interrupted run it is the step that was running.
+func (r *Run) FailedStep() string {
+	for _, s := range r.Steps {
+		if s.State == Failed {
+			return s.ID
+		}
+	}
+	return ""
+}
+
+// Latest returns the newest run of an instance for reading, or nil.
+func Latest(dir string) *Run {
+	ids := listIDs(dir)
+	for i := len(ids) - 1; i >= 0; i-- {
+		if r, err := Get(dir, ids[i]); err == nil {
+			return r
+		}
+	}
+	return nil
+}

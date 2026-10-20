@@ -23,6 +23,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/learn"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -202,6 +203,8 @@ type Instance struct {
 	// the end of the failed run's output.
 	SeedDone  string `json:"seed_done,omitempty"`
 	SeedError string `json:"seed_error,omitempty"`
+	// LastRun is the newest run of the instance (design.md D14); nil when it has none.
+	LastRun *LastRun `json:"last_run,omitempty"`
 
 	// Recipe inputs recorded at prepare, kept out of the JSON: a sibling
 	// worktree's recipe is derived from them (add-repo-browser D6a).
@@ -321,6 +324,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 	inst.IsMain = inst.RelRoot == "main checkout"
 	inst.SeedOnce, inst.SeedService = info.SeedOnce, info.SeedService
 	fillSeed(&inst, info, filepath.Dir(manifestPath))
+	inst.LastRun = lastRun(filepath.Dir(manifestPath))
 	if fi, err := os.Stat(manifestPath); err == nil {
 		inst.Used = fi.ModTime()
 	}
@@ -855,6 +859,48 @@ func toStatusRows(rows []containerRow) []compose.StatusRow {
 	return out
 }
 
+// LastRun summarizes the newest run recorded for an instance.
+type LastRun struct {
+	ID         int       `json:"id"`
+	Command    string    `json:"command"`
+	Trigger    string    `json:"trigger"`
+	Outcome    string    `json:"outcome"`
+	FailedStep string    `json:"failed_step,omitempty"`
+	StartedAt  time.Time `json:"started_at"`
+	EndedAt    time.Time `json:"ended_at,omitzero"`
+}
+
+func lastRun(instanceDir string) *LastRun {
+	r := runs.Latest(instanceDir)
+	if r == nil {
+		return nil
+	}
+	return &LastRun{ID: r.ID, Command: r.Command, Trigger: r.Trigger, Outcome: r.Outcome, FailedStep: r.FailedStep(),
+		StartedAt: r.StartedAt, EndedAt: r.EndedAt}
+}
+
+// seedRunLog is the output of the newest run that ran the seed step, "" when
+// no run did (an instance seeded before runs existed has only seed.log).
+func seedRunLog(instanceDir, root string) string {
+	id := "seed"
+	if k, _ := knowledge.LoadFirst(root); k != nil {
+		if st := k.Plan.SeedStep(); st != nil {
+			id = st.ID
+		}
+	}
+	all, _ := runs.List(instanceDir)
+	for _, r := range all {
+		for _, s := range r.Steps {
+			if s.ID == id && s.Log != "" && (s.State == runs.Succeeded || s.State == runs.Failed) {
+				if b, err := runs.Log(instanceDir, r.ID, id); err == nil {
+					return string(b)
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // InstanceRef points a repo checkout at its stackfork instance (the repo
 // browser's join with the inventory).
 type InstanceRef struct {
@@ -878,7 +924,11 @@ func fillSeed(inst *Instance, info *state.Manifest, instanceDir string) {
 	}
 	run := "stackfork --instance " + info.Project + " seed"
 	inst.SeedCommand, inst.SeedForce, inst.SeedDone = run, run+" --force", run+" --mark-done"
-	inst.SeedError = seedError(filepath.Join(instanceDir, state.SeedLog))
+	if log := seedRunLog(instanceDir, info.Root); log != "" {
+		inst.SeedError = lastLines(log)
+	} else {
+		inst.SeedError = seedError(filepath.Join(instanceDir, state.SeedLog))
+	}
 }
 
 // seedError is the last few lines of the failed seed's output.
@@ -887,8 +937,13 @@ func seedError(path string) string {
 	if err != nil {
 		return ""
 	}
+	return lastLines(string(data))
+}
+
+// lastLines is the end of a seed's output: its last 4 lines, without stack frames.
+func lastLines(text string) string {
 	var lines []string
-	for _, l := range strings.Split(string(data), "\n") {
+	for _, l := range strings.Split(text, "\n") {
 		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "at ") {
 			lines = append(lines, l)
 		}

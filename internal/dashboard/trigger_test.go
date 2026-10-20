@@ -1,9 +1,13 @@
 package dashboard_test
 
 import (
+	"encoding/json"
 	"io"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/cli"
@@ -116,4 +120,45 @@ func mustGlob(t *testing.T, pattern string) string {
 
 func (e *browserEnv) cardAction(action, project string) (int, actionResponseFixture) {
 	return postAction(e.t, e.srv, reposHost, actionRequestFixture{Action: action, Project: project})
+}
+
+// last_run is the same in `list --json` and /api/instances.
+func TestLastRunMatchesListJSON(t *testing.T) {
+	old := cli.Version
+	cli.Version = "test"
+	defer func() { cli.Version = old }()
+	newBase, legacyBase, project := preparedFixture(t)
+	if code, resp := postAction(t, mustServer(t, newBase, legacyBase), "127.0.0.1:55301", actionRequestFixture{Action: "up", Project: project}); code != 200 || !resp.OK {
+		t.Fatalf("%d %+v", code, resp)
+	}
+	var listOut, listErr strings.Builder
+	if code := cli.Run([]string{"--state-dir", newBase, "--legacy-state-dir", legacyBase, "list", "--json"}, &listOut, &listErr); code != 0 {
+		t.Fatal(listErr.String())
+	}
+	srv := mustServer(t, newBase, legacyBase)
+	req := httptest.NewRequest("GET", "/api/instances", nil)
+	req.Host = "127.0.0.1:55301"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	var fromList, fromAPI map[string]any
+	if json.Unmarshal([]byte(listOut.String()), &fromList) != nil || json.Unmarshal(rec.Body.Bytes(), &fromAPI) != nil {
+		t.Fatalf("%s\n%s", listOut.String(), rec.Body.String())
+	}
+	first, _ := fromAPI["instances"].([]any)[0].(map[string]any)
+	lr, _ := first["last_run"].(map[string]any)
+	if lr == nil || lr["id"] != float64(1) || lr["command"] != "up" || lr["trigger"] != "dashboard" || lr["outcome"] != "succeeded" {
+		t.Fatalf("%v", first)
+	}
+	if !reflect.DeepEqual(fromList, fromAPI) {
+		t.Fatalf("list --json and /api/instances disagree:\n%s\n%s", listOut.String(), rec.Body.String())
+	}
+}
+
+func mustServer(t *testing.T, newBase, legacyBase string) *dashboard.Server {
+	t.Helper()
+	srv, err := dashboard.New(newBase, legacyBase, "test", 55301)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv
 }
