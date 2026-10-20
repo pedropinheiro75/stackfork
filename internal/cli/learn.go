@@ -291,6 +291,8 @@ func cmdLearnRecordStep(stdout io.Writer, rest []string, root string) error {
 	name := fs.String("name", "", "")
 	dir := fs.String("dir", "", "")
 	portEnv := fs.String("port-env", "", "")
+	port := fs.Int("port", 0, "")
+	args := fs.String("args", "", "")
 	text := fs.String("text", "", "")
 	before := fs.String("before", "", "")
 	remove := fs.String("remove", "", "")
@@ -308,11 +310,14 @@ func cmdLearnRecordStep(stdout io.Writer, rest []string, root string) error {
 		}
 	} else {
 		if *id == "" || *kind == "" {
-			return errors.New("usage: learn record step --id ID --kind K [--cmd C] [--service S] [--once data|schema|none] [--modes a,b] [--exclude a,b] [--name N] [--dir D] [--port-env A,B] [--text T] [--before ID] | --remove ID")
+			return errors.New("usage: learn record step --id ID --kind K [--cmd C] [--service S] [--once data|schema|none] [--modes a,b] [--exclude a,b] [--name N] [--dir D] [--port-env A,B] [--port N] [--args A,B] [--text T] [--before ID] | --remove ID")
 		}
 		st := knowledge.Step{ID: *id, Kind: *kind, Cmd: *cmd, Service: *service, Once: *once,
 			Modes: splitList(*modes), Exclude: splitList(*exclude), Name: *name, Dir: *dir,
-			PortEnv: splitList(*portEnv), Text: *text}
+			PortEnv: splitList(*portEnv), Port: *port, Args: splitList(*args), Text: *text}
+		if len(st.Args) > 0 && st.Kind != knowledge.KindPrepare {
+			return errors.New("--args is for prepare steps only")
+		}
 		prev := stepByID(k.Plan, st.ID)
 		switch {
 		case st.Once == "none" && prev != nil && prev.Once == knowledge.OnceData:

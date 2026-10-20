@@ -41,7 +41,7 @@ The recipe is a startup plan: an ordered list of steps in `.stackfork/knowledge.
 | `host` | Runs `cmd` on the host. `cmd` is an argument vector: no shell, so no pipes, redirects or `&&`. |
 | `note` | Shows `text` to the person. Runs nothing. |
 
-A `host` step has a `name`, an optional `dir` and `port`, and `port_env`. The step always sets `PORT`, plus each name in `port_env`. `no_seed` records the answer "never seed".
+A `host` step has a `name`, an optional `dir` and `port` (`--port N`, 1 to 65535), and `port_env`. A `prepare` step takes `args` (`--args -f,compose.yaml`). The step always sets `PORT`, plus each name in `port_env`. `no_seed` records the answer "never seed".
 
 Record, change or remove a step:
 

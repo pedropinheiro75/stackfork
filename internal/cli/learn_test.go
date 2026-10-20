@@ -346,3 +346,34 @@ func TestLearnKeepsConvertedSchema1PlanWithSeedPending(t *testing.T) {
 		t.Fatalf("verify: %s", stderr)
 	}
 }
+
+func TestLearnRecordStepPortAndArgs(t *testing.T) {
+	testsupport.RequireCompose(t)
+	root := learnFixtureRoot(t)
+	runCLI(t, "--root", root, "learn")
+	if _, stderr, code := runCLI(t, "--root", root, "learn", "record", "step", "--id", "app", "--kind", "host", "--name", "app", "--cmd", "bun run dev", "--port", "3000"); code != 0 {
+		t.Fatalf("port: %s", stderr)
+	}
+	if _, stderr, code := runCLI(t, "--root", root, "learn", "record", "step", "--id", "prepare", "--kind", "prepare", "--args", "-f,compose.yaml"); code != 0 {
+		t.Fatalf("args: %s", stderr)
+	}
+	k, _ := knowledge.Load(filepath.Join(root, ".stackfork", "knowledge.json"))
+	var gotPort int
+	for _, s := range k.Plan.Steps {
+		if s.ID == "app" {
+			gotPort = s.Port
+		}
+	}
+	if gotPort != 3000 || strings.Join(stepArgs(k, knowledge.KindPrepare), " ") != "-f compose.yaml" {
+		t.Fatalf("port %d, args %v", gotPort, stepArgs(k, knowledge.KindPrepare))
+	}
+	for _, bad := range [][]string{
+		{"--id", "a", "--kind", "host", "--name", "a", "--cmd", "x", "--port", "70000"},
+		{"--id", "a", "--kind", "note", "--text", "t", "--port", "3000"},
+		{"--id", "a", "--kind", "note", "--text", "t", "--args", "x"},
+	} {
+		if _, _, code := runCLI(t, append([]string{"--root", root, "learn", "record", "step"}, bad...)...); code == 0 {
+			t.Errorf("%v must be refused", bad)
+		}
+	}
+}
