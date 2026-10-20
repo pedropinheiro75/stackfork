@@ -64,6 +64,18 @@ not trust the caller:
   macOS dialog. An agent can forge the HTTP request but cannot answer the
   dialog. On other systems these commands are refused.
 
+## Host steps in knowledge.json
+
+A committed `.stackfork/knowledge.json` can name a host command in a `host` step. That command runs only after a person ran `stackfork plan --trust` (or clicked **Trust** in the dashboard) on that machine. Trust applies when the active mode runs a host step. Its hash covers all `host` and `prepare` steps, so any change to them, including a new field, needs a new trust. The `host` command is an argument vector and never goes through a shell. The guard blocks `plan --trust` for agents, and the dashboard asks in a native dialog that lists every field.
+
+Known limits:
+
+- The guard does not watch the state directory. An agent with file access can write the trust file directly.
+- Trust is stored once for each main checkout. Worktrees with different host steps invalidate each other's trust.
+- If you kill a host supervisor with `kill -9`, its app keeps running. Doctor detection is planned for slice 2.
+- A foreground `host NAME` command that ignores SIGTERM is orphaned after its stackfork gets SIGKILL.
+- The Windows native runtime is not available yet. The stubs refuse.
+
 ## Reporting a vulnerability
 
 Please report security issues privately through

@@ -7,6 +7,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Startup plan (`add-learn-plan`): `learn` records an ordered plan of steps (prepare, compose-up,
+  exec, host, note) instead of a flat recipe. Check it with `stackfork plan [--mode] [--json]`.
+  Hybrid mode (`config set mode hybrid`, `config set-mode REPO hybrid`, `start-env --mode`) runs
+  your app on the host and the rest in containers. Host steps run only after you trust them with
+  `stackfork plan --trust` or the dashboard's Trust button. `host start|stop|restart|logs NAME`
+  runs an app detached and supervised, and `down` stops it first. macOS and Linux only for now;
+  the Windows runtime comes in a later release.
 - A new worktree of a repo that another worktree already runs can be started: `start-env` (and
   `worktree add`) rebuild the recipe from that sibling's prepared instance, copying its untracked
   adapter files and runtime env with checkout paths rewritten (never `.env`, keys or tokens), and

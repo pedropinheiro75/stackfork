@@ -10,7 +10,7 @@ The CLI only scans; you drive the rest, because it needs judgment the CLI can't 
 
 1. **Scan.** Run `stackfork learn` and read `.stackfork/knowledge.md`.
 2. **Write the adapter.** Follow `references/adapting-compose.md` (and `references/nuxt-template.md` if applicable), informed by what the scan found.
-3. **Try it.** `prepare` → `up` → run the project's real migrate/seed-once command.
+3. **Try it.** Run the plan: `stackfork plan` lists the steps, then `prepare` → `up` → the project's real migrate/seed-once command.
 4. **Verify.** Database identity and app readiness at minimum; a representative flow when this is the project's first adoption.
 5. **On failure,** fix the adapter (or ask the user when the fix isn't safe to pick alone), retry, and record what broke and how it was fixed.
 5b. **Confirm the seed command.** When the scan found a seed or migrate script it pre-fills `recipe.migrate` and a proposed `recipe.seed_once`, marked pending. Confirm the command with the user and record it with `learn record recipe --seed-once "<cmd>"` (add `--seed-service SVC` when it is not the primary app service), or `--seed-once none` if this project must never be seeded. Without a decision the default is automatic: `up` seeds a new database (one whose data volume `up` just created) with the detected script, once, after migrations and health; a database that already existed is never seeded. `learn verify` only warns when no decision was recorded. `stackfork seed` retries a failed seed; `--force` reruns it (ask first).
@@ -27,7 +27,45 @@ stackfork learn record gotcha "<problem>" "<fix>"
 stackfork learn record recipe --prepare "<cmd>" --up "<cmd>" [--migrate "<cmd>"] [--seed-once "<cmd>"|none] [--seed-service SVC] [--login "<step>" ...]
 ```
 
-`record recipe` only sets the flags given each call, so it can be recorded incrementally as the session goes. Each `record` call requires a prior `stackfork learn` (there is no draft to record into otherwise).
+`record recipe` is an alias that writes plan steps and marks the plan recorded. It sets only the flags given in each call, so you can record it step by step as the session goes. Each `record` call requires a prior `stackfork learn` (there is no draft to record into otherwise).
+
+## The startup plan
+
+The recipe is a startup plan: an ordered list of steps in `.stackfork/knowledge.json` (schema 2; a schema 1 file is converted when read). `learn` proposes the plan, and you correct it with `learn record step`. A step has an `id` and a `kind`:
+
+| Kind | What it does |
+|---|---|
+| `prepare` | Runs `prepare` with the recorded arguments. |
+| `compose-up` | Starts the stack. `exclude` lists services to leave out. |
+| `exec` | Runs `cmd` in `service`. `once` is `data` (seed, new database only) or `schema` (migrate). |
+| `host` | Runs `cmd` on the host. `cmd` is an argument vector: no shell, so no pipes, redirects or `&&`. |
+| `note` | Shows `text` to the person. Runs nothing. |
+
+A `host` step has a `name`, an optional `dir` and `port`, and `port_env`. The step always sets `PORT`, plus each name in `port_env`. `no_seed` records the answer "never seed".
+
+Record, change or remove a step:
+
+```sh
+stackfork learn record step --id web --kind host --name web --cmd "bun run dev" --port-env VITE_PORT --modes hybrid
+stackfork learn record step --id web --remove
+```
+
+`learn verify` needs a recorded plan with a `compose-up` step.
+
+### Modes and trust
+
+Each machine runs the plan in a mode: `container` (default) or `hybrid`. Set it with `stackfork config set mode hybrid`, per repo with `stackfork config set-mode REPO hybrid`, or for one run with `start-env --mode`. Hybrid mode drops the app service and every service that depends on it, and runs the `host` step instead.
+
+A host step runs a command from a file in the repository, so a person must trust it first. Trust is needed only when the active mode runs a host step. The trust hash covers all `host` and `prepare` steps. Adding a field to a step changes the hash and needs a new trust.
+
+To trust the host steps:
+
+1. Run `stackfork plan --mode hybrid` and read every host and prepare step.
+2. Run `stackfork plan --trust`.
+
+Or click **Trust** in the dashboard: it shows every field of the plan in a native dialog and trusts exactly the plan shown. Do not run `plan --trust` yourself and do not write the trust file. The guard blocks `plan --trust` for agents. Ask the person to do it.
+
+Trust is stored once for each main checkout. Two worktrees with different host steps invalidate each other's trust.
 
 ## Verifying
 

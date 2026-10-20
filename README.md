@@ -63,6 +63,17 @@ npm run dev                # or however this project starts
 
 `stackfork route add <name> <port>` gives it a portless `*.localhost` URL through the shared proxy, same as a containerized service. `--with-passwords` fills in a real credential, but only when it's a literal value in your Compose file — never a `--secret`/`env_file` one. Seeding that database from a teammate's dump or a production export instead of an empty one: `stackfork clone-db --from-dump backup.sql` (also takes `.sql.gz` or a Postgres custom-format dump).
 
+#### Hybrid mode
+
+To let stackfork run the app on the host and keep everything else in containers, record the app as a `host` step in the startup plan (`stackfork learn record step --kind host ...`, see `references/learning.md`) and switch the mode:
+
+1. Run `stackfork config set mode hybrid`, or `stackfork config set-mode REPO hybrid` for one repo.
+2. Run `stackfork plan --mode hybrid` and read the host steps.
+3. Run `stackfork plan --trust`. In the dashboard, click **Trust** instead: a native dialog shows every field of the plan, and stackfork trusts exactly that plan.
+4. Run `stackfork start-env`.
+
+Hybrid mode drops the app service and every service that depends on it. The host step runs detached under a supervisor: use `stackfork host stop|restart|logs NAME`; `stackfork down` stops it first. Trust is per machine, covers all host and prepare steps, and is stored once for each main checkout. An agent cannot trust a plan. See [SECURITY.md](SECURITY.md). On Windows the host runtime is not supported yet.
+
 ## 🆚 How it's different
 
 stackfork isn't a new environment format and it doesn't run your project *for* you — it isolates the Compose stack you already maintain, as-is:
