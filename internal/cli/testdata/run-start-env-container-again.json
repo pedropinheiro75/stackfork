@@ -12,6 +12,15 @@
   "steps": [
     {
       "ended_at": "TIME",
+      "id": "sync",
+      "kind": "sync",
+      "log": "2/sync.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "fetch the upstream; fast-forward when clean"
+    },
+    {
+      "ended_at": "TIME",
       "id": "prepare",
       "kind": "prepare",
       "reason": "already prepared",

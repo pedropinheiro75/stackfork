@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/config"
@@ -22,6 +23,9 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
+
+// syncUpstream is repos.SyncUpstream; tests replace it.
+var syncUpstream = repos.SyncUpstream
 
 // StartOptions is everything StartEnv needs; the dashboard fills the same
 // struct the CLI does, so both run one code path (design.md D6).
@@ -117,6 +121,17 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		}
 		rec.Finish(retErr)
 	}()
+	// sync: the checkout follows its upstream when that cannot lose anything;
+	// otherwise it says how far behind it is. It never fails the start. The
+	// plan already checked is the one that runs; a fast-forwarded plan applies
+	// from the next start.
+	sync := rec.Step("sync", "sync", "fetch the upstream; fast-forward when clean")
+	if msg := syncUpstream(root, 15*time.Second); msg != "" {
+		fmt.Fprintln(sync.Start(), msg)
+	} else {
+		sync.Start()
+	}
+	sync.End(nil, 0)
 
 	prepare := func(out io.Writer, _ []string) error {
 		if !needsPrepare(instanceDir, root, branch, project) {

@@ -7,6 +7,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Every start begins with a `sync` step: it fetches the checkout's upstream, fast-forwards a clean checkout with no local commits, and otherwise touches nothing and warns how many commits it is behind and how to update. A failed fetch is a note, never a failed start.
+- `worktree add` for a branch that is already checked out names that checkout and the `start-env` command for it.
 - Plan runs (`add-plan-runs`): each `start-env`, dashboard Start, `up` and `seed` is recorded as a run with its steps, states and step logs under the instance's `runs/` directory, the last 20 kept. `stackfork runs` and `runs show [ID] [--step STEP]` read them. The dashboard's Repos list shows the live plan of a start, each instance card shows its last run, and the log drawer reads any step of a run. A recorded `up` and `start-env` merge Compose's stderr into stdout in the step log (and the terminal output), so the two streams are no longer separate.
 - Startup plan (`add-learn-plan`): `learn` records an ordered plan of steps (prepare, compose-up,
   exec, host, note) instead of a flat recipe. Check it with `stackfork plan [--mode] [--json]`.
