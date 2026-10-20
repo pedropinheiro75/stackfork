@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
@@ -27,7 +28,8 @@ type StartOptions struct {
 	LegacyStateBase string
 	Global          []string // extra global flags (--npmrc, --secret) to forward
 	ProfileDirs     []string
-	Force           bool // start a project without verified knowledge (CLI only)
+	Force           bool   // start a project without verified knowledge (CLI only)
+	Mode            string // container or hybrid; empty = the machine's configured mode
 }
 
 // StartEnv prepares (only when needed) and starts the instance of one
@@ -50,6 +52,24 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 	if main == "" {
 		main = root
 	}
+	var plan knowledge.Plan
+	for _, dir := range []string{root, main} {
+		if kk, err := knowledge.Load(filepath.Join(dir, ".stackfork", "knowledge.json")); err == nil {
+			plan = kk.Plan
+			break
+		}
+	}
+	mode := o.Mode
+	if mode == "" {
+		mode = knowledge.ModeContainer
+		if cfg, err := config.Load(); err == nil {
+			mode = cfg.ModeFor(main)
+		}
+	}
+	runner := lifecycle.PlanRunner{NewBase: o.NewStateBase, Main: main, Mode: mode, Plan: plan}
+	if err := runner.Check(); err != nil { // before any Docker call
+		return err
+	}
 	insts := collectInstances(o.NewStateBase, o.LegacyStateBase)
 	project, instanceDir, err := checkoutInstance(root, branch, o.NewStateBase, o.LegacyStateBase)
 	if err != nil {
@@ -68,7 +88,11 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 		}
 	}
 
-	if needsPrepare(instanceDir, root, branch, project) {
+	prepare := func([]string) error {
+		if !needsPrepare(instanceDir, root, branch, project) {
+			fmt.Fprintf(out, "%s is already prepared\n", project)
+			return nil
+		}
 		args, err := prepareArgs(root, main, instanceDir)
 		pbase := base
 		var seedCmd, seedSvc string
@@ -114,17 +138,32 @@ func StartEnv(out, errOut io.Writer, o StartOptions) error {
 		if seedCmd != "" {
 			recordSeedRecipe(instanceDir, seedCmd, seedSvc)
 		}
-	} else {
-		fmt.Fprintf(out, "%s is already prepared\n", project)
+		return nil
+	}
+	up := func(services []string) error {
+		fmt.Fprintf(out, "starting %s\n", project)
+		args := append([]string{}, base...)
+		args = append(args, "up")
+		for _, s := range services {
+			args = append(args, "--service", s)
+		}
+		code, err := run(args, out, errOut)
+		if err != nil {
+			return err
+		}
+		if code != 0 {
+			return fmt.Errorf("up exited with status %d", code)
+		}
+		return nil
 	}
 
-	fmt.Fprintf(out, "starting %s\n", project)
-	code, err := run(append(append([]string{}, base...), "up"), out, errOut)
-	if err != nil {
-		return err
+	runner.Out, runner.Err, runner.Root, runner.Branch, runner.Project = out, errOut, root, branch, project
+	runner.InstanceDir, runner.LegacyBase, runner.Prepare, runner.Up = instanceDir, o.LegacyStateBase, prepare, up
+	runner.Host = func(step knowledge.Step) error {
+		return lifecycle.HostStart(out, errOut, root, instanceDir, step)
 	}
-	if code != 0 {
-		return fmt.Errorf("up exited with status %d", code)
+	if err := runner.Run(); err != nil {
+		return err
 	}
 	fmt.Fprintf(out, "started %s; see `stackfork --root %s urls`\n", project, root)
 	return nil
@@ -311,20 +350,31 @@ func recipePrepareArgs(cmd string) []string {
 // cmdStartEnv is `stackfork start-env [CHECKOUT]`.
 func cmdStartEnv(stdout, stderr io.Writer, subArgs []string, rootArg, newStateBase, legacyStateBase string, global []string) (int, error) {
 	if isHelpRequest(subArgs) {
-		printFlaglessUsage(stdout, "start-env", "start-env [--force] [CHECKOUT]")
+		printFlaglessUsage(stdout, "start-env", "start-env [--force] [--mode MODE] [CHECKOUT]")
 		return 0, nil
 	}
 	force := false
+	mode := ""
 	var rest []string
-	for _, a := range subArgs {
-		if a == "--force" {
+	for i := 0; i < len(subArgs); i++ {
+		a := subArgs[i]
+		switch {
+		case a == "--force":
 			force = true
-		} else {
+		case a == "--mode" && i+1 < len(subArgs):
+			i++
+			mode = subArgs[i]
+		case strings.HasPrefix(a, "--mode="):
+			mode = strings.TrimPrefix(a, "--mode=")
+		default:
 			rest = append(rest, a)
 		}
 	}
+	if mode != "" && mode != knowledge.ModeContainer && mode != knowledge.ModeHybrid {
+		return 2, fmt.Errorf("unknown mode %q (%s or %s)", mode, knowledge.ModeContainer, knowledge.ModeHybrid)
+	}
 	if len(rest) > 1 {
-		return 2, errors.New("usage: stackfork start-env [--force] [CHECKOUT]")
+		return 2, errors.New("usage: stackfork start-env [--force] [--mode MODE] [CHECKOUT]")
 	}
 	checkout := rootArg
 	if len(rest) == 1 {
@@ -336,7 +386,7 @@ func cmdStartEnv(stdout, stderr io.Writer, subArgs []string, rootArg, newStateBa
 	}
 	return 0, StartEnv(stdout, stderr, StartOptions{
 		Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase,
-		Global: global, ProfileDirs: profiles, Force: force,
+		Global: global, ProfileDirs: profiles, Force: force, Mode: mode,
 	})
 }
 

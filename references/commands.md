@@ -215,7 +215,8 @@ stackfork worktree add storefront fix/login
 ```
 
 ### start-env
-`start-env [--force] [CHECKOUT]`: for a project whose startup was learned and verified (readiness `ready`), `prepare` only when needed (no prepared instance, or its inputs changed) with the recorded recipe/adapter, then `up`; progress lines are printed. The dashboard's Start button runs this same code. Refuses `needs-learn`, `draft` and `unknown` projects and prints the `repos --prompt` command; `--force` starts a `needs-learn` one anyway with a warning (people only: the guard blocks it for agents, who should learn the project instead). Not the per-service `start`.
+`start-env [--force] [--mode MODE] [CHECKOUT]`: for a project whose startup was learned and verified (readiness `ready`), `prepare` only when needed (no prepared instance, or its inputs changed) with the recorded recipe/adapter, then `up`; progress lines are printed. The dashboard's Start button runs this same code. Refuses `needs-learn`, `draft` and `unknown` projects and prints the `repos --prompt` command; `--force` starts a `needs-learn` one anyway with a warning (people only: the guard blocks it for agents, who should learn the project instead). Not the per-service `start`. Runs the startup plan for the machine's mode (`--mode container|hybrid` overrides it); a plan with a host step refuses until `stackfork plan --trust` ran on this machine.
+Flags: `--force`, `--mode`
 ```sh
 stackfork start-env .worktrees/fix-login
 ```

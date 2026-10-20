@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 )
 
 // scratchRepo makes a one-commit repo on main at dir.
@@ -219,5 +221,128 @@ func TestStartEnvInWorktreeMissingAnUntrackedAdapterSaysSo(t *testing.T) {
 	_, e, code := runCLI(t, append(base, "start-env", filepath.Join(repo, ".worktrees", "wt"))...)
 	if code == 0 || !strings.Contains(e, "only in the main checkout") || !strings.Contains(e, "adapter_files") {
 		t.Fatalf("%d %s", code, e)
+	}
+}
+
+const planCompose = "services:\n  db:\n    image: postgres:17\n    volumes:\n      - pgdata:/var/lib/postgresql/data\n  web:\n    image: nginx\nvolumes:\n  pgdata: {}\n"
+
+// planRepo is a verified repo whose knowledge carries the given plan steps.
+func planRepo(t *testing.T, root string, steps []knowledge.Step) string {
+	t.Helper()
+	repo := adaptedRepo(t, root)
+	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(planCompose), 0o644)
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified,
+		Plan: knowledge.Plan{Status: knowledge.PlanRecorded, Steps: steps}}
+	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	return repo
+}
+
+var hybridSteps = []knowledge.Step{
+	{ID: "up", Kind: knowledge.KindComposeUp, Modes: []string{"hybrid"}, Exclude: []string{"web"}},
+	{ID: "migrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Service: "db", Cmd: "m"},
+	{ID: "app", Kind: knowledge.KindHost, Modes: []string{"hybrid"}, Name: "app", Cmd: "npm run dev"},
+}
+
+func TestStartEnvRunsPlanInContainerMode(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := readyRepo(t, root) // schema 1 conversion, empty recipe: starts as before, no trust asked
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	out, e, code := runCLI(t, append(base, "start-env", repo)...)
+	b, _ := os.ReadFile(log)
+	if code != 0 || !strings.Contains(out, "started") || countLines(string(b), " up -d ") != 1 || strings.Contains(string(b), " exec ") {
+		t.Fatalf("%d %s %s\n%s", code, out, e, b)
+	}
+}
+
+func TestStartEnvHybridExcludesAppAndRunsHostStep(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, hybridSteps)
+	log := installFakeDocker(t)
+	var started []string
+	old := lifecycle.HostStart
+	lifecycle.HostStart = func(out, errOut io.Writer, root, instanceDir string, s knowledge.Step) error {
+		started = append(started, s.Name)
+		return nil
+	}
+	defer func() { lifecycle.HostStart = old }()
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	if _, e, code := runCLI(t, append(base, "--root", repo, "plan", "--trust")...); code != 0 {
+		t.Fatal(e)
+	}
+	if _, e, code := runCLI(t, "config", "set-mode", repo, "hybrid"); code != 0 {
+		t.Fatal(e)
+	}
+	out, e, code := runCLI(t, append(base, "start-env", repo)...)
+	b := string(mustRead(t, log))
+	var upLine, execLine string
+	for _, l := range strings.Split(b, "\n") {
+		if strings.Contains(l, " up -d ") {
+			upLine = strings.TrimSpace(l)
+		}
+		if strings.Contains(l, " exec ") {
+			execLine = l
+		}
+	}
+	if code != 0 || !strings.HasSuffix(upLine, " db") || strings.Contains(upLine, "web") || !strings.Contains(execLine, " m") ||
+		len(started) != 1 || started[0] != "app" {
+		t.Fatalf("%d %s %s\nup=%q exec=%q started=%v", code, out, e, upLine, execLine, started)
+	}
+}
+
+func mustRead(t *testing.T, p string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestStartEnvRefusesUntrustedBeforeDocker(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, hybridSteps)
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, "config", "set-mode", repo, "hybrid")
+	_, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if code != 1 || !strings.Contains(e, "not trusted on this machine") || !strings.Contains(e, "stackfork plan --trust") {
+		t.Fatalf("%d %s", code, e)
+	}
+	if b, _ := os.ReadFile(log); len(strings.TrimSpace(string(b))) != 0 {
+		t.Fatalf("docker was called:\n%s", b)
+	}
+}
+
+func TestStartEnvRefusesUnsupportedMode(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp}})
+	log := installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	_, e, code := runCLI(t, append(base, "start-env", "--mode", "hybrid", repo)...)
+	if code == 0 || !strings.Contains(e, `mode "hybrid" is not supported`) || !strings.Contains(e, "supported: container") {
+		t.Fatalf("%d %s", code, e)
+	}
+	if b, _ := os.ReadFile(log); len(strings.TrimSpace(string(b))) != 0 {
+		t.Fatalf("docker was called:\n%s", b)
+	}
+}
+
+func TestStartEnvSkipsSchemaStepWhenUpSeeded(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "migrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Service: "db", Cmd: "m"},
+		{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Service: "db", Cmd: "s"},
+	})
+	log := installFakeDocker(t)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1") // the volume is new: this up seeds
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	out, e, code := runCLI(t, append(base, "start-env", repo)...)
+	b := string(mustRead(t, log))
+	if code != 0 || countLines(b, " exec ") != 1 || !strings.Contains(b, "m && s") {
+		t.Fatalf("%d %s %s\n%s", code, out, e, b)
 	}
 }
