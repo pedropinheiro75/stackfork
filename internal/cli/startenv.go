@@ -122,11 +122,13 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		args, err := prepareArgs(root, main, instanceDir)
 		pbase := base
 		var seedCmd, seedSvc string
+		var sibRefs []string // NAME=ref pairs taken from a sibling worktree
 		fromSibling := errors.Is(err, errNoRecipe)
 		if fromSibling {
 			var secrets []string
 			args, secrets, seedCmd, seedSvc, err = seedFromSibling(out, root, main, insts, err)
 			for _, sec := range secrets {
+				sibRefs = append(sibRefs, sec)
 				pbase = append(append([]string{}, pbase...), "--secret", sec)
 			}
 		}
@@ -143,6 +145,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 			}
 			sort.Strings(names)
 			for _, n := range names {
+				sibRefs = append(sibRefs, n+"="+sec[n])
 				pbase = append(append([]string{}, pbase...), "--secret", n+"="+sec[n])
 			}
 			if len(names) > 0 {
@@ -151,7 +154,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		}
 		fmt.Fprintf(out, "preparing %s (%s)\n", project, branch)
 		var pOut, pErr bytes.Buffer
-		code, err := run(append(append(append([]string{}, pbase...), "prepare"), args...), &pOut, &pErr)
+		code, err := runPrepare(append(append(append([]string{}, pbase...), "prepare"), args...), &pOut, &pErr)
 		if err != nil {
 			return err
 		}
@@ -159,7 +162,11 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 			return fmt.Errorf("prepare exited with status %d", code)
 		}
 		if w := strings.TrimSpace(pErr.String()); w != "" {
-			fmt.Fprintln(out, w)
+			// The step writer only knows the secrets of the manifest and --secret
+			// flags; the references prepare received from a sibling are not in it.
+			rw := redact.NewWriter(out, refSecrets(sibRefs))
+			fmt.Fprintln(rw, w)
+			rw.Close()
 		}
 		if seedCmd != "" {
 			recordSeedRecipe(instanceDir, seedCmd, seedSvc)
@@ -432,11 +439,20 @@ func runSecrets(instanceDir string, global []string) []redact.Secret {
 	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
 		secrets = lifecycle.SecretsForRedaction(m)
 	}
+	var refs []string
 	for i := 0; i+1 < len(global); i++ {
-		if global[i] != "--secret" {
-			continue
+		if global[i] == "--secret" {
+			refs = append(refs, global[i+1])
 		}
-		if name, ref, ok := strings.Cut(global[i+1], "="); ok {
+	}
+	return append(secrets, refSecrets(refs)...)
+}
+
+// refSecrets resolves NAME=ref pairs to the values to redact.
+func refSecrets(refs []string) []redact.Secret {
+	var secrets []redact.Secret
+	for _, r := range refs {
+		if name, ref, ok := strings.Cut(r, "="); ok {
 			if v, err := compose.ResolveSecret(name, ref); err == nil {
 				secrets = append(secrets, redact.Secret{Name: name, Value: v})
 			}
@@ -444,3 +460,8 @@ func runSecrets(instanceDir string, global []string) []redact.Secret {
 	}
 	return secrets
 }
+
+// runPrepare runs the prepare command; a variable so tests can print from it.
+var runPrepare func([]string, io.Writer, io.Writer) (int, error)
+
+func init() { runPrepare = run }

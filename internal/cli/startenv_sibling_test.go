@@ -2,6 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -164,5 +166,41 @@ func TestStartEnvWithOwnAdapterReusesSiblingSecretReferences(t *testing.T) {
 	json.Unmarshal(m, &man)
 	if man.Secrets["tok"] != "env:"+sibTokenName {
 		t.Errorf("secrets %v", man.Secrets)
+	}
+}
+
+func TestStartEnvRedactsSiblingSecretsInPrepareLog(t *testing.T) {
+	repo, _, base := siblingRepo(t)
+	installFakeDocker(t)
+	const val = "sibling-secret-value-4242"
+	t.Setenv(sibTokenName, val)
+	orig := runPrepare
+	runPrepare = func(args []string, o, e io.Writer) (int, error) {
+		code, err := orig(args, o, e)
+		fmt.Fprintln(e, "prepare saw "+val)
+		return code, err
+	}
+	t.Cleanup(func() { runPrepare = orig })
+	nw := filepath.Join(repo, ".worktrees", "feat-b")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "feat-b", nw).CombinedOutput(); err != nil {
+		t.Fatalf("%s", out)
+	}
+	out, e, code := runCLI(t, append(base, "start-env", nw)...)
+	if code != 0 {
+		t.Fatalf("%d\n%s\n%s", code, out, e)
+	}
+	logs, _ := filepath.Glob(filepath.Join(base[1], "*", "runs", "*", "*.log"))
+	var all strings.Builder
+	for _, p := range logs {
+		b, _ := os.ReadFile(p)
+		all.Write(b)
+	}
+	if !strings.Contains(out, "prepare saw") { // an implicit prepare writes to the stream, a plan step to its log
+		t.Errorf("prepare output missing: %s", out)
+	}
+	for _, got := range []string{all.String(), out, e} {
+		if strings.Contains(got, val) {
+			t.Errorf("secret leaked: %s", got)
+		}
 	}
 }
