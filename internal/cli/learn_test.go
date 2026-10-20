@@ -319,3 +319,30 @@ func TestWhereReportsStaleKnowledge(t *testing.T) {
 		t.Fatalf("expected the file itself to stay verified (staleness is reported, not rewritten), got %q", k.Status)
 	}
 }
+
+// A schema 1 recipe with seed_pending still converts to a recorded plan:
+// re-running learn keeps the recorded prepare args and migrate.
+func TestLearnKeepsConvertedSchema1PlanWithSeedPending(t *testing.T) {
+	testsupport.RequireCompose(t)
+	root := learnFixtureRoot(t)
+	writeKnowledgeJSON(t, root, `{"schema":1,"recipe":{"prepare":"stackfork prepare -f compose.yaml --env-file .env.dev","migrate":"custom-migrate","seed_pending":true}}`)
+	if _, stderr, code := runCLI(t, "--root", root, "learn"); code != 0 {
+		t.Fatal(stderr)
+	}
+	k, err := knowledge.Load(filepath.Join(root, ".stackfork", "knowledge.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(stepArgs(k, knowledge.KindPrepare), " "); got != "-f compose.yaml --env-file .env.dev" {
+		t.Fatalf("prepare args lost: %q", got)
+	}
+	if m := k.Plan.MigrateStep(); m == nil || m.Cmd != "custom-migrate" {
+		t.Fatalf("migrate lost: %+v", k.Plan.Steps)
+	}
+	if k.Plan.NoSeed || k.Plan.SeedStep() != nil {
+		t.Fatalf("seeding must stay undecided: %+v", k.Plan)
+	}
+	if _, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "y"); code != 0 {
+		t.Fatalf("verify: %s", stderr)
+	}
+}

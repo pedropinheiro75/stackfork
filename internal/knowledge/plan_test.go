@@ -49,8 +49,8 @@ func TestFromRecipeOrder(t *testing.T) {
 	if len(e.Steps) != 2 || e.Steps[0].Kind != KindPrepare || len(e.Steps[0].Args) != 0 || e.Steps[1].Kind != KindComposeUp {
 		t.Fatalf("empty: %+v", e.Steps)
 	}
-	if FromRecipe(Recipe{SeedOnce: "s", SeedPending: true}).Status != PlanProposed {
-		t.Fatal("pending must be proposed")
+	if pp := FromRecipe(Recipe{SeedOnce: "s", SeedPending: true}); pp.Status != PlanRecorded || pp.SeedStep() != nil || pp.NoSeed {
+		t.Fatalf("pending must be recorded, undecided: %+v", pp)
 	}
 }
 

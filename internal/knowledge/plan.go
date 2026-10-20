@@ -301,17 +301,16 @@ func recipePrepareArgs(cmd string) []string {
 // FromRecipe converts a schema 1 recipe to the equivalent plan.
 func FromRecipe(r Recipe) Plan {
 	p := Plan{Modes: []string{ModeContainer}, Status: PlanRecorded}
-	if r.SeedPending {
-		p.Status = PlanProposed
-	}
+	// seed_pending leaves the data step out (undecided: auto-detect); the plan
+	// is still recorded, so a re-scan never replaces it.
 	p.Steps = append(p.Steps,
 		Step{ID: "prepare", Kind: KindPrepare, Args: recipePrepareArgs(r.Prepare)},
 		Step{ID: "up", Kind: KindComposeUp})
 	if r.Migrate != "" {
 		p.Steps = append(p.Steps, Step{ID: "migrate", Kind: KindExec, Cmd: r.Migrate, Once: OnceSchema})
 	}
-	p.NoSeed = r.SeedOnce == "none"
-	if r.SeedOnce != "" && r.SeedOnce != "none" {
+	p.NoSeed = r.SeedOnce == "none" && !r.SeedPending
+	if r.SeedOnce != "" && r.SeedOnce != "none" && !r.SeedPending {
 		p.Steps = append(p.Steps, Step{ID: "seed", Kind: KindExec, Service: r.SeedService, Cmd: r.SeedOnce, Once: OnceData})
 	}
 	for i, l := range r.Login {
