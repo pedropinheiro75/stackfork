@@ -23,8 +23,8 @@ func TestProposePlanNuxtBun(t *testing.T) {
 	want := []knowledge.Step{
 		{ID: "up", Kind: knowledge.KindComposeUp, Modes: []string{knowledge.ModeContainer}},
 		{ID: "up-hybrid", Kind: knowledge.KindComposeUp, Modes: []string{knowledge.ModeHybrid}, Exclude: []string{"app"}},
-		{ID: "migrate", Kind: knowledge.KindExec, Cmd: migrate, Once: knowledge.OnceSchema},
-		{ID: "seed", Kind: knowledge.KindExec, Cmd: seed, Once: knowledge.OnceData},
+		{ID: "migrate", Kind: knowledge.KindExec, Modes: []string{knowledge.ModeContainer}, Cmd: migrate, Once: knowledge.OnceSchema},
+		{ID: "seed", Kind: knowledge.KindExec, Modes: []string{knowledge.ModeContainer}, Cmd: seed, Once: knowledge.OnceData},
 		{ID: "app", Kind: knowledge.KindHost, Modes: []string{knowledge.ModeHybrid}, Name: "app", Cmd: "bun run dev", PortEnv: []string{"PORT"}},
 	}
 	if !reflect.DeepEqual(p.Steps, want) {

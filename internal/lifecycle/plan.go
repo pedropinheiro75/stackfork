@@ -54,13 +54,10 @@ func (r PlanRunner) Check() error {
 		}
 	}
 	for _, st := range run {
-		if st.Kind != knowledge.KindExec || st.Once == knowledge.OnceData {
+		if st.Kind != knowledge.KindExec {
 			continue
 		}
-		svc := st.Service
-		if svc == "" {
-			svc = r.Plan.AppService
-		}
+		svc := ResolveExecService(r.InstanceDir, st, r.Plan)
 		if svc != "" && contains(excluded, svc) {
 			return fmt.Errorf("step %s runs in %s, which this mode does not start; set --service on the step", st.ID, svc)
 		}

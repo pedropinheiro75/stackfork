@@ -101,12 +101,19 @@ func ProposePlan(root string, k *knowledge.Knowledge) knowledge.Plan {
 		p.Steps = append(p.Steps, hy)
 	}
 
+	// The detected commands run in the app service, which hybrid does not
+	// start: with a hybrid proposal they are scoped to container mode, and
+	// `learn record step` adds the hybrid ones.
+	var execModes []string
+	if devName != "" {
+		execModes = []string{knowledge.ModeContainer}
+	}
 	migrate, seed := DetectSeed(root)
 	if migrate != "" {
-		p.Steps = append(p.Steps, knowledge.Step{ID: "migrate", Kind: knowledge.KindExec, Cmd: migrate, Once: knowledge.OnceSchema})
+		p.Steps = append(p.Steps, knowledge.Step{ID: "migrate", Kind: knowledge.KindExec, Modes: execModes, Cmd: migrate, Once: knowledge.OnceSchema})
 	}
 	if seed != "" {
-		p.Steps = append(p.Steps, knowledge.Step{ID: "seed", Kind: knowledge.KindExec, Cmd: seed, Once: knowledge.OnceData})
+		p.Steps = append(p.Steps, knowledge.Step{ID: "seed", Kind: knowledge.KindExec, Modes: execModes, Cmd: seed, Once: knowledge.OnceData})
 	}
 
 	if devName != "" {
