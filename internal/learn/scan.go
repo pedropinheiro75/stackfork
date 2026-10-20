@@ -190,8 +190,7 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 		}
 	}
 
-	migrate, seed := DetectSeed(root)
-	k.Plan = knowledge.Proposed(migrate, seed)
+	k.Plan = ProposePlan(root, k)
 
 	k.Risks = detectRisks(root)
 	for _, rel := range findByPredicate(root, isEntrypointName) {
