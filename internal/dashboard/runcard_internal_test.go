@@ -1,0 +1,132 @@
+package dashboard
+
+import (
+	"bytes"
+	"encoding/json"
+	"html"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/pedropinheiro75/stackfork/internal/inventory"
+)
+
+func runInst(lr *inventory.LastRun, mutate func(*inventory.Instance)) inventory.Instance {
+	i := inst("acme-web", "sf-acme-web-2ffa6841c75d", "feature-login", "stopped", false, time.Now())
+	i.Root = "/src/acme-web/.worktrees/feature-login"
+	i.LastRun = lr
+	if mutate != nil {
+		mutate(&i)
+	}
+	return i
+}
+
+func ago5() time.Time { return time.Now().Add(-5 * time.Minute) }
+
+var runCardCases = []struct {
+	name string
+	inst inventory.Instance
+	want []string // fragments of the card
+	not  []string
+}{
+	{"none", runInst(nil, nil), nil, []string{"callout", "Last run", "Starting"}},
+	{"running", runInst(&inventory.LastRun{ID: 3, Command: "start-env", Trigger: "cli", Outcome: "running", Step: "seed", StepN: 3, StepTotal: 6, StartedAt: ago5()}, nil),
+		[]string{`title="step 3 of 6: seed"`, "Starting…"}, []string{">Stopped<", "callout"}},
+	{"failed start-env", runInst(&inventory.LastRun{ID: 4, Command: "start-env", Trigger: "dashboard", Outcome: "failed", FailedStep: "app", StartedAt: ago5(), EndedAt: ago5(),
+		Retry: "stackfork --root /src/acme-web/.worktrees/feature-login start-env", Tail: "line 1\nboom <b>"}, nil),
+		[]string{`class="callout callout-failed" data-run="failed"`, `Start failed at step <code class="mono">app</code>`, `data-repo-action="start"`,
+			`data-repo="/src/acme-web"`, `data-path="/src/acme-web/.worktrees/feature-login"`, "line 1\nboom &lt;b&gt;", `data-run-id="4" data-step="app"`, ">View log<"}, []string{"data-seed", "Last run"}},
+	{"failed up", runInst(&inventory.LastRun{ID: 5, Command: "up", Trigger: "cli", Outcome: "failed", FailedStep: "up", StartedAt: ago5(), EndedAt: ago5(),
+		Retry: "stackfork --instance sf-acme-web-2ffa6841c75d up"}, nil),
+		[]string{`data-run="stackfork --instance sf-acme-web-2ffa6841c75d up"`, ">Retry<"}, []string{"data-repo-action", "mono-log"}},
+	{"failed without a step", runInst(&inventory.LastRun{ID: 6, Command: "up", Trigger: "cli", Outcome: "failed", StartedAt: ago5(), EndedAt: ago5()}, nil),
+		[]string{">Start failed</p>"}, []string{">Retry<", ">View log<", "<code"}},
+	{"interrupted", runInst(&inventory.LastRun{ID: 7, Command: "start-env", Trigger: "cli", Outcome: "interrupted", FailedStep: "up", StartedAt: ago5(),
+		Retry: "stackfork --root /src/acme-web/.worktrees/feature-login start-env"}, nil),
+		[]string{`class="callout callout-attention" data-run="interrupted"`, "Start interrupted at step", ">Retry<"}, []string{"callout-failed"}},
+	{"succeeded", runInst(&inventory.LastRun{ID: 8, Command: "up", Trigger: "cli", Outcome: "succeeded", StartedAt: ago5(), EndedAt: ago5().Add(41 * time.Second)}, nil),
+		[]string{"Last run", "succeeded · 41 s · 5 min ago", `data-run-id="8" data-step=""`}, []string{"callout"}},
+	{"seed failure reported once", runInst(&inventory.LastRun{ID: 9, Command: "start-env", Trigger: "cli", Outcome: "failed", FailedStep: "seed", StartedAt: ago5(), EndedAt: ago5(),
+		Retry: "stackfork --instance sf-acme-web-2ffa6841c75d seed", Tail: "duplicate key"}, func(i *inventory.Instance) {
+		i.SeedCommand, i.SeedForce, i.SeedDone = "stackfork --instance P seed", "stackfork --instance P seed --force", "stackfork --instance P seed --mark-done"
+		i.SeedError, i.SeedRun, i.SeedStep = "duplicate key", 9, "seed"
+	}), []string{`data-seed="failed"`, `data-run-log data-project="sf-acme-web-2ffa6841c75d" data-run-id="9" data-step="seed"`, ">View log<"}, []string{`data-run="failed"`, "Start failed"}},
+	{"seed callout of an older run", runInst(&inventory.LastRun{ID: 10, Command: "up", Trigger: "cli", Outcome: "failed", FailedStep: "up", StartedAt: ago5(), EndedAt: ago5(),
+		Retry: "stackfork --instance sf-acme-web-2ffa6841c75d up"}, func(i *inventory.Instance) {
+		i.SeedCommand, i.SeedDone, i.SeedForce = "stackfork --instance P seed", "d", "f"
+		i.SeedRun, i.SeedStep = 8, "seed"
+	}), []string{`data-seed="failed"`, `data-run="failed"`, "Start failed at step"}, nil},
+}
+
+func renderVersion(t *testing.T, i inventory.Instance) string {
+	t.Helper()
+	ps := buildProjects([]inventory.Instance{i})
+	var buf bytes.Buffer
+	if err := indexTemplate.ExecuteTemplate(&buf, "version", ps[0].Versions[0]); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
+// Each outcome shows the right card pieces, and app.js renders the same card.
+func TestVersionCardLastRunTemplateAndScriptAgree(t *testing.T) {
+	var insts []inventory.Instance
+	for _, c := range runCardCases {
+		insts = append(insts, c.inst)
+		got := renderVersion(t, c.inst)
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: card lacks %q\n%s", c.name, w, got)
+			}
+		}
+		for _, n := range c.not {
+			if strings.Contains(got, n) {
+				t.Errorf("%s: card has %q\n%s", c.name, n, got)
+			}
+		}
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	dir := t.TempDir()
+	in, out := filepath.Join(dir, "in.json"), filepath.Join(dir, "out.json")
+	b, _ := json.Marshal(insts)
+	os.WriteFile(in, b, 0o600)
+	cmd := exec.Command(node, abs(t, "testdata/appjs_harness.js"), abs(t, "static/app.js"), abs(t, "testdata/card_parity.case.js"))
+	cmd.Env = append(os.Environ(), "SF_PARITY_IN="+in, "SF_PARITY_OUT="+out)
+	if o, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, o)
+	}
+	var js []string
+	raw, _ := os.ReadFile(out)
+	if err := json.Unmarshal(raw, &js); err != nil || len(js) != len(insts) {
+		t.Fatalf("%v %s", err, raw)
+	}
+	for i, c := range runCardCases {
+		a, b := normalizeCard(renderVersion(t, c.inst)), normalizeCard(js[i])
+		if a != b {
+			t.Errorf("%s: template and app.js differ\ntemplate: %s\napp.js:   %s", c.name, a, b)
+		}
+	}
+}
+
+func abs(t *testing.T, p string) string {
+	t.Helper()
+	a, err := filepath.Abs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+// normalizeCard drops what the two renderers spell differently without
+// meaning anything different: entities, and whitespace between tags.
+func normalizeCard(s string) string {
+	s = html.UnescapeString(s)
+	s = strings.ReplaceAll(s, "\n<", "<")
+	return strings.TrimSpace(s)
+}

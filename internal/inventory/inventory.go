@@ -203,6 +203,10 @@ type Instance struct {
 	// the end of the failed run's output.
 	SeedDone  string `json:"seed_done,omitempty"`
 	SeedError string `json:"seed_error,omitempty"`
+	// SeedRun and SeedStep name the run step whose log SeedError is the end
+	// of; the card's View log opens it. Zero when SeedError came from seed.log.
+	SeedRun  int    `json:"seed_run,omitempty"`
+	SeedStep string `json:"seed_step,omitempty"`
 	// LastRun is the newest run of the instance (design.md D14); nil when it has none.
 	LastRun *LastRun `json:"last_run,omitempty"`
 
@@ -859,7 +863,10 @@ func toStatusRows(rows []containerRow) []compose.StatusRow {
 	return out
 }
 
-// LastRun summarizes the newest run recorded for an instance.
+// LastRun summarizes the newest run recorded for an instance. Beyond the
+// fields of design.md D14 it carries what the card needs without a second
+// request: the retry command, the end of the failed step's log, and the
+// running step's position.
 type LastRun struct {
 	ID         int       `json:"id"`
 	Command    string    `json:"command"`
@@ -868,20 +875,59 @@ type LastRun struct {
 	FailedStep string    `json:"failed_step,omitempty"`
 	StartedAt  time.Time `json:"started_at"`
 	EndedAt    time.Time `json:"ended_at,omitzero"`
+	Retry      string    `json:"retry,omitempty"`      // failed or interrupted runs
+	Tail       string    `json:"tail,omitempty"`       // last lines of the failed step's log
+	Step       string    `json:"step,omitempty"`       // running run: the step running now
+	StepN      int       `json:"step_n,omitempty"`     // its 1-based position
+	StepTotal  int       `json:"step_total,omitempty"` // steps in the run
 }
+
+// tailLines is how many lines of a failed step's log the card shows.
+const tailLines = 6
 
 func lastRun(instanceDir string) *LastRun {
 	r := runs.Latest(instanceDir)
 	if r == nil {
 		return nil
 	}
-	return &LastRun{ID: r.ID, Command: r.Command, Trigger: r.Trigger, Outcome: r.Outcome, FailedStep: r.FailedStep(),
+	lr := &LastRun{ID: r.ID, Command: r.Command, Trigger: r.Trigger, Outcome: r.Outcome, FailedStep: r.FailedStep(),
 		StartedAt: r.StartedAt, EndedAt: r.EndedAt}
+	switch r.Outcome {
+	case runs.Failed, runs.Interrupted:
+		lr.Retry = r.Retry
+		if lr.FailedStep != "" {
+			if b, err := runs.Log(instanceDir, r.ID, lr.FailedStep); err == nil {
+				lr.Tail = endOf(string(b), tailLines)
+			}
+		}
+	case runs.Running:
+		for i, s := range r.Steps {
+			if s.State == runs.StepRunning {
+				lr.Step, lr.StepN, lr.StepTotal = s.ID, i+1, len(r.Steps)
+			}
+		}
+	}
+	return lr
 }
 
-// seedRunLog is the output of the newest run that ran the seed step, "" when
-// no run did (an instance seeded before runs existed has only seed.log).
-func seedRunLog(instanceDir, root string) string {
+// endOf is the last n non-empty lines of text, trailing space trimmed.
+func endOf(text string, n int) string {
+	var lines []string
+	for _, l := range strings.Split(text, "\n") {
+		if l = strings.TrimRight(l, " \t\r"); strings.TrimSpace(l) != "" {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// seedRunLog is the output of the newest run that ran the seed step and the
+// run and step it came from; "" when no run did (an instance seeded before
+// runs existed has only seed.log).
+func seedRunLog(instanceDir, root string) (text string, run int, step string) {
 	id := "seed"
 	if k, _ := knowledge.LoadFirst(root); k != nil {
 		if st := k.Plan.SeedStep(); st != nil {
@@ -893,12 +939,12 @@ func seedRunLog(instanceDir, root string) string {
 		for _, s := range r.Steps {
 			if s.ID == id && s.Log != "" && (s.State == runs.Succeeded || s.State == runs.Failed) {
 				if b, err := runs.Log(instanceDir, r.ID, id); err == nil {
-					return string(b)
+					return string(b), r.ID, id
 				}
 			}
 		}
 	}
-	return ""
+	return "", 0, ""
 }
 
 // InstanceRef points a repo checkout at its stackfork instance (the repo
@@ -924,8 +970,9 @@ func fillSeed(inst *Instance, info *state.Manifest, instanceDir string) {
 	}
 	run := "stackfork --instance " + info.Project + " seed"
 	inst.SeedCommand, inst.SeedForce, inst.SeedDone = run, run+" --force", run+" --mark-done"
-	if log := seedRunLog(instanceDir, info.Root); log != "" {
+	if log, run, step := seedRunLog(instanceDir, info.Root); log != "" {
 		inst.SeedError = lastLines(log)
+		inst.SeedRun, inst.SeedStep = run, step
 	} else {
 		inst.SeedError = seedError(filepath.Join(instanceDir, state.SeedLog))
 	}

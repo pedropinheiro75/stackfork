@@ -312,6 +312,71 @@
     return h + "</div>";
   }
 
+  // --- the last run on the card (design.md D14); must match runcard.go ---------
+
+  // agoText must match dashboard.go's ago.
+  function agoText(iso) {
+    var d = Date.now() - Date.parse(iso);
+    var h = d / 3600000;
+    if (isNaN(d)) return "\u2014";
+    if (d < 60000) return "just now";
+    if (d < 3600000) return Math.floor(d / 60000) + " min ago";
+    if (h < 24) return Math.floor(h) + " h ago";
+    if (h < 7 * 24) return Math.floor(h / 24) + " d ago";
+    if (h < 60 * 24) return Math.floor(h / (24 * 7)) + " w ago";
+    if (h < 365 * 24) return Math.floor(h / (24 * 30)) + " mo ago";
+    return Math.floor(h / (24 * 365)) + " y ago";
+  }
+
+  function isStartEnvRetry(cmd) { return /^stackfork --root .* start-env$/.test(cmd || ""); }
+
+  // The Starting… chip replaces the state chip while a run is in progress,
+  // whoever started it (a terminal included).
+  function startingChip(inst) {
+    var lr = inst.last_run;
+    if (!lr || lr.outcome !== "running") return null;
+    return { cls: "busy", glyph: GLYPH.busy, label: "Starting…", title: lr.step ? "step " + lr.step_n + " of " + lr.step_total + ": " + lr.step : "Start in progress" };
+  }
+
+  // A failed seed step is reported by the seed callout; the card never shows
+  // two callouts for one failure.
+  function seedCovers(inst) {
+    var lr = inst.last_run;
+    return !!(lr && inst.seed_command && lr.failed_step && inst.seed_run === lr.id && inst.seed_step === lr.failed_step);
+  }
+
+  function runLogAttrs(project, run, step) {
+    return ' data-run-log data-project="' + escapeHtml(project) + '" data-run-id="' + run + '" data-step="' + escapeHtml(step || "") + '"';
+  }
+
+  function runCalloutHtml(inst, name) {
+    var lr = inst.last_run, p = inst.project;
+    if (!lr || (lr.outcome !== "failed" && lr.outcome !== "interrupted") || seedCovers(inst)) return "";
+    var interrupted = lr.outcome === "interrupted", step = lr.failed_step || "";
+    var title = (interrupted ? "Start interrupted" : "Start failed") + (step ? ' at step <code class="mono">' + escapeHtml(step) + "</code>" : "");
+    var retry = "";
+    if (isStartEnvRetry(lr.retry)) {
+      retry = '<button type="button" class="btn" data-repo-action="start" data-repo="' + escapeHtml(repoRoot(inst.root)) + '" data-path="' + escapeHtml(inst.root) +
+        '" data-key="' + escapeHtml(p) + '/run/retry" title="Start again">Retry</button>';
+    } else if (lr.retry) {
+      retry = '<button type="button" class="btn" data-run="' + escapeHtml(lr.retry) + '" data-key="' + escapeHtml(p) + '/run/retry" title="' + escapeHtml(lr.retry) + '">Retry</button>';
+    }
+    var more = step ? menuHtml(p + "/run/menu", "More run actions for " + name, "More run actions",
+      menuItem(p + "/run/viewlog", "View log", "", runLogAttrs(p, lr.id, step))) : "";
+    return '<div class="callout callout-' + (interrupted ? "attention" : "failed") + '" data-run="' + escapeHtml(lr.outcome) + '"><span class="callout-glyph" aria-hidden="true">' +
+      (interrupted ? GLYPH.attention : GLYPH.failed) + '</span><div class="callout-body"><p class="callout-title">' + title + "</p>" +
+      (lr.tail ? '<pre class="mono-log" tabindex="0" data-key="' + escapeHtml(p) + '/run/log" aria-label="Output of step ' + escapeHtml(step) + '">' + escapeHtml(lr.tail) + "</pre>" : "") +
+      '</div><div class="callout-actions">' + retry + more + "</div></div>";
+  }
+
+  // The version menu's Last run item, for a run that succeeded.
+  function lastRunItem(inst) {
+    var lr = inst.last_run;
+    if (!lr || lr.outcome !== "succeeded") return "";
+    var text = "succeeded \u00B7 " + fmtDur(Date.parse(lr.ended_at) - Date.parse(lr.started_at)) + " \u00B7 " + agoText(lr.started_at);
+    return menuItem(inst.project + "/menu/lastrun", "Last run", text, runLogAttrs(inst.project, lr.id, ""));
+  }
+
   // The seed callout: Retry seed is the button; Mark as seeded and the
   // overwriting Re-seed live in the menu, each with its command in mono.
   function seedHtml(inst, name) {
@@ -324,6 +389,7 @@
       '<div class="callout-actions"><button type="button" class="btn" data-run="' + escapeHtml(inst.seed_command) + '" data-key="' + escapeHtml(k) +
       '/seed/retry" title="' + escapeHtml(inst.seed_command) + '">Retry seed</button>' +
       menuHtml(k + "/seed/menu", "More seed actions for " + name, "More seed actions",
+        (inst.seed_run ? menuItem(k + "/seed/viewlog", "View log", "", runLogAttrs(k, inst.seed_run, inst.seed_step)) : "") +
         menuItem(k + "/seed/done", "Mark as seeded", inst.seed_done, ' data-run="' + escapeHtml(inst.seed_done) + '"') +
         '<hr class="menu-sep" role="separator">' +
         menuItem(k + "/seed/force", "Re-seed, overwriting data", inst.seed_force, ' data-run="' + escapeHtml(inst.seed_force) + '"', "menu-item-danger")) +
@@ -390,6 +456,7 @@
       items += menuItem(inst.project + "/menu/restart", "Restart", "", ' data-action="restart" data-project="' + p + '"');
       items += menuItem(inst.project + "/menu/down", "Stop", "", ' data-action="down" data-project="' + p + '"', "mobile-only");
     }
+    items += lastRunItem(inst);
     items += menuItem(inst.project + "/menu/path", "Copy path", "", ' data-copy="' + escapeHtml(inst.root) + '"');
     if (hint) items += menuItem(inst.project + "/menu/host", "How to run the host app", hint, ' data-copy="' + escapeHtml(hint) + '" title="' + escapeHtml(hint) + '"');
     if (inst.env_block) {
@@ -404,7 +471,7 @@
     items += '<hr class="menu-sep" role="separator">';
     items += menuItem(inst.project + "/menu/remove", "Remove instance and data", down, ' data-run="' + escapeHtml(down) + '"', "menu-item-danger");
 
-    var chips = '<div class="stack-chips">' + chipHtml(stateChip(inst.state)) + (inst.legacy ? '<span class="chip chip-off">legacy</span>' : "") +
+    var chips = '<div class="stack-chips">' + chipHtml(startingChip(inst) || stateChip(inst.state)) + (inst.legacy ? '<span class="chip chip-off">legacy</span>' : "") +
       (inst.knowledge && (inst.knowledge.status === "draft" || inst.knowledge.status === "stale")
         ? '<span class="chip chip-attention" title="Setup knowledge: ' + escapeHtml(inst.knowledge.status) + '"><span class="chip-glyph" aria-hidden="true">' + GLYPH.attention + "</span>Setup unverified</span>" : "") + "</div>";
     var meta = '<div class="stack-meta mono"><span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.rel_root || inst.root) + "</span>" +
@@ -434,7 +501,7 @@
       '<div class="stack-id"><h3 class="version-title" title="' + p + '"><span class="branch-pill" title="' + escapeHtml(inst.branch) + '">' + escapeHtml(inst.branch) + "</span></h3>" +
       chips + '<div class="stack-actions">' + actions + "</div>" + meta + "</div></header>" +
       (appStrip ? '<div class="app-strip">' + appStrip + "</div>" : "") +
-      seedHtml(inst, name) + warnings + oneOffHtml(inst) +
+      seedHtml(inst, name) + runCalloutHtml(inst, name) + warnings + oneOffHtml(inst) +
       '<div class="stack-body" id="body-' + id + '">' + table + "</div></article>"
     );
   }
@@ -743,6 +810,26 @@
       .catch(function (err) { body.textContent = "error: " + err.message; });
   }
 
+  // Run log: a step of a recorded run in the drawer. Without a step the
+  // failed one opens, else the last step that has a log.
+  function openRunLog(project, runId, step, opener) {
+    openDrawer(project + " / run " + runId + (step ? " / " + step : ""), project, "loading...", opener);
+    var body = document.getElementById("logs-body");
+    var q = "project=" + encodeURIComponent(project) + "&id=" + runId;
+    fetch("/api/runs?" + q, { credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw new Error("run " + runId + " is gone"); return r.json(); })
+      .then(function (run) {
+        var withLog = (run.steps || []).filter(function (s) { return s.log; });
+        var pick = step || (withLog.filter(function (s) { return s.state === "failed"; })[0] || withLog[withLog.length - 1] || {}).id;
+        if (!pick) { body.textContent = "(no step has output)"; return; }
+        document.getElementById("logs-title").textContent = project + " / run " + runId + " / " + pick;
+        return fetch("/api/runs/log?" + q + "&step=" + encodeURIComponent(pick), { credentials: "same-origin" })
+          .then(function (r) { if (!r.ok) throw new Error("no log for " + pick); return r.text(); })
+          .then(function (text) { body.textContent = text || "(no output)"; });
+      })
+      .catch(function (err) { body.textContent = "error: " + err.message; });
+  }
+
   function wireControls() {
     document.getElementById("filter").addEventListener("input", function (e) {
       state.filter = e.target.value;
@@ -868,6 +955,10 @@
         openSettings[toggleSettings.dataset.key.replace(/\/settings$/, "")] = openNow;
         return;
       }
+      var runLog = e.target.closest("[data-run-log]");
+      if (runLog) { openRunLog(runLog.dataset.project, Number(runLog.dataset.runId), runLog.dataset.step, runLog); return; }
+      var startAgain = e.target.closest("button[data-repo-action]"); // Retry of a failed Start
+      if (startAgain) { if (!startAgain.disabled) runRepoAction(startAgain); return; }
       var btn = e.target.closest("button[data-action]");
       if (btn) {
         runAction(btn.dataset.action, btn.dataset.project, btn.dataset.service);
@@ -1750,7 +1841,7 @@
   // The script tests (appscript_runs_test.go) load this file in Node and ask
   // for the functions they exercise; a browser never defines __sfExport.
   if (typeof window.__sfExport === "function") {
-    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip });
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText });
   }
 
   if (document.readyState === "loading") {

@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,7 +63,7 @@ func TestSeedErrorReadsTheSeedStepLogThenSeedLog(t *testing.T) {
 	w.Write([]byte("seeding\nerror: duplicate key\n"))
 	s.End(errors.New("exited with status 1"), 1)
 	r.Finish(errors.New("failed"))
-	if i := collectOne(t, base); i.SeedError != "seeding\nerror: duplicate key" || strings.Contains(i.SeedError, "old log") {
+	if i := collectOne(t, base); i.SeedError != "seeding\nerror: duplicate key" || strings.Contains(i.SeedError, "old log") || i.SeedRun != 1 || i.SeedStep != "seed" {
 		t.Fatalf("run log: %q", i.SeedError)
 	}
 	// a newer run that did not reach the seed does not hide it
@@ -71,5 +72,35 @@ func TestSeedErrorReadsTheSeedStepLogThenSeedLog(t *testing.T) {
 	r2.Finish(errors.New("failed"))
 	if i := collectOne(t, base); i.SeedError != "seeding\nerror: duplicate key" {
 		t.Fatalf("older seed run: %q", i.SeedError)
+	}
+}
+
+func TestLastRunCarriesRetryTailAndRunningStep(t *testing.T) {
+	installFakeDocker(t)
+	base := t.TempDir()
+	root := gitRepo(t, "main")
+	writeInstance(t, base, "sf-run-3", root, "main", []string{"web"}, nil)
+	dir := filepath.Join(base, "sf-run-3")
+	r, _ := runs.Begin(dir, runs.Meta{Command: "start-env", Trigger: "cli", Mode: "container"})
+	r.Step("prepare", "prepare", "prepare")
+	r.Step("app", "host", "app")
+	s := r.Step("prepare", "prepare", "prepare")
+	s.Start()
+	if lr := collectOne(t, base).LastRun; lr == nil || lr.Outcome != runs.Running || lr.Step != "prepare" || lr.StepN != 1 || lr.StepTotal != 2 || lr.Tail != "" {
+		t.Fatalf("running: %+v", lr)
+	}
+	s.End(nil, 0)
+	app := r.Step("app", "host", "app")
+	w := app.Start()
+	for i := 1; i <= 9; i++ {
+		fmt.Fprintf(w, "line %d\n\n", i)
+	}
+	app.End(errors.New("exited with status 2"), 2)
+	r.SetRetry("stackfork --root /x start-env")
+	r.Finish(errors.New("step app failed"))
+	lr := collectOne(t, base).LastRun
+	if lr.Outcome != runs.Failed || lr.FailedStep != "app" || lr.Retry != "stackfork --root /x start-env" || lr.Step != "" ||
+		lr.Tail != "line 4\nline 5\nline 6\nline 7\nline 8\nline 9" {
+		t.Fatalf("failed: %+v", lr)
 	}
 }
