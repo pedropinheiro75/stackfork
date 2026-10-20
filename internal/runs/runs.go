@@ -83,6 +83,8 @@ type Run struct {
 	Error     string    `json:"error,omitempty"`
 	Retry     string    `json:"retry,omitempty"`
 	Steps     []*Step   `json:"steps"`
+	// DurationMS is set by readers only; it is never in a stored file.
+	DurationMS int64 `json:"duration_ms,omitempty"`
 
 	dir  string // instance directory
 	meta Meta
@@ -101,6 +103,8 @@ type Step struct {
 	EndedAt   time.Time `json:"ended_at,omitzero"`
 	Log       string    `json:"log,omitempty"` // relative to runs/, e.g. 17/seed.log
 	ExitCode  *int      `json:"exit_code,omitempty"`
+	// DurationMS is set by readers only; it is never in a stored file.
+	DurationMS int64 `json:"duration_ms,omitempty"`
 
 	run   *Run
 	index int // 1-based position, for the log name fallback
