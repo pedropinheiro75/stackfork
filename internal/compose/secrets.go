@@ -77,7 +77,13 @@ func ResolveSecret(name, ref string) (string, error) {
 			return "", fmt.Errorf("secret %s (%s): %w", name, ref, err)
 		}
 		return value, nil
+	case secretstore.IsStoreRef(ref):
+		value, st, err := secretstore.Resolve(ref)
+		if st != secretstore.Resolves {
+			return "", fmt.Errorf("secret %s (%s): %s: %v", name, ref, st, err)
+		}
+		return value, nil
 	default:
-		return "", fmt.Errorf("secret %s (%s): reference must start with env: or npmrc:", name, ref)
+		return "", fmt.Errorf("secret %s (%s): reference must start with env:, npmrc:, keychain: or op://", name, ref)
 	}
 }

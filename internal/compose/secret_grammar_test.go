@@ -3,6 +3,8 @@ package compose
 import (
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/secretstore"
 )
 
 // Task 1.1: keychain: and op:// references share one validator for flags,
@@ -91,5 +93,21 @@ func TestParseSecretFlagNeverEchoesUnparsedInput(t *testing.T) {
 	}
 	if _, ref, err = ParseSecretFlag("STRIPE=op://Dev/acme-stripe/test-key"); err != nil || ref != "op://Dev/acme-stripe/test-key" {
 		t.Fatalf("op ref: %q %v", ref, err)
+	}
+}
+
+// Task 1.2: keychain: and op:// resolve through secretstore; a status other
+// than resolves becomes an error naming the secret and the reference.
+func TestResolveSecretDelegatesToSecretstore(t *testing.T) {
+	old := secretstore.Default
+	secretstore.Default = &secretstore.Backend{GOOS: "windows"}
+	defer func() { secretstore.Default = old }()
+	for _, ref := range []string{"keychain:acme-npm-token", "op://Dev/acme-stripe/test-key"} {
+		v, err := ResolveSecret("NPM_TOKEN", ref)
+		if v != "" || err == nil ||
+			!strings.Contains(err.Error(), "NPM_TOKEN") || !strings.Contains(err.Error(), ref) ||
+			!strings.Contains(err.Error(), "unavailable") {
+			t.Errorf("%s: %q %v", ref, v, err)
+		}
 	}
 }
