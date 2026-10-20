@@ -280,3 +280,48 @@ func TestConfirmationBypassIsDestructive(t *testing.T) {
 		t.Error("harmless osascript/curl must stay allowed")
 	}
 }
+
+func TestSplitCommandsWindowsBackslash(t *testing.T) {
+	const cmd = `C:\Users\x\stackfork.exe down --volumes`
+	got := splitCommandsFor(cmd, true)
+	if len(got) != 1 || got[0][0] != `C:\Users\x\stackfork.exe` || len(got[0]) != 3 {
+		t.Fatalf("windows split = %q", got)
+	}
+	if got := splitCommandsFor(cmd, false); got[0][0] != `C:Usersxstackfork.exe` {
+		t.Fatalf("unix split changed: %q", got)
+	}
+}
+
+func TestDestructiveOnWindowsSyntax(t *testing.T) {
+	old := windowsSplit
+	windowsSplit = true
+	t.Cleanup(func() { windowsSplit = old })
+	for cmd, want := range map[string]bool{
+		`C:\Users\x\stackfork.exe prune --all`:       true,
+		`C:\Users\x\STACKFORK.EXE gc --apply`:        true,
+		`cmd /c "stackfork prune --all"`:             true,
+		`cmd.exe /c stackfork.exe gc --apply`:        true,
+		`echo hi; stackfork prune --all`:             true,
+		`powershell -Command "stackfork gc --apply"`: true,
+		`C:\Users\x\stackfork.exe prune`:             false,
+		`C:\Users\x\stackfork.exe down --volumes`:    false,
+		`echo C:\bin\stackfork.exe prune --all`:      false,
+	} {
+		if got := Destructive(cmd, `C:\repo`); got != want {
+			t.Errorf("Destructive(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}
+
+func TestExeSuffixTightensOnlyOnUnix(t *testing.T) {
+	// The `.exe` strip adds blocks (a deny guard), never removes one.
+	if !Destructive("/opt/stackfork.exe prune --all", "/repo") {
+		t.Error("stackfork.exe prune --all should be destructive")
+	}
+	if Destructive("/opt/notstackfork.exe prune --all", "/repo") {
+		t.Error("other program names must not match")
+	}
+	if Destructive(`/opt/a\stackfork prune --all`, "/repo") {
+		t.Error("on Unix a backslash is not a path separator")
+	}
+}

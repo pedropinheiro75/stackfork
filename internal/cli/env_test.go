@@ -210,3 +210,27 @@ func TestEnvNeverLeaksInterpolatedSecret(t *testing.T) {
 		}
 	}
 }
+
+func TestPowershellQuote(t *testing.T) {
+	if got, want := powershellQuote("a'b$c`d\ne"), "'a''b$c`d\ne'"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestEnvFormatPowershell(t *testing.T) {
+	root, stateDir, _, psLine := envSetup(t, envFixturePlaceholder)
+	t.Setenv("DOCKER_FAKE_PS", psLine+"\n")
+
+	out, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "env", "--format", "powershell")
+	if code != 0 {
+		t.Fatalf("env failed: %s", stderr)
+	}
+	want := `$env:DATABASE_URL = 'postgres://postgres:<password>@127.0.0.1:20050/postgres'` + "\n"
+	if out != want {
+		t.Fatalf("got:\n%q\nwant:\n%q", out, want)
+	}
+	_, stderr, code = runCLI(t, "--root", root, "--state-dir", stateDir, "env", "--format", "bogus")
+	if code == 0 || !strings.Contains(stderr, "shell, dotenv or powershell") {
+		t.Fatalf("unknown format: code %d, %q", code, stderr)
+	}
+}

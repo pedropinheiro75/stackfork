@@ -101,7 +101,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 		"prompt":   repos.Prompt(repo.Name, repo.Path, repo.DefaultBranch),
 		"agents":   agentChoices(cfg, repo.Path),
 		"terminal": terminalApp(cfg),
-		"canOpen":  runtime.GOOS == "darwin",
+		"canOpen":  runtime.GOOS == "darwin" || runtime.GOOS == "windows",
 	})
 }
 
@@ -159,8 +159,8 @@ func (s *Server) handleLearn(w http.ResponseWriter, r *http.Request) {
 // prompt, then stay in a login shell) and opens it in the terminal. A var
 // so tests do not open windows.
 var OpenAgentTerminal = func(stateBase, term, dir string, a agentDef, prompt string) error {
-	if runtime.GOOS != "darwin" {
-		return errors.New("opening a terminal is macOS-only for now; copy the prompt instead")
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		return errors.New("opening a terminal is macOS and Windows only for now; copy the prompt instead")
 	}
 	launchDir := filepath.Join(stateBase, "agent-launch")
 	if err := os.MkdirAll(launchDir, 0o700); err != nil {
@@ -176,6 +176,9 @@ var OpenAgentTerminal = func(stateBase, term, dir string, a agentDef, prompt str
 		}
 	}
 	id := fmt.Sprintf("learn-%d", time.Now().UnixNano())
+	if runtime.GOOS == "windows" {
+		return openWindowsTerminal(launchDir, id, dir, a, prompt)
+	}
 	cmd := a.Bin
 	if a.Flag != "" {
 		cmd += " " + a.Flag
@@ -209,4 +212,22 @@ var OpenAgentTerminal = func(stateBase, term, dir string, a agentDef, prompt str
 		return exec.Command("open", "-a", "Terminal", scriptPath).Run()
 	}
 	return fmt.Errorf("unknown terminal %q in the config; use warp, iterm or terminal", term)
+}
+
+// openWindowsTerminal writes the prompt and a .ps1 launcher next to each
+// other (same 0o700 dir) and opens a PowerShell window running it: Windows
+// Terminal when wt.exe is on PATH, else a plain console via cmd's start.
+func openWindowsTerminal(launchDir, id, dir string, a agentDef, prompt string) error {
+	promptPath := filepath.Join(launchDir, id+".prompt.txt")
+	if err := os.WriteFile(promptPath, []byte(prompt), 0o600); err != nil {
+		return err
+	}
+	ps1 := filepath.Join(launchDir, id+".ps1")
+	if err := os.WriteFile(ps1, []byte(psLauncherScript(dir, a.Bin, a.Flag, promptPath)), 0o600); err != nil {
+		return err
+	}
+	if wt, err := exec.LookPath("wt.exe"); err == nil {
+		return exec.Command(wt, "-d", dir, "powershell", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", ps1).Start()
+	}
+	return exec.Command("cmd", "/c", "start", "", "powershell", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", ps1).Start()
 }

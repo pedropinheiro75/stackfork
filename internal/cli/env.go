@@ -27,8 +27,8 @@ func cmdEnv(stdout io.Writer, subArgs []string, root, branch, project, instanceD
 	if err := fs.Parse(subArgs); err != nil {
 		return parseFailureErr(fs, err)
 	}
-	if *format != "shell" && *format != "dotenv" {
-		return fmt.Errorf("invalid --format %q; want shell or dotenv", *format)
+	if *format != "shell" && *format != "dotenv" && *format != "powershell" {
+		return fmt.Errorf("invalid --format %q; want shell, dotenv or powershell", *format)
 	}
 
 	block, err := envBlock(project, instanceDir, newStateBase, legacyStateBase, *withPasswords)
@@ -44,6 +44,8 @@ func cmdEnv(stdout io.Writer, subArgs []string, root, branch, project, instanceD
 		switch *format {
 		case "dotenv":
 			fmt.Fprintf(stdout, "%s=%s\n", key, dotenvQuote(value))
+		case "powershell":
+			fmt.Fprintf(stdout, "$env:%s = %s\n", key, powershellQuote(value))
 		default:
 			fmt.Fprintf(stdout, "export %s=%s\n", key, shellQuote(value))
 		}
@@ -58,6 +60,13 @@ func cmdEnv(stdout io.Writer, subArgs []string, root, branch, project, instanceD
 // spaces, newlines, ...).
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// powershellQuote wraps a value in a PowerShell single-quoted string, where
+// the only special character is the quote itself (doubled). $, backtick and
+// newlines stay literal.
+func powershellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 // dotenvQuote double-quotes a value for a plain KEY="value" line, escaping

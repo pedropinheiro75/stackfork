@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"net"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -154,7 +155,7 @@ func checkLocalhostResolution() (status, message, hint string) {
 	ips, err := net.LookupHost(name)
 	if err != nil {
 		return "fail", fmt.Sprintf("%s did not resolve: %s", name, err),
-			"add `127.0.0.1 <hostname>.localhost` lines to /etc/hosts, or configure a resolver for *.localhost"
+			"add `127.0.0.1 <hostname>.localhost` lines to " + hostsFile() + ", or configure a resolver for *.localhost"
 	}
 	for _, ip := range ips {
 		if ip == "127.0.0.1" || ip == "::1" {
@@ -162,7 +163,14 @@ func checkLocalhostResolution() (status, message, hint string) {
 		}
 	}
 	return "fail", fmt.Sprintf("%s resolved to %v, not loopback", name, ips),
-		"check /etc/hosts and your resolver config for a stray *.localhost override"
+		"check " + hostsFile() + " and your resolver config for a stray *.localhost override"
+}
+
+func hostsFile() string {
+	if runtime.GOOS == "windows" {
+		return `C:\Windows\System32\drivers\etc\hosts`
+	}
+	return "/etc/hosts"
 }
 
 // checkProxyPort never binds the port itself (task 9.6/safety: this machine

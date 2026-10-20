@@ -58,6 +58,12 @@ var runStackfork = map[string]bool{
 // a native dialog. An agent can forge the HTTP request, not click the
 // dialog. A var so tests can answer it.
 var Confirm = func(title, text string) (bool, error) {
+	if runtime.GOOS == "windows" {
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", psMessageBoxScript(title, text)).Output()
+		return err == nil && strings.TrimSpace(string(out)) == "OK", nil
+	}
 	if runtime.GOOS != "darwin" {
 		return false, errors.New("no confirmation dialog on this system; run it in a terminal")
 	}

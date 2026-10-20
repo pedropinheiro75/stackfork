@@ -8,8 +8,30 @@ package guard
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
+
+// windowsSplit selects Windows command syntax (backslash is a path
+// character, not an escape). A var so tests can exercise it on any OS.
+var windowsSplit = runtime.GOOS == "windows"
+
+// progBase is the program name of a command word: the last path element
+// (either separator on Windows) without a trailing .exe, any case. The .exe
+// strip only adds matches, which for a deny guard only adds blocks.
+func progBase(w string) string {
+	if windowsSplit {
+		w = strings.ReplaceAll(w, `\`, "/")
+	}
+	b := filepath.Base(w)
+	if len(b) > 4 && strings.EqualFold(b[len(b)-4:], ".exe") {
+		b = b[:len(b)-4]
+	}
+	if windowsSplit {
+		b = strings.ToLower(b)
+	}
+	return b
+}
 
 // HostRunEnv is set by `stackfork host` for its child; a command that
 // carries it (as an env prefix, or in the guard's own environment) is the
@@ -91,10 +113,19 @@ func changeDir(dir string, words []string) string {
 	return filepath.Clean(target)
 }
 
-// shellDashC unwraps `bash -c "cmd"` / `sh -lc "cmd"`.
+// shellDashC unwraps `bash -c "cmd"` / `sh -lc "cmd"`, and on Windows
+// `cmd /c "cmd"` and `powershell -Command "cmd"`.
 func shellDashC(words []string) (string, bool) {
-	switch filepath.Base(words[0]) {
+	switch progBase(words[0]) {
 	case "bash", "sh", "zsh", "dash":
+	case "cmd", "powershell", "pwsh":
+		for i := 1; i < len(words)-1; i++ {
+			switch strings.ToLower(words[i]) {
+			case "/c", "/k", "-c", "-command":
+				return strings.Join(words[i+1:], " "), true
+			}
+		}
+		return "", false
 	default:
 		return "", false
 	}
@@ -110,7 +141,11 @@ func shellDashC(words []string) (string, bool) {
 // splitCommands tokenizes command into simple commands split on unquoted
 // && || ; | & and newlines, honoring single and double quotes and
 // backslash escapes. Quotes are removed from the words.
-func splitCommands(command string) [][]string {
+func splitCommands(command string) [][]string { return splitCommandsFor(command, windowsSplit) }
+
+// splitCommandsFor is splitCommands with the syntax chosen: with windows a
+// backslash is a literal character (paths), and only quotes group.
+func splitCommandsFor(command string, windows bool) [][]string {
 	var cmds [][]string
 	var words []string
 	var cur strings.Builder
@@ -137,7 +172,7 @@ func splitCommands(command string) [][]string {
 		case quote != 0:
 			if r == quote {
 				quote = 0
-			} else if r == '\\' && quote == '"' && i+1 < len(rs) {
+			} else if !windows && r == '\\' && quote == '"' && i+1 < len(rs) {
 				i++
 				cur.WriteRune(rs[i])
 			} else {
@@ -146,7 +181,7 @@ func splitCommands(command string) [][]string {
 		case r == '\'' || r == '"':
 			quote = r
 			inWord = true
-		case r == '\\' && i+1 < len(rs):
+		case !windows && r == '\\' && i+1 < len(rs):
 			i++
 			cur.WriteRune(rs[i])
 			inWord = true
@@ -228,7 +263,7 @@ func nonFlags(words []string) []string {
 }
 
 func startsServer(words []string) bool {
-	switch filepath.Base(words[0]) {
+	switch progBase(words[0]) {
 	case "stackfork":
 		return false // including `stackfork host ...`, the sanctioned path
 	case "bun", "npm", "pnpm", "yarn":
@@ -268,7 +303,7 @@ func binStartsServer(rest []string) bool {
 	if len(rest) == 0 {
 		return false
 	}
-	switch filepath.Base(rest[0]) {
+	switch progBase(rest[0]) {
 	case "nodemon":
 		return true
 	case "vite":
@@ -285,7 +320,7 @@ func binStartsServer(rest []string) bool {
 // names stackfork's own snapshot (compose.json) is left alone.
 func composeStarts(words []string) bool {
 	args := words[1:]
-	if filepath.Base(words[0]) == "docker" {
+	if progBase(words[0]) == "docker" {
 		if len(args) == 0 || args[0] != "compose" {
 			return false
 		}
@@ -333,7 +368,7 @@ func Destructive(command, cwd string) bool {
 	}
 	for _, seg := range Segments(command, cwd) {
 		w := seg.Words
-		if filepath.Base(w[0]) != "stackfork" {
+		if progBase(w[0]) != "stackfork" {
 			continue
 		}
 		action, args := "", []string(nil)
@@ -376,7 +411,7 @@ func bypassesConfirmation(command string) bool {
 	httpClients := map[string]bool{"curl": true, "wget": true, "http": true, "https": true, "xh": true,
 		"python": true, "python3": true, "node": true, "bun": true, "deno": true, "ruby": true, "perl": true}
 	for _, seg := range Segments(command, "") {
-		if !httpClients[filepath.Base(seg.Words[0])] {
+		if !httpClients[progBase(seg.Words[0])] {
 			continue
 		}
 		for _, w := range seg.Words[1:] {
