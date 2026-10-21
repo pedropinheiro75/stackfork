@@ -20,6 +20,7 @@ import (
 //   - `docker compose ... ps --format json` -> $DOCKER_FAKE_STATUS (empty by default)
 //   - `docker compose ... logs ...`         -> $DOCKER_FAKE_LOGS (empty by default)
 //   - `docker compose ... exec|run ...`     -> $DOCKER_FAKE_EXEC_OUT (empty by default)
+//   - `docker volume ls ...`   -> $DOCKER_FAKE_VOLUMES, one name per line (empty by default)
 //   - `docker inspect -f {{.State.Running}} ...` -> $DOCKER_FAKE_PROXY_RUNNING (false by default)
 //   - `docker inspect -f {{(index ...HostPort}} ...` -> $DOCKER_FAKE_PROXY_PORT (empty by default)
 //   - `docker inspect -f {{.HostConfig.NetworkMode}} ...` -> $DOCKER_FAKE_PROXY_NETMODE (bridge by default), exit 1 if $DOCKER_FAKE_PROXY_MISSING is set
@@ -47,6 +48,10 @@ if [ "$1" = "compose" ]; then
     *" logs "*) printf '%s' "$DOCKER_FAKE_LOGS" ;;
   esac
   exit "${DOCKER_FAKE_EXIT:-0}"
+fi
+if [ "$1" = "volume" ] && [ "$2" = "ls" ]; then
+  printf '%s' "$DOCKER_FAKE_VOLUMES"
+  exit 0
 fi
 if [ "$1" = "volume" ] && [ "$2" = "inspect" ]; then
   exit "${DOCKER_FAKE_VOLUME_EXIT:-0}"

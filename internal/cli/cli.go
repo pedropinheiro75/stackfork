@@ -142,13 +142,24 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if action == "repos" {
 		return cmdRepos(stdout, subArgs, newStateBase, legacyStateBase)
 	}
-	if action == "start-env" || action == "secret" {
+	if action == "start-env" || action == "secret" || action == "reset" {
 		var global []string
 		if *npmrcFlag != "" {
 			global = append(global, "--npmrc", *npmrcFlag)
 		}
 		for _, sec := range secretFlag {
 			global = append(global, "--secret", sec)
+		}
+		if action == "reset" {
+			checkout := rootArg
+			if *instanceFlag != "" {
+				r, _, _, err := resolveInstance(*instanceFlag, newStateBase, legacyStateBase)
+				if err != nil {
+					return 0, err
+				}
+				checkout = r
+			}
+			return cmdReset(stdout, stderr, subArgs, checkout, newStateBase, legacyStateBase, global)
 		}
 		if action == "secret" {
 			return cmdSecret(stdout, stderr, subArgs, rootArg, newStateBase, legacyStateBase, global)

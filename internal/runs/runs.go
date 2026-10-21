@@ -155,6 +155,11 @@ func (r *Run) SetRetry(cmd string) {
 	r.update(Event{Run: r.ID, State: r.Outcome}, func() { r.Retry = cmd })
 }
 
+// SetMode replaces the mode a run began with; a reset learns it only after sync.
+func (r *Run) SetMode(mode string) {
+	r.update(Event{Run: r.ID, State: r.Outcome}, func() { r.Mode = mode })
+}
+
 // Step declares a step as pending, or returns the one already declared.
 func (r *Run) Step(id, kind, text string) *Step {
 	r.mu.Lock()

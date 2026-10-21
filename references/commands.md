@@ -258,6 +258,14 @@ Flags: `--force`, `--mode`
 stackfork start-env .worktrees/fix-login
 ```
 
+### reset
+`reset [--yes]`: throw away this checkout's environment and start it again from zero, from the code in the worktree. Steps of the recorded run (`reset`): `sync` (fast-forward when clean, as every start does), `secrets`, `down` with volumes (this deletes the instance's data), `prepare` (re-render), `up --build`, then the plan's schema and data steps on the new database and, in hybrid mode, the host steps. It never touches your code: no `git reset`, no discarded changes. When the checkout is behind its upstream and has local changes or commits, it stops before deleting anything and asks `reset with the current code?`. Without `--yes` it lists the volumes it will delete and asks `y/N` on a terminal; with no terminal and no `--yes` it refuses. `--yes` confirms the deletion and means continue with the current code. The checkout comes from `--root`/the current directory or `--instance NAME`; the main checkout works too (it resets the environment, not git). The dashboard has the same action in the instance and worktree menus. Destructive: the guard blocks it for agents, who should ask the user to run it.
+Flags: `--yes`
+```sh
+stackfork reset
+stackfork --instance sf-fix-login-1a2b3c reset --yes
+```
+
 ### doctor
 Check the local environment the proxy/tool depend on (Docker context, Compose version, `*.localhost` resolution, proxy port, `host.docker.internal`, Docker disk usage). The disk check warns at 85% used, because a full Docker disk makes installs fail later with `no space left on device`.
 

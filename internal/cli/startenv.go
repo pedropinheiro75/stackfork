@@ -26,8 +26,8 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
-// syncUpstream is repos.SyncUpstream; tests replace it.
-var syncUpstream = repos.SyncUpstream
+// syncRepo is repos.Sync; tests replace it.
+var syncRepo = repos.Sync
 
 // StartOptions is everything StartEnv needs; the dashboard fills the same
 // struct the CLI does, so both run one code path (design.md D6).
@@ -40,7 +40,31 @@ type StartOptions struct {
 	Force           bool             // start a project without verified knowledge (CLI only)
 	Mode            string           // container or hybrid; empty = the machine's configured mode
 	Trigger         string           // who started it: cli (default) or dashboard; recorded in the run
+	Reset           bool             // throw the environment away and start it from zero (command reset)
+	Current         bool             // Reset: go on with the current code when it is behind and cannot be updated
 	Observer        func(runs.Event) // receives the run's state changes, may be nil
+}
+
+// startPlan is the plan of a checkout and the mode it starts in.
+func startPlan(out io.Writer, o StartOptions, root, main string) (plan knowledge.Plan, mode string, err error) {
+	kk, err := knowledge.LoadFirst(root, main)
+	if err != nil { // a broken file is not an empty plan
+		return plan, "", err
+	}
+	if kk != nil {
+		plan = kk.Plan
+	}
+	mode = o.Mode
+	if mode == "" {
+		mode = knowledge.ModeContainer
+		if cfg, err := config.Load(); err == nil {
+			var note string
+			if mode, note = cfg.ModeForPlan(main, plan); note != "" {
+				fmt.Fprintln(out, "note: "+note)
+			}
+		}
+	}
+	return plan, mode, nil
 }
 
 // StartEnv prepares (only when needed) and starts the instance of one
@@ -66,23 +90,9 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	if main == "" {
 		main = root
 	}
-	var plan knowledge.Plan
-	kk, err := knowledge.LoadFirst(root, main)
-	if err != nil { // a broken file is not an empty plan
+	plan, mode, err := startPlan(out, o, root, main)
+	if err != nil {
 		return err
-	}
-	if kk != nil {
-		plan = kk.Plan
-	}
-	mode := o.Mode
-	if mode == "" {
-		mode = knowledge.ModeContainer
-		if cfg, err := config.Load(); err == nil {
-			var note string
-			if mode, note = cfg.ModeForPlan(main, plan); note != "" {
-				fmt.Fprintln(out, "note: "+note)
-			}
-		}
 	}
 	runner := lifecycle.PlanRunner{NewBase: o.NewStateBase, Main: main, Mode: mode, Plan: plan}
 	if err := runner.Check(); err != nil { // before any Docker call
@@ -117,7 +127,11 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	if trigger == "" {
 		trigger = "cli"
 	}
-	willPrepare := needsPrepare(instanceDir, root, branch, project)
+	willPrepare := o.Reset || needsPrepare(instanceDir, root, branch, project)
+	command, retry := "start-env", " start-env"
+	if o.Reset {
+		command, retry = "reset", " reset --yes"
+	}
 	if flags := flagSecrets(o.Global); !willPrepare && len(flags) > 0 {
 		names := make([]string, 0, len(flags))
 		for n := range flags {
@@ -128,14 +142,14 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	}
 	var vals lifecycle.SecretValues // the preflight's values redact every step after it (D11)
 	secrets := func() []redact.Secret { return vals.Redactions() }
-	rec, err := runs.Begin(instanceDir, runs.Meta{Command: "start-env", Trigger: trigger, Mode: mode, Project: project, Branch: branch,
+	rec, err := runs.Begin(instanceDir, runs.Meta{Command: command, Trigger: trigger, Mode: mode, Project: project, Branch: branch,
 		Out: out, Secrets: secrets, Observer: o.Observer})
 	if err != nil {
 		return err
 	}
 	// Set now, not at the end: a killed process leaves an interrupted run
 	// that the card can still retry. A failed seed replaces it.
-	rec.SetRetry("stackfork --root " + root + " start-env")
+	rec.SetRetry("stackfork --root " + root + retry)
 	defer func() { // the run ends with the command, whatever path returned
 		if p := recover(); p != nil { // a panic is a failed run, not a succeeded one
 			rec.Finish(fmt.Errorf("panic: %v", p))
@@ -148,12 +162,28 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	// plan already checked is the one that runs; a fast-forwarded plan applies
 	// from the next start.
 	sync := rec.Step("sync", "sync", "fetch the upstream; fast-forward when clean")
-	if msg := syncUpstream(root, 15*time.Second); msg != "" {
-		fmt.Fprintln(sync.Start(), msg)
+	res := syncRepo(root, 15*time.Second, true)
+	if res.Msg != "" {
+		fmt.Fprintln(sync.Start(), res.Msg)
 	} else {
 		sync.Start()
 	}
+	if o.Reset && res.Blocked && !o.Current {
+		err := errors.New("the checkout is behind its upstream and cannot be updated without touching your work; nothing was deleted. Reset with the current code: stackfork --root " + root + " reset --yes")
+		sync.End(err, 0)
+		return err
+	}
 	sync.End(nil, 0)
+	if o.Reset { // the code may have changed: its plan and mode apply to this run
+		if plan, mode, err = startPlan(out, o, root, main); err != nil {
+			return err
+		}
+		runner.Plan, runner.Mode = plan, mode
+		if err := runner.Check(); err != nil {
+			return err
+		}
+		rec.SetMode(mode)
+	}
 
 	// secrets: resolve every effective reference before prepare, which already
 	// calls Docker, and fail naming every problem (design D8).
@@ -163,12 +193,21 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	runValues.Store(inRunKey(instanceDir), vals)
 	defer runValues.Delete(inRunKey(instanceDir))
 
+	if o.Reset {
+		if err := resetDown(rec, root, branch, project, instanceDir, o.NewStateBase, o.LegacyStateBase); err != nil {
+			return err
+		}
+	}
+
 	prepare := func(out io.Writer, _ []string) error {
-		if !needsPrepare(instanceDir, root, branch, project) {
+		if !o.Reset && !needsPrepare(instanceDir, root, branch, project) {
 			fmt.Fprintf(out, "%s is already prepared\n", project)
 			return lifecycle.ErrAlreadyPrepared
 		}
 		args, err := prepareArgs(root, main, instanceDir)
+		if o.Reset {
+			args, err = resetPrepareArgs(root, main, instanceDir)
+		}
 		var seedCmd, seedSvc string
 		fromSibling := errors.Is(err, errNoRecipe)
 		if fromSibling {
@@ -217,6 +256,9 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		fmt.Fprintf(out, "starting %s\n", project)
 		args := append([]string{}, base...)
 		args = append(args, "up", "--in-run", "--mode", mode)
+		if o.Reset {
+			args = append(args, "--build") // the images are rebuilt from the code in the worktree
+		}
 		for _, s := range services {
 			args = append(args, "--service", s)
 		}
@@ -236,11 +278,15 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	runner.Host = func(w io.Writer, step knowledge.Step) error {
 		return lifecycle.HostStart(w, w, base, root, instanceDir, step)
 	}
-	runner.Run, runner.Prepared = rec, func() bool { return !needsPrepare(instanceDir, root, branch, project) }
+	runner.Run, runner.Prepared = rec, func() bool { return !o.Reset && !needsPrepare(instanceDir, root, branch, project) }
 	if err := runner.Execute(); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "started %s; see `stackfork --root %s urls`\n", project, root)
+	verb := "started"
+	if o.Reset {
+		verb = "reset and started"
+	}
+	fmt.Fprintf(out, "%s %s; see `stackfork --root %s urls`\n", verb, project, root)
 	return nil
 }
 
