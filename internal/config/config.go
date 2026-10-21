@@ -32,6 +32,10 @@ type Config struct {
 	// Secrets maps, per resolved main-checkout path, a secret name to a
 	// reference (add-secret-vault D5). Only `secret map|unmap` write it.
 	Secrets map[string]map[string]string `json:"secrets,omitempty"`
+	// Live and Cleanup are per resolved main-checkout path (live-mode D1,
+	// D15). Only `live on|off|cleanup` and POST /api/live write them.
+	Live    map[string]bool    `json:"live,omitempty"`
+	Cleanup map[string]Cleanup `json:"cleanup,omitempty"`
 
 	extra map[string]json.RawMessage
 }
@@ -72,11 +76,14 @@ func load(validate bool) (*Config, error) {
 	if err := json.Unmarshal(data, &c.extra); err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
-	for _, k := range []string{"roots", "exclude", "maxDepth", "mode", "modes", "secrets"} {
+	for _, k := range []string{"roots", "exclude", "maxDepth", "mode", "modes", "secrets", "live", "cleanup"} {
 		delete(c.extra, k)
 	}
 	if validate {
 		if err := c.validateSecrets(); err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
+		if err := c.validateLive(); err != nil {
 			return nil, fmt.Errorf("%s: %w", p, err)
 		}
 	}
@@ -109,6 +116,12 @@ func (c *Config) Save() error {
 	}
 	if len(c.Secrets) > 0 {
 		out["secrets"] = c.Secrets
+	}
+	if len(c.Live) > 0 {
+		out["live"] = c.Live
+	}
+	if len(c.Cleanup) > 0 {
+		out["cleanup"] = c.Cleanup
 	}
 	return state.WritePrivate(p, out)
 }
