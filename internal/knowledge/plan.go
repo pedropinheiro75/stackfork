@@ -248,7 +248,11 @@ func ValidatePlan(p Plan) error {
 			}
 		}
 		switch s.Kind {
-		case KindPrepare, KindComposeUp, KindExec, KindHost, KindNote:
+		case KindPrepare:
+			if err := CheckPrepareArgs(s.Args); err != nil {
+				return fmt.Errorf("step %q: %w", s.ID, err)
+			}
+		case KindComposeUp, KindExec, KindHost, KindNote:
 		default:
 			return fmt.Errorf("step %q: unknown kind %q (expected prepare, compose-up, exec, host or note)", s.ID, s.Kind)
 		}
@@ -274,6 +278,40 @@ func ValidatePlan(p Plan) error {
 		}
 	}
 	return nil
+}
+
+// CheckPrepareArgs allows in a prepare step only what recipePrepareArgs
+// produces: -f/--file/--env-file/--hostname with one plain value each, and
+// --reassign-ports and --random-ports. Anything else (above all --secret,
+// which splitArgs lifts from anywhere in argv) would reach prepare without
+// the secrets preflight seeing it. The message names the flag, never a value.
+func CheckPrepareArgs(args []string) error {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; a {
+		case "-f", "--file", "--env-file", "--hostname":
+			if i+1 >= len(args) {
+				return fmt.Errorf("prepare argument %s has no value", a)
+			}
+			i++
+			if v := args[i]; v == "" || strings.HasPrefix(v, "-") || strings.ContainsAny(v, "$`;&|<>") {
+				return fmt.Errorf("prepare argument %s needs a plain value (no leading '-', no shell characters)", a)
+			}
+		case "--reassign-ports", "--random-ports":
+		default:
+			return fmt.Errorf("prepare argument %s is not allowed in a plan; a prepare step takes only -f, --file, --env-file, --hostname, --reassign-ports and --random-ports (secrets come from the machine map: stackfork secret map)", argLabel(a, i+1))
+		}
+	}
+	return nil
+}
+
+// argLabel names a refused argument without echoing a value: a flag by its
+// name (before any "="), anything else by position.
+func argLabel(a string, pos int) string {
+	name, _, _ := strings.Cut(a, "=")
+	if strings.HasPrefix(name, "-") && strings.Trim(name, "-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") == "" {
+		return name
+	}
+	return fmt.Sprintf("number %d (not a flag)", pos)
 }
 
 // recipePrepareArgs mirrors cli.recipePrepareArgs: the safe prepare flags in

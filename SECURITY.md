@@ -81,7 +81,7 @@ stackfork reads named secrets (an npm token, a test API key) from places the per
 
 | Threat | Control | Residual risk |
 |---|---|---|
-| A malicious `knowledge.json` (from a pull request) names references to exfiltrate unrelated secrets | Knowledge holds names only; references live in the machine map, written only by people; `keychain:` reaches only the `stackfork` service | A person maps a name to a sensitive reference because a hint asked for it. The preflight shows the reference before the first use. |
+| A malicious `knowledge.json` (from a pull request) names references to exfiltrate unrelated secrets | Knowledge holds names only; a plan `prepare` step takes only file, env-file, hostname and port flags, never `--secret`; references live in the machine map, written only by people; `keychain:` reaches only the `stackfork` service | A person maps a name to a sensitive reference because a hint asked for it. The preflight shows the reference before the first use. |
 | A fake `op`, `security` or `secret-tool` earlier on `PATH` captures values or lies | Fixed absolute paths, ownership and permission checks, never `PATH`, not inside a scanned root | A process running as the person can replace a binary the person owns (a Homebrew `op`). Out of scope: same user. |
 | Shoulder-surfing and screen sharing | No command or page prints a value; prompts are hidden-answer dialogs or echo-off terminal reads | The store's own applications show values; that is their behavior. |
 | Values in process arguments | Reads through pipes, writes through stdin or an API | None known. |

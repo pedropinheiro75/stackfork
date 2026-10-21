@@ -277,10 +277,8 @@ func prepareArgs(root, main, instanceDir string) ([]string, error) {
 		return nil, err
 	}
 	if k != nil {
-		for _, st := range k.Plan.Steps {
-			if st.Kind == knowledge.KindPrepare && len(st.Args) > 0 {
-				return st.Args, nil
-			}
+		if args, err := planPrepareArgs(k); args != nil || err != nil {
+			return args, err
 		}
 		var files []string
 		for _, f := range k.AdapterFiles {
@@ -308,6 +306,21 @@ func prepareArgs(root, main, instanceDir string) ([]string, error) {
 		}
 	}
 	return nil, errNoRecipe
+}
+
+// planPrepareArgs is the plan's prepare step args. Load already validated
+// them; the check is repeated because these args reach prepare, where a
+// --secret would be recorded and resolved without the preflight (C1).
+func planPrepareArgs(k *knowledge.Knowledge) ([]string, error) {
+	for _, st := range k.Plan.Steps {
+		if st.Kind == knowledge.KindPrepare && len(st.Args) > 0 {
+			if err := knowledge.CheckPrepareArgs(st.Args); err != nil {
+				return nil, fmt.Errorf("step %q: %w", st.ID, err)
+			}
+			return st.Args, nil
+		}
+	}
+	return nil, nil
 }
 
 var errNoRecipe = errors.New("no recorded prepare recipe or adapter compose file for this project; run `stackfork prepare -f FILE` once")
