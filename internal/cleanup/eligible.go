@@ -15,8 +15,13 @@ import (
 )
 
 // cacheDirs are the dependency and build-cache folders that `prepare` knows
-// (design D18). Ignored files inside them do not block an automatic cleanup.
+// (design D18). Ignored files inside them do not block an automatic cleanup,
+// unless they hold a git repository. A name counts only at the repository root
+// or in a folder with one of manifestFiles (a build context): src/vendor is
+// source.
 var cacheDirs = []string{"node_modules", ".nuxt", ".next", ".output", "vendor", ".venv", "target"}
+
+var manifestFiles = []string{"package.json", "go.mod", "Cargo.toml", "composer.json", "pyproject.toml", "requirements.txt", "Gemfile", "pom.xml", "build.gradle", "Pipfile"}
 
 // Check is one eligibility question (design D18). It is asked when the
 // candidate is found and again immediately before the first cleanup step.
@@ -160,21 +165,60 @@ func ignoredFiles(main, wt string, adapter []string) []string {
 	}
 	var res []string
 	for _, p := range strings.Split(string(out), "\x00") {
-		if p == "" || inCacheDir(p) || adapterCopy(main, wt, p, adapter) {
+		if p == "" || adapterCopy(main, wt, p, adapter) {
 			continue
+		}
+		if inCacheDir(wt, p) {
+			if !holdsRepo(wt, p) {
+				continue
+			}
+			p += " (contains a git repository)"
 		}
 		res = append(res, p)
 	}
 	return res
 }
 
-func inCacheDir(p string) bool {
-	for _, seg := range strings.Split(strings.Trim(filepath.ToSlash(p), "/"), "/") {
-		if slices.Contains(cacheDirs, seg) {
+// inCacheDir: p is, or is inside, a cache folder at a known root.
+func inCacheDir(wt, p string) bool {
+	segs := strings.Split(strings.Trim(filepath.ToSlash(p), "/"), "/")
+	for i, seg := range segs {
+		if !slices.Contains(cacheDirs, seg) {
+			continue
+		}
+		if i == 0 {
 			return true
 		}
+		for _, m := range manifestFiles {
+			if _, err := os.Lstat(filepath.Join(wt, filepath.FromSlash(strings.Join(segs[:i], "/")), m)); err == nil {
+				return true
+			}
+		}
+		return false
 	}
 	return false
+}
+
+// holdsRepo: p is, or contains, a `.git` entry (a directory, or the file of a
+// linked worktree or submodule). Somebody's work may live there.
+func holdsRepo(wt, p string) bool {
+	abs := filepath.Join(wt, filepath.FromSlash(p))
+	if filepath.Base(abs) == ".git" {
+		return true
+	}
+	found := false
+	filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			found = true // unreadable: do not guess
+			return filepath.SkipAll
+		}
+		if d.Name() == ".git" {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // adapterCopy: p (a file, or a folder with a trailing slash) is under an

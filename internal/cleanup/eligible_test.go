@@ -11,7 +11,19 @@ import (
 // origin/main and deleted there, and its detected candidate.
 func mergedFx(t *testing.T) (fixture, Candidate, Result) {
 	t.Helper()
+	return mergedFxWith(t)
+}
+
+// mergedFxWith first commits the given files (path, body pairs) to main.
+func mergedFxWith(t *testing.T, files ...string) (fixture, Candidate, Result) {
+	t.Helper()
 	f := newFixture(t)
+	for i := 0; i+1 < len(files); i += 2 {
+		commit(t, f.Main, files[i], files[i+1], "add "+files[i])
+	}
+	if len(files) > 0 {
+		run(t, f.Main, "push", "-q", "origin", "main")
+	}
 	f.branch(t, "feature-login", 2)
 	commit(t, f.Main, "other.txt", "o\n", "unrelated")
 	run(t, f.Main, "merge", "-q", "--squash", "feature-login")
@@ -163,5 +175,61 @@ func TestDeleteBranchWithoutProofKeepsIt(t *testing.T) {
 	}
 	if run(t, f.Main, "branch", "--list", "spike") == "" {
 		t.Fatal("the unmerged branch is gone")
+	}
+}
+
+func excludeLine(t *testing.T, wt, line string) {
+	t.Helper()
+	exclude := run(t, wt, "rev-parse", "--git-path", "info/exclude")
+	if !filepath.IsAbs(exclude) {
+		exclude = filepath.Join(wt, exclude)
+	}
+	os.MkdirAll(filepath.Dir(exclude), 0o755)
+	fh, err := os.OpenFile(exclude, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fh.WriteString(line + "\n")
+	fh.Close()
+}
+
+// An ignored cache-named folder that holds a git repository is somebody's
+// work: it is listed and blocks `auto`.
+func TestEvaluateNestedRepoInAnIgnoredCacheFolderIsListedAndBlocksAuto(t *testing.T) {
+	f, c, r := mergedFx(t)
+	ignore(t, c.Path, "vendor/lib/x.go")
+	run(t, filepath.Join(c.Path, "vendor", "lib"), "init", "-q")
+	v := Evaluate(Check{Main: f.Main, Candidate: c, Result: r, Auto: true})
+	if v.Eligible || !strings.Contains(v.Warning, "vendor/") {
+		t.Fatalf("auto: %+v", v)
+	}
+	v = Evaluate(Check{Main: f.Main, Candidate: c, Result: r})
+	if !v.Eligible || len(v.Ignored) != 1 || !strings.Contains(v.Ignored[0], "vendor/") || !strings.Contains(v.Ignored[0], "git repository") {
+		t.Fatalf("suggest must list the nested repository: %+v", v)
+	}
+}
+
+// A cache name is a cache folder only at the repository root or next to a
+// package manifest; src/vendor is a source folder.
+func TestEvaluateCacheFolderNamesCountOnlyAtKnownRoots(t *testing.T) {
+	f, c, r := mergedFxWith(t, "src/main.go", "package main\n")
+	excludeLine(t, c.Path, "/src/vendor")
+	put(t, c.Path, "src/vendor/x.go", "package x\n")
+	v := Evaluate(Check{Main: f.Main, Candidate: c, Result: r, Auto: true})
+	if v.Eligible || !strings.Contains(v.Warning, "src/vendor/") {
+		t.Fatalf("src/vendor must not be a cache folder: %+v", v)
+	}
+}
+
+func TestEvaluateCacheFolderBesideAManifestStaysACache(t *testing.T) {
+	f, c, r := mergedFxWith(t, "web/package.json", "{}")
+	excludeLine(t, c.Path, "/web/node_modules")
+	put(t, c.Path, "web/node_modules/x/index.js", "x")
+	if v := Evaluate(Check{Main: f.Main, Candidate: c, Result: r, Auto: true}); !v.Eligible {
+		t.Fatalf("web/node_modules is a dependency folder: %+v", v)
+	}
+	put(t, c.Path, "web/node_modules/dep/.git", "gitdir: elsewhere\n")
+	if v := Evaluate(Check{Main: f.Main, Candidate: c, Result: r, Auto: true}); v.Eligible {
+		t.Fatalf("a git repository in a dependency folder blocks auto: %+v", v)
 	}
 }
