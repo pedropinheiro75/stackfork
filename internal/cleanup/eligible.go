@@ -222,6 +222,10 @@ func inCacheDir(wt, p string) bool {
 
 // holdsRepo: p is, or contains, a `.git` entry (a directory, or the file of a
 // linked worktree or submodule). Somebody's work may live there.
+// ponytail: the walk stops at the first .git but is otherwise a full walk of
+// the cache folder on every Evaluate; no subfolder provably cannot hold a repo
+// (a vendored checkout may sit anywhere), so cache the answer per folder
+// mtime if Evaluate shows up in a profile.
 func holdsRepo(wt, p string) bool {
 	abs := filepath.Join(wt, filepath.FromSlash(p))
 	if filepath.Base(abs) == ".git" {
