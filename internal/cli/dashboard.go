@@ -92,6 +92,16 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 			Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles, Trigger: trigger, Observer: obs,
 		})
 	}
+	srv.ResetEnv = func(out, errOut io.Writer, checkout string, current bool, obs func(runs.Event)) error {
+		return StartEnv(out, errOut, StartOptions{
+			Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles,
+			Trigger: dashboard.TriggerDashboard, Observer: obs, Reset: true, Current: current,
+		})
+	}
+	srv.ResetPreview = func(checkout string) (string, bool, error) {
+		p, err := PreviewReset(checkout, newStateBase, legacyStateBase)
+		return p.Describe(), p.Blocked, err
+	}
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
 

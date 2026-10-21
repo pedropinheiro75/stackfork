@@ -51,3 +51,8 @@ func TestStartsKeepOwnProgressAndDisabledRetry(t *testing.T) {
 func TestSecretsButtonsStayBusyAcrossARender(t *testing.T) {
 	runAppJS(t, "secrets.case.js")
 }
+
+// A reset streams, shows its progress and fails like a Start, but is not one.
+func TestResetStreamsLikeStart(t *testing.T) {
+	runAppJS(t, "reset.case.js")
+}

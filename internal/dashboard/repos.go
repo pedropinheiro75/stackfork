@@ -277,6 +277,15 @@ var reposTemplate = template.Must(
 // obs receives the run's state changes for the stream (nil: none wanted).
 type StartFunc func(out, errOut io.Writer, checkout, trigger string, obs func(runs.Event)) error
 
+// ResetFunc throws away the environment of one checkout and starts it from
+// zero (cli.StartEnv with Reset). current: go on with the code as it is when
+// the checkout is behind and cannot be updated.
+type ResetFunc func(out, errOut io.Writer, checkout string, current bool, obs func(runs.Event)) error
+
+// ResetPreviewFunc is what the confirmation shows: the text, and whether the
+// checkout is behind its upstream and blocked from updating.
+type ResetPreviewFunc func(checkout string) (text string, blocked bool, err error)
+
 // TriggerDashboard is the trigger of every run the dashboard starts, directly
 // or through the commands of /api/run (STACKFORK_TRIGGER).
 const TriggerDashboard = "dashboard"
@@ -507,7 +516,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 // --- repo actions (start, worktree-add, fetch) ------------------------------
 
-var repoActions = map[string]bool{"start": true, "worktree-add": true, "fetch": true}
+var repoActions = map[string]bool{"start": true, "reset": true, "worktree-add": true, "fetch": true}
 
 // inConfiguredRoots re-checks, at action time, that the path is still under
 // a configured root (a root may have been removed since the scan).
@@ -550,7 +559,7 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, req actionRequest) {
 					branch = wt.Branch
 				}
 			}
-			if checkout == "" || req.Action != "start" {
+			if checkout == "" || (req.Action != "start" && req.Action != "reset") {
 				writeActionResult(w, http.StatusForbidden, actionResponse{Message: "not a worktree of this repo"})
 				return
 			}
@@ -575,6 +584,10 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, req actionRequest) {
 		}
 		if req.Action == "start" && s.StartEnv == nil {
 			writeActionResult(w, http.StatusServiceUnavailable, actionResponse{Message: "start is not available in this build"})
+			return
+		}
+		if req.Action == "reset" && (s.ResetEnv == nil || s.ResetPreview == nil || checkout == "") {
+			writeActionResult(w, http.StatusServiceUnavailable, actionResponse{Message: "reset is not available in this build"})
 			return
 		}
 	}
@@ -609,6 +622,8 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, req actionRequest) {
 		writeActionResult(w, http.StatusOK, actionResponse{OK: true, Message: "created " + wt.Path + copiedNote(wt)})
 	case "start":
 		s.streamStart(w, repo, checkout, branch)
+	case "reset":
+		s.streamReset(w, repo, checkout)
 	}
 }
 
@@ -627,15 +642,15 @@ func lastLine(out string, err error) string {
 	return err.Error()
 }
 
-// streamStart answers with newline-delimited JSON: {"line": "..."} for each
-// progress line as it happens, then one {"ok": bool, "message": "..."}.
-func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, branch string) {
+// stream starts a newline-delimited JSON answer: {"line": "..."} for each
+// progress line, then (from finish) one {"ok": bool, "message": "..."}.
+func stream(w http.ResponseWriter, okMessage string) (*lineWriter, func(error)) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.WriteHeader(http.StatusOK)
 	lw := &lineWriter{w: w}
-	finish := func(err error) {
+	return lw, func(err error) {
 		lw.flushPartial()
-		resp := actionResponse{OK: err == nil, Message: "started " + repo.Name}
+		resp := actionResponse{OK: err == nil, Message: okMessage}
 		resp.Run, resp.FailedStep = lw.runInfo()
 		if err != nil {
 			resp.Message = err.Error()
@@ -644,42 +659,76 @@ func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, 
 		w.Write(append(b, '\n')) //nolint:errcheck // client gone
 		flush(w)
 	}
-	// A host or prepare step nobody approved on this machine: ask first,
-	// before anything is created or run (design.md D9).
+}
+
+// approveHostSteps asks for the plan's host and prepare steps nobody approved
+// on this machine, before anything is created or run (design.md D9). verb is
+// the dialog's first word (Start, Reset).
+func (s *Server) approveHostSteps(lw io.Writer, repo *repos.Repo, checkout, verb string) error {
 	// Same lookup as StartEnv: the checkout's own knowledge.json, then the main repo's.
-	k, kerr := knowledge.LoadFirst(checkout, repo.Path)
-	if kerr != nil {
-		finish(kerr)
+	k, err := knowledge.LoadFirst(checkout, repo.Path)
+	if err != nil || k == nil {
+		return err
+	}
+	cfg, _ := config.Load()
+	mode := knowledge.ModeContainer
+	if cfg != nil {
+		mode, _ = cfg.ModeForPlan(repo.Path, k.Plan)
+	}
+	if ok, _ := lifecycle.TrustedHere(s.NewStateBase, repo.Path, k.Plan, mode); ok {
+		return nil
+	}
+	diff := lifecycle.ReadableDiff(s.NewStateBase, repo.Path, k.Plan)
+	prompt, err := lifecycle.TrustPrompt(k.Plan, diff)
+	if err != nil { // no dialog: steps that cannot be shown are not approved
+		return err
+	}
+	text := verb + " " + repo.Name + "?\n\nIts plan runs host commands nobody approved on this machine.\n\n" + prompt
+	approved, err := Confirm("stackfork", text)
+	if err != nil || !approved {
+		if err == nil {
+			err = errors.New("cancelled; nothing ran")
+		}
+		return err
+	}
+	if _, err := lifecycle.TrustHere(s.NewStateBase, repo.Path, k.Plan); err != nil {
+		return err
+	}
+	fmt.Fprintln(lw, "trusted the host steps on this machine")
+	return nil
+}
+
+// streamReset confirms with a native dialog that names the volumes (and the
+// blocked update), then streams the reset like a Start.
+func (s *Server) streamReset(w http.ResponseWriter, repo *repos.Repo, checkout string) {
+	lw, finish := stream(w, "reset "+repo.Name)
+	text, blocked, err := s.ResetPreview(checkout)
+	if err != nil {
+		finish(err)
 		return
 	}
-	if k != nil {
-		cfg, _ := config.Load()
-		mode := knowledge.ModeContainer
-		if cfg != nil {
-			mode, _ = cfg.ModeForPlan(repo.Path, k.Plan)
+	approved, err := Confirm("stackfork", text)
+	if err != nil || !approved {
+		if err == nil {
+			err = errors.New("cancelled; nothing was changed")
 		}
-		if ok, _ := lifecycle.TrustedHere(s.NewStateBase, repo.Path, k.Plan, mode); !ok {
-			diff := lifecycle.ReadableDiff(s.NewStateBase, repo.Path, k.Plan)
-			prompt, perr := lifecycle.TrustPrompt(k.Plan, diff)
-			if perr != nil { // no dialog: steps that cannot be shown are not approved
-				finish(perr)
-				return
-			}
-			text := "Start " + repo.Name + "?\n\nIts plan runs host commands nobody approved on this machine.\n\n" + prompt
-			approved, err := Confirm("stackfork", text)
-			if err != nil || !approved {
-				if err == nil {
-					err = errors.New("cancelled; nothing ran")
-				}
-				finish(err)
-				return
-			}
-			if _, err := lifecycle.TrustHere(s.NewStateBase, repo.Path, k.Plan); err != nil {
-				finish(err)
-				return
-			}
-			fmt.Fprintln(lw, "trusted the host steps on this machine")
-		}
+		finish(err)
+		return
+	}
+	if err := s.approveHostSteps(lw, repo, checkout, "Reset"); err != nil {
+		finish(err)
+		return
+	}
+	finish(s.ResetEnv(lw, lw, checkout, blocked, lw.observe))
+}
+
+// streamStart answers with newline-delimited JSON: {"line": "..."} for each
+// progress line as it happens, then one {"ok": bool, "message": "..."}.
+func (s *Server) streamStart(w http.ResponseWriter, repo *repos.Repo, checkout, branch string) {
+	lw, finish := stream(w, "started "+repo.Name)
+	if err := s.approveHostSteps(lw, repo, checkout, "Start"); err != nil {
+		finish(err)
+		return
 	}
 	if checkout == "" { // a branch without a worktree: create it first
 		fmt.Fprintf(lw, "creating a worktree for %s\n", branch)

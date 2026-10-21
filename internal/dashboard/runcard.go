@@ -18,6 +18,8 @@ type runView struct {
 	Retry       string // a command /api/run runs; empty when Retry starts the checkout again
 	RetryStart  bool   // Retry sends the Repos Start action for Checkout
 	CanRetry    bool
+	RetryAction string // RetryStart: the Repos action (start or reset) and the button's title
+	RetryTitle  string
 	Repo        string // main checkout of the repo, for the Start action
 }
 
@@ -32,6 +34,19 @@ func isStartEnvRetry(cmd string) bool {
 	return strings.HasPrefix(cmd, "stackfork --root ") && strings.HasSuffix(cmd, " start-env")
 }
 
+// isResetRetry is the retry a failed reset records.
+func isResetRetry(cmd string) bool {
+	return strings.HasPrefix(cmd, "stackfork --root ") && strings.HasSuffix(cmd, " reset --yes")
+}
+
+// runVerb names a run to a person: Start, or Reset for a reset.
+func runVerb(command string) string {
+	if command == "reset" {
+		return "Reset"
+	}
+	return "Start"
+}
+
 // RunStarting is the Starting… chip that replaces the state chip while a run
 // is in progress, whoever started it.
 func (c cardData) RunStarting() *chipView {
@@ -39,11 +54,14 @@ func (c cardData) RunStarting() *chipView {
 	if lr == nil || lr.Outcome != "running" {
 		return nil
 	}
-	title := "Start in progress"
+	title, label := "Start in progress", "Starting…"
+	if lr.Command == "reset" {
+		title, label = "Reset in progress", "Resetting…"
+	}
 	if lr.Step != "" {
 		title = fmt.Sprintf("step %d of %d: %s", lr.StepN, lr.StepTotal, lr.Step)
 	}
-	return &chipView{Class: "busy", Glyph: glyphBusy, Label: "Starting…", Title: title}
+	return &chipView{Class: "busy", Glyph: glyphBusy, Label: label, Title: title}
 }
 
 // seedCovers is true when the seed callout already reports the failure of the
@@ -59,9 +77,9 @@ func (c cardData) RunCallout() *runView {
 	if lr == nil || (lr.Outcome != "failed" && lr.Outcome != "interrupted") || c.seedCovers() {
 		return nil
 	}
-	v := &runView{Tone: "failed", Glyph: glyphFailed, Title: "Start failed", Step: lr.FailedStep, Tail: lr.Tail, Run: lr.ID}
+	v := &runView{Tone: "failed", Glyph: glyphFailed, Title: runVerb(lr.Command) + " failed", Step: lr.FailedStep, Tail: lr.Tail, Run: lr.ID}
 	if lr.Outcome == "interrupted" {
-		v.Tone, v.Glyph, v.Title = "attention", glyphAttention, "Start interrupted"
+		v.Tone, v.Glyph, v.Title = "attention", glyphAttention, runVerb(lr.Command)+" interrupted"
 	}
 	if lr.FailedStep != "" {
 		v.Title += " at step"
@@ -70,6 +88,10 @@ func (c cardData) RunCallout() *runView {
 	case lr.Retry == "":
 	case isStartEnvRetry(lr.Retry):
 		v.CanRetry, v.RetryStart, v.Repo = true, true, repoRoot(c.Root)
+		v.RetryAction, v.RetryTitle = "start", "Start again"
+	case isResetRetry(lr.Retry):
+		v.CanRetry, v.RetryStart, v.Repo = true, true, repoRoot(c.Root)
+		v.RetryAction, v.RetryTitle = "reset", "Reset again"
 	default:
 		v.CanRetry, v.Retry = true, lr.Retry
 	}

@@ -32,7 +32,14 @@ var runCardCases = []struct {
 	want []string // fragments of the card
 	not  []string
 }{
-	{"none", runInst(nil, nil), nil, []string{"callout", "Last run", "Starting"}},
+	{"none", runInst(nil, nil), []string{`data-repo-action="reset" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login"`, "Reset environment&hellip;"},
+		[]string{"callout", "Last run", "Starting"}},
+	{"resetting", runInst(&inventory.LastRun{ID: 12, Command: "reset", Trigger: "dashboard", Outcome: "running", Step: "down", StepN: 3, StepTotal: 8, StartedAt: ago5()}, nil),
+		[]string{`title="step 3 of 8: down"`, "Resetting…"}, []string{"Starting…", "callout"}},
+	{"failed reset", runInst(&inventory.LastRun{ID: 13, Command: "reset", Trigger: "dashboard", Outcome: "failed", FailedStep: "up", StartedAt: ago5(), EndedAt: ago5(),
+		Retry: "stackfork --root /src/acme-web/.worktrees/feature-login reset --yes", Tail: "no space left"}, nil),
+		[]string{`Reset failed at step <code class="mono">up</code>`, `data-repo-action="reset" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login" data-key="sf-acme-web-2ffa6841c75d/run/retry" title="Reset again"`, "no space left"},
+		[]string{"Start failed", `data-repo-action="start"`, `data-run="stackfork --root`}},
 	{"running", runInst(&inventory.LastRun{ID: 3, Command: "start-env", Trigger: "cli", Outcome: "running", Step: "seed", StepN: 3, StepTotal: 6, StartedAt: ago5()}, nil),
 		[]string{`title="step 3 of 6: seed"`, "Starting…"}, []string{">Stopped<", "callout"}},
 	{"failed start-env", runInst(&inventory.LastRun{ID: 4, Command: "start-env", Trigger: "dashboard", Outcome: "failed", FailedStep: "app", StartedAt: ago5(), EndedAt: ago5(),
@@ -41,7 +48,7 @@ var runCardCases = []struct {
 			`data-repo="/src/acme-web"`, `data-path="/src/acme-web/.worktrees/feature-login"`, "line 1\nboom &lt;b&gt;", `data-run-id="4" data-step="app"`, ">View log<"}, []string{"data-seed", "Last run"}},
 	{"failed up", runInst(&inventory.LastRun{ID: 5, Command: "up", Trigger: "cli", Outcome: "failed", FailedStep: "up", StartedAt: ago5(), EndedAt: ago5(),
 		Retry: "stackfork --instance sf-acme-web-2ffa6841c75d up"}, nil),
-		[]string{`data-run="stackfork --instance sf-acme-web-2ffa6841c75d up"`, ">Retry<"}, []string{"data-repo-action", "mono-log"}},
+		[]string{`data-run="stackfork --instance sf-acme-web-2ffa6841c75d up"`, ">Retry<"}, []string{`data-repo-action="start"`, "mono-log"}},
 	{"failed without a step", runInst(&inventory.LastRun{ID: 6, Command: "up", Trigger: "cli", Outcome: "failed", StartedAt: ago5(), EndedAt: ago5()}, nil),
 		[]string{">Start failed</p>"}, []string{">Retry<", ">View log<", "<code"}},
 	{"interrupted", runInst(&inventory.LastRun{ID: 7, Command: "start-env", Trigger: "cli", Outcome: "interrupted", FailedStep: "up", StartedAt: ago5(),

@@ -52,6 +52,7 @@ var indexFuncs = template.FuncMap{
 	"appName":         appName,
 	"domID":           domID,
 	"hostHint":        hostHint,
+	"repoRoot":        repoRoot,
 }
 
 var indexTemplate = parseIndexTemplate()
@@ -90,6 +91,11 @@ type Server struct {
 	// directories for readiness, and the Start button's code path.
 	ProfileDirs []string
 	StartEnv    StartFunc
+	// ResetEnv and ResetPreview back "Reset environment...": the preview is the
+	// text of the native confirmation (it names the volumes) and whether the
+	// checkout cannot be updated; the CLI supplies both.
+	ResetEnv     ResetFunc
+	ResetPreview ResetPreviewFunc
 
 	mux      http.Handler
 	cache    *inventoryCache

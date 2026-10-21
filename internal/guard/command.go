@@ -510,6 +510,9 @@ func Destructive(command, cwd string) bool {
 				return true
 			}
 		}
+		if action == "reset" { // deletes the environment's data, whatever the flags
+			return true
+		}
 	}
 	return false
 }

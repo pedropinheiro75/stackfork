@@ -64,6 +64,12 @@ not trust the caller:
   macOS dialog. An agent can forge the HTTP request but cannot answer the
   dialog. On other systems these commands are refused.
 
+## Environment reset
+
+| Threat | Control | Residual risk |
+|---|---|---|
+| An agent, or a forged dashboard request, deletes an environment's volumes with `reset` | The guard blocks `stackfork reset` (any flags, global flags first, wrappers) and its forged-call check covers the dashboard's actions endpoint. The dashboard asks in a native dialog that names the volumes. The CLI asks `y/N` on a terminal and refuses without one unless `--yes` is given | `--yes` is the person's choice, and the guard is not a sandbox: an agent can run other tools as the person. Reset never touches the code, but a person may lose data they kept only in the volumes. |
+
 ## Host steps in knowledge.json
 
 A committed `.stackfork/knowledge.json` can name a host command in a `host` step. That command runs only after a person ran `stackfork plan --trust` (or clicked **Trust** in the dashboard) on that machine. Trust applies when the active mode runs a host step. Its hash covers all `host` and `prepare` steps, so any change to them, including a new field, needs a new trust. The `host` command is an argument vector and never goes through a shell. The guard blocks `plan --trust` for agents, and the dashboard asks in a native dialog that lists every field.

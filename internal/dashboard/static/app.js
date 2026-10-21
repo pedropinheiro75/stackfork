@@ -329,13 +329,17 @@
   }
 
   function isStartEnvRetry(cmd) { return /^stackfork --root .* start-env$/.test(cmd || ""); }
+  function isResetRetry(cmd) { return /^stackfork --root .* reset --yes$/.test(cmd || ""); }
+  // A reset is a streamed repo action like a Start (runRepoAction).
+  function isStreamAction(a) { return a === "start" || a === "reset"; }
 
   // The Starting… chip replaces the state chip while a run is in progress,
   // whoever started it (a terminal included).
   function startingChip(inst) {
     var lr = inst.last_run;
     if (!lr || lr.outcome !== "running") return null;
-    return { cls: "busy", glyph: GLYPH.busy, label: "Starting…", title: lr.step ? "step " + lr.step_n + " of " + lr.step_total + ": " + lr.step : "Start in progress" };
+    var reset = lr.command === "reset";
+    return { cls: "busy", glyph: GLYPH.busy, label: reset ? "Resetting…" : "Starting…", title: lr.step ? "step " + lr.step_n + " of " + lr.step_total + ": " + lr.step : (reset ? "Reset in progress" : "Start in progress") };
   }
 
   // A failed seed step is reported by the seed callout; the card never shows
@@ -353,11 +357,13 @@
     var lr = inst.last_run, p = inst.project;
     if (!lr || (lr.outcome !== "failed" && lr.outcome !== "interrupted") || seedCovers(inst)) return "";
     var interrupted = lr.outcome === "interrupted", step = lr.failed_step || "";
-    var title = (interrupted ? "Start interrupted" : "Start failed") + (step ? ' at step <code class="mono">' + escapeHtml(step) + "</code>" : "");
+    var verb = lr.command === "reset" ? "Reset" : "Start";
+    var title = verb + (interrupted ? " interrupted" : " failed") + (step ? ' at step <code class="mono">' + escapeHtml(step) + "</code>" : "");
     var retry = "";
-    if (isStartEnvRetry(lr.retry)) {
-      retry = '<button type="button" class="btn" data-repo-action="start" data-repo="' + escapeHtml(repoRoot(inst.root)) + '" data-path="' + escapeHtml(inst.root) +
-        '" data-key="' + escapeHtml(p) + '/run/retry" title="Start again">Retry</button>';
+    if (isStartEnvRetry(lr.retry) || isResetRetry(lr.retry)) {
+      var again = isResetRetry(lr.retry) ? "reset" : "start";
+      retry = '<button type="button" class="btn" data-repo-action="' + again + '" data-repo="' + escapeHtml(repoRoot(inst.root)) + '" data-path="' + escapeHtml(inst.root) +
+        '" data-key="' + escapeHtml(p) + '/run/retry" title="' + (again === "reset" ? "Reset" : "Start") + ' again">Retry</button>';
     } else if (lr.retry) {
       retry = '<button type="button" class="btn" data-run="' + escapeHtml(lr.retry) + '" data-key="' + escapeHtml(p) + '/run/retry" title="' + escapeHtml(lr.retry) + '">Retry</button>';
     }
@@ -468,6 +474,8 @@
       items += menuItem(inst.project + "/menu/cmd" + i, run ? "Run command" : "Copy command", c, (run ? " data-run" : " data-copy") + '="' + escapeHtml(c) + '"');
     });
     items += menuItem(inst.project + "/menu/copydown", "Copy down command", down, ' data-copy="' + escapeHtml(down) + '"');
+    items += menuItem(inst.project + "/menu/reset", "Reset environment…", "", ' data-repo-action="reset" data-repo="' + escapeHtml(repoRoot(inst.root)) + '" data-path="' + escapeHtml(inst.root) +
+      '" title="deletes this environment\'s volumes and starts it again from the code in the worktree; asks first"');
     items += '<hr class="menu-sep" role="separator">';
     items += menuItem(inst.project + "/menu/remove", "Remove instance and data", down, ' data-run="' + escapeHtml(down) + '"', "menu-item-danger");
 
@@ -1602,7 +1610,8 @@
       if (!b) return;
       var s = reposState.starts[key];
       b.disabled = true;
-      if (!s.inMenu && b.textContent !== "Starting\u2026") b.textContent = "Starting\u2026";
+      var busyText = s.reset ? "Resetting\u2026" : "Starting\u2026";
+      if (!s.inMenu && b.textContent !== busyText) b.textContent = busyText;
       var anchor = s.inMenu ? b.closest(".menu-anchor") : b;
       var p = anchor.previousElementSibling;
       if (!p || !p.classList.contains("row-progress")) {
@@ -1689,6 +1698,7 @@
 
   function retryCommand(d, created) {
     if (d.repoAction === "fetch") return "git -C " + shq(d.repo) + " fetch --prune";
+    if (d.repoAction === "reset") return "stackfork --root " + shq(d.path) + " reset";
     if (d.repoAction === "start" && d.path) return "stackfork start-env " + shq(d.path);
     if (created) return "stackfork start-env " + shq(created);
     return "stackfork worktree add " + shq(d.repo) + " " + shq(d.branch) + (d.repoAction === "start" ? " && stackfork start-env " + shq(d.repo + "/.worktrees/" + d.branch.replace(/\//g, "-")) : "");
@@ -1716,7 +1726,7 @@
     var created = "";
     var runRef = null; // the run this Start recorded, for the callout's View log
     function fail(msg) {
-      reposState.errors[d.repo] = { label: label, title: ({ start: "Start", "worktree-add": "Create worktree", fetch: "Fetch" }[d.repoAction] || "Action") + " failed", message: msg, command: retryCommand(d, created),
+      reposState.errors[d.repo] = { label: label, title: ({ start: "Start", reset: "Reset", "worktree-add": "Create worktree", fetch: "Fetch" }[d.repoAction] || "Action") + " failed", message: msg, command: retryCommand(d, created),
         log: runRef && runRef.step ? runRef : null };
     }
     // A menu item keeps its label (it is hidden once the menu closes); the
@@ -1725,20 +1735,20 @@
     var anchor = inMenu ? btn.closest(".menu-anchor") : btn;
     btn.disabled = true;
     var btnText = btn.textContent;
-    if (!inMenu) btn.textContent = d.repoAction === "start" ? "Starting\u2026" : btnText + "\u2026";
+    if (!inMenu) btn.textContent = d.repoAction === "start" ? "Starting\u2026" : d.repoAction === "reset" ? "Resetting\u2026" : btnText + "\u2026";
     // The latest progress line shows next to the button: a start can take
     // minutes (installs, health checks) and the log is at the page bottom.
     // With a live plan row it moves under that row (paintRuns).
     var progress = document.createElement("span");
     progress.className = "row-progress";
     progress.setAttribute("aria-live", "polite");
-    progress.textContent = "starting\u2026";
+    progress.textContent = d.repoAction === "reset" ? "resetting\u2026" : "starting\u2026";
     anchor.insertAdjacentElement("beforebegin", progress);
     var startKey = btn.dataset.key || "";
-    if (startKey) reposState.starts[startKey] = { inMenu: inMenu, repo: d.repo, text: progress.textContent };
+    if (startKey) reposState.starts[startKey] = { inMenu: inMenu, repo: d.repo, text: progress.textContent, reset: d.repoAction === "reset" };
     reposState.busy = (reposState.busy || 0) + 1;
     delete reposState.errors[d.repo];
-    if (d.repoAction === "start" && reposState.runs[d.repo]) { // a new Start replaces the previous run's states
+    if (isStreamAction(d.repoAction) && reposState.runs[d.repo]) { // a new Start replaces the previous run's states
       delete reposState.runs[d.repo];
       lastRepos = null;
       loadRepos();
@@ -2073,7 +2083,7 @@
   // The script tests (appscript_runs_test.go) load this file in Node and ask
   // for the functions they exercise; a browser never defines __sfExport.
   if (typeof window.__sfExport === "function") {
-    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck });
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip });
   }
 
   if (document.readyState === "loading") {

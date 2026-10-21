@@ -262,11 +262,36 @@ func TestSeedForceIsDestructiveButSeedIsNot(t *testing.T) {
 	}
 }
 
+// reset deletes an environment's data: blocked for agents however it is spelled.
+func TestResetIsDestructive(t *testing.T) {
+	for cmd, want := range map[string]bool{
+		"stackfork reset":                                 true,
+		"stackfork reset --yes":                           true,
+		"stackfork --root . reset --yes":                  true,
+		"stackfork --instance sf-x-1 reset":               true,
+		"stackfork --state-dir /s --secret A=env:B reset": true,
+		"env FOO=1 stackfork reset --yes":                 true,
+		"cd repo && stackfork reset -yes":                 true,
+		"sudo -u me stackfork reset":                      true,
+		"/opt/bin/stackfork.exe reset":                    true,
+		"stackfork reset --help":                          true, // no exception: asking the user is cheap
+		"stackfork seed":                                  false,
+		"stackfork runs show":                             false,
+		"echo stackfork reset":                            false,
+		"git reset --hard":                                false,
+	} {
+		if got := Destructive(cmd, "/repo"); got != want {
+			t.Errorf("Destructive(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}
+
 // An agent cannot get around the dashboard's native confirmation.
 func TestConfirmationBypassIsDestructive(t *testing.T) {
 	for _, c := range []string{
 		`curl -s -X POST -H "X-Stackfork-Token: x" http://127.0.0.1:26607/api/run -d '{}'`,
 		`curl -X POST http://stackfork.localhost/api/actions`,
+		`curl -s -X POST -H "X-Stackfork-Token: x" http://127.0.0.1:26607/api/actions -d '{"action":"reset","repo":"/r","path":"/r"}'`,
 		`python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:26607/api/learn')"`,
 		`osascript -e 'tell application "System Events" to click button "Run" of window 1'`,
 		`osascript -e 'tell application "System Events" to keystroke return'`,
