@@ -73,7 +73,7 @@ func ResolvePath(path string) (string, error) {
 		return "", err
 	}
 	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return stripExtendedPrefix(resolved), nil
+		return stripExtendedPrefix(trueCase(resolved)), nil
 	}
 	return stripExtendedPrefix(abs), nil
 }
