@@ -26,6 +26,9 @@ type SiblingRecipe struct {
 	// untracked lists the Files (and EnvFile) git does not track: Apply
 	// copies their folders from the sibling.
 	untracked []string
+	// skipKnowledge: Apply leaves knowledge.json where it is (the main
+	// recipe: a worktree reads the main checkout's file).
+	skipKnowledge bool
 }
 
 // SiblingReport lists exactly what Apply did. It names files and env keys,
@@ -193,7 +196,7 @@ func (r *SiblingRecipe) Apply(target string) (SiblingReport, error) {
 		for _, e := range entries {
 			x := filepath.ToSlash(filepath.Join(d, e.Name()))
 			dst := filepath.Join(target, filepath.FromSlash(x))
-			if !e.Type().IsRegular() || x == r.EnvFile || strings.HasSuffix(e.Name(), ".log") {
+			if !e.Type().IsRegular() || x == r.EnvFile || strings.HasSuffix(e.Name(), ".log") || (r.skipKnowledge && e.Name() == "knowledge.json") {
 				continue
 			}
 			if _, err := os.Lstat(dst); err == nil {

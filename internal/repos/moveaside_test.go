@@ -2,6 +2,7 @@ package repos
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -141,5 +142,114 @@ func TestMoveAsideReportsWhatMovedWhenARenameFails(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(wt, ".stackfork", "b.yml")); err != nil {
 		t.Fatal("the unmoved file is gone")
+	}
+}
+
+// C1: an untracked root file in the recipe must never turn "." into a
+// folder to sweep (it would move the worktree's .git file).
+func TestAsideFilesRefusesAnUntrackedRecipeFileOutsideTheAdapterFolders(t *testing.T) {
+	_, wt, _ := mainRecipeFixture(t)
+	write(t, filepath.Join(wt, "notes.md"), "n\n", 0o644)
+	write(t, filepath.Join(wt, ".env.local"), "E=1\n", 0o600)
+	r := &SiblingRecipe{untracked: []string{"compose.override.yaml"}}
+	files, err := AsideFiles(wt, r)
+	if err == nil || !strings.Contains(err.Error(), "compose.override.yaml") || files != nil {
+		t.Fatalf("want a refusal naming the file, got %v %v", files, err)
+	}
+	if rep, err := MoveAside(wt, r); err == nil || len(rep.Moved) != 0 {
+		t.Fatalf("MoveAside must refuse too: %+v %v", rep, err)
+	}
+	if _, err := os.Stat(filepath.Join(wt, ".git")); err != nil {
+		t.Fatal(".git is gone")
+	}
+	if top := strings.TrimSpace(git(t, wt, "rev-parse", "--show-toplevel")); top != wt {
+		t.Fatalf("worktree detached: %s", top)
+	}
+	for _, f := range []string{"notes.md", ".env.local"} {
+		if _, err := os.Stat(filepath.Join(wt, f)); err != nil {
+			t.Fatalf("%s moved", f)
+		}
+	}
+}
+
+// C2: a symlinked adapter folder (pointing at main's) is refused, and
+// nothing in main moves.
+func TestAsideFilesRefusesASymlinkedAdapterFolder(t *testing.T) {
+	main, wt, insts := mainRecipeFixture(t)
+	os.RemoveAll(filepath.Join(wt, ".stackfork"))
+	if err := os.Symlink(filepath.Join(main, ".stackfork"), filepath.Join(wt, ".stackfork")); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	r, _ := FindMainRecipe(main, wt, insts)
+	if files, err := AsideFiles(wt, r); err == nil || files != nil || !strings.Contains(err.Error(), "symbolic link") {
+		t.Fatalf("want a refusal, got %v %v", files, err)
+	}
+	if rep, err := MoveAside(wt, r); err == nil || len(rep.Moved) != 0 {
+		t.Fatalf("MoveAside must refuse: %+v %v", rep, err)
+	}
+	for _, f := range []string{"dev.compose.yaml", "runtime.env"} {
+		if _, err := os.Stat(filepath.Join(main, ".stackfork", f)); err != nil {
+			t.Fatalf("main lost %s", f)
+		}
+	}
+}
+
+func TestAsideFilesRefusesASymlinkedAsideFolder(t *testing.T) {
+	main, wt, insts := mainRecipeFixture(t)
+	r, _ := FindMainRecipe(main, wt, insts)
+	out := t.TempDir()
+	if err := os.Symlink(out, filepath.Join(wt, ".stackfork-aside")); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	if _, err := MoveAside(wt, r); err == nil || !strings.Contains(err.Error(), ".stackfork-aside") {
+		t.Fatalf("want a refusal: %v", err)
+	}
+	if ents, _ := os.ReadDir(out); len(ents) != 0 {
+		t.Fatal("files went through the symlink")
+	}
+}
+
+// A git failure other than "not tracked" (exit 1) is an error, never "untracked".
+func TestAsideFilesTreatsOtherGitFailuresAsErrors(t *testing.T) {
+	main, wt, insts := mainRecipeFixture(t)
+	r, _ := FindMainRecipe(main, wt, insts)
+	real, _ := exec.LookPath("git")
+	dir := t.TempDir()
+	script := "#!/bin/sh\ncase \" $* \" in *\" ls-files \"*) exit 3;; esac\nexec " + real + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if files, err := AsideFiles(wt, r); err == nil || files != nil {
+		t.Fatalf("want an error, got %v %v", files, err)
+	}
+	if rep, err := MoveAside(wt, r); err == nil || len(rep.Moved) != 0 {
+		t.Fatalf("%+v %v", rep, err)
+	}
+	if _, err := os.Stat(filepath.Join(wt, ".stackfork", "old.compose.yaml")); err != nil {
+		t.Fatal("a file moved")
+	}
+}
+
+// M2: the main recipe never copies main's knowledge.json; the worktree falls
+// back to main's file.
+func TestMainRecipeApplyLeavesKnowledgeInMain(t *testing.T) {
+	main, wt, insts := mainRecipeFixture(t)
+	write(t, filepath.Join(main, ".stackfork", "knowledge.json"), "{}\n", 0o644)
+	r, err := FindMainRecipe(main, wt, insts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MoveAside(wt, r); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Apply(wt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(wt, ".stackfork", "knowledge.json")); err == nil {
+		t.Fatal("main's knowledge.json was copied")
+	}
+	if _, err := os.Stat(filepath.Join(wt, ".stackfork", "dev.compose.yaml")); err != nil {
+		t.Fatal("the recipe files were not copied")
 	}
 }
