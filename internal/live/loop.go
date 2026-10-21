@@ -160,14 +160,17 @@ func LastLiveRun(instanceDir string) *RunInfo {
 const HostSkipWarning = "host steps skipped: run start-env"
 
 // HostStepsSkipped is true when a live run skipped a host step (HostSkipReason)
-// and no run of another trigger came after it. Live runs settle the baseline
+// and no start-env or reset that succeeded came after it. Live runs settle the baseline
 // for a change whose only work was a host step, so this keeps it visible until
-// a person's full run (start-env, reset, up) does that work.
+// a person's start-env or reset does that work.
 func HostStepsSkipped(instanceDir string) bool {
 	list, _ := runs.List(instanceDir)
 	for _, r := range list {
 		if r.Trigger != TriggerLive {
-			return false
+			if (r.Command == "start-env" || r.Command == "reset") && r.Outcome == runs.Succeeded {
+				return false // a full run that completed did the host steps
+			}
+			continue // up, seed or a failed run did not
 		}
 		for _, s := range r.Steps {
 			if s.State == runs.Skipped && s.Reason == HostSkipReason {

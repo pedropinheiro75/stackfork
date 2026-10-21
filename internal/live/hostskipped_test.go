@@ -1,13 +1,14 @@
 package live
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 )
 
-func finishedRun(t *testing.T, dir, command, trigger string, skip bool) {
+func finishedRun(t *testing.T, dir, command, trigger string, skip bool, fail ...bool) {
 	t.Helper()
 	r, err := runs.Begin(dir, runs.Meta{Command: command, Trigger: trigger})
 	if err != nil {
@@ -19,6 +20,10 @@ func finishedRun(t *testing.T, dir, command, trigger string, skip bool) {
 	} else {
 		s.Start()
 		s.End(nil, 0)
+	}
+	if len(fail) > 0 && fail[0] {
+		r.Finish(errors.New("boom"))
+		return
 	}
 	r.Finish(nil)
 }
@@ -39,8 +44,15 @@ func TestHostStepsSkippedUntilAFullRun(t *testing.T) {
 	if !HostStepsSkipped(dir) {
 		t.Fatal("a later live run must not hide the skipped host step")
 	}
-	finishedRun(t, dir, "start-env", "cli", false)
+	// only a start-env or reset that completed clears it
+	finishedRun(t, dir, "up", "cli", false)
+	finishedRun(t, dir, "seed", "cli", false)
+	finishedRun(t, dir, "start-env", "cli", false, true)
+	if !HostStepsSkipped(dir) {
+		t.Fatal("up, seed and a failed start-env ran no host step")
+	}
+	finishedRun(t, dir, "reset", "cli", false)
 	if HostStepsSkipped(dir) {
-		t.Fatal("start-env ran the host steps")
+		t.Fatal("reset ran the host steps")
 	}
 }

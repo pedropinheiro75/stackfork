@@ -103,7 +103,10 @@ func TestPlanRunnerExecRefusesAnUntrustedHostStep(t *testing.T) {
 	plan := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{step}}
 	var calls int
 	old := HostExec
-	HostExec = func(io.Writer, string, string, string, string, string, knowledge.Step) (int, error) { calls++; return 0, nil }
+	HostExec = func(io.Writer, string, string, string, string, string, knowledge.Step) (int, error) {
+		calls++
+		return 0, nil
+	}
 	t.Cleanup(func() { HostExec = old })
 	r := PlanRunner{NewBase: t.TempDir(), Main: t.TempDir(), Plan: plan}
 	if _, err := r.exec(io.Discard, step); err == nil || !strings.Contains(err.Error(), "not trusted on this machine") || calls != 0 {
