@@ -55,10 +55,8 @@ func ResolveExecService(instanceDir string, step knowledge.Step, plan knowledge.
 		return service
 	}
 	if len(svcs) == 1 {
-		for name, raw := range svcs { // a single-service stack has one place to run it, unless that is a database: the app command is not there
-			if !compose.DatabaseService(raw) && !compose.UtilityService(raw) {
-				return name
-			}
+		for name := range svcs { // a single-service stack has one place to run it (psql, mysql and mongosh commands run in the database)
+			return name
 		}
 	}
 	return ""
@@ -90,14 +88,37 @@ func hostHint(instanceDir string, plan knowledge.Plan, id, cmd, once string) str
 			return ""
 		}
 	}
-	if _, err := knowledge.SplitArgv(cmd); err != nil { // a host step is one command, never a shell line
-		return "no service of this stack runs the app; to run it on the host, the command needs a shell-free form (no &&, |, ;, redirects or substitutions): one command per step"
+	return hostRecordHint("no service of this stack runs the app", id, cmd, once)
+}
+
+// hostRecordHint is the hint that ends with the command recording the step on the
+// host, or, for a command SplitArgv refuses (a host step is one command, never
+// a shell line), the note that it needs a shell-free form.
+func hostRecordHint(why, id, cmd, once string) string {
+	if _, err := knowledge.SplitArgv(cmd); err != nil {
+		return why + "; to run it on the host, the command needs a shell-free form (no &&, |, ;, redirects or substitutions): one command per step"
 	}
-	h := fmt.Sprintf("no service of this stack runs the app; to run it on the host with this instance's environment:\n  stackfork learn record step --id %s --kind exec --on host --cmd %q", id, cmd)
+	h := fmt.Sprintf("%s; to run it on the host with this instance's environment:\n  stackfork learn record step --id %s --kind exec --on host --cmd %q", why, id, cmd)
 	if once != "" {
 		h += " --once " + once
 	}
 	return h
+}
+
+// notFoundHint is the end of the error for a container exec that exited 126 or
+// 127 in a database or utility service: the app command is not there, so the
+// step likely belongs on the host. "" for any other service or status.
+func notFoundHint(instanceDir, service string, code int, id, cmd, once string) string {
+	if code != 126 && code != 127 {
+		return ""
+	}
+	top, _ := snapshotModel(instanceDir).(map[string]interface{})
+	svcs, _ := top["services"].(map[string]interface{})
+	raw, ok := svcs[service]
+	if !ok || !(compose.DatabaseService(raw) || compose.UtilityService(raw)) {
+		return ""
+	}
+	return hostRecordHint("the command was not found in "+service+", a database or utility image", id, cmd, once)
 }
 
 // RunSeed execs cmd in service (default: the primary app service). On
@@ -171,6 +192,9 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 		err = fmt.Errorf("exited with status %d", code)
 	}
 	if err != nil {
+		if h := notFoundHint(instanceDir, service, code, "seed", seedCmdOf(plan, cmd), knowledge.OnceData); h != "" {
+			err = fmt.Errorf("%v; %s", err, h)
+		}
 		if step != nil {
 			step.End(err, code)
 		}

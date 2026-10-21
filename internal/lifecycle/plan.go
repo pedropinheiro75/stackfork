@@ -346,7 +346,11 @@ func (r PlanRunner) exec(w io.Writer, s knowledge.Step) (int, error) {
 		return 0, err
 	}
 	if code != 0 {
-		return code, fmt.Errorf("exited with status %d", code)
+		err := fmt.Errorf("exited with status %d", code)
+		if h := notFoundHint(r.InstanceDir, svc, code, s.ID, s.Cmd, s.Once); h != "" {
+			err = fmt.Errorf("%v; %s", err, h)
+		}
+		return code, err
 	}
 	return 0, nil
 }

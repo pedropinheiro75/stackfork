@@ -13,8 +13,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
-// the one service is an app image: a database-only stack has no place for an app command (it gets the host hint)
-const seedCompose = "services:\n  db:\n    image: acme/app:1\n    volumes:\n      - pgdata:/var/lib/postgresql/data\nvolumes:\n  pgdata: {}\n"
+const seedCompose = "services:\n  db:\n    image: postgres:17\n    volumes:\n      - pgdata:/var/lib/postgresql/data\nvolumes:\n  pgdata: {}\n"
 
 func seedFixture(t *testing.T) (root, stateDir, log string) {
 	t.Helper()
@@ -264,7 +263,7 @@ func TestStatelessStackIsNeverSeeded(t *testing.T) {
 	log := installFakeDocker(t)
 	root := seedScriptRoot(t)
 	composePath := filepath.Join(root, "compose.yaml")
-	os.WriteFile(composePath, []byte("services:\n  db:\n    image: acme/app:1\n"), 0o600)
+	os.WriteFile(composePath, []byte("services:\n  db:\n    image: postgres:17\n"), 0o600)
 	stateDir := filepath.Join(t.TempDir(), "state")
 	runCLI(t, "--root", root, "--state-dir", stateDir, "prepare", "-f", composePath)
 	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
@@ -387,5 +386,22 @@ func TestRecordRecipeKeepsProposedSeedAndNoneIsExplicit(t *testing.T) {
 	runCLI(t, "--root", root, "learn", "record", "step", "--id", "seed", "--kind", "exec", "--cmd", "s", "--once", "data")
 	if k, _ = knowledge.Load(path); k.Plan.NoSeed || k.Plan.SeedStep() == nil {
 		t.Fatalf("recording a data step clears no_seed: %+v", k.Plan)
+	}
+}
+
+// A command with no service runs in the stack's only service, even a database
+// (psql, mysql and mongosh commands live there). When it is not found there,
+// the error suggests recording the step on the host.
+func TestSeedNotFoundInTheOnlyDatabaseSuggestsTheHost(t *testing.T) {
+	root, stateDir, _ := seedFixture(t)
+	k := `{"schema":2,"plan":{"status":"recorded","steps":[{"id":"up","kind":"compose-up"},{"id":"seed","kind":"exec","cmd":"bun run db:seed","once":"data"}]}}`
+	if err := os.WriteFile(filepath.Join(root, ".stackfork", "knowledge.json"), []byte(k), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	t.Setenv("DOCKER_FAKE_EXEC_EXIT", "127")
+	_, stderr, _ := runCLI(t, "--root", root, "--state-dir", stateDir, "up")
+	if !strings.Contains(stderr, "--on host") || !strings.Contains(stderr, `--cmd "bun run db:seed"`) {
+		t.Fatalf("no host hint:\n%s", stderr)
 	}
 }

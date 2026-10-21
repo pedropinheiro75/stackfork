@@ -60,11 +60,6 @@ func TestMissingServiceSuggestsTheHostWhenNoServiceRunsTheApp(t *testing.T) {
 	if _, err := hostHintStack(t, `{"postgres":{"image":"postgres:17"}}`).exec(io.Discard, named); err == nil || !strings.Contains(err.Error(), hostRecord) {
 		t.Errorf("single postgres: %v", err)
 	}
-	// a single-service postgres stack and a step that names none: no "only service" fallback into the database
-	unnamed := knowledge.Step{ID: "migrate", Kind: knowledge.KindExec, Cmd: "bun run db:migrate", Once: knowledge.OnceSchema}
-	if _, err := hostHintStack(t, `{"postgres":{"image":"postgres:17"}}`).exec(io.Discard, unnamed); err == nil || !strings.Contains(err.Error(), hostRecord) {
-		t.Errorf("single postgres, no service: %v", err)
-	}
 	// the suggestion repeats the step's cmd and once; once is left out when unset
 	step.Once = ""
 	if _, err := hostHintStack(t, `{"db":{"image":"mysql:8"},"cache":{"image":"redis:7"}}`).exec(io.Discard, step); err == nil || !strings.HasSuffix(err.Error(), `--cmd "bun run db:migrate"`) {
