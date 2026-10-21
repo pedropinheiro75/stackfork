@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -204,4 +205,48 @@ func TestAppsEntryHostRoute(t *testing.T) {
 			t.Fatalf("duplicate route chip: %+v", inst.Apps)
 		}
 	}
+}
+
+// A path link on a guessed entry must not hide the heuristic's App chip.
+func TestAppsGuessedEntryKeepsAppWithPathLink(t *testing.T) {
+	inst := collectEntry(t, "sf-entrypathlink-1", &knowledge.Knowledge{
+		Entry: &knowledge.Entry{Service: "nginx", Port: 80, Proposed: true},
+		Links: []knowledge.Link{{Name: "Dashboard", Path: "/admin"}},
+	})
+	var labels []string
+	for _, a := range inst.Apps {
+		labels = append(labels, a.Label)
+	}
+	if got := strings.Join(labels, ","); !strings.Contains(got, "App") || !strings.Contains(got, "Dashboard") {
+		t.Fatalf("apps %s", got)
+	}
+}
+
+// A knowledge file that cannot load counts as no entry, with a warning.
+func TestAppsBrokenKnowledgeWarns(t *testing.T) {
+	installFakeDocker(t)
+	newBase := t.TempDir()
+	root := gitRepo(t, "main")
+	writeAppsFixture(t, newBase, "sf-entrybroken-1", root, &state.Manifest{}, entryConfig())
+	if err := os.MkdirAll(filepath.Join(root, ".stackfork"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".stackfork", "knowledge.json"), []byte("{nope"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inv, err := Collect(Options{NewStateBase: newBase, LegacyStateBase: t.TempDir(), Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range inv.Instances {
+		if i.Project == "sf-entrybroken-1" {
+			for _, w := range i.Warnings {
+				if strings.HasPrefix(w, "knowledge cannot be loaded: ") {
+					return
+				}
+			}
+			t.Fatalf("warnings %v", i.Warnings)
+		}
+	}
+	t.Fatal("instance not found")
 }

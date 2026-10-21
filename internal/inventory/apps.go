@@ -304,7 +304,9 @@ func entryApps(r knowledge.Resolved, inPlay bool, w knowledge.Where, services []
 			chip.Hint = "port assigned on start"
 		}
 		chips = append(chips, chip)
-		covered[fmt.Sprintf("%s:%d", l.Service, l.Port)] = true
+		if !l.OnEntry {
+			covered[fmt.Sprintf("%s:%d", l.Service, l.Port)] = true
+		}
 	}
 	return chips, warnings, covered
 }

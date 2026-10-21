@@ -452,7 +452,7 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 	model := map[string]interface{}{"services": svcMap}
 	primaryService, primaryTarget, primaryHTTPS, hasPrimary := compose.PrimaryHTTPService(model)
 	// The recorded entry (or the host route) replaces the guess (entry-links D6).
-	k, _ := knowledge.LoadForCheckout(info.Root)
+	k, kerr := knowledge.LoadForCheckout(info.Root)
 	entry := knowledge.ResolveEntry(k, model, info.Routes)
 	inPlay := k != nil && k.Entry != nil && !k.Entry.Proposed
 	if inPlay && entry.Source != knowledge.SourceHostRoute {
@@ -508,6 +508,9 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 		where.ProxyPort = proxyStatus.Port
 	}
 	chips, appWarnings, covered := entryApps(entry, inPlay, where, services)
+	if kerr != nil {
+		appWarnings = append(appWarnings, "knowledge cannot be loaded: "+kerr.Error())
+	}
 	apps := buildApps(services, info, primaryService, hasPrimary && !inPlay, covered)
 	if inPlay {
 		apps = append(chips, apps...)
