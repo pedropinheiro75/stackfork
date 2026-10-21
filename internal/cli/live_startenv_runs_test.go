@@ -109,7 +109,7 @@ func TestLiveStartEnvRuns(t *testing.T) {
 	for _, s := range r.Steps {
 		states = append(states, s.ID+"="+s.State)
 	}
-	if r.Outcome != runs.Succeeded || strings.Join(states, " ") != "prepare=succeeded up=succeeded seed=succeeded wait=succeeded helper=succeeded" {
+	if r.Outcome != runs.Succeeded || strings.Join(states, " ") != "sync=succeeded secrets=skipped prepare=succeeded up=succeeded seed=succeeded wait=succeeded helper=succeeded" {
 		t.Fatalf("%s %v\n%s", r.Outcome, states, first.String())
 	}
 	if files, _ := filepath.Glob(filepath.Join(instanceDir, "runs", "*.json")); len(files) != 1 {
