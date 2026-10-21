@@ -170,3 +170,27 @@ func TestLearnRecordEntryHelp(t *testing.T) {
 		t.Fatalf("%s", out)
 	}
 }
+
+// Dropping the entry leaves path-only links without a target; say which.
+func TestLearnRecordEntryNoneNamesOrphanLinks(t *testing.T) {
+	root, _ := seedKnowledge(t)
+	for _, a := range [][]string{
+		{"entry", "--port", "80", "--service", "nginx"},
+		{"link", "Dashboard", "--path", "/admin"},
+		{"link", "Email", "--service", "smtp4dev", "--port", "80"},
+	} {
+		if _, stderr, code := learnRec(t, root, a...); code != 0 {
+			t.Fatalf("%v: %s", a, stderr)
+		}
+	}
+	for _, flag := range []string{"--none", "--remove"} {
+		out, stderr, code := learnRec(t, root, "entry", flag)
+		all := out + stderr
+		if code != 0 || !strings.Contains(all, "these links follow the entry and now have no target: Dashboard\"") {
+			t.Fatalf("%s: %d %s", flag, code, all)
+		}
+		if _, _, code := learnRec(t, root, "entry", "--port", "80", "--service", "nginx"); code != 0 {
+			t.Fatal("re-record")
+		}
+	}
+}

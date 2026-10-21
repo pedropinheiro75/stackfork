@@ -155,13 +155,13 @@ func recordEntry(k *knowledge.Knowledge, rest []string, stack func() stackView) 
 			return "", errors.New("no entry is recorded")
 		}
 		k.Entry = nil
-		return "", nil
+		return orphanLinksNote(k), nil
 	case *none:
 		if *service != "" || *port != 0 || *path != "" {
 			return "", usage
 		}
 		k.Entry = &knowledge.Entry{None: true}
-		return "", knowledge.ValidateEntryLinks(k.Entry, k.Links)
+		return orphanLinksNote(k), knowledge.ValidateEntryLinks(k.Entry, k.Links)
 	}
 	if *service == "" || *port == 0 {
 		return "", usage
@@ -176,6 +176,21 @@ func recordEntry(k *knowledge.Knowledge, rest []string, stack func() stackView) 
 	}
 	k.Entry = e
 	return v.note, nil
+}
+
+// orphanLinksNote names the links that follow the entry (no service of
+// their own), which have no target once the entry is gone.
+func orphanLinksNote(k *knowledge.Knowledge) string {
+	var names []string
+	for _, l := range k.Links {
+		if l.Service == "" {
+			names = append(names, l.Name)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return "these links follow the entry and now have no target: " + strings.Join(names, ", ")
 }
 
 // recordLink is `learn record link`.
