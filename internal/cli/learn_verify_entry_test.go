@@ -15,6 +15,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 const verifyCompose = `services:
@@ -231,5 +232,60 @@ func TestLearnVerifyProbesLinks(t *testing.T) {
 	k2, _ := knowledge.Load(v2.path)
 	if code != 0 || !strings.Contains(out, "Email") || k2.Verification.Links[0].Answered {
 		t.Fatalf("%d %s %+v", code, out, k2.Verification)
+	}
+}
+
+// An exited entry service must not fall back to the manifest's stable port:
+// whatever listens there is not the app.
+func TestLearnVerifyStoppedEntryIgnoresStablePort(t *testing.T) {
+	stranger := newProbeServer(func(string) int { return 200 })
+	defer stranger.Close()
+	mail := newProbeServer(func(string) int { return 200 })
+	defer mail.Close()
+	for name, links := range map[string][]knowledge.Link{
+		"entry": nil,
+		"link":  {{Name: "Web", Service: "web", Port: 8080}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			entry := &knowledge.Entry{Service: "web", Port: 8080}
+			if name == "link" {
+				entry = &knowledge.Entry{Service: "mail", Port: 80}
+			}
+			v := newVerifyEnv(t, serverPort(t, stranger), serverPort(t, mail), entry, links)
+			manifests, _ := filepath.Glob(filepath.Join(v.flags[1], "*", "manifest.json"))
+			if len(manifests) == 0 {
+				manifests, _ = filepath.Glob(filepath.Join(v.flags[1], "*", "*", "manifest.json"))
+			}
+			if len(manifests) != 1 {
+				t.Fatalf("manifests %v", manifests)
+			}
+			m, _ := state.ReadManifest(manifests[0])
+			for i := range m.Ports {
+				if m.Ports[i].Service == "web" {
+					m.Ports[i].Host = serverPort(t, stranger)
+				}
+			}
+			data, _ := json.Marshal(m)
+			os.WriteFile(manifests[0], data, 0o600)
+			row := func(svc, st string, target, published int) string {
+				pub := ""
+				if st == "running" {
+					pub = fmt.Sprintf(`{"Protocol":"tcp","PublishedPort":%d,"TargetPort":%d,"URL":"127.0.0.1"}`, published, target)
+				}
+				return fmt.Sprintf(`{"ID":"c-%s","Name":"%s-1","Service":"%s","State":"%s","Health":"","Publishers":[%s]}`, svc, svc, svc, st, pub)
+			}
+			t.Setenv("DOCKER_FAKE_STATUS", row("web", "exited", 8080, 0)+"\n"+row("mail", "running", 80, serverPort(t, mail))+"\n")
+			out, stderr, code := v.verify(t)
+			if name == "entry" {
+				if code == 0 || !strings.Contains(stderr, "no published port yet") {
+					t.Fatalf("%d %s %s", code, out, stderr)
+				}
+			} else if code != 0 || !strings.Contains(out, "no published port yet") {
+				t.Fatalf("%d %s %s", code, out, stderr)
+			}
+			if len(stranger.paths) != 0 {
+				t.Fatalf("probed the stable port: %v", stranger.paths)
+			}
+		})
 	}
 }

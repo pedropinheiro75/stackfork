@@ -41,7 +41,7 @@ func probeEntryAndLinks(root, newStateBase, legacyStateBase string, k *knowledge
 		return "", nil, nil, err
 	}
 	r := knowledge.ResolveEntry(k, model, info.Routes)
-	where := knowledge.Where{Hostname: hostname, Rows: rows, Stable: info.Ports}
+	where := knowledge.Where{Hostname: hostname, Rows: rows}
 	label := fmt.Sprintf("%s:%d", k.Entry.Service, k.Entry.Port)
 	if k.Entry.Path != "" && k.Entry.Path != "/" {
 		label += k.Entry.Path
