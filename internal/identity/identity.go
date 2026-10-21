@@ -154,8 +154,13 @@ func BrowserHostname(project, selected string) (string, error) {
 	return hostname, nil
 }
 
-// stateDir joins the given state-dir name onto ~/.local/state.
+// stateDir joins the given state-dir name onto ~/.local/state, or onto
+// $STACKFORK_STATE_HOME when set: tests set it so nothing they prepare ever
+// lands in the developer's real state.
 func stateDir(name string) (string, error) {
+	if base := os.Getenv("STACKFORK_STATE_HOME"); base != "" {
+		return filepath.Join(base, name), nil
+	}
 	if runtime.GOOS == "windows" {
 		// Machine-local state: %LOCALAPPDATA%, not the roaming %APPDATA%.
 		base, err := os.UserCacheDir()
