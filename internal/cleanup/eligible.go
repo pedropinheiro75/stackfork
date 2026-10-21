@@ -96,6 +96,12 @@ func Evaluate(c Check) Verdict {
 		v.Warning = "PR merged, but git cannot remove a worktree with an initialized submodule; remove it yourself"
 		return v
 	}
+	// Removing the worktree drops its per-worktree refs; they are not
+	// reachable from any branch, so nothing above covers them.
+	if refs, err := git(path, "for-each-ref", "--format=%(refname)", "refs/worktree", "refs/bisect", "refs/rewritten"); err != nil || refs != "" {
+		v.Warning = "PR merged, but this worktree has refs of its own (" + strings.Join(head(strings.Fields(refs), 3), ", ") + "); removing it would drop them"
+		return v
+	}
 	v.Dirty = dirty(c.Main, path, c.Adapter)
 	if len(v.Dirty) > 0 {
 		v.Warning = "PR merged, but this worktree has uncommitted changes"

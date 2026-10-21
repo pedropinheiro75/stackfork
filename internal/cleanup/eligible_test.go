@@ -261,3 +261,17 @@ func TestEvaluateInitializedSubmoduleIsNotEligible(t *testing.T) {
 		t.Fatalf("initialized submodule: %+v", v)
 	}
 }
+
+// Removing a worktree drops its per-worktree refs (refs/worktree/*,
+// refs/bisect/*, refs/rewritten/*): a person's bookmark there is work.
+func TestEvaluatePerWorktreeRefsAreNotEligible(t *testing.T) {
+	f, c, r := mergedFx(t)
+	if v := Evaluate(Check{Main: f.Main, Candidate: c, Result: r}); !v.Eligible {
+		t.Fatalf("baseline: %+v", v)
+	}
+	run(t, c.Path, "update-ref", "refs/worktree/keep-this", "HEAD")
+	v := Evaluate(Check{Main: f.Main, Candidate: c, Result: r})
+	if v.Eligible || !strings.Contains(v.Warning, "refs/worktree/keep-this") {
+		t.Fatalf("%+v", v)
+	}
+}
