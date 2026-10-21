@@ -94,6 +94,25 @@ func TestDetectSquashBeyondTheCommitCapIsNotMerged(t *testing.T) {
 	}
 }
 
+// git cherry ignores merge commits, so a merge that carries content (here
+// evil.txt) must not pass for a rebase merge.
+func TestDetectContentCarryingMergeCommitIsNotMergedViaCherry(t *testing.T) {
+	f := newFixture(t)
+	wt := f.branch(t, "feature-login", 1)
+	commit(t, f.Main, "other.txt", "o\n", "unrelated")
+	run(t, f.Main, "push", "-q", "origin", "main")
+	run(t, wt, "fetch", "-q", "origin")
+	run(t, wt, "merge", "-q", "--no-ff", "--no-commit", "origin/main")
+	put(t, wt, "evil.txt", "not reviewed\n")
+	run(t, wt, "add", "evil.txt")
+	run(t, wt, "commit", "-q", "-m", "merge main")
+	run(t, f.Main, "cherry-pick", run(t, wt, "rev-parse", "feature-login^1"))
+	f.settle(t, "feature-login", true)
+	if r := f.detect(t, "feature-login"); r.State != Closed {
+		t.Fatalf("got %+v", r)
+	}
+}
+
 func TestDetectWritesNoObjects(t *testing.T) {
 	f := newFixture(t)
 	f.branch(t, "feature-login", 2)

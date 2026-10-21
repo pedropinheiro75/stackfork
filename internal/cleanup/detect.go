@@ -96,8 +96,12 @@ func inDefault(main, branch, target string) string {
 	if _, err := git(main, "merge-base", "--is-ancestor", ref, target); err == nil {
 		return ViaAncestry
 	}
-	if cherry, err := git(main, "cherry", target, ref); err == nil && !strings.Contains("\n"+cherry, "\n+") {
-		return ViaCherry
+	// git cherry skips merge commits, which can carry content of their own:
+	// with one in the branch only the whole-diff check below can prove it.
+	if merges, err := git(main, "rev-list", "--merges", "--max-count=1", target+".."+ref); err == nil && merges == "" {
+		if cherry, err := git(main, "cherry", target, ref); err == nil && !strings.Contains("\n"+cherry, "\n+") {
+			return ViaCherry
+		}
 	}
 	if squashMerged(main, ref, target) {
 		return ViaPatchID
