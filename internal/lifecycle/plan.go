@@ -317,6 +317,9 @@ func (r PlanRunner) upServices(w io.Writer, s knowledge.Step) ([]string, error) 
 // returns the command's exit status.
 func (r PlanRunner) exec(w io.Writer, s knowledge.Step) (int, error) {
 	if s.IsHostExec() {
+		if err := requireTrust(r.NewBase, r.Main, r.Plan); err != nil { // defence in depth: Check ran earlier
+			return 0, err
+		}
 		fmt.Fprintf(w, "running %s on the host: %s\n", s.ID, s.Cmd)
 		code, err := HostExec(w, r.Project, r.Root, r.InstanceDir, r.NewBase, r.LegacyBase, s)
 		if err == nil && code != 0 {

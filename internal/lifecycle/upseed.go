@@ -149,7 +149,7 @@ func UpAndSeed(out, errOut io.Writer, a UpSeed) UpOutcome {
 	}
 	withLock(a.Lock, a.InstanceDir, func() {
 		cmd, svc := SeedRecipeIn(a.Root, a.Main, a.InstanceDir, a.Mode)
-		res.SeedErr = RunSeed(out, errOut, a.Root, a.Branch, a.Project, a.InstanceDir, a.NewBase, a.LegacyBase, cmd, svc, a.Plan, seedS)
+		res.SeedErr = RunSeed(out, errOut, a.Root, a.Main, a.Branch, a.Project, a.InstanceDir, a.NewBase, a.LegacyBase, cmd, svc, a.Plan, seedS)
 	})
 	res.Seeded = res.SeedErr == nil
 	return res

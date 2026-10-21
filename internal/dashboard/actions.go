@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
-	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
@@ -208,17 +207,11 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 // for the repo, runs a host command: a host step or an exec step on the host.
 func planRunsHost(root string) bool {
 	main := repos.MainRepoOf(root)
-	if main == "" {
-		main = root
-	}
 	k, err := knowledge.LoadFirst(root, main)
 	if err != nil || k == nil {
 		return false
 	}
-	mode := knowledge.ModeContainer
-	if cfg, err := config.Load(); err == nil {
-		mode, _ = cfg.ModeForPlan(main, k.Plan)
-	}
+	mode := lifecycle.PlanMode(root, main) // the mode the run itself uses (same main, so the same answer)
 	run, _ := k.Plan.ForMode(mode)
 	for _, st := range run {
 		if st.Kind == knowledge.KindHost || st.IsHostExec() {

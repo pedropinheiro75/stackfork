@@ -1008,6 +1008,10 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 	// lock, so a Start waiting on this up's lock is never blocked by a wait here.
 	var rec *runs.Run
 	var runErr error
+	var upPlan knowledge.Plan // loaded once: the plan that is checked is the plan that runs
+	if action == "up" {
+		upPlan = lifecycle.LoadPlan(root, repos.MainRepoOf(root))
+	}
 	if action == "up" && !inRun {
 		if planMode == "" {
 			planMode = lifecycle.PlanMode(root, repos.MainRepoOf(root))
@@ -1016,7 +1020,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 			return 0, err // a refusal before the first step is not a run
 		}
 		main := repos.MainRepoOf(root)
-		if err := lifecycle.CheckSeedTrust(root, main, instanceDir, newStateBase, lifecycle.LoadPlan(root, main), planMode); err != nil {
+		if err := lifecycle.CheckSeedTrust(root, main, instanceDir, newStateBase, upPlan, planMode); err != nil {
 			return 0, err // an untrusted host seed: before any Docker call
 		}
 		var err error
@@ -1058,7 +1062,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		// a failed up leaves seeded:false, so the next up seeds
 		res := lifecycle.UpAndSeed(stdout, stderr, lifecycle.UpSeed{
 			Run: rec, Root: root, Main: main, Branch: branch, Project: project, InstanceDir: instanceDir,
-			NewBase: newStateBase, LegacyBase: legacyStateBase, Mode: planMode, Plan: lifecycle.LoadPlan(root, main), Seed: !inRun,
+			NewBase: newStateBase, LegacyBase: legacyStateBase, Mode: planMode, Plan: upPlan, Seed: !inRun,
 			Compose: func(so, se io.Writer) (int, error) {
 				return lifecycle.Execute(so, se, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
 			},

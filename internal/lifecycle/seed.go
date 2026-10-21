@@ -101,7 +101,7 @@ func hostHint(instanceDir string, plan knowledge.Plan, id, cmd, once string) str
 // seed's output goes to the step's writer (and so to its log), not to
 // stdout/stderr; the final failure message still goes to stderr. It returns
 // nil when there was nothing to run.
-func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase, cmd, service string, plan knowledge.Plan, step *runs.Step) error {
+func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir, newBase, legacyBase, cmd, service string, plan knowledge.Plan, step *runs.Step) error {
 	if cmd == "" { // nothing to run in this mode: leave the marker alone
 		if step != nil && step.State == runs.Pending {
 			step.Skip("no seed for this mode")
@@ -112,6 +112,14 @@ func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBa
 	hostSteps := hostSeedSteps(plan)
 	if hostSteps != nil && cmd != hostSeedCmd(hostSteps) {
 		hostSteps = nil // the command is not the plan's data step (a manifest recipe, say)
+	}
+	if hostSteps != nil {
+		if err := requireTrust(newBase, main, plan); err != nil { // the plan whose steps run here, not an earlier load
+			return failSeed(stderr, step, err)
+		}
+	} else if disk := hostSeedSteps(LoadPlan(root, main)); disk != nil && cmd == hostSeedCmd(disk) {
+		// cmd is a host seed but this plan has no such steps (it changed, or a live run cut them): never run it in a container
+		return failSeed(stderr, step, errors.New("the seed is a host command and the plan being run has no matching host step; run it again"))
 	}
 	if hostSteps == nil {
 		service = ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)
@@ -171,6 +179,14 @@ func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBa
 		step.End(nil, 0)
 	}
 	return nil
+}
+
+func failSeed(stderr io.Writer, step *runs.Step, err error) error {
+	if step != nil {
+		step.End(err, 0)
+	}
+	fmt.Fprintf(stderr, "not seeded: %v\n", err)
+	return err
 }
 
 // runHostSeed is RunSeed's tail for a seed on the host: the steps run in

@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
+	stpkg "github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 // stubHostExecCodes is stubHostExec with an exit status per step id.
@@ -178,5 +181,65 @@ func TestSeedRunsAHostSeedOnATrustedPlan(t *testing.T) {
 	}
 	if out, e, code := runCLI(t, append(base, "--root", repo, "seed")...); code != 0 || strings.Join(*calls, "|") != "seed: bun run db:seed" {
 		t.Fatalf("%d %s %s %v", code, out, e, *calls)
+	}
+}
+
+// swapSeedWhileLocked trusts the plan, then runs `up` or `seed` while the
+// instance lock is held; once the command has passed its trust check (its run
+// file exists) it rewrites the seed command in knowledge.json and lets go.
+func swapSeedWhileLocked(t *testing.T, cmd string) (calls *[]string, code int, stderr string) {
+	t.Helper()
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, hostSeedPlan(hostStep("seed", knowledge.OnceData, "bun run db:seed", "")))
+	calls = stubHostExecCodes(t, nil)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+	if _, e, c := runCLI(t, append(base, "--root", repo, "prepare", "-f", ".agent-dev/app.compose.yaml")...); c != 0 {
+		t.Fatal(e)
+	}
+	lock, err := stpkg.AcquireLock(filepath.Join(onlyRunDir(t, state), ".lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, stderr, code = runCLI(t, append(base, "--root", repo, cmd)...)
+	}()
+	for i := 0; len(runFiles(state)) == 0; i++ {
+		if i > 500 {
+			t.Fatal("the command never started its run")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	path := filepath.Join(repo, ".stackfork", "knowledge.json")
+	k, err := knowledge.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range k.Plan.Steps {
+		if k.Plan.Steps[i].ID == "seed" {
+			k.Plan.Steps[i].Cmd = "evil-command"
+		}
+	}
+	if err := k.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	lock.Release()
+	<-done
+	return calls, code, stderr
+}
+
+// The plan the check trusted is the plan that runs: a seed command rewritten
+// after the check, while the run waits for the lock, never reaches the host.
+func TestUpAndSeedRefuseAHostSeedSwappedAfterTheTrustCheck(t *testing.T) {
+	for _, cmd := range []string{"up", "seed"} {
+		t.Run(cmd, func(t *testing.T) {
+			calls, code, e := swapSeedWhileLocked(t, cmd)
+			if len(*calls) != 0 {
+				t.Fatalf("the host ran %v (exit %d): %s", *calls, code, e)
+			}
+		})
 	}
 }

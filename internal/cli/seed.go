@@ -23,13 +23,12 @@ func seedRecipe(root, instanceDir string) (cmd, service string) {
 	return lifecycle.SeedRecipe(root, repos.MainRepoOf(root), instanceDir)
 }
 
-func runSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBase, legacyBase, mode string, step *runs.Step) error {
-	main := repos.MainRepoOf(root)
+func runSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir, newBase, legacyBase, mode string, plan knowledge.Plan, step *runs.Step) error {
 	if mode == "" {
 		mode = lifecycle.PlanMode(root, main)
 	}
 	cmd, service := lifecycle.SeedRecipeIn(root, main, instanceDir, mode)
-	return lifecycle.RunSeed(stdout, stderr, root, branch, project, instanceDir, newBase, legacyBase, cmd, service, lifecycle.LoadPlan(root, main), step)
+	return lifecycle.RunSeed(stdout, stderr, root, main, branch, project, instanceDir, newBase, legacyBase, cmd, service, plan, step)
 }
 
 // cmdSeed is `stackfork seed [--force]`: runs the recorded seed_once unless
@@ -68,7 +67,8 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	main := repos.MainRepoOf(root)
 	mode := lifecycle.PlanMode(root, main)
-	if err := lifecycle.CheckSeedTrust(root, main, instanceDir, newBase, lifecycle.LoadPlan(root, main), mode); err != nil {
+	plan := lifecycle.LoadPlan(root, main) // one load: the plan that is checked is the plan that runs
+	if err := lifecycle.CheckSeedTrust(root, main, instanceDir, newBase, plan, mode); err != nil {
 		return 0, err // an untrusted host seed: before the preflight and any Docker call
 	}
 	var vals lifecycle.SecretValues
@@ -82,7 +82,7 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		rec.Finish(err)
 		return 0, err
 	}
-	entry, _ := lifecycle.SeedEntry(root, main, instanceDir, lifecycle.LoadPlan(root, main), mode)
+	entry, _ := lifecycle.SeedEntry(root, main, instanceDir, plan, mode)
 	if entry.ID == "" { // cmd != "" above, so SeedEntry has an entry
 		entry.ID = "seed"
 	}
@@ -93,7 +93,7 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		return 0, err
 	}
 	defer lock.Release()
-	serr := runSeed(stdout, stderr, root, branch, project, instanceDir, newBase, legacyBase, mode, step)
+	serr := runSeed(stdout, stderr, root, main, branch, project, instanceDir, newBase, legacyBase, mode, plan, step)
 	if serr != nil {
 		rec.SetRetry("stackfork --instance " + project + " seed")
 		rec.Finish(fmt.Errorf("step %s failed: %v; retry with stackfork seed", entry.ID, serr))

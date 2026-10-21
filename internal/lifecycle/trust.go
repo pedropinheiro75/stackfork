@@ -55,6 +55,13 @@ func CheckSeedTrust(root, main, instanceDir, stateBase string, plan knowledge.Pl
 	if e, ok := SeedEntry(root, main, instanceDir, plan, mode); !ok || !e.IsHostExec() {
 		return nil
 	}
+	return requireTrust(stateBase, main, plan)
+}
+
+// requireTrust refuses plan unless this machine trusts it. The code that runs
+// a host command calls it on the plan value whose steps it runs: a check on an
+// earlier load of the file proves nothing about this one.
+func requireTrust(stateBase, main string, plan knowledge.Plan) error {
 	if ok, _ := HashTrusted(stateBase, main, plan); !ok {
 		return errUntrusted(stateBase, main, plan)
 	}
