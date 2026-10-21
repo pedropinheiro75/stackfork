@@ -19,6 +19,7 @@ Dependency caches across restarts: `prepare` turns an anonymous volume on a depe
 ### up
 Start the prepared stack.
 Flags: `--build`, `--force`, `--mode`, `--profile`, `--service`, `--wait-timeout`
+If Compose fails with `endpoint with name X already exists in network N` (Docker keeps these after a crash or a full disk) and N is one of this project's networks and X is not a running container, `up` force-disconnects X, prints a note and retries once.
 `--mode container|hybrid` names the plan mode that decides whether this `up` runs the one-time seed (default: the configured mode); `start-env` sets it.
 ```sh
 stackfork up --build --wait-timeout 120
@@ -27,7 +28,7 @@ stackfork up --build --wait-timeout 120
 ### down
 Stop it (data kept unless `--volumes`).
 Flags: `--volumes`, `--forget`, `--instance`
-`--forget` (needs `--volumes`, else exit 2) removes the instance's state directory after a successful `down --volumes`, so it leaves the list; the next Start prepares it again. The dashboard's "Remove instance and data" runs it. The guard blocks `--forget` for agents.
+`--forget` (needs `--volumes`, else exit 2) removes the instance's state directory after a successful `down --volumes`, so it leaves the list; the next Start prepares it again. The dashboard's "Remove instance and data" runs it. The guard blocks `--forget` for agents. Every `down` also force-disconnects leftover endpoints of this project's networks (label `com.docker.compose.project`) whose container is gone, and removes the network.
 ```sh
 stackfork down --volumes
 ```

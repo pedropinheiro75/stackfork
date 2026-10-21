@@ -24,6 +24,10 @@ import (
 //   - `docker inspect -f {{.State.Running}} ...` -> $DOCKER_FAKE_PROXY_RUNNING (false by default)
 //   - `docker inspect -f {{(index ...HostPort}} ...` -> $DOCKER_FAKE_PROXY_PORT (empty by default)
 //   - `docker inspect -f {{.HostConfig.NetworkMode}} ...` -> $DOCKER_FAKE_PROXY_NETMODE (bridge by default), exit 1 if $DOCKER_FAKE_PROXY_MISSING is set
+//   - `docker network ls ...` -> $DOCKER_FAKE_NETWORKS, one name per line (empty by default)
+//   - `docker network inspect ...` -> $DOCKER_FAKE_NET_ENDPOINTS, one endpoint name per line (empty by default)
+//   - `docker container inspect -f {{.State.Running}} NAME` -> true when NAME is in $DOCKER_FAKE_CONTAINERS (space separated), else exit 1
+//   - `docker compose ... up ...` -> fails with $DOCKER_FAKE_UP_MSG on stderr once (every time when $DOCKER_FAKE_UP_ALWAYS is set)
 //   - anything else -> succeeds silently
 func installFakeDocker(t *testing.T) (logPath string) {
 	t.Helper()
@@ -44,10 +48,30 @@ if [ "$1" = "compose" ]; then
   done
   case " $* " in
     *" exec "*|*" run "*) printf '%s' "$DOCKER_FAKE_EXEC_OUT"; exit "${DOCKER_FAKE_EXEC_EXIT:-0}" ;;
+    *" up "*)
+      if [ -n "$DOCKER_FAKE_UP_MSG" ] && { [ -n "$DOCKER_FAKE_UP_ALWAYS" ] || [ ! -e "` + logPath + `.upfail" ]; }; then
+        : > "` + logPath + `.upfail"
+        printf '%s\n' "$DOCKER_FAKE_UP_MSG" >&2
+        exit 1
+      fi ;;
     *" ps "*) printf '%s' "$DOCKER_FAKE_STATUS" ;;
     *" logs "*) printf '%s' "$DOCKER_FAKE_LOGS" ;;
   esac
   exit "${DOCKER_FAKE_EXIT:-0}"
+fi
+if [ "$1" = "network" ] && [ "$2" = "ls" ]; then
+  printf '%s' "$DOCKER_FAKE_NETWORKS"
+  exit 0
+fi
+if [ "$1" = "network" ] && [ "$2" = "inspect" ]; then
+  printf '%s' "$DOCKER_FAKE_NET_ENDPOINTS"
+  exit 0
+fi
+if [ "$1" = "container" ] && [ "$2" = "inspect" ]; then
+  for c in $DOCKER_FAKE_CONTAINERS; do
+    if [ "$c" = "$5" ]; then printf true; exit 0; fi
+  done
+  exit 1
 fi
 if [ "$1" = "volume" ] && [ "$2" = "ls" ]; then
   printf '%s' "$DOCKER_FAKE_VOLUMES"

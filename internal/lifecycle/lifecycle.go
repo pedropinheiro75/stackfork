@@ -8,6 +8,7 @@
 package lifecycle
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -295,10 +296,19 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		dockerCommand = append(dockerCommand, opts.Command...)
 	}
 
-	cmd := exec.Command("docker", dockerCommand...)
-	cmd.Env = compose.DockerEnv(secretEnv)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	var upFailure bytes.Buffer // up only: what Compose said, to spot a stale network endpoint
+	newCmd := func() *exec.Cmd {
+		cmd := exec.Command("docker", dockerCommand...)
+		cmd.Env = compose.DockerEnv(secretEnv)
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		if action == "up" {
+			upFailure.Reset()
+			cmd.Stderr = io.MultiWriter(stderr, &upFailure)
+		}
+		return cmd
+	}
+	cmd := newCmd()
 	if action == "run" || action == "exec" {
 		// Both print what a container prints, to whoever called: redact with
 		// the values known for this instance (review I2).
@@ -322,6 +332,14 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		cmd.Stdin = os.Stdin
 	}
 	runErr := cmd.Run()
+	if runErr != nil && action == "up" && RecoverStaleEndpoint(stderr, project, upFailure.String()) {
+		cmd = newCmd()
+		cmd.Stdin = os.Stdin
+		runErr = cmd.Run() // once: a second failure is reported as it is
+	}
+	if action == "down" {
+		CleanProjectNetworks(stderr, project)
+	}
 
 	// Task 9.2, design.md D7 layer 3: `up`, `down`, and now a per-service
 	// `start`/`stop` (fix 5) are exactly the points where which containers
