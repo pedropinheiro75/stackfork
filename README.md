@@ -46,6 +46,25 @@ Choose one method:
 
 To check the install, run `stackfork version`. Docker with the Compose plugin must be running.
 
+## macOS app
+
+`Stackfork.app` is a menu bar app for macOS 14 or later. It runs its own dashboard for as long as it runs, shows your instances in the menu bar with **Start** and **Stop**, and opens the dashboard in a window. It needs no terminal and no installed CLI.
+
+1. Download `stackfork-app_VERSION_darwin_universal.dmg` and its `.sha256` file from the [releases page](https://github.com/pedropinheiro75/stackfork/releases).
+2. Check the download. In the folder that holds both files, run `shasum -a 256 -c stackfork-app_VERSION_darwin_universal.dmg.sha256`. It prints `OK`.
+3. Open the DMG and drag `Stackfork.app` to Applications.
+4. Clear the quarantine attribute:
+
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/Stackfork.app
+   ```
+
+5. Open Stackfork. The first menu row reads `Dashboard running`.
+
+The app is signed ad hoc and is not notarized yet, so macOS 15 and later refuse to open a downloaded copy until you clear the attribute. The command clears it for the helper inside the app too. Choose **Open at Login** in the menu to start the app after you log in; it works only when the app is in `/Applications` or `~/Applications`.
+
+The app runs its own copy of the dashboard, on a port of its own, and never uses or stops a `stackfork dashboard` that already runs in a terminal. Both can run side by side; live mode runs in only one of them. The app and the CLI share the same state directories, so update both together.
+
 ## Quick start
 
 These five steps start two isolated copies of one Compose project. The project is the `examples/node-postgres` example: a small Node server and Postgres. Each request counts a visit, so you can see that the two copies have separate data. The first run builds the app image.

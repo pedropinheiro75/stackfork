@@ -31,6 +31,20 @@ STACKFORK_LIVE=1 go test ./...
 Live tests use the synthetic fixtures in `testdata/`, never a real project
 checkout, so they pass on a clean machine.
 
+## The macOS app
+
+The app is a Swift package in `desktop/macos` (AppKit, WebKit, ServiceManagement and Foundation only; no dependency). It needs Xcode with Swift 6.2.
+
+```sh
+swift build --package-path desktop/macos
+swift test --package-path desktop/macos
+scripts/build-macos-app.sh 0.0.0-dev
+```
+
+The script writes `Stackfork.app`, the DMG and its `.sha256` file to `dist/macos-app/` (ignored by Git). Never use port 26607 or your own state directory in tests: run a built app with a temporary `HOME`.
+
+The release workflow builds the DMG after GoReleaser. If that step fails, the CLI release and its cask are already published. On the release runner, run `scripts/build-macos-app.sh VERSION` and then `gh release upload vVERSION dist/macos-app/*.dmg dist/macos-app/*.sha256`.
+
 ## Invariants (do not weaken)
 
 These come from `openspec/config.yaml` and hold for every change:

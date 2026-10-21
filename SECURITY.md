@@ -48,6 +48,12 @@ no-store`. The page itself only calls it for a pill whose displayed text
 already contains the `<password>` placeholder, and writes the response
 straight to the clipboard without logging or rendering it.
 
+## macOS app
+
+`Stackfork.app` runs `stackfork dashboard --supervised` from its own bundle as a child process. The child prints its URL and per-process token on one line of its standard output, which only the app reads. The app keeps the token in memory: it never writes it to a file, the user defaults, a log or a URL. It sends the token and the dashboard's own `Origin` with `POST /api/actions` for **Start** and **Stop**, and uses no other endpoint. The dashboard's checks, the agent guard and its native confirmations are unchanged. The app takes no commands from other processes (no URL scheme, scripting dictionary or XPC service). Any local process can still read the token with `GET /` on the dashboard's port, as with `stackfork dashboard`.
+
+The app is signed ad hoc with the hardened runtime. It is not notarized and has no Developer ID, so macOS cannot tell a tampered copy from the real one. Until the app is notarized, the `.sha256` file on the release is the only integrity check for the DMG: verify it before you open the app (`shasum -a 256 -c`). The app is not sandboxed, because it runs `docker`, `git` and host steps as you.
+
 ## Commands run from the dashboard
 
 `POST /api/run` runs a command the page shows, behind the same token,
