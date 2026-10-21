@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
 func cmdOpen(stdout io.Writer, subArgs []string, project, newStateBase, legacyStateBase string) error {
@@ -58,22 +59,17 @@ func cmdOpen(stdout io.Writer, subArgs []string, project, newStateBase, legacySt
 			}
 		}
 	}
+	if service == "" {
+		k, _ := knowledge.LoadForCheckout(inst.Root)
+		app, err := inventory.OpenApp(inst.Apps, k != nil && k.Entry != nil && k.Entry.None, false)
+		if err != nil {
+			return err
+		}
+		url = app.URL
+	}
 	for _, app := range inst.Apps {
-		if url != "" || app.URL == "" {
-			continue
-		}
-		if service != "" {
-			if app.Service == service {
-				url = app.URL
-			}
-			continue
-		}
-		if app.Label == "App" {
+		if url == "" && app.URL != "" && app.Service == service {
 			url = app.URL
-			break
-		}
-		if url == "" {
-			url = app.URL // fall back to the first link when none is the primary app
 		}
 	}
 	if url == "" {

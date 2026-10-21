@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -321,4 +322,38 @@ func withLinkChips(apps, links []AppLink) []AppLink {
 	out := append([]AppLink{}, apps[:at]...)
 	out = append(out, links...)
 	return append(out, apps[at:]...)
+}
+
+// OpenApp is the app that `stackfork open` and the card's Open App button
+// open: the recorded entry (an error saying why when it has no URL, or when
+// the entry is `none`), else the App chip, else the first service chip. A
+// link chip never stands in for the app. needRunning (the dashboard) skips
+// chips whose service is stopped.
+func OpenApp(apps []AppLink, none, needRunning bool) (*AppLink, error) {
+	ok := func(a AppLink) bool { return a.URL != "" && (a.Running || !needRunning) }
+	for i := range apps {
+		if apps[i].Source == "entry" {
+			if ok(apps[i]) {
+				return &apps[i], nil
+			}
+			msg := "the recorded entry has no URL yet"
+			if apps[i].Warning != "" {
+				msg += ": " + apps[i].Warning
+			} else if apps[i].Hint != "" {
+				msg += ": " + apps[i].Hint
+			}
+			return nil, errors.New(msg)
+		}
+	}
+	if none {
+		return nil, errors.New("no web entry recorded")
+	}
+	for _, label := range []string{knowledge.ReservedLinkName, ""} {
+		for i := range apps {
+			if apps[i].Source != "link" && ok(apps[i]) && (label == "" || apps[i].Label == label) {
+				return &apps[i], nil
+			}
+		}
+	}
+	return nil, errors.New("this instance has no app URL")
 }

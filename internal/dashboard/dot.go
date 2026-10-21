@@ -125,25 +125,12 @@ var (
 
 func runnable(cmd string) bool { return runnableCmd.MatchString(cmd) && !placeholder.MatchString(cmd) }
 
-// openApp is the app the card's Open App button opens: the recorded entry,
-// else the first running app link with a URL. A link chip never stands in
-// for the app, and a missing entry opens nothing. app.js's pickOpenApp must
-// match.
+// openApp is the app the card's Open App button opens: inventory.OpenApp
+// restricted to running chips; nil when there is none. app.js's pickOpenApp
+// must match.
 func openApp(apps []inventory.AppLink) *inventory.AppLink {
-	for i := range apps {
-		if apps[i].Source == "entry" {
-			if apps[i].URL != "" && apps[i].Running {
-				return &apps[i]
-			}
-			return nil
-		}
-	}
-	for i := range apps {
-		if apps[i].Source != "link" && apps[i].URL != "" && apps[i].Running {
-			return &apps[i]
-		}
-	}
-	return nil
+	a, _ := inventory.OpenApp(apps, false, true)
+	return a
 }
 
 // warningCommands are the commands the warnings name, minus the down
