@@ -2,7 +2,10 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
@@ -48,8 +51,61 @@ func (c *Config) SecretsFor(repo string) map[string]string {
 	return out
 }
 
-// Map sets the reference of a secret name for a repository, keyed by its
-// resolved path. The name and reference are validated like a --secret flag.
+// InheritedSecretsFor returns the references mapped on the folders above a
+// repository (never its own entry), and the folder each comes from. A folder
+// matches by path segments, and the nearest one wins per name (R2).
+func (c *Config) InheritedSecretsFor(repo string) (refs, from map[string]string) {
+	refs, from = map[string]string{}, map[string]string{}
+	key := repo
+	if p, err := identity.ResolvePath(repo); err == nil {
+		key = p
+	}
+	var dirs []string
+	for k := range c.Secrets {
+		if strings.HasPrefix(key, strings.TrimRight(k, string(filepath.Separator))+string(filepath.Separator)) {
+			dirs = append(dirs, k)
+		}
+	}
+	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) < len(dirs[j]) }) // the nearest is last, so it wins
+	for _, d := range dirs {
+		for n, r := range c.Secrets[d] {
+			refs[n], from[n] = r, d
+		}
+	}
+	return refs, from
+}
+
+// checkMapTarget refuses a path that is neither a repository root nor a
+// folder above repositories (R5); the error says why.
+func checkMapTarget(p string) error {
+	if p == filepath.VolumeName(p)+string(filepath.Separator) {
+		return fmt.Errorf("%s is the filesystem root; map a narrower folder", p)
+	}
+	if h, err := os.UserHomeDir(); err == nil {
+		if rh, err := identity.ResolvePath(h); err == nil && rh == p {
+			return fmt.Errorf("%s is your home directory; map a narrower folder", p)
+		}
+	}
+	fi, err := os.Stat(p)
+	switch {
+	case err != nil:
+		return fmt.Errorf("%s does not exist", p)
+	case !fi.IsDir():
+		return fmt.Errorf("%s is not a directory", p)
+	}
+	if _, err := os.Lstat(filepath.Join(p, ".git")); err == nil {
+		return nil // a repository root
+	}
+	for d := filepath.Dir(p); d != filepath.Dir(d); d = filepath.Dir(d) {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
+			return fmt.Errorf("%s is inside the repository %s; map the repository itself", p, d)
+		}
+	}
+	return nil
+}
+
+// Map sets the reference of a secret name for a repository or a folder
+// above repositories, keyed by its resolved path. The name and reference are validated like a --secret flag.
 func (c *Config) Map(repo, name, ref string) error {
 	if why := compose.SecretNameProblem(name); why != "" {
 		return fmt.Errorf("%s", why)
@@ -59,6 +115,9 @@ func (c *Config) Map(repo, name, ref string) error {
 	}
 	p, err := identity.ResolvePath(repo)
 	if err != nil {
+		return err
+	}
+	if err := checkMapTarget(p); err != nil {
 		return err
 	}
 	if c.Secrets == nil {

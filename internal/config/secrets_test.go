@@ -179,3 +179,96 @@ func TestReservedNameSaysReservedAndUnmapStillWorks(t *testing.T) {
 		t.Fatalf("%v %v", c2, err)
 	}
 }
+
+func mkdirs(t *testing.T, base string, rel ...string) []string {
+	t.Helper()
+	var out []string
+	for _, r := range rel {
+		p := filepath.Join(base, r)
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		rp, err := identity.ResolvePath(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, rp)
+	}
+	return out
+}
+
+// R2: an ancestor matches by path segments, never by string prefix, and the
+// nearest folder wins per name. The repo's own entry is not inherited.
+func TestInheritedSecretsForByAncestorSegments(t *testing.T) {
+	tempConfig(t)
+	base := t.TempDir()
+	d := mkdirs(t, base, "idv", "rr/team", "rr/team/app", "idv-other/app")
+	rr, team, app, other := d[0], d[1], d[2], d[3]
+	c := &Config{Secrets: map[string]map[string]string{
+		rr:    {"NPM_TOKEN": "keychain:far", "ONLY_FAR": "env:FAR"},
+		team:  {"NPM_TOKEN": "keychain:near"},
+		app:   {"NPM_TOKEN": "keychain:own"},
+		other: {"X": "env:X"},
+	}}
+	refs, from := c.InheritedSecretsFor(app)
+	if len(refs) != 2 || refs["NPM_TOKEN"] != "keychain:near" || refs["ONLY_FAR"] != "env:FAR" {
+		t.Fatalf("%v", refs)
+	}
+	if from["NPM_TOKEN"] != team || from["ONLY_FAR"] != rr {
+		t.Fatalf("%v", from)
+	}
+	if got := c.SecretsFor(app); len(got) != 1 || got["NPM_TOKEN"] != "keychain:own" {
+		t.Fatalf("own: %v", got)
+	}
+	if r, _ := c.InheritedSecretsFor(filepath.Join(rr + "-other")); len(r) != 0 {
+		t.Fatalf("string prefix matched: %v", r)
+	}
+	if r, _ := c.InheritedSecretsFor(rr); len(r) != 0 {
+		t.Fatalf("a key is not its own ancestor: %v", r)
+	}
+}
+
+func TestMapUnmapOnFolder(t *testing.T) {
+	tempConfig(t)
+	folder := t.TempDir()
+	c, _ := Load()
+	if err := c.Map(folder, "NPM_TOKEN", "keychain:acme-npm"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Unmap(folder, "NPM_TOKEN"); err != nil || len(c.Secrets) != 0 {
+		t.Fatalf("%v %v", err, c.Secrets)
+	}
+}
+
+// R5: what a folder mapping refuses, and why.
+func TestMapFolderRefusals(t *testing.T) {
+	tempConfig(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	base := t.TempDir()
+	file := filepath.Join(base, "f.txt")
+	os.WriteFile(file, []byte("x"), 0o600)
+	repo := mkdirs(t, base, "repo")[0]
+	os.Mkdir(filepath.Join(repo, ".git"), 0o755)
+	sub := mkdirs(t, base, "repo/sub")[0]
+	c, _ := Load()
+	for name, tc := range map[string]struct{ path, why string }{
+		"root":    {string(filepath.Separator), "root"},
+		"home":    {home, "home"},
+		"file":    {file, "not a directory"},
+		"missing": {filepath.Join(base, "nope"), "does not exist"},
+		"in repo": {sub, "inside the repository"},
+	} {
+		err := c.Map(tc.path, "NPM_TOKEN", "keychain:x")
+		if err == nil || !strings.Contains(err.Error(), tc.why) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if err := c.Map(repo, "NPM_TOKEN", "keychain:x"); err != nil {
+		t.Fatalf("a repository root is still allowed: %v", err)
+	}
+	if len(c.Secrets) != 1 {
+		t.Fatalf("%v", c.Secrets)
+	}
+}
