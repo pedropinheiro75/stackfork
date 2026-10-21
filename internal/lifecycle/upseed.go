@@ -53,7 +53,11 @@ func SeedEntry(root, main, instanceDir string, plan knowledge.Plan, mode string)
 	if cmd == "" {
 		return knowledge.Step{}, false
 	}
-	return knowledge.Step{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Cmd: cmd, Service: svc}, true
+	e := knowledge.Step{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Cmd: cmd, Service: svc}
+	if _, _, host := seedRecipeIn(root, main, instanceDir, mode); host { // a live run's plan has no data step, the checkout's does
+		e.On = knowledge.OnHost
+	}
+	return e, true
 }
 
 // RunOrder is the order a Start runs and shows steps in: the data step is

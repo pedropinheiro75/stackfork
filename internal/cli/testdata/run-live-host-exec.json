@@ -31,7 +31,7 @@
       "id": "seed",
       "kind": "exec",
       "state": "pending",
-      "text": "bun run db:migrate; then bun run db:seed"
+      "text": "bun run db:migrate; then bun run db:seed  on host"
     },
     {
       "ended_at": "TIME",
