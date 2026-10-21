@@ -231,3 +231,34 @@ func TestStartEnvRedactsSiblingSecretsInPrepareLog(t *testing.T) {
 		}
 	}
 }
+
+// A sibling's keychain: or op:// reference is not reused (the machine map
+// holds those); the Start says so by name, never by reference (N6).
+func TestStartEnvNotesDroppedSiblingStoreReference(t *testing.T) {
+	repo, sib, base := siblingRepo(t)
+	installFakeDocker(t)
+	whereOut, _, _ := runCLI(t, append(base, "--root", sib, "where")...)
+	var w struct{ State string }
+	json.Unmarshal([]byte(whereOut), &w)
+	mp := filepath.Join(w.State, "manifest.json")
+	raw, _ := os.ReadFile(mp)
+	var man map[string]any
+	json.Unmarshal(raw, &man)
+	man["secrets"] = map[string]string{"tok": "keychain:sibling-item-canary"}
+	raw, _ = json.Marshal(man)
+	os.WriteFile(mp, raw, 0o600)
+	nw := filepath.Join(repo, ".worktrees", "feat-b")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "feat-b", nw).CombinedOutput(); err != nil {
+		t.Fatalf("%s", out)
+	}
+	ad := filepath.Join(nw, ".stackfork")
+	os.MkdirAll(ad, 0o755)
+	os.WriteFile(filepath.Join(ad, "app.compose.yaml"), []byte("services:\n  app:\n    image: alpine:3.20\n"), 0o644)
+	out, e, _ := runCLI(t, append(base, "start-env", nw)...)
+	if !strings.Contains(out+e, "note: sibling's tok uses a store reference; map it with `stackfork secret map") {
+		t.Errorf("no note:\n%s\n%s", out, e)
+	}
+	if strings.Contains(out+e, "sibling-item-canary") {
+		t.Error("the reference item leaked")
+	}
+}

@@ -97,7 +97,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	base := append(slices.Clone(head), o.Global...)
 	// The references a sibling worktree contributes, computed once: the
 	// preflight and prepare both use this set (review I1).
-	sibling, err := siblingRefs(o, root, main, instanceDir, insts)
+	sibling, err := siblingRefs(out, o, root, main, instanceDir, insts)
 	if err != nil {
 		return err
 	}
@@ -562,7 +562,7 @@ func flagSecrets(global []string) map[string]string {
 // any. The machine map's names and the flags' names are dropped: they win,
 // and so is any keychain: or op:// reference (a sibling's is stale: the map
 // is where those live).
-func siblingRefs(o StartOptions, root, main, instanceDir string, insts []inventory.Instance) (map[string]string, error) {
+func siblingRefs(note io.Writer, o StartOptions, root, main, instanceDir string, insts []inventory.Instance) (map[string]string, error) {
 	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err == nil {
 		return nil, nil
 	}
@@ -581,7 +581,13 @@ func siblingRefs(o StartOptions, root, main, instanceDir string, insts []invento
 	}
 	flags := flagSecrets(o.Global)
 	out := map[string]string{}
-	for n, r := range refs {
+	names := make([]string, 0, len(refs))
+	for n := range refs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		r := refs[n]
 		if mapped[n] != "" || flags[n] != "" {
 			continue
 		}
@@ -589,6 +595,7 @@ func siblingRefs(o StartOptions, root, main, instanceDir string, insts []invento
 			// Only a person's map holds a keychain: or op:// reference, and prepare
 			// takes sibling references as --secret flags, which refuse them. A name
 			// the map holds now is dropped above and reaches prepare through it.
+			fmt.Fprintf(note, "note: sibling's %s uses a store reference; map it with `stackfork secret map %s %s=REF`\n", n, filepath.Base(main), n)
 			continue
 		}
 		out[n] = r
