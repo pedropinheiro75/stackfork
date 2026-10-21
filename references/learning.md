@@ -69,6 +69,31 @@ Or click **Trust** in the dashboard: it shows every field of the plan in a nativ
 
 Trust is stored once for each main checkout. Two worktrees with different host steps invalidate each other's trust.
 
+## Live mode overrides and migration directories
+
+Live mode watches a set of files that it derives from the plan: build contexts, Dockerfiles, lockfiles, Compose and adapter files, and migration directories. `learn` records the migration directories it finds in `facts.migration_dirs`: the existing ones among `prisma/migrations`, `db/migrate`, `migrations`, `drizzle`, `supabase/migrations`, `alembic/versions`, `src/migrations` and `database/migrations`, at the repository root and in each build context. The scan only lists directories and runs nothing. Add one that the scan missed:
+
+```sh
+stackfork learn record fact migration-dir db/changes
+stackfork learn record fact migration-dir db/changes --remove
+```
+
+When the plan has no `once: schema` step, a change in a migration directory has no action, and `live status` says so.
+
+To change the watch set for this repository, use the `live` object of `knowledge.json`:
+
+```sh
+stackfork learn record live-watch config/features.yaml --action prepare
+stackfork learn record live-watch services/api/seeds --action rebuild --service api
+stackfork learn record live-ignore docs
+stackfork learn record live-watch config/features.yaml --remove
+```
+
+- `--action` is `rebuild` (rebuild `--service` and recreate it), `prepare` (run `prepare` and `up` again) or `migrate` (run the plan's schema steps). `rebuild` needs `--service`, and the service must exist in the instance.
+- A path is relative to the checkout, uses `/`, has no `..` and stays inside the checkout.
+- `live-ignore` stops watching a default path.
+- The `live` object and `migration_dirs` are not part of the plan's trust hash. Only a changed `host` or `prepare` step needs a new trust.
+
 ## Verifying
 
 Step 7 only, never on your own initiative — `learn verify` refuses if the recipe's `--prepare`/`--up` were never recorded (recording the steps is what step 3 means by "try it"):
