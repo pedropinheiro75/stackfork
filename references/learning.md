@@ -27,6 +27,8 @@ stackfork learn record gotcha "<problem>" "<fix>"
 stackfork learn record recipe --prepare "<cmd>" --up "<cmd>" [--migrate "<cmd>"] [--seed-once "<cmd>"|none] [--seed-service SVC] [--login "<step>" ...]
 ```
 
+To declare a secret the project needs, use `stackfork learn record secret NAME [--hint TEXT]` (or `--remove NAME`). It records the name and a hint for the person, never a reference or a value. Ask the user to set the value (`stackfork secret set`) and map it (`stackfork secret map`); run `stackfork secret ls` or `secret check` to see the state.
+
 `record recipe` is an alias that writes plan steps and marks the plan recorded. It sets only the flags given in each call, so you can record it step by step as the session goes. Each `record` call requires a prior `stackfork learn` (there is no draft to record into otherwise).
 
 ## The startup plan

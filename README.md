@@ -102,7 +102,7 @@ stackfork isolates checkouts from each other. It is not a sandbox. It does not p
 - **Trust for host steps.** A project can record a command to run on the host (hybrid mode). That command runs only after a person runs `stackfork plan --trust` or clicks **Trust** in the dashboard. Trust is stored for each machine. The guard blocks agents from trusting a plan.
 - **Native confirmation.** The dashboard runs a data-deleting command (`down --volumes`, `prune`, `gc`, worktree removal) only after a person clicks Run in a native macOS dialog. An agent can send the request, but it cannot answer the dialog.
 - **Data kept by default.** `stackfork down` removes no volumes. `stackfork prune` is a dry run until you pass `--yes`. It touches only Docker objects that carry stackfork labels, and it never runs `docker system prune`.
-- **Secrets.** stackfork does not print or store secrets. The dashboard shows a `<password>` placeholder. It returns a real password only when the value is written literally in your Compose file.
+- **Secrets.** stackfork prints no secret value. The dashboard shows a `<password>` placeholder. It returns a real password only when the value is written literally in your Compose file. Named secrets (tokens, API keys) come from your OS keychain or 1Password: see [Secrets](#secrets).
 
 Read [SECURITY.md](SECURITY.md) for the full boundary, the known limits and how to report a vulnerability.
 
@@ -140,6 +140,18 @@ stackfork hooks status
 ```
 
 Codex runs only a hook that you trusted. After `hooks install --tool codex`, open `codex` once and approve the hook, or run `/hooks`.
+
+## Secrets
+
+A project can name the secrets it needs (`learn record secret NPM_TOKEN --hint "..."`). Each person decides where the value comes from on their machine. To move a token from your shell to the keychain:
+
+```sh
+printenv NPM_TOKEN | stackfork secret set acme-npm-token     # stores it; the value is never an argument
+stackfork secret map . NPM_TOKEN=keychain:acme-npm-token      # this repo's NPM_TOKEN now comes from the keychain
+stackfork secret check                                        # resolves | missing | locked | unavailable | error
+```
+
+`keychain:` uses the macOS Keychain, the Linux Secret Service (`secret-tool`) or the Windows Credential Manager (target `stackfork/ITEM`, at most 2560 bytes). `op://VAULT/ITEM/FIELD` reads from 1Password with `op`. Every run starts with a `secrets` step that fails before any Docker command and lists each problem with the command that fixes it. A Start from the dashboard does not see your shell, so use the keychain or 1Password for those values. The dashboard's Repos panel has a Secrets table with a hidden-answer **Set value…** dialog.
 
 ## Dashboard
 

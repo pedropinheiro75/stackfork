@@ -75,6 +75,32 @@ Known limits:
 - If you kill a host supervisor with `kill -9`, its app keeps running. `doctor` reports it (the `host apps` check) when its port still answers.
 - A foreground `host NAME` command that ignores SIGTERM is orphaned after its stackfork gets SIGKILL.
 
+## Secrets
+
+stackfork reads named secrets (an npm token, a test API key) from places the person already trusts and hands them to the Compose child only. A `secret` command never prints a value and takes none as an argument. A reference is `env:VAR`, `npmrc:PATH#HOST`, `keychain:ITEM` (macOS Keychain, Linux Secret Service, Windows Credential Manager, service or target prefix `stackfork`) or `op://VAULT/ITEM/FIELD` (1Password). References live in the machine's `config.json`; the committed `knowledge.json` names secrets and hints only.
+
+| Threat | Control | Residual risk |
+|---|---|---|
+| A malicious `knowledge.json` (from a pull request) names references to exfiltrate unrelated secrets | Knowledge holds names only; references live in the machine map, written only by people; `keychain:` reaches only the `stackfork` service | A person maps a name to a sensitive reference because a hint asked for it. The preflight shows the reference before the first use. |
+| A fake `op`, `security` or `secret-tool` earlier on `PATH` captures values or lies | Fixed absolute paths, ownership and permission checks, never `PATH`, not inside a scanned root | A process running as the person can replace a binary the person owns (a Homebrew `op`). Out of scope: same user. |
+| Shoulder-surfing and screen sharing | No command or page prints a value; prompts are hidden-answer dialogs or echo-off terminal reads | The store's own applications show values; that is their behavior. |
+| Values in process arguments | Reads through pipes, writes through stdin or an API | None known. |
+| Values in the environment of unrelated children | No `os.Setenv`; values only in the Compose child | The Compose child and the containers have them, by design. `docker inspect` shows the environment of a running container to anyone who can use the Docker socket. |
+| Values in logs and the terminal | Run redactor from the preflight values; the dashboard log view waits for redaction | Values shorter than 8 characters are not matched (`internal/redact`). A value the app transforms (URL-encoded, split) is not matched. |
+| An agent reads values | Guard rules (below) | An agent can run other tools as the person; the guard is not a sandbox. |
+| Tampering with `config.json` | The file is 0600 in the user's config directory | An agent with file access can edit it, as it can the trust file. |
+| A forged dashboard request opens the value dialog | Token, `Origin` and `Host` checks; the dialog names the repository, the secret and the store item; only a person can answer it; the guard blocks System Events keystrokes | A person may type a value into a dialog they did not expect. The dialog text says which action opened it. |
+
+Residual risks that no control removes:
+
+- **Same-user processes.** Any process that runs as you can read what you can read: the store, your environment, `config.json`.
+- **`docker inspect`.** A value passed to a container as an environment variable is visible to whoever can run `docker inspect` on it.
+- **The 8-character redaction limit.** Short values stay in logs.
+- **The keychain access list.** An item created through `/usr/bin/security` trusts that tool, so any process of yours that runs `security` can read it. macOS treats items created this way like this. Linux and Windows have the same property for their own tools.
+- **Windows.** A Credential Manager value is at most 2560 bytes (a UTF-16 limit of the API). The Windows code is built and vetted but has not run on a Windows machine.
+
+The guard blocks `stackfork secret set|map|unmap`, store reads of stackfork's items (`security find-generic-password -w`/`-g` with `-s stackfork`, `security dump-keychain -d`, `security -i`, `secret-tool lookup|search` with `service stackfork`, `cmdkey /list` with a stackfork target, PowerShell that reads a `stackfork/` target), `op read|inject|run|item get --reveal` of a mapped `op://` reference, and forged `/api/secrets` calls. It allows `secret ls` and `secret check`. It matches command text, so a script file, a renamed binary or a new tool gets past it. It is a guardrail for cooperative agents, not a boundary.
+
 ## Run logs
 
 A run's step logs (`runs/<id>/<step>.log` in the instance directory) hold the output of Compose, the seed and host steps. Values of 8 or more characters that stackfork knows as secrets are redacted before they are written, as they are on the terminal and in the dashboard stream. Shorter values are not matched (`internal/redact`). Run files and step logs are created 0600, in directories 0700, as the other state files are.
