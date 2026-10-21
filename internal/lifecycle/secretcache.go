@@ -9,6 +9,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/redact"
+	"github.com/pedropinheiro75/stackfork/internal/secretstore"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -56,19 +57,34 @@ func CachedSecrets(instanceDir string) (SecretValues, bool) {
 // prompt, e.g. 1Password) and remembers the values for redaction. The values
 // are returned only so a caller can redact with them.
 func CheckSecrets(instanceDir string, info *state.Manifest) (SecretValues, error) {
+	values, _, err := CheckSecretsStatus(instanceDir, info)
+	return values, err
+}
+
+// CheckSecretsStatus is CheckSecrets that also returns the status of each
+// reference it read, keyed by reference, so a page can show the outcome
+// without resolving anything twice.
+func CheckSecretsStatus(instanceDir string, info *state.Manifest) (SecretValues, map[string]RefStatus, error) {
 	mapped, err := MappedSecrets(info.Root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	refs, _, _ := InstanceSecrets(info, mapped)
 	values := SecretValues{}
+	status := map[string]RefStatus{}
 	for name, ref := range refs {
-		if v, _, _ := compose.CheckSecret(ref); v != "" {
+		v, st, serr := compose.CheckSecret(ref)
+		if v != "" {
 			values[name] = v
 		}
+		rs := RefStatus{Status: st}
+		if serr != nil && st != secretstore.Resolves {
+			rs.Detail = firstLineOf(serr.Error())
+		}
+		status[ref] = rs
 	}
 	CacheSecrets(instanceDir, values)
-	return values, nil
+	return values, status, nil
 }
 
 // LogSecrets are the values the dashboard redacts a log with, obtained

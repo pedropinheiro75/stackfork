@@ -96,6 +96,7 @@ type Server struct {
 	disk     diskState
 	repos    reposState
 	configMu sync.Mutex
+	secrets  secretsState
 
 	// actionMu serializes actions per project (design.md D4: "one at a
 	// time per instance"); a project already running an action gets 409.
@@ -163,6 +164,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/agents", s.handleAgents)
 	mux.HandleFunc("POST /api/learn", s.handleLearn)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
+	mux.HandleFunc("GET /api/secrets", s.handleSecrets)
+	mux.HandleFunc("POST /api/secrets/check", s.handleSecretsCheck)
+	mux.HandleFunc("POST /api/secrets/set", s.handleSecretsSet)
 	mux.HandleFunc("GET /api/runs", s.handleRuns)
 	mux.HandleFunc("GET /api/runs/log", s.handleRunLog)
 	mux.HandleFunc("POST /api/actions", s.handleActions)

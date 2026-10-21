@@ -10,9 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -22,7 +20,6 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/secretstore"
-	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 func init() {
@@ -118,15 +115,6 @@ func mainRepo(path string) string {
 
 // --- ls / check -----------------------------------------------------------
 
-type secretRow struct {
-	Name      string `json:"name"`
-	Reference string `json:"reference"`
-	Source    string `json:"source"`
-	Hint      string `json:"hint,omitempty"`
-	Status    string `json:"status"`
-	Detail    string `json:"detail,omitempty"`
-}
-
 func secretList(stdout io.Writer, verb string, args []string, rootArg, newStateBase, legacyStateBase string) (int, error) {
 	fs := newFlagSet(stdout, "secret "+verb)
 	asJSON := fs.Bool("json", false, "")
@@ -174,84 +162,11 @@ func secretList(stdout io.Writer, verb string, args []string, rootArg, newStateB
 	return 0, nil
 }
 
-// secretRows builds one row per secret name of a repository: the machine
-// map's references, then the recorded references of its newest prepared
-// instance, then declared names with no reference at all. check reads every
-// value (and drops it); otherwise nothing that would prompt is read.
-func secretRows(repo string, check bool, newBase, legacyBase string) ([]secretRow, error) {
-	cfg, err := config.Load()
-	if err != nil {
-		return nil, err
-	}
-	refs, source := lifecycle.Effective(
-		lifecycle.Layer{Source: lifecycle.SourceManifest, Refs: manifestRefsFor(repo, newBase, legacyBase)},
-		lifecycle.Layer{Source: lifecycle.SourceMap, Refs: cfg.SecretsFor(repo)})
-	hints := map[string]string{}
-	for _, d := range lifecycle.DeclaredSecrets(repo, repo) {
-		hints[d.Name] = d.Hint
-		if _, ok := refs[d.Name]; !ok {
-			refs[d.Name], source[d.Name] = "", "declared"
-		}
-	}
-	names := make([]string, 0, len(refs))
-	for n := range refs {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	rows := make([]secretRow, 0, len(names))
-	for _, n := range names {
-		row := secretRow{Name: n, Reference: refs[n], Source: source[n], Hint: hints[n]}
-		var st secretstore.Status
-		var serr error
-		switch {
-		case row.Reference == "":
-			st, serr = secretstore.Missing, errors.New("no reference on this machine")
-		case check:
-			_, st, serr = compose.CheckSecret(row.Reference)
-		default:
-			st, serr = compose.ExistsSecret(row.Reference)
-		}
-		row.Status = string(st)
-		if serr != nil && st != secretstore.Resolves {
-			row.Detail = firstLineOf(serr.Error())
-		}
-		rows = append(rows, row)
-	}
-	return rows, nil
+func secretRows(repo string, check bool, newBase, legacyBase string) ([]lifecycle.SecretRow, error) {
+	return lifecycle.SecretRows(repo, check, nil, newBase, legacyBase)
 }
 
-func firstLineOf(s string) string {
-	line, _, _ := strings.Cut(s, "\n")
-	return line
-}
-
-// manifestRefsFor are the references recorded by the newest prepared
-// instance of the repository (any of its checkouts), or nil.
-func manifestRefsFor(repo, newBase, legacyBase string) map[string]string {
-	want, _ := filepath.EvalSymlinks(repo)
-	var best map[string]string
-	var bestTime int64
-	for _, base := range []string{newBase, legacyBase} {
-		files, _ := filepath.Glob(filepath.Join(base, "*", "manifest.json"))
-		for _, f := range files {
-			m, err := state.ReadManifest(f)
-			if err != nil || m == nil {
-				continue
-			}
-			got, _ := filepath.EvalSymlinks(mainRepo(m.Root))
-			fi, serr := os.Stat(f)
-			if got != want || serr != nil || len(m.ResolvedSecrets()) == 0 {
-				continue
-			}
-			if t := fi.ModTime().UnixNano(); t > bestTime {
-				best, bestTime = m.ResolvedSecrets(), t
-			}
-		}
-	}
-	return best
-}
-
-func printSecretRows(w io.Writer, rows []secretRow) {
+func printSecretRows(w io.Writer, rows []lifecycle.SecretRow) {
 	if len(rows) == 0 {
 		fmt.Fprintln(w, "no secrets: none mapped on this machine, none declared by the project")
 		return
