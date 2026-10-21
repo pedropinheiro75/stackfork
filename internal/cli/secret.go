@@ -33,7 +33,7 @@ func init() {
 	}
 }
 
-const secretUsage = "secret ls [REPO] [--json] | secret check [REPO] [--json] | secret set ITEM [--store keychain] | secret map REPO NAME=REF | secret unmap REPO NAME"
+const secretUsage = "secret ls [REPO] [--json] | secret check [REPO] [--json] | secret set ITEM [--store keychain] | secret map REPO|FOLDER NAME=REF | secret unmap REPO|FOLDER NAME"
 
 // secretStdin is where `secret set` reads a value from; tests replace it.
 var secretStdin io.Reader = os.Stdin
@@ -331,15 +331,19 @@ func readSecretValue(prompt io.Writer, item string) (string, error) {
 func secretMap(stdout io.Writer, verb string, args []string, newBase, legacyBase string) (int, error) {
 	if len(args) != 2 {
 		if verb == "map" {
-			return 2, errors.New("usage: stackfork secret map REPO NAME=REF")
+			return 2, errors.New("usage: stackfork secret map REPO|FOLDER NAME=REF")
 		}
-		return 2, errors.New("usage: stackfork secret unmap REPO NAME")
+		return 2, errors.New("usage: stackfork secret unmap REPO|FOLDER NAME")
 	}
 	repo, err := resolveRepoArg(args[0], newBase, legacyBase)
 	if err != nil {
 		return 0, err
 	}
 	repo = mainRepo(repo)
+	target := "for " + repo
+	if repos.MainRepoOf(repo) == "" {
+		target = "for folder " + repo
+	}
 	load := config.Load
 	if verb == "unmap" {
 		load = config.LoadForUnmap
@@ -355,7 +359,7 @@ func secretMap(stdout io.Writer, verb string, args []string, newBase, legacyBase
 		if err := cfg.Save(); err != nil {
 			return 0, err
 		}
-		fmt.Fprintf(stdout, "unmapped %s for %s\n", args[1], repo)
+		fmt.Fprintf(stdout, "unmapped %s %s\n", args[1], target)
 		return 0, nil
 	}
 	name, ref, err := compose.ParseSecretFlag(args[1])
@@ -369,7 +373,10 @@ func secretMap(stdout io.Writer, verb string, args []string, newBase, legacyBase
 		return 0, err
 	}
 	st, _ := compose.ExistsSecret(ref) // never prompts
-	fmt.Fprintf(stdout, "mapped %s to %s for %s (status: %s)\n", name, ref, repo, st)
+	if repos.MainRepoOf(repo) == "" {
+		target += " (applies to the repositories under it that use " + name + ")"
+	}
+	fmt.Fprintf(stdout, "mapped %s to %s %s (status: %s)\n", name, ref, target, st)
 	if st == secretstore.Missing && strings.HasPrefix(ref, "keychain:") {
 		fmt.Fprintf(stdout, "store its value: printenv VAR | stackfork secret set %s\n", strings.TrimPrefix(ref, "keychain:"))
 	}
