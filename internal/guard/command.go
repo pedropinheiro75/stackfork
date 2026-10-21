@@ -8,6 +8,7 @@ package guard
 import (
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -466,12 +467,9 @@ func bypassesConfirmation(command string) bool {
 			continue
 		}
 		for _, w := range seg.Words[1:] {
-			decoded := w // the server decodes the path: /api/%73ecrets is /api/secrets
-			if d, err := url.PathUnescape(w); err == nil {
-				decoded = d
-			}
+			norm := normalizeURLWord(w)
 			for _, ep := range []string{"/api/run", "/api/actions", "/api/learn", "/api/secrets"} {
-				if strings.Contains(w, ep) || strings.Contains(decoded, ep) {
+				if strings.Contains(w, ep) || strings.Contains(norm, ep) {
 					return true
 				}
 			}
@@ -479,4 +477,18 @@ func bypassesConfirmation(command string) bool {
 	}
 	return strings.Contains(command, "osascript") && strings.Contains(command, "System Events") &&
 		(strings.Contains(command, "click") || strings.Contains(command, "keystroke") || strings.Contains(command, "key code"))
+}
+
+// normalizeURLWord is the path the server would route a URL word to: cut at
+// the query or fragment, percent-decode (an undecodable escape keeps the
+// word as is), and clean away `.`, `..` and `//` segments, so
+// /api/x/../%73ecrets/set?a=%zz is /api/secrets/set.
+func normalizeURLWord(w string) string {
+	if i := strings.IndexAny(w, "?#"); i >= 0 {
+		w = w[:i]
+	}
+	if d, err := url.PathUnescape(w); err == nil {
+		w = d
+	}
+	return path.Clean(w)
 }
