@@ -24,9 +24,9 @@ var lockWait = 2 * time.Second
 
 func lockPath(dir string) string { return filepath.Join(dir, ".run.lock") }
 
-// Begin takes the instance's run lock (retrying for up to 2 s), marks the
-// runs of dead processes interrupted, assigns the next id, applies retention
-// and writes the new run. Call Finish to release the lock.
+// Begin takes the instance's run lock (retrying for up to 2 s, or once with
+// Meta.NoWait), marks the runs of dead processes interrupted, assigns the next
+// id, applies retention and writes the new run. Call Finish to release the lock.
 func Begin(dir string, m Meta) (*Run, error) {
 	if err := os.MkdirAll(runsDir(dir), 0o700); err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func Begin(dir string, m Meta) (*Run, error) {
 		if !errors.Is(err, state.ErrLocked) {
 			return nil, err
 		}
-		if time.Now().After(deadline) {
+		if m.NoWait || time.Now().After(deadline) {
 			return nil, busyError(dir)
 		}
 		time.Sleep(50 * time.Millisecond)

@@ -49,8 +49,10 @@ const schema = 1
 
 // Meta is what the caller knows when a run begins.
 type Meta struct {
-	Command  string // start-env, up or seed
-	Trigger  string // cli or dashboard
+	Command  string // start-env, up, seed, reset or live
+	Trigger  string // cli, dashboard or live
+	Cause    *Cause // live runs only: why the run started
+	NoWait   bool   // Begin tries the run lock once instead of retrying for 2 s
 	Mode     string
 	Project  string
 	Branch   string
@@ -84,6 +86,7 @@ type Run struct {
 	Outcome   string    `json:"outcome"`
 	Error     string    `json:"error,omitempty"`
 	Retry     string    `json:"retry,omitempty"`
+	Cause     *Cause    `json:"cause,omitempty"`
 	Steps     []*Step   `json:"steps"`
 	// DurationMS is set by readers only; it is never in a stored file.
 	DurationMS int64 `json:"duration_ms,omitempty"`
@@ -126,7 +129,7 @@ func newRun(dir string, m Meta, id int) (*Run, error) {
 	}
 	r := &Run{Schema: schema, ID: id, Command: m.Command, Trigger: m.Trigger, Mode: m.Mode,
 		Project: m.Project, Branch: m.Branch, PID: os.Getpid(), StartedAt: now(),
-		Outcome: Running, Steps: []*Step{}, dir: dir, meta: m}
+		Outcome: Running, Cause: m.Cause, Steps: []*Step{}, dir: dir, meta: m}
 	if err := r.save(); err != nil {
 		return nil, err
 	}
