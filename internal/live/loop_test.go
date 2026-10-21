@@ -231,3 +231,22 @@ func TestAdmitRepoAcceptsARootThatIsTheMainCheckout(t *testing.T) {
 		t.Fatal("no configured folder must refuse")
 	}
 }
+
+// git worktree list stores the typed case; on a case-insensitive filesystem
+// the same directory in another case is the same file.
+func TestSameFileIgnoresCaseOnACaseInsensitiveFS(t *testing.T) {
+	dir := filepath.Join(tmp(t), "Repo")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(filepath.Dir(dir), "rEPO")
+	if _, err := os.Stat(other); err != nil {
+		t.Skip("case-sensitive filesystem")
+	}
+	if !sameFile(dir, other) {
+		t.Errorf("%s and %s are the same directory", dir, other)
+	}
+	if sameFile(dir, filepath.Join(dir, "missing")) {
+		t.Error("a missing path is never the same")
+	}
+}

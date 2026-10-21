@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -298,10 +299,12 @@ func Targets(newBase, legacyBase, main, version string) ([]Target, error) {
 	return out, nil
 }
 
+// sameFile compares by os.SameFile: git worktree list keeps the typed case,
+// which differs from the instance root on a case-insensitive filesystem.
 func sameFile(a, b string) bool {
-	ra, ea := filepath.EvalSymlinks(a)
-	rb, eb := filepath.EvalSymlinks(b)
-	return ea == nil && eb == nil && ra == rb
+	fa, ea := os.Stat(a)
+	fb, eb := os.Stat(b)
+	return ea == nil && eb == nil && os.SameFile(fa, fb)
 }
 
 // Slot reserves the one live run at a time for a cleanup of main (design
