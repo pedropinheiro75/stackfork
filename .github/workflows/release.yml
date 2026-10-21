@@ -25,3 +25,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      # The DMG comes after GoReleaser: the CLI release and its cask are
+      # already published if this fails. Rerun the two steps by hand (CONTRIBUTING).
+      - name: Build the macOS app
+        run: scripts/build-macos-app.sh "${GITHUB_REF_NAME#v}"
+      - name: Attach the DMG to the release
+        run: gh release upload "$GITHUB_REF_NAME" dist/macos-app/*.dmg dist/macos-app/*.sha256
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
