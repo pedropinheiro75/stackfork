@@ -27,7 +27,7 @@ func TestLogSecretsNeedACheckForOPUntilTheValuesAreRemembered(t *testing.T) {
 	if _, err := LogSecrets(dir, info); !errors.Is(err, ErrCheckSecrets) {
 		t.Fatalf("empty cache with an op:// reference: %v", err)
 	}
-	CacheSecrets(dir, SecretValues{"STRIPE": "op-value-123456"})
+	CacheSecrets(dir, SecretValues{"STRIPE": {Ref: "op://Dev/acme-stripe/test-key", Value: "op-value-123456"}})
 	got, err := LogSecrets(dir, info)
 	if err != nil || len(got) != 2 {
 		t.Fatalf("remembered: %v %v", got, err)

@@ -79,7 +79,7 @@ func cmdWorktree(stdout io.Writer, subArgs []string, newStateBase, legacyStateBa
 	// sibling worktree now, so `start-env` has what it needs (design.md D6a).
 	if _, dir, err := checkoutInstance(res.Path, res.Branch, newStateBase, legacyStateBase); err == nil {
 		if _, err := prepareArgs(res.Path, repo, dir); errors.Is(err, errNoRecipe) {
-			if _, _, _, _, err := seedFromSibling(stdout, res.Path, repo, collectInstances(newStateBase, legacyStateBase), err); err != nil && err != errNoRecipe {
+			if _, _, _, err := seedFromSibling(stdout, res.Path, repo, collectInstances(newStateBase, legacyStateBase), err); err != nil && err != errNoRecipe {
 				fmt.Fprintf(stdout, "note: %v\n", err)
 			}
 		}

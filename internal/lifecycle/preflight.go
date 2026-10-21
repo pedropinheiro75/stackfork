@@ -17,9 +17,17 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
+// SecretValue is one resolved secret and the reference it came from.
+type SecretValue struct {
+	Ref   string
+	Value string
+}
+
 // SecretValues are the values a run resolved, by the secret's manifest name.
-// They live in memory for the run (D8) and are never written anywhere.
-type SecretValues map[string]string
+// They live in memory for the run (D8) and are never written anywhere. The
+// reference travels with the value: a different reference under the same
+// name is a different secret (review I1, I4).
+type SecretValues map[string]SecretValue
 
 // Redactions turns the values into what the run redactor takes.
 func (v SecretValues) Redactions() []redact.Secret {
@@ -30,7 +38,7 @@ func (v SecretValues) Redactions() []redact.Secret {
 	sort.Strings(names)
 	out := make([]redact.Secret, 0, len(names))
 	for _, n := range names {
-		out = append(out, redact.Secret{Name: n, Value: v[n]})
+		out = append(out, redact.Secret{Name: n, Value: v[n].Value})
 	}
 	return out
 }
@@ -82,7 +90,7 @@ func (p Preflight) Do() (SecretValues, error) {
 		if step != nil {
 			step.Skip("no secrets")
 		}
-		return nil, nil
+		return SecretValues{}, nil // non-nil: a run with no secrets, Execute resolves nothing late
 	}
 	w := p.Out
 	if step != nil {
@@ -119,7 +127,7 @@ func (p Preflight) Do() (SecretValues, error) {
 		default:
 			value, st, err := compose.CheckSecret(ref)
 			if st == secretstore.Resolves {
-				values[name] = value
+				values[name] = SecretValue{Ref: ref, Value: value}
 				fmt.Fprintf(w, "%s (%s): %s\n", name, ref, st)
 				continue
 			}

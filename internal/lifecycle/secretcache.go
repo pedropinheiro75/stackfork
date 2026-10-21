@@ -75,7 +75,7 @@ func CheckSecretsStatus(instanceDir string, info *state.Manifest) (SecretValues,
 	for name, ref := range refs {
 		v, st, serr := compose.CheckSecret(ref)
 		if v != "" {
-			values[name] = v
+			values[name] = SecretValue{Ref: ref, Value: v}
 		}
 		rs := RefStatus{Status: st}
 		if serr != nil && st != secretstore.Resolves {
@@ -108,7 +108,7 @@ func LogSecrets(instanceDir string, info *state.Manifest) ([]redact.Secret, erro
 			need = true
 		default:
 			if v, _, _ := compose.CheckSecret(ref); v != "" {
-				values[name] = v
+				values[name] = SecretValue{Ref: ref, Value: v}
 			}
 		}
 	}

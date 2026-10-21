@@ -35,8 +35,10 @@ type Options struct {
 	Service     string   // restart/start/stop/run/exec
 	Targets     []string // restart/start/stop: several services at once (Service is the first)
 	Command     []string // run/exec
-	// Secrets are the values the run's preflight resolved, by manifest
-	// name. Execute resolves any effective reference missing from it.
+	// Secrets are the values the run's preflight resolved, by manifest name,
+	// with their references. Non-nil means a run: Execute then refuses any
+	// effective reference the set lacks or holds with another reference. Nil
+	// (a bare `run`) resolves the references itself.
 	Secrets SecretValues
 }
 
@@ -186,12 +188,19 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		}
 		secretEnv = map[string]string{}
 		for name, ref := range refs {
-			value, ok := opts.Secrets[name]
-			if !ok {
-				var err error
-				if value, err = compose.ResolveSecret(name, ref); err != nil {
-					return 0, err
+			var value string
+			if opts.Secrets != nil {
+				// Under a run the secrets step resolved every reference, with
+				// the person's flags and map applied. Nothing resolves later: a
+				// prompt from here, or a value the redactor never saw, is the
+				// hole this closes (review I1).
+				v, ok := opts.Secrets[name]
+				if !ok || v.Ref != ref {
+					return 0, fmt.Errorf("secret %s was not resolved by the secrets step; start again", name)
 				}
+				value = v.Value
+			} else if value, err = compose.ResolveSecret(name, ref); err != nil {
+				return 0, err
 			}
 			secretEnv[name] = value
 		}

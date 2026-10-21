@@ -89,7 +89,14 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	if err != nil {
 		return err
 	}
-	base := append([]string{"--state-dir", o.NewStateBase, "--legacy-state-dir", o.LegacyStateBase, "--root", root}, o.Global...)
+	head := []string{"--state-dir", o.NewStateBase, "--legacy-state-dir", o.LegacyStateBase, "--root", root}
+	base := append(slices.Clone(head), o.Global...)
+	// The references a sibling worktree contributes, computed once: the
+	// preflight and prepare both use this set (review I1).
+	sibling, err := siblingRefs(o, root, main, instanceDir, insts)
+	if err != nil {
+		return err
+	}
 
 	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err != nil {
 		level, reason := repos.ReadinessOf(filepath.Base(main), append(repos.Checkouts(main), root), repos.DefaultBranchOf(main), insts, o.ProfileDirs)
@@ -137,7 +144,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 
 	// secrets: resolve every effective reference before prepare, which already
 	// calls Docker, and fail naming every problem (design D8).
-	if vals, err = startPreflight(rec, o, root, main, instanceDir, trigger, insts); err != nil {
+	if vals, err = startPreflight(rec, o, root, main, instanceDir, trigger, sibling, needsPrepare(instanceDir, root, branch, project)); err != nil {
 		return err
 	}
 	runValues.Store(inRunKey(instanceDir), vals)
@@ -149,45 +156,32 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 			return lifecycle.ErrAlreadyPrepared
 		}
 		args, err := prepareArgs(root, main, instanceDir)
-		mapped, merr := lifecycle.MappedSecrets(root)
-		if merr != nil {
-			return merr
-		}
-		pbase := base
 		var seedCmd, seedSvc string
-		var sibRefs []string // NAME=ref pairs taken from a sibling worktree
 		fromSibling := errors.Is(err, errNoRecipe)
 		if fromSibling {
-			var secrets []string
-			args, secrets, seedCmd, seedSvc, err = seedFromSibling(out, root, main, insts, err)
-			for _, sec := range secrets {
-				if name, _, _ := strings.Cut(sec, "="); mapped[name] != "" {
-					continue // the machine map beats a sibling's reference (D7)
-				}
-				sibRefs = append(sibRefs, sec)
-				pbase = append(append([]string{}, pbase...), "--secret", sec)
-			}
+			args, seedCmd, seedSvc, err = seedFromSibling(out, root, main, insts, err)
 		}
 		if err != nil {
 			return err
 		}
-		if !fromSibling && args != nil && !hasSecretFlag(o.Global) {
-			// A recipe from knowledge or an adapter names files, not secrets:
-			// take the registry token references a sibling instance runs with.
-			sec := repos.SiblingSecrets(main, root, insts)
-			names := make([]string, 0, len(sec))
-			for n := range sec {
-				names = append(names, n)
+		// Sibling references go BEFORE the person's flags: the last --secret
+		// of a name wins, and an explicit flag must beat a sibling (D7).
+		pbase := slices.Clone(head)
+		names := make([]string, 0, len(sibling))
+		for n := range sibling {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			pbase = append(pbase, "--secret", n+"="+sibling[n])
+		}
+		pbase = append(pbase, o.Global...)
+		if len(names) > 0 {
+			from := " from another worktree"
+			if fromSibling {
+				from = ""
 			}
-			sort.Strings(names)
-			names = slices.DeleteFunc(names, func(n string) bool { return mapped[n] != "" }) // the machine map beats a sibling's reference (D7)
-			for _, n := range names {
-				sibRefs = append(sibRefs, n+"="+sec[n])
-				pbase = append(append([]string{}, pbase...), "--secret", n+"="+sec[n])
-			}
-			if len(names) > 0 {
-				fmt.Fprintf(out, "reusing secret references %s from another worktree (values stay where they are)\n", strings.Join(names, ", "))
-			}
+			fmt.Fprintf(out, "reusing secret references %s%s (values stay where they are)\n", strings.Join(names, ", "), from)
 		}
 		fmt.Fprintf(out, "preparing %s (%s)\n", project, branch)
 		var pOut, pErr bytes.Buffer
@@ -338,17 +332,17 @@ func collectInstances(newBase, legacyBase string) []inventory.Instance {
 // the sibling's untracked adapter files, writes the rewritten runtime env,
 // and returns the prepare flags and the secret references to reuse. none is
 // the error to return when no sibling can help.
-func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instance, none error) (args, secrets []string, seedCmd, seedSvc string, err error) {
+func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instance, none error) (args []string, seedCmd, seedSvc string, err error) {
 	r, ferr := repos.FindSiblingRecipe(main, root, "", insts)
 	if r == nil {
 		if ferr != nil {
-			return nil, nil, "", "", fmt.Errorf("%w; the prepared instance of another worktree cannot be reused: %v", none, ferr)
+			return nil, "", "", fmt.Errorf("%w; the prepared instance of another worktree cannot be reused: %v", none, ferr)
 		}
-		return nil, nil, "", "", none
+		return nil, "", "", none
 	}
 	rep, aerr := r.Apply(root)
 	if aerr != nil {
-		return nil, nil, "", "", fmt.Errorf("reusing the recipe of %s: %w", r.Project, aerr)
+		return nil, "", "", fmt.Errorf("reusing the recipe of %s: %w", r.Project, aerr)
 	}
 	fmt.Fprintf(out, "reusing the recipe of %s (%s): %s", r.Project, r.Source, strings.Join(r.Files, ", "))
 	if r.EnvFile != "" {
@@ -368,17 +362,6 @@ func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instanc
 	if r.EnvFile != "" {
 		args = append(args, "--env-file", r.EnvFile)
 	}
-	names := make([]string, 0, len(r.Secrets))
-	for n := range r.Secrets {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
-		secrets = append(secrets, n+"="+r.Secrets[n])
-	}
-	if len(names) > 0 {
-		fmt.Fprintf(out, "reusing secret references %s (values stay where they are)\n", strings.Join(names, ", "))
-	}
 	seedCmd, seedSvc = r.SeedOnce, r.SeedService
 	if seedCmd == "" {
 		// the sibling's decision may live only in its knowledge file
@@ -387,7 +370,7 @@ func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instanc
 	if learn.SeedActive(seedCmd) {
 		fmt.Fprintln(out, "carrying the seed_once recipe (runs once, when this instance's data is first created)")
 	}
-	return args, secrets, seedCmd, seedSvc, nil
+	return args, seedCmd, seedSvc, nil
 }
 
 func fileArgs(files []string) []string {
@@ -506,26 +489,62 @@ func flagSecrets(global []string) map[string]string {
 	return refs
 }
 
-// startPreflight is the secrets step of a Start. The references are the ones
-// prepare is about to record: a sibling worktree's (only when nothing is
-// prepared and no --secret is given), the manifest's, the machine map's and
-// the flags' (design D7).
-func startPreflight(rec *runs.Run, o StartOptions, root, main, instanceDir, trigger string, insts []inventory.Instance) (lifecycle.SecretValues, error) {
+// siblingRefs is the one place that decides which references a sibling
+// worktree lends this Start, before the preflight, and prepare records exactly
+// these (design D7). Nothing when an instance is prepared already. With no
+// recipe to copy, the references of the sibling whose recipe will be reused
+// (read-only: Apply runs later, in prepare). With a recipe from knowledge or
+// an adapter and no --secret flag, those of the most recent sibling that has
+// any. The machine map's names and the flags' names are dropped: they win.
+func siblingRefs(o StartOptions, root, main, instanceDir string, insts []inventory.Instance) (map[string]string, error) {
+	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err == nil {
+		return nil, nil
+	}
 	mapped, err := lifecycle.MappedSecrets(root)
 	if err != nil {
 		return nil, err
 	}
-	var sibling, manifest map[string]string
+	var refs map[string]string
+	switch args, perr := prepareArgs(root, main, instanceDir); {
+	case errors.Is(perr, errNoRecipe):
+		if r, _ := repos.FindSiblingRecipe(main, root, "", insts); r != nil {
+			refs = r.Secrets
+		}
+	case perr == nil && args != nil && !hasSecretFlag(o.Global):
+		refs = repos.SiblingSecrets(main, root, insts)
+	}
+	flags := flagSecrets(o.Global)
+	out := map[string]string{}
+	for n, r := range refs {
+		if mapped[n] == "" && flags[n] == "" {
+			out[n] = r
+		}
+	}
+	return out, nil
+}
+
+// startPreflight is the secrets step of a Start. The references are the ones
+// prepare is about to record: a sibling worktree's (siblingRefs), the
+// manifest's, the machine map's and the flags' (design D7). The flags count
+// only when prepare will run to record them.
+func startPreflight(rec *runs.Run, o StartOptions, root, main, instanceDir, trigger string, sibling map[string]string, willPrepare bool) (lifecycle.SecretValues, error) {
+	mapped, err := lifecycle.MappedSecrets(root)
+	if err != nil {
+		return nil, err
+	}
+	var manifest map[string]string
 	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
 		manifest = m.ResolvedSecrets()
-	} else if !hasSecretFlag(o.Global) {
-		sibling = repos.SiblingSecrets(main, root, insts)
+	}
+	flags := flagSecrets(o.Global)
+	if !willPrepare {
+		flags = nil // nothing records them: the manifest's references are the ones `up` runs with
 	}
 	refs, _ := lifecycle.Effective(
 		lifecycle.Layer{Source: lifecycle.SourceSibling, Refs: sibling},
 		lifecycle.Layer{Source: lifecycle.SourceManifest, Refs: manifest},
 		lifecycle.Layer{Source: lifecycle.SourceMap, Refs: mapped},
-		lifecycle.Layer{Source: lifecycle.SourceFlag, Refs: flagSecrets(o.Global)})
+		lifecycle.Layer{Source: lifecycle.SourceFlag, Refs: flags})
 	return lifecycle.Preflight{Run: rec, InstanceDir: instanceDir, Main: main, Refs: refs, Declared: lifecycle.DeclaredSecrets(root, main),
 		Dashboard: trigger == "dashboard"}.Do()
 }
