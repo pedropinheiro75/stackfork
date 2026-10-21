@@ -32,18 +32,23 @@ type RefStatus struct {
 }
 
 // SecretRows builds one row per secret name of a repository: the machine
-// map's references, then the recorded references of its newest prepared
-// instance, then declared names with no reference at all. check reads every
+// map's references (and the flags' of this command), then the recorded
+// references of the repository's own instance, then those of its newest
+// prepared instance in another worktree (source sibling), then declared names
+// with no reference at all. check reads every
 // value (and drops it); otherwise nothing that would prompt is read, and a
 // reference in known keeps the status an earlier check gave it.
-func SecretRows(repo string, check bool, known map[string]RefStatus, newBase, legacyBase string) ([]SecretRow, error) {
+func SecretRows(repo string, check bool, known map[string]RefStatus, flags map[string]string, newBase, legacyBase string) ([]SecretRow, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
 	}
+	own, sibling := manifestRefsFor(repo, newBase, legacyBase)
 	refs, source := Effective(
-		Layer{Source: SourceManifest, Refs: manifestRefsFor(repo, newBase, legacyBase)},
-		Layer{Source: SourceMap, Refs: cfg.SecretsFor(repo)})
+		Layer{Source: SourceSibling, Refs: sibling},
+		Layer{Source: SourceManifest, Refs: own},
+		Layer{Source: SourceMap, Refs: cfg.SecretsFor(repo)},
+		Layer{Source: SourceFlag, Refs: flags})
 	hints := map[string]string{}
 	for _, d := range DeclaredSecrets(repo, repo) {
 		hints[d.Name] = d.Hint
@@ -86,11 +91,11 @@ func firstLineOf(s string) string {
 }
 
 // manifestRefsFor are the references recorded by the newest prepared
-// instance of the repository (any of its checkouts), or nil.
-func manifestRefsFor(repo, newBase, legacyBase string) map[string]string {
+// instance of the repository's own checkout (own) and by the newest one of
+// another checkout of it (sibling), or nil.
+func manifestRefsFor(repo, newBase, legacyBase string) (own, sibling map[string]string) {
 	want, _ := filepath.EvalSymlinks(repo)
-	var best map[string]string
-	var bestTime int64
+	var ownTime, sibTime int64
 	for _, base := range []string{newBase, legacyBase} {
 		files, _ := filepath.Glob(filepath.Join(base, "*", "manifest.json"))
 		for _, f := range files {
@@ -103,12 +108,17 @@ func manifestRefsFor(repo, newBase, legacyBase string) map[string]string {
 			if got != want || serr != nil || len(m.ResolvedSecrets()) == 0 {
 				continue
 			}
-			if t := fi.ModTime().UnixNano(); t > bestTime {
-				best, bestTime = m.ResolvedSecrets(), t
+			root, _ := filepath.EvalSymlinks(m.Root)
+			t := fi.ModTime().UnixNano()
+			switch {
+			case root == want && t > ownTime:
+				own, ownTime = m.ResolvedSecrets(), t
+			case root != want && t > sibTime:
+				sibling, sibTime = m.ResolvedSecrets(), t
 			}
 		}
 	}
-	return best
+	return own, sibling
 }
 
 func mainOf(path string) string {

@@ -90,7 +90,7 @@ func winEcho(on bool) error {
 
 // cmdSecret is `stackfork secret ...`. It never prints a value and has no
 // flag that takes one (design D10).
-func cmdSecret(stdout, stderr io.Writer, subArgs []string, rootArg, newStateBase, legacyStateBase string) (int, error) {
+func cmdSecret(stdout, stderr io.Writer, subArgs []string, rootArg, newStateBase, legacyStateBase string, global []string) (int, error) {
 	if len(subArgs) == 0 || isHelpRequest(subArgs) {
 		printFlaglessUsage(stdout, "secret", secretUsage)
 		if len(subArgs) == 0 {
@@ -101,7 +101,7 @@ func cmdSecret(stdout, stderr io.Writer, subArgs []string, rootArg, newStateBase
 	verb, rest := subArgs[0], subArgs[1:]
 	switch verb {
 	case "ls", "check":
-		return secretList(stdout, verb, rest, rootArg, newStateBase, legacyStateBase)
+		return secretList(stdout, verb, rest, rootArg, newStateBase, legacyStateBase, global)
 	case "set":
 		return secretSet(stdout, stderr, rest, rootArg)
 	case "map", "unmap":
@@ -135,7 +135,10 @@ func mainRepo(path string) string {
 
 // --- ls / check -----------------------------------------------------------
 
-func secretList(stdout io.Writer, verb string, args []string, rootArg, newStateBase, legacyStateBase string) (int, error) {
+func secretList(stdout io.Writer, verb string, args []string, rootArg, newStateBase, legacyStateBase string, global []string) (int, error) {
+	if err := checkSecretFlags(global); err != nil {
+		return 2, err
+	}
 	fs := newFlagSet(stdout, "secret "+verb)
 	asJSON := fs.Bool("json", false, "")
 	pos, err := parseMixed(fs, args)
@@ -161,7 +164,7 @@ func secretList(stdout io.Writer, verb string, args []string, rootArg, newStateB
 		return 0, err
 	}
 	repo = mainRepo(repo)
-	rows, err := secretRows(repo, verb == "check", newStateBase, legacyStateBase)
+	rows, err := lifecycle.SecretRows(repo, verb == "check", nil, flagSecrets(global), newStateBase, legacyStateBase)
 	if err != nil {
 		return 0, err
 	}
@@ -180,10 +183,6 @@ func secretList(stdout io.Writer, verb string, args []string, rootArg, newStateB
 		}
 	}
 	return 0, nil
-}
-
-func secretRows(repo string, check bool, newBase, legacyBase string) ([]lifecycle.SecretRow, error) {
-	return lifecycle.SecretRows(repo, check, nil, newBase, legacyBase)
 }
 
 func printSecretRows(w io.Writer, rows []lifecycle.SecretRow) {

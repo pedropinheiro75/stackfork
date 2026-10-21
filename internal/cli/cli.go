@@ -142,7 +142,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if action == "repos" {
 		return cmdRepos(stdout, subArgs, newStateBase, legacyStateBase)
 	}
-	if action == "start-env" {
+	if action == "start-env" || action == "secret" {
 		var global []string
 		if *npmrcFlag != "" {
 			global = append(global, "--npmrc", *npmrcFlag)
@@ -150,10 +150,10 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		for _, sec := range secretFlag {
 			global = append(global, "--secret", sec)
 		}
+		if action == "secret" {
+			return cmdSecret(stdout, stderr, subArgs, rootArg, newStateBase, legacyStateBase, global)
+		}
 		return cmdStartEnv(stdout, stderr, subArgs, rootArg, newStateBase, legacyStateBase, global)
-	}
-	if action == "secret" {
-		return cmdSecret(stdout, stderr, subArgs, rootArg, newStateBase, legacyStateBase)
 	}
 	if action == "worktree" {
 		return cmdWorktree(stdout, subArgs, newStateBase, legacyStateBase)
