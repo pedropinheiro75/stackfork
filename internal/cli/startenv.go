@@ -19,6 +19,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/learn"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/live"
 	"github.com/pedropinheiro75/stackfork/internal/redact"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
@@ -42,6 +43,7 @@ type StartOptions struct {
 	Trigger         string           // who started it: cli (default) or dashboard; recorded in the run
 	Reset           bool             // throw the environment away and start it from zero (command reset)
 	Current         bool             // Reset: go on with the current code when it is behind and cannot be updated
+	Live            *live.Job        // a live reconcile: run only the steps of this job (command live, trigger live)
 	Observer        func(runs.Event) // receives the run's state changes, may be nil
 }
 
@@ -98,6 +100,9 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	if err := runner.Check(); err != nil { // before any Docker call
 		return err
 	}
+	if o.Live != nil { // the full plan was checked; the run executes the steps of the job
+		runner.Plan, runner.Exact = o.Live.Plan(plan), true
+	}
 	insts := collectInstances(o.NewStateBase, o.LegacyStateBase)
 	project, instanceDir, err := checkoutInstance(root, branch, o.NewStateBase, o.LegacyStateBase)
 	if err != nil {
@@ -127,10 +132,18 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	if trigger == "" {
 		trigger = "cli"
 	}
+	if o.Live != nil {
+		trigger = live.TriggerLive
+	}
 	willPrepare := o.Reset || needsPrepare(instanceDir, root, branch, project)
 	command, retry := "start-env", " start-env"
 	if o.Reset {
 		command, retry = "reset", " reset --yes"
+	}
+	meta := runs.Meta{Trigger: trigger, Mode: mode, Project: project, Branch: branch, Observer: o.Observer}
+	if o.Live != nil { // a failed live run is retried by turning live mode on again (design D10)
+		command, retry = "live", ""
+		meta.NoWait, meta.Cause = true, &o.Live.Cause
 	}
 	if flags := flagSecrets(o.Global); !willPrepare && len(flags) > 0 {
 		names := make([]string, 0, len(flags))
@@ -142,14 +155,18 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	}
 	var vals lifecycle.SecretValues // the preflight's values redact every step after it (D11)
 	secrets := func() []redact.Secret { return vals.Redactions() }
-	rec, err := runs.Begin(instanceDir, runs.Meta{Command: command, Trigger: trigger, Mode: mode, Project: project, Branch: branch,
-		Out: out, Secrets: secrets, Observer: o.Observer})
+	meta.Command, meta.Out, meta.Secrets = command, out, secrets
+	rec, err := runs.Begin(instanceDir, meta)
 	if err != nil {
 		return err
 	}
 	// Set now, not at the end: a killed process leaves an interrupted run
 	// that the card can still retry. A failed seed replaces it.
-	rec.SetRetry("stackfork --root " + root + retry)
+	if o.Live != nil {
+		rec.SetRetry("stackfork live on " + main)
+	} else {
+		rec.SetRetry("stackfork --root " + root + retry)
+	}
 	defer func() { // the run ends with the command, whatever path returned
 		if p := recover(); p != nil { // a panic is a failed run, not a succeeded one
 			rec.Finish(fmt.Errorf("panic: %v", p))
@@ -160,20 +177,22 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	// sync: the checkout follows its upstream when that cannot lose anything;
 	// otherwise it says how far behind it is. It never fails the start. The
 	// plan already checked is the one that runs; a fast-forwarded plan applies
-	// from the next start.
-	sync := rec.Step("sync", "sync", "fetch the upstream; fast-forward when clean")
-	res := syncRepo(root, 15*time.Second, true)
-	if res.Line != "" {
-		fmt.Fprintln(sync.Start(), res.Line)
-	} else {
-		sync.Start()
+	// from the next start. A live run has no sync step: the reconciler fetched.
+	if o.Live == nil {
+		sync := rec.Step("sync", "sync", "fetch the upstream; fast-forward when clean")
+		res := syncRepo(root, 15*time.Second, true)
+		if res.Line != "" {
+			fmt.Fprintln(sync.Start(), res.Line)
+		} else {
+			sync.Start()
+		}
+		if o.Reset && res.Blocked && !o.Current {
+			err := errors.New("the checkout is behind its upstream and cannot be updated without touching your work; nothing was deleted. Reset with the current code: stackfork --root " + root + " reset --yes")
+			sync.End(err, 0)
+			return err
+		}
+		sync.End(nil, 0)
 	}
-	if o.Reset && res.Blocked && !o.Current {
-		err := errors.New("the checkout is behind its upstream and cannot be updated without touching your work; nothing was deleted. Reset with the current code: stackfork --root " + root + " reset --yes")
-		sync.End(err, 0)
-		return err
-	}
-	sync.End(nil, 0)
 	if o.Reset { // the code may have changed: its plan and mode apply to this run
 		if plan, mode, err = startPlan(out, o, root, main); err != nil {
 			return err
@@ -262,6 +281,12 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		if o.Reset {
 			args = append(args, "--build") // the images are rebuilt from the code in the worktree
 		}
+		if o.Live != nil { // never down, --volumes or --force-recreate: only --build, for the services that changed
+			var build bool
+			if build, services = o.Live.UpArgs(services); build {
+				args = append(args, "--build")
+			}
+		}
 		for _, s := range services {
 			args = append(args, "--service", s)
 		}
@@ -289,6 +314,9 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	verb := "started"
 	if o.Reset {
 		verb = "reset and started"
+	}
+	if o.Live != nil {
+		verb = "reconciled"
 	}
 	fmt.Fprintf(out, "%s %s; see `stackfork --root %s urls`\n", verb, project, root)
 	return nil
@@ -697,5 +725,5 @@ func startPreflight(rec *runs.Run, o StartOptions, root, main, instanceDir, trig
 		lifecycle.Layer{Source: lifecycle.SourceMap, Refs: mapped},
 		lifecycle.Layer{Source: lifecycle.SourceFlag, Refs: flags})
 	return lifecycle.Preflight{Run: rec, InstanceDir: instanceDir, Main: main, Refs: refs, Declared: lifecycle.DeclaredSecrets(root, main),
-		Dashboard: trigger == "dashboard"}.Do()
+		Dashboard: trigger == "dashboard" || trigger == live.TriggerLive}.Do()
 }

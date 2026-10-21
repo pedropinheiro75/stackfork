@@ -1,0 +1,51 @@
+{
+  "branch": "BRANCH",
+  "cause": {
+    "changed": [
+      {
+        "category": "build",
+        "path": "bun.lock",
+        "service": "web"
+      }
+    ]
+  },
+  "command": "live",
+  "ended_at": "TIME",
+  "id": 2,
+  "mode": "container",
+  "outcome": "succeeded",
+  "pid": 0,
+  "project": "PROJECT",
+  "schema": 1,
+  "started_at": "TIME",
+  "steps": [
+    {
+      "ended_at": "TIME",
+      "id": "secrets",
+      "kind": "secrets",
+      "reason": "no secrets",
+      "started_at": "TIME",
+      "state": "skipped",
+      "text": "resolve secrets"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "rebuild",
+      "kind": "compose-up",
+      "log": "2/rebuild.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "up --build web (bun.lock changed)"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "seed",
+      "kind": "exec",
+      "reason": "data already exists",
+      "started_at": "TIME",
+      "state": "skipped",
+      "text": "m \u0026\u0026 s  in db"
+    }
+  ],
+  "trigger": "live"
+}

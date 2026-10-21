@@ -1,0 +1,77 @@
+{
+  "branch": "BRANCH",
+  "cause": {
+    "changed": [
+      {
+        "category": "compose",
+        "path": "docker-compose.yml"
+      },
+      {
+        "category": "build",
+        "path": "bun.lock",
+        "service": "web"
+      },
+      {
+        "category": "migrations",
+        "path": "db/migrations/2/m.sql"
+      }
+    ]
+  },
+  "command": "live",
+  "ended_at": "TIME",
+  "id": 2,
+  "mode": "container",
+  "outcome": "succeeded",
+  "pid": 0,
+  "project": "PROJECT",
+  "schema": 1,
+  "started_at": "TIME",
+  "steps": [
+    {
+      "ended_at": "TIME",
+      "id": "secrets",
+      "kind": "secrets",
+      "reason": "no secrets",
+      "started_at": "TIME",
+      "state": "skipped",
+      "text": "resolve secrets"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "prepare",
+      "kind": "prepare",
+      "log": "2/prepare.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "prepare -f .agent-dev/app.compose.yaml"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "up-all",
+      "kind": "compose-up",
+      "log": "2/up-all.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "compose up --build web (bun.lock changed)"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "seed",
+      "kind": "exec",
+      "reason": "data already exists",
+      "started_at": "TIME",
+      "state": "skipped",
+      "text": "m \u0026\u0026 s  in db"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "migrate",
+      "kind": "exec",
+      "log": "2/migrate.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "m  in db"
+    }
+  ],
+  "trigger": "live"
+}

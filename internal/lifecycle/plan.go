@@ -36,6 +36,10 @@ type PlanRunner struct {
 	Up                                                                  func(w io.Writer, services []string) error // the CLI's `up --in-run` path
 	Host                                                                func(w io.Writer, step knowledge.Step) error
 	FreshData                                                           bool // a reset deleted the data: the seed runs whatever the volume check says
+	// Exact runs Plan's steps for the mode as they are: no check, no implicit
+	// prepare, no implicit compose-up. A live run sets it with a plan it cut
+	// from the full plan; its caller checked and trusted the full one.
+	Exact bool
 }
 
 // Check refuses an untrusted host step and an unsupported mode; it touches nothing.
@@ -69,18 +73,20 @@ func (r PlanRunner) Check() error {
 
 // Execute checks, then runs the steps in list order, no retries.
 func (r PlanRunner) Execute() error {
-	if err := r.Check(); err != nil {
-		return err
-	}
 	steps, _ := r.Plan.ForMode(r.Mode)
-	hasUp := false
-	for _, s := range steps {
-		hasUp = hasUp || s.Kind == knowledge.KindComposeUp
+	if !r.Exact {
+		if err := r.Check(); err != nil {
+			return err
+		}
+		hasUp := false
+		for _, s := range steps {
+			hasUp = hasUp || s.Kind == knowledge.KindComposeUp
+		}
+		if !hasUp { // a plan without compose-up (e.g. none recorded) still starts the stack
+			steps = append(steps, knowledge.Step{ID: "up", Kind: knowledge.KindComposeUp})
+		}
+		steps = withImplicitPrepare(steps)
 	}
-	if !hasUp { // a plan without compose-up (e.g. none recorded) still starts the stack
-		steps = append(steps, knowledge.Step{ID: "up", Kind: knowledge.KindComposeUp})
-	}
-	steps = withImplicitPrepare(steps)
 	r.declare(steps)
 	prepared, seeded := false, false
 	for _, s := range steps {
@@ -303,6 +309,30 @@ func (r PlanRunner) exec(w io.Writer, s knowledge.Step) (int, error) {
 		return code, fmt.Errorf("exited with status %d", code)
 	}
 	return 0, nil
+}
+
+// StartedServices are the services the mode's compose-up steps start. all is
+// true when one of them starts every service (no exclude), or the plan has no
+// compose-up step, which starts the whole stack.
+func StartedServices(instanceDir string, plan knowledge.Plan, mode string) (names []string, all bool, err error) {
+	run, _ := plan.ForMode(mode)
+	r := PlanRunner{InstanceDir: instanceDir}
+	seen := false
+	for _, s := range run {
+		if s.Kind != knowledge.KindComposeUp {
+			continue
+		}
+		seen = true
+		list, err := r.upServices(io.Discard, s)
+		if err != nil {
+			return nil, false, err
+		}
+		if list == nil {
+			return nil, true, nil
+		}
+		names = append(names, list...)
+	}
+	return names, !seen, nil
 }
 
 // excludedServices are the services the steps' compose-up leave out.

@@ -14,6 +14,9 @@ func StepText(st knowledge.Step) string {
 	case knowledge.KindPrepare:
 		parts = append(parts, "prepare "+strings.Join(st.Args, " "))
 	case knowledge.KindComposeUp:
+		if st.Text != "" { // a live run names what it builds
+			return st.Text
+		}
 		parts = append(parts, "compose up")
 		if len(st.Exclude) > 0 {
 			parts = append(parts, "without "+strings.Join(st.Exclude, ", "))
