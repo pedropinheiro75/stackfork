@@ -403,6 +403,13 @@ func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instanc
 		}
 		return nil, "", "", none
 	}
+	args = fileArgs(r.Files)
+	if r.EnvFile != "" {
+		args = append(args, "--env-file", r.EnvFile)
+	}
+	if cerr := knowledge.CheckPrepareArgs(args); cerr != nil {
+		return nil, "", "", fmt.Errorf("reusing the recipe of %s: %w", r.Project, cerr)
+	}
 	rep, aerr := r.Apply(root)
 	if aerr != nil {
 		return nil, "", "", fmt.Errorf("reusing the recipe of %s: %w", r.Project, aerr)
@@ -420,13 +427,6 @@ func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instanc
 	}
 	for _, sk := range rep.Skipped {
 		fmt.Fprintf(out, "skipped %s\n", sk)
-	}
-	args = fileArgs(r.Files)
-	if r.EnvFile != "" {
-		args = append(args, "--env-file", r.EnvFile)
-	}
-	if cerr := knowledge.CheckPrepareArgs(args); cerr != nil {
-		return nil, "", "", fmt.Errorf("reusing the recipe of %s: %w", r.Project, cerr)
 	}
 	seedCmd, seedSvc = r.SeedOnce, r.SeedService
 	if seedCmd == "" {

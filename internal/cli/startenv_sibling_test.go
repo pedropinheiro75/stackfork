@@ -262,3 +262,25 @@ func TestStartEnvNotesDroppedSiblingStoreReference(t *testing.T) {
 		t.Error("the reference item leaked")
 	}
 }
+
+// A recipe prepare would refuse leaves no copied files behind (info nit).
+func TestStartEnvRefusedSiblingRecipeCopiesNothing(t *testing.T) {
+	repo, sib, base := siblingRepo(t)
+	ad := filepath.Join(sib, ".agent-dev")
+	os.WriteFile(filepath.Join(ad, "a&b.yml"), []byte("services: {}\n"), 0o644)
+	if _, e, code := runCLI(t, append(append([]string{}, base...), "--root", sib, "--secret", "tok=env:"+sibTokenName,
+		"prepare", "-f", "docker-compose.yml", "-f", ".agent-dev/a&b.yml", "--env-file", ".agent-dev/runtime.env")...); code != 0 {
+		t.Fatal(e)
+	}
+	nw := filepath.Join(repo, ".worktrees", "feat-b")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "feat-b", nw).CombinedOutput(); err != nil {
+		t.Fatalf("%s", out)
+	}
+	_, e, code := runCLI(t, append(base, "start-env", nw)...)
+	if code == 0 || !strings.Contains(e, "plain value") {
+		t.Fatalf("%d %s", code, e)
+	}
+	if _, err := os.Stat(filepath.Join(nw, ".agent-dev")); err == nil {
+		t.Error("files were copied before the recipe was refused")
+	}
+}
