@@ -338,8 +338,8 @@
   function startingChip(inst) {
     var lr = inst.last_run;
     if (!lr || lr.outcome !== "running") return null;
-    var reset = lr.command === "reset";
-    return { cls: "busy", glyph: GLYPH.busy, label: reset ? "Resetting…" : "Starting…", title: lr.step ? "step " + lr.step_n + " of " + lr.step_total + ": " + lr.step : (reset ? "Reset in progress" : "Start in progress") };
+    var liveRun = lr.trigger === "live", reset = !liveRun && lr.command === "reset";
+    return { cls: "busy", glyph: GLYPH.busy, label: reset ? "Resetting…" : "Starting…", title: lr.step ? "step " + lr.step_n + " of " + lr.step_total + ": " + lr.step : (liveRun ? "Live run in progress" : reset ? "Reset in progress" : "Start in progress") };
   }
 
   // A failed seed step is reported by the seed callout; the card never shows
@@ -357,10 +357,13 @@
     var lr = inst.last_run, p = inst.project;
     if (!lr || (lr.outcome !== "failed" && lr.outcome !== "interrupted") || seedCovers(inst)) return "";
     var interrupted = lr.outcome === "interrupted", step = lr.failed_step || "";
-    var verb = lr.command === "reset" ? "Reset" : "Start";
+    var verb = lr.trigger === "live" ? "Live run" : lr.command === "reset" ? "Reset" : "Start";
     var title = verb + (interrupted ? " interrupted" : " failed") + (step ? ' at step <code class="mono">' + escapeHtml(step) + "</code>" : "");
     var retry = "";
-    if (isStartEnvRetry(lr.retry) || isResetRetry(lr.retry)) {
+    if (lr.trigger === "live") {
+      // a failed live run paused live mode: its Retry is Resume (add-live-mode D14)
+      retry = '<button type="button" class="btn" data-live-op="resume" data-repo="' + escapeHtml(repoRoot(inst.root)) + '" data-key="' + escapeHtml(p) + '/run/retry" title="Resume live mode">Resume</button>';
+    } else if (isStartEnvRetry(lr.retry) || isResetRetry(lr.retry)) {
       var again = isResetRetry(lr.retry) ? "reset" : "start";
       retry = '<button type="button" class="btn" data-repo-action="' + again + '" data-repo="' + escapeHtml(repoRoot(inst.root)) + '" data-path="' + escapeHtml(inst.root) +
         '" data-key="' + escapeHtml(p) + '/run/retry" title="' + (again === "reset" ? "Reset" : "Start") + ' again">Retry</button>';
@@ -379,7 +382,7 @@
   function lastRunItem(inst) {
     var lr = inst.last_run;
     if (!lr || lr.outcome !== "succeeded") return "";
-    var text = "succeeded \u00B7 " + fmtDur(Date.parse(lr.ended_at) - Date.parse(lr.started_at)) + " \u00B7 " + agoText(lr.started_at);
+    var text = (lr.trigger === "live" ? "live \u00B7 " : "") + "succeeded \u00B7 " + fmtDur(Date.parse(lr.ended_at) - Date.parse(lr.started_at)) + " \u00B7 " + agoText(lr.started_at);
     return menuItem(inst.project + "/menu/lastrun", "Last run", text, runLogAttrs(inst.project, lr.id, ""));
   }
 
@@ -400,6 +403,21 @@
         '<hr class="menu-sep" role="separator">' +
         menuItem(k + "/seed/force", "Re-seed, overwriting data", inst.seed_force, ' data-run="' + escapeHtml(inst.seed_force) + '"', "menu-item-danger")) +
       "</div></div>";
+  }
+
+  // The cleanup callout of a merged or closed branch (add-live-mode D20): on
+  // the worktree row and on the VersionCard. templates/cleanup.html.tmpl
+  // renders the same markup; change both together.
+  function cleanupNoteHtml(n) {
+    if (!n) return "";
+    var pr = n.pr ? " \u00B7 " + (isWebUrl(n.url) ? '<a href="' + escapeHtml(n.url) + '" target="_blank" rel="noopener">#' + n.pr + "</a>" : "#" + n.pr) : "";
+    var at = ' data-repo="' + escapeHtml(n.repo) + '" data-path="' + escapeHtml(n.path) + '" data-key="' + escapeHtml(n.path);
+    var actions = n.ask
+      ? '<div class="callout-actions"><button type="button" class="btn" data-live-op="clean"' + at + '/cleanup/clean">' + (n.ask === "auto" ? "Clean up now" : "Clean up") +
+        '</button><button type="button" class="btn btn-ghost" data-live-op="keep"' + at + '/cleanup/keep">Keep</button></div>'
+      : "";
+    return '<div class="callout callout-attention cleanup-note" data-cleanup="' + (n.ask || "warning") + '"><span class="callout-glyph" aria-hidden="true">' + GLYPH.attention +
+      '</span><div class="callout-body"><p class="callout-title">' + escapeHtml(n.title) + '</p><p class="callout-detail"><code class="mono">' + escapeHtml(n.branch) + "</code>" + pr + "</p></div>" + actions + "</div>";
   }
 
   function serviceHtml(inst, svc) {
@@ -509,7 +527,7 @@
       '<div class="stack-id"><h3 class="version-title" title="' + p + '"><span class="branch-pill" title="' + escapeHtml(inst.branch) + '">' + escapeHtml(inst.branch) + "</span></h3>" +
       chips + '<div class="stack-actions">' + actions + "</div>" + meta + "</div></header>" +
       (appStrip ? '<div class="app-strip">' + appStrip + "</div>" : "") +
-      seedHtml(inst, name) + runCalloutHtml(inst, name) + warnings + oneOffHtml(inst) +
+      seedHtml(inst, name) + runCalloutHtml(inst, name) + warnings + cleanupNoteHtml(inst.cleanup) + oneOffHtml(inst) +
       '<div class="stack-body" id="body-' + id + '">' + table + "</div></article>"
     );
   }
@@ -738,6 +756,7 @@
       .then(function (inv) {
         state.inventory = inv;
         state.stale = !inv.docker.reachable;
+        noteLiveRuns(inv.instances || [], toast);
         render();
       })
       .catch(function () {
@@ -745,6 +764,28 @@
         state.stale = true;
         render();
       });
+  }
+
+  // A live run starts without a click, so the page learns of it from the poll.
+  // A run that succeeded says nothing; one that failed toasts once, when the
+  // poll first sees it end (add-live-mode D14). The runs already there when
+  // the page opens only show on their cards.
+  var liveSeen = null;
+
+  function noteLiveRuns(insts, notify) {
+    var first = liveSeen === null;
+    if (first) liveSeen = {};
+    insts.forEach(function (inst) {
+      var lr = inst.last_run;
+      if (!lr || lr.trigger !== "live" || lr.outcome === "running") return;
+      var seen = liveSeen[inst.project];
+      liveSeen[inst.project] = lr.id;
+      if (first || seen === lr.id) return;
+      if (lr.outcome === "failed" || lr.outcome === "interrupted") {
+        var what = lr.failed_step ? lr.failed_step + " " + (lr.outcome === "failed" ? "failed" : "interrupted") : "run " + lr.id + " " + lr.outcome;
+        notify("failed", appName(inst) + " live mode paused: " + what);
+      }
+    });
   }
 
   function runAction(action, project, service) {
@@ -1364,7 +1405,7 @@
   var lastRepos = null;
 
   function loadRepos() {
-    fetch("/fragments/repos", { credentials: "same-origin" })
+    return fetch("/fragments/repos", { credentials: "same-origin" })
       .then(function (r) { if (!r.ok) throw new Error("status " + r.status); return r.text(); })
       .then(function (html) {
         var list = document.getElementById("repos-list");
@@ -1383,6 +1424,7 @@
           paintRuns(); // the live run and the Starts in flight survive every render
           paintStarts();
           paintSecrets();
+          paintLive();
           if (menuKey) { var tr = keyedIn("#repos-list", menuKey); if (tr) openMenu(tr, false); }
           if (focusKey) {
             var again = keyedIn("#repos-list", focusKey);
@@ -1986,6 +2028,87 @@
       });
   }
 
+  // --- Live mode (add-live-mode D14, D20, D21) -------------------------------
+  // Every [data-live-op] button posts /api/live: the Live switch, Resume, the
+  // cleanup callouts' Clean up and Keep. The server opens the native dialogs;
+  // a refusal or a missing dialog comes back as a message (and, for turning
+  // live mode on, the command to run in a terminal). liveBusy holds the calls
+  // in flight by the button's data-key: a render replaces the button, and a
+  // second click must not post the same call twice.
+  var liveBusy = {};
+
+  function paintLive() {
+    Object.keys(liveBusy).forEach(function (key) {
+      var b = keyedIn("#repos-list", key) || keyedIn("#view-instances", key);
+      if (b) b.disabled = true;
+    });
+  }
+
+  function afterLive() {
+    lastRepos = null; // a cancelled dialog leaves the control as the server has it
+    poll();
+    loadRepos();
+  }
+
+  function finishLive(res, repo, label) {
+    var msg = res.message || (res.ok ? "done" : "refused");
+    log("live: " + msg);
+    if (res.ok || /^cancelled/.test(msg)) toast("ok", msg);
+    else {
+      toast("failed", msg.split("\n")[0]);
+      if (res.command && repo) {
+        reposState.errors[repo] = { title: label + " not done", label: "", message: msg, command: res.command };
+        renderRepoErrors();
+      }
+    }
+  }
+
+  function liveOp(btn) {
+    var d = btn.dataset, key = d.key || "";
+    if (btn.disabled || (key && liveBusy[key])) return;
+    if (key) liveBusy[key] = true;
+    btn.disabled = true;
+    var body = { repo: d.repo, op: d.liveOp };
+    if (d.path) body.path = d.path;
+    return post("/api/live", body)
+      .then(function (r) { return r.text().then(function (t) { try { return JSON.parse(t); } catch (e) { return { message: t }; } }); })
+      .then(function (res) { finishLive(res, d.repo, d.liveOp === "on" ? "Turning live mode on" : d.liveOp === "off" ? "Turning live mode off" : d.liveOp === "resume" ? "Resume" : d.liveOp === "keep" ? "Keep" : "Clean up"); })
+      .catch(function (err) { log("live: " + err.message); toast("failed", err.message); })
+      .then(function () {
+        if (key) delete liveBusy[key];
+        btn.disabled = false;
+        afterLive();
+      });
+  }
+
+  // The cleanup selector: off, suggest or auto, the grace period and whether
+  // the local branch goes too. Choosing auto or branch deletion asks first.
+  function postCleanup(ctl) {
+    var box = ctl.closest(".live-cleanup");
+    var sel = box.querySelector("select[data-cleanup-for]");
+    var grace = box.querySelector("input[data-cleanup-grace]");
+    var del = box.querySelector("input[data-cleanup-delete]");
+    var body = { repo: sel.dataset.cleanupFor, op: "cleanup", mode: sel.value };
+    if (grace && grace.value) body.grace_hours = Number(grace.value);
+    if (del) body.delete_branch = del.checked;
+    post("/api/live", body)
+      .then(function (r) { return r.text().then(function (t) { try { return JSON.parse(t); } catch (e) { return { message: t }; } }); })
+      .then(function (res) { finishLive(res, body.repo, "Cleanup setting"); })
+      .catch(function (err) { toast("failed", "cleanup: " + err.message); })
+      .then(afterLive);
+  }
+
+  function wireLive() {
+    document.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-live-op]");
+      if (b) liveOp(b);
+    });
+    document.getElementById("repos-list").addEventListener("change", function (e) {
+      var ctl = e.target.closest("select[data-cleanup-for], input[data-cleanup-grace], input[data-cleanup-delete]");
+      if (ctl) postCleanup(ctl);
+    });
+  }
+
   // Learn modal: pick an installed agent the folder allows (config
   // agentRules), then Start setup: stackfork opens it in a terminal with
   // the prompt. A disabled agent keeps its reason on screen.
@@ -2070,6 +2193,7 @@
     wireCleanup();
     wireLogsPanel();
     wireRepos();
+    wireLive();
     loadDisk();
     poll();
     setInterval(function () {
@@ -2083,7 +2207,7 @@
   // The script tests (appscript_runs_test.go) load this file in Node and ask
   // for the functions they exercise; a browser never defines __sfExport.
   if (typeof window.__sfExport === "function") {
-    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip });
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, cleanupNoteHtml: cleanupNoteHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, noteLiveRuns: noteLiveRuns, liveOp: liveOp, paintLive: paintLive, loadRepos: loadRepos, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip });
   }
 
   if (document.readyState === "loading") {

@@ -56,3 +56,10 @@ func TestSecretsButtonsStayBusyAcrossARender(t *testing.T) {
 func TestResetStreamsLikeStart(t *testing.T) {
 	runAppJS(t, "reset.case.js")
 }
+
+// Live mode on the page: a failed live run toasts once and a succeeded one
+// not at all; the Live switch keeps focus across a render; the switch and the
+// cleanup buttons post one call each (add-live-mode D14).
+func TestLiveModeOnThePage(t *testing.T) {
+	runAppJS(t, "live_ui.case.js")
+}

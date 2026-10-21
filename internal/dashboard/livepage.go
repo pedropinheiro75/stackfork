@@ -86,7 +86,11 @@ type cleanupCandidate struct {
 
 // note is the card's view of the candidate.
 func (c cleanupCandidate) note(repo string) *inventory.CleanupNote {
-	return &inventory.CleanupNote{Repo: repo, Path: c.Path, Branch: c.Branch, Title: c.Title, PR: c.PR, URL: c.URL, Ask: c.Ask}
+	url := c.URL
+	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") { // app.js links only these
+		url = ""
+	}
+	return &inventory.CleanupNote{Repo: repo, Path: c.Path, Branch: c.Branch, Title: c.Title, PR: c.PR, URL: url, Ask: c.Ask}
 }
 
 // CleanupFor is the callout of the worktree at path, or nil.

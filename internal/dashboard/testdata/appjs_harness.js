@@ -27,5 +27,5 @@ function el(props, q) {
   }, props);
   return e;
 }
-require(process.argv[3])(ex, { el, doc, assert, ctx });
-console.log("ok");
+// a case may return a promise (the ones that drive fetch)
+Promise.resolve(require(process.argv[3])(ex, { el, doc, assert, ctx })).then(() => console.log("ok"), (e) => { console.error(e); process.exit(1); });

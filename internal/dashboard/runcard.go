@@ -21,6 +21,7 @@ type runView struct {
 	RetryAction string // RetryStart: the Repos action (start or reset) and the button's title
 	RetryTitle  string
 	Repo        string // main checkout of the repo, for the Start action
+	RetryLive   bool   // a failed live run: the button is Resume, and resumes live mode
 }
 
 type lastRunMenu struct {
@@ -39,9 +40,13 @@ func isResetRetry(cmd string) bool {
 	return strings.HasPrefix(cmd, "stackfork --root ") && strings.HasSuffix(cmd, " reset --yes")
 }
 
-// runVerb names a run to a person: Start, or Reset for a reset.
-func runVerb(command string) string {
-	if command == "reset" {
+// runVerb names a run to a person: Start, Reset for a reset, or Live run for
+// one that live mode started.
+func runVerb(command, trigger string) string {
+	switch {
+	case trigger == "live":
+		return "Live run"
+	case command == "reset":
 		return "Reset"
 	}
 	return "Start"
@@ -55,7 +60,9 @@ func (c cardData) RunStarting() *chipView {
 		return nil
 	}
 	title, label := "Start in progress", "Starting…"
-	if lr.Command == "reset" {
+	if lr.Trigger == "live" {
+		title = "Live run in progress"
+	} else if lr.Command == "reset" {
 		title, label = "Reset in progress", "Resetting…"
 	}
 	if lr.Step != "" {
@@ -77,14 +84,16 @@ func (c cardData) RunCallout() *runView {
 	if lr == nil || (lr.Outcome != "failed" && lr.Outcome != "interrupted") || c.seedCovers() {
 		return nil
 	}
-	v := &runView{Tone: "failed", Glyph: glyphFailed, Title: runVerb(lr.Command) + " failed", Step: lr.FailedStep, Tail: lr.Tail, Run: lr.ID}
+	v := &runView{Tone: "failed", Glyph: glyphFailed, Title: runVerb(lr.Command, lr.Trigger) + " failed", Step: lr.FailedStep, Tail: lr.Tail, Run: lr.ID}
 	if lr.Outcome == "interrupted" {
-		v.Tone, v.Glyph, v.Title = "attention", glyphAttention, runVerb(lr.Command)+" interrupted"
+		v.Tone, v.Glyph, v.Title = "attention", glyphAttention, runVerb(lr.Command, lr.Trigger)+" interrupted"
 	}
 	if lr.FailedStep != "" {
 		v.Title += " at step"
 	}
 	switch {
+	case lr.Trigger == "live":
+		v.CanRetry, v.RetryLive, v.Repo = true, true, repoRoot(c.Root)
 	case lr.Retry == "":
 	case isStartEnvRetry(lr.Retry):
 		v.CanRetry, v.RetryStart, v.Repo = true, true, repoRoot(c.Root)
@@ -104,7 +113,11 @@ func (c cardData) LastRunMenu() *lastRunMenu {
 	if lr == nil || lr.Outcome != "succeeded" {
 		return nil
 	}
-	return &lastRunMenu{Run: lr.ID, Text: "succeeded · " + durText(lr.EndedAt.Sub(lr.StartedAt).Milliseconds()) + " · " + ago(lr.StartedAt)}
+	prefix := ""
+	if lr.Trigger == "live" {
+		prefix = "live · "
+	}
+	return &lastRunMenu{Run: lr.ID, Text: prefix + "succeeded · " + durText(lr.EndedAt.Sub(lr.StartedAt).Milliseconds()) + " · " + ago(lr.StartedAt)}
 }
 
 // durText must match app.js fmtDur: 320 ms, 41 s, 1 m 5 s.

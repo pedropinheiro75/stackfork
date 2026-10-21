@@ -66,6 +66,24 @@ var runCardCases = []struct {
 		i.SeedCommand, i.SeedDone, i.SeedForce = "stackfork --instance P seed", "d", "f"
 		i.SeedRun, i.SeedStep = 11, "seed"
 	}), []string{`data-seed="failed"`, `data-run-outcome="interrupted"`, "Start interrupted at step"}, nil},
+	{"live run in progress", runInst(&inventory.LastRun{ID: 30, Command: "live", Trigger: "live", Outcome: "running", Step: "rebuild", StepN: 2, StepTotal: 4, StartedAt: ago5()}, nil),
+		[]string{`title="step 2 of 4: rebuild"`, "Starting…"}, []string{"callout", "Resetting"}},
+	{"live run failed", runInst(&inventory.LastRun{ID: 31, Command: "live", Trigger: "live", Outcome: "failed", FailedStep: "migrate", StartedAt: ago5(), EndedAt: ago5(),
+		Retry: "stackfork --instance sf-acme-web-2ffa6841c75d up", Tail: "boom"}, nil),
+		[]string{`class="callout callout-failed" data-run-outcome="failed"`, `Live run failed at step <code class="mono">migrate</code>`, `data-live-op="resume" data-repo="/src/acme-web" data-key="sf-acme-web-2ffa6841c75d/run/retry" title="Resume live mode">Resume<`},
+		[]string{">Retry<", `data-run="stackfork --instance`, `data-repo-action="start"`}},
+	{"live run succeeded", runInst(&inventory.LastRun{ID: 32, Command: "live", Trigger: "live", Outcome: "succeeded", StartedAt: ago5(), EndedAt: ago5().Add(41 * time.Second)}, nil),
+		[]string{"Last run", "live · succeeded · 41 s · 5 min ago"}, []string{"callout"}},
+	{"cleanup suggest", runInst(nil, func(i *inventory.Instance) {
+		i.Cleanup = &inventory.CleanupNote{Repo: "/src/acme-web", Path: i.Root, Branch: "feature-login", Title: "PR merged — clean up?", PR: 42, URL: "https://example.com/acme/web/pull/42", Ask: "suggest"}
+	}), []string{`data-cleanup="suggest"`, "PR merged — clean up?", `<a href="https://example.com/acme/web/pull/42" target="_blank" rel="noopener">#42</a>`,
+		`data-live-op="clean" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login"`, ">Clean up<", `data-live-op="keep"`, ">Keep<"}, []string{"Clean up now"}},
+	{"cleanup auto", runInst(nil, func(i *inventory.Instance) {
+		i.Cleanup = &inventory.CleanupNote{Repo: "/src/acme-web", Path: i.Root, Branch: "feature-login", Title: "Cleanup in 23 h", Ask: "auto"}
+	}), []string{`data-cleanup="auto"`, "Cleanup in 23 h", ">Clean up now<", ">Keep<"}, []string{"<a "}},
+	{"cleanup warning", runInst(nil, func(i *inventory.Instance) {
+		i.Cleanup = &inventory.CleanupNote{Repo: "/src/acme-web", Path: i.Root, Branch: "feature<login", Title: "PR merged, but this worktree has uncommitted changes"}
+	}), []string{`data-cleanup="warning"`, "uncommitted changes", "feature&lt;login"}, []string{"data-live-op", "callout-actions"}},
 	{"seed callout of an older run", runInst(&inventory.LastRun{ID: 10, Command: "up", Trigger: "cli", Outcome: "failed", FailedStep: "up", StartedAt: ago5(), EndedAt: ago5(),
 		Retry: "stackfork --instance sf-acme-web-2ffa6841c75d up"}, func(i *inventory.Instance) {
 		i.SeedCommand, i.SeedDone, i.SeedForce = "stackfork --instance P seed", "d", "f"

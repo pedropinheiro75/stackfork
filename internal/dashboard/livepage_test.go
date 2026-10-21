@@ -385,3 +385,32 @@ func TestReposFragmentCleanupSelector(t *testing.T) {
 		t.Error("the cleanup selector shows with live mode off")
 	}
 }
+
+func TestInstancesJSONCarriesTheCleanupNoteOfItsWorktree(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo, wt := e.liveWorktree(t)
+	writeFixtureInstance(t, e.newDir, "sf-acme-web-feature-login", wt, "feature-login", "web")
+	f, _ := e.withLiveOps(t, true, nil)
+	cfg, _ := config.Load()
+	cfg.SetLive(repo)
+	cfg.Save()
+	f.st = cleanupStatus(repo, wt, "suggest", live.CandidateStatus{State: "merged", Eligible: true, Project: "sf-acme-web-feature-login", PR: 42})
+	time.Sleep(2100 * time.Millisecond) // the inventory cache (2 s) was filled by the scan before the instance existed
+	e.get("/api/repos")                 // the card joins the scan
+	var inv struct {
+		Instances []struct {
+			Project string
+			Cleanup *struct{ Repo, Path, Branch, Title, Ask string }
+		}
+	}
+	if err := json.Unmarshal(e.get("/api/instances").Body.Bytes(), &inv); err != nil || len(inv.Instances) != 1 {
+		t.Fatalf("%v %s", err, e.get("/api/instances").Body.String())
+	}
+	c := inv.Instances[0].Cleanup
+	if c == nil || c.Repo != repo || c.Path != wt || c.Branch != "feature-login" || c.Title != "PR merged — clean up?" || c.Ask != "suggest" {
+		t.Fatalf("cleanup note: %+v", c)
+	}
+	if !strings.Contains(e.get("/").Body.String(), `data-cleanup="suggest"`) {
+		t.Fatal("the first paint lacks the callout")
+	}
+}
