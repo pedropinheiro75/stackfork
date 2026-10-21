@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
+	"unicode"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -221,6 +223,9 @@ func Load(path string) (*Knowledge, error) {
 	if err := ValidatePlan(k.Plan); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	if err := ValidateAdapterFiles(k.AdapterFiles); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	return &k, nil
 }
 
@@ -251,6 +256,9 @@ func (k *Knowledge) Save(path string) error {
 		return err
 	}
 	if err := ValidateSecrets(k.Secrets); err != nil {
+		return err
+	}
+	if err := ValidateAdapterFiles(k.AdapterFiles); err != nil {
 		return err
 	}
 	b, err := json.MarshalIndent(k, "", "  ")
@@ -464,4 +472,24 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// ValidateAdapterFiles accepts only clean relative paths inside the
+// repository. The entries become `prepare -f` values, and splitArgs lifts
+// --npmrc=, --secret= and --state-dir= out of argv wherever they sit, so an
+// entry that starts with '-' would be a flag the preflight never sees.
+func ValidateAdapterFiles(files []string) error {
+	for i, f := range files {
+		switch {
+		case f == "":
+			return fmt.Errorf("adapter_files[%d] is empty", i)
+		case strings.HasPrefix(f, "-"):
+			return fmt.Errorf("adapter_files[%d] starts with '-': it would be read as a flag", i)
+		case strings.IndexFunc(f, unicode.IsControl) >= 0:
+			return fmt.Errorf("adapter_files[%d] has a control character", i)
+		case strings.Contains(f, "\\") || !filepath.IsLocal(f) || path.Clean(f) != f:
+			return fmt.Errorf("adapter_files[%d] must be a clean relative path inside the repository (forward slashes, no .. or ./)", i)
+		}
+	}
+	return nil
 }

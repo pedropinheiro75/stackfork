@@ -1,6 +1,7 @@
 package knowledge
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,5 +63,30 @@ func TestLoadRefusesPrepareStepWithSecretFlag(t *testing.T) {
 	_, err := Load(p)
 	if err == nil || !strings.Contains(err.Error(), "--secret") || strings.Contains(err.Error(), "bank") {
 		t.Fatalf("err %v", err)
+	}
+}
+
+// Round 2, C1 via adapter_files: prepare gets the adapter files as -f
+// values, and splitArgs lifts --npmrc=, --secret= and --state-dir= out of
+// argv, so an entry that starts with '-' is a flag, not a file.
+func TestLoadRefusesUnsafeAdapterFiles(t *testing.T) {
+	for _, bad := range []string{"--npmrc=evil.compose.yaml", "-f", "--secret=X=env:Y.compose.yaml", "/etc/evil.compose.yaml",
+		"../evil.compose.yaml", "a/../b.compose.yaml", "./a.compose.yaml", "", "a\nb.compose.yaml"} {
+		body, _ := json.Marshal(map[string]any{"schema": 2, "status": "verified", "facts": map[string]any{}, "plan": map[string]any{}, "adapter_files": []string{".agent-dev/ok.compose.yaml", bad}})
+		p := filepath.Join(t.TempDir(), "knowledge.json")
+		os.WriteFile(p, body, 0o644)
+		if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "adapter_files") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+	body := `{"schema":2,"status":"verified","facts":{},"plan":{},"adapter_files":[".stackfork/compose.override.yaml",".agent-dev/app.compose.yaml","dir/sub"]}`
+	p := filepath.Join(t.TempDir(), "knowledge.json")
+	os.WriteFile(p, []byte(body), 0o644)
+	if _, err := Load(p); err != nil {
+		t.Fatal(err)
+	}
+	k := &Knowledge{AdapterFiles: []string{"--npmrc=x.compose.yaml"}}
+	if err := k.Save(filepath.Join(t.TempDir(), "k.json")); err == nil {
+		t.Error("Save accepted it")
 	}
 }

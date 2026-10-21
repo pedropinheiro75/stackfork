@@ -291,6 +291,18 @@ func needsPrepare(instanceDir, root, branch, project string) bool {
 // manifest already records its files, else the recorded recipe's
 // -f/--env-file, else the project's adapter compose files.
 func prepareArgs(root, main, instanceDir string) ([]string, error) {
+	args, err := prepareArgsFrom(root, main, instanceDir)
+	if err == nil && args != nil {
+		// whatever the source (plan, adapter_files, a glob), these reach
+		// prepare, where splitArgs lifts --secret, --npmrc and the like
+		if cerr := knowledge.CheckPrepareArgs(args); cerr != nil {
+			return nil, cerr
+		}
+	}
+	return args, err
+}
+
+func prepareArgsFrom(root, main, instanceDir string) ([]string, error) {
 	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err == nil {
 		return nil, nil // prepare reuses the files, env file and secrets it recorded
 	}
@@ -299,17 +311,8 @@ func prepareArgs(root, main, instanceDir string) ([]string, error) {
 		return nil, err
 	}
 	if k != nil {
-		if args, err := planPrepareArgs(k); args != nil || err != nil {
+		if args, err := knowledgePrepareArgs(k); args != nil || err != nil {
 			return args, err
-		}
-		var files []string
-		for _, f := range k.AdapterFiles {
-			if strings.HasSuffix(f, ".compose.yaml") || strings.HasSuffix(f, ".compose.yml") {
-				files = append(files, f)
-			}
-		}
-		if len(files) > 0 {
-			return fileArgs(files), nil
 		}
 	}
 	for _, dir := range []string{".stackfork", ".agent-dev"} {
@@ -328,6 +331,28 @@ func prepareArgs(root, main, instanceDir string) ([]string, error) {
 		}
 	}
 	return nil, errNoRecipe
+}
+
+// knowledgePrepareArgs are the prepare args knowledge gives: the plan's
+// prepare step, else the adapter Compose files. Both are checked.
+func knowledgePrepareArgs(k *knowledge.Knowledge) ([]string, error) {
+	if args, err := planPrepareArgs(k); args != nil || err != nil {
+		return args, err
+	}
+	var files []string
+	for _, f := range k.AdapterFiles {
+		if strings.HasSuffix(f, ".compose.yaml") || strings.HasSuffix(f, ".compose.yml") {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
+		return nil, nil
+	}
+	args := fileArgs(files)
+	if err := knowledge.CheckPrepareArgs(args); err != nil {
+		return nil, fmt.Errorf("adapter_files: %w", err)
+	}
+	return args, nil
 }
 
 // planPrepareArgs is the plan's prepare step args. Load already validated
@@ -389,6 +414,9 @@ func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instanc
 	args = fileArgs(r.Files)
 	if r.EnvFile != "" {
 		args = append(args, "--env-file", r.EnvFile)
+	}
+	if cerr := knowledge.CheckPrepareArgs(args); cerr != nil {
+		return nil, "", "", fmt.Errorf("reusing the recipe of %s: %w", r.Project, cerr)
 	}
 	seedCmd, seedSvc = r.SeedOnce, r.SeedService
 	if seedCmd == "" {

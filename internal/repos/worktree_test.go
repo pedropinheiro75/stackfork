@@ -106,7 +106,7 @@ func TestAddWorktreeCopiesOnlyAllowedAdapterFiles(t *testing.T) {
 	w("tokened/.npmrc", "//npm.pkg.github.com/:_authToken=abc")
 	w("plain/.npmrc", "registry=https://registry.npmjs.org/")
 	k := &knowledge.Knowledge{Status: knowledge.StatusVerified, AdapterFiles: []string{
-		".agent-dev", "tokened", "plain", "missing.yaml", "../escape", "/etc/hosts",
+		".agent-dev", "tokened", "plain", "missing.yaml", // paths outside the repo are refused by Load now
 	}}
 	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestAddWorktreeCopiesOnlyAllowedAdapterFiles(t *testing.T) {
 	if len(res.Copied) != 3 {
 		t.Fatalf("copied %v skipped %v", res.Copied, res.Skipped)
 	}
-	if !strings.Contains(strings.Join(res.Skipped, "|"), "outside the project") {
+	if !strings.Contains(strings.Join(res.Skipped, "|"), "missing.yaml (missing)") {
 		t.Fatalf("skipped %v", res.Skipped)
 	}
 	if git(t, repo, "status", "--porcelain") != before {
