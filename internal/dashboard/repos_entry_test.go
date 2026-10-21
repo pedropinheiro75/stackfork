@@ -8,9 +8,10 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
-func recordEntry(t *testing.T, repo string, e *knowledge.Entry) {
+func recordEntry(t *testing.T, repo string, e *knowledge.Entry, facts []knowledge.Service) {
 	t.Helper()
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Entry: e}
+	k.Facts.Services = facts
 	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
@@ -19,19 +20,25 @@ func recordEntry(t *testing.T, repo string, e *knowledge.Entry) {
 // D12: the Repos panel shows the entry line in each state, in the recipe
 // block and in the plan bar.
 func TestReposEntryLine(t *testing.T) {
-	cmd := `data-copy="stackfork learn record entry --service S --port N"`
+	cmd := `data-copy="stackfork learn record entry --service web --port 3000"`
+	placeholders := `data-copy="stackfork learn record entry --service S --port N"`
 	for _, c := range []struct {
 		name  string
 		entry *knowledge.Entry
+		facts []knowledge.Service
 		want  []string
 		not   []string
 	}{
-		{"recorded", &knowledge.Entry{Service: "nginx", Port: 80, Path: "/app"},
+		{"recorded", &knowledge.Entry{Service: "nginx", Port: 80, Path: "/app"}, nil,
 			[]string{`data-entry="recorded"`, `<span class="micro">App</span><span aria-hidden="true">&rarr;</span><code class="mono">nginx:80/app</code>`, "chip-ok", ">recorded<"}, []string{"entry guessed", "No web entry", cmd}},
-		{"guessed", &knowledge.Entry{Service: "web", Port: 3000, Proposed: true},
+		{"guessed", &knowledge.Entry{Service: "web", Port: 3000, Proposed: true}, nil,
 			[]string{`data-entry="guessed"`, ">web:3000<", "chip-attention", "entry guessed", cmd}, []string{"No web entry", ">recorded<"}},
-		{"none", &knowledge.Entry{None: true},
-			[]string{`data-entry="none"`, "No web entry"}, []string{`<span class="micro">App</span>`, cmd, "entry guessed"}},
+		{"no entry, scan proposes one", nil, []knowledge.Service{{Name: "web", Ports: []string{"3000:3000"}}},
+			[]string{`data-entry="guessed"`, ">web:3000<", "chip-attention", "entry guessed", cmd}, []string{"No web entry", ">recorded<", "no entry recorded"}},
+		{"no entry, no proposal", nil, nil,
+			[]string{`data-entry="guessed"`, "no entry recorded", "chip-attention", ">no entry<", placeholders}, []string{"entry guessed", "No web entry", ">recorded<"}},
+		{"none", &knowledge.Entry{None: true}, nil,
+			[]string{`data-entry="none"`, "No web entry"}, []string{`<span class="micro">App</span>`, cmd, placeholders, "entry guessed"}},
 	} {
 		for _, withPlan := range []bool{false, true} {
 			e := newBrowserEnv(t)
@@ -44,11 +51,12 @@ func TestReposEntryLine(t *testing.T) {
 					t.Fatal(err)
 				}
 				k.Entry = c.entry
+				k.Facts.Services = c.facts
 				if err := k.Save(file); err != nil {
 					t.Fatal(err)
 				}
 			} else {
-				recordEntry(t, repo, c.entry)
+				recordEntry(t, repo, c.entry, c.facts)
 			}
 			e.get("/api/repos")
 			frag := e.get("/fragments/repos").Body.String()

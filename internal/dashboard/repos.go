@@ -30,7 +30,7 @@ import (
 var reposTemplateSrc embed.FS
 
 var reposFuncs = template.FuncMap{
-	"entryCommand": func() string { return entryCommand },
+	"entryCommand": entryCommand,
 	"date": func(t time.Time) string {
 		if t.IsZero() {
 			return "-"

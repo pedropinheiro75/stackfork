@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"path/filepath"
+	"strconv"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
@@ -52,22 +53,43 @@ func (s *Server) repoRecipe(repo repos.Repo) recipeView {
 
 // entryView is the Repos entry line (entry-links D12): State is recorded,
 // guessed or none; Target is "service:port[path]", empty when unknown.
+// Service and Port are the known target of a guess, for the copy command.
 type entryView struct {
-	State, Target string
+	State, Target, Service string
+	Port                   int
 }
 
-// entryCommand is the copy-only command of a guessed entry; S and N stay
-// placeholders so the page never runs it.
-const entryCommand = "stackfork learn record entry --service S --port N"
+// entryCommand is the copy-only command of a guessed entry: the guessed
+// service and port when known, else the placeholders S and N. The page never
+// runs it.
+func entryCommand(v *entryView) string {
+	service, port := "S", "N"
+	if v != nil && v.Service != "" {
+		service, port = v.Service, strconv.Itoa(v.Port)
+	}
+	return "stackfork learn record entry --service " + service + " --port " + port
+}
 
 // repoEntry reads the main checkout's knowledge; nil when there is none.
+// With no entry recorded it shows the scan's proposal, when there is one.
 func repoEntry(repo repos.Repo) *entryView {
 	k, err := knowledge.LoadFirst(repo.Path)
 	if err != nil || k == nil {
 		return nil
 	}
-	st, target := k.EntryLine()
-	return &entryView{State: st, Target: target}
+	e := k.Entry
+	if e == nil {
+		e = learn.ProposeEntry(k)
+	}
+	v := &entryView{}
+	if e != nil {
+		v.Service, v.Port = e.Service, e.Port
+	}
+	if k.Entry == nil && e != nil {
+		k = &knowledge.Knowledge{Entry: e}
+	}
+	v.State, v.Target = k.EntryLine()
+	return v
 }
 
 // stepView is one row of a repo's plan list.
