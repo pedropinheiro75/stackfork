@@ -11,7 +11,17 @@ import (
 )
 
 // TestMain isolates the developer's real config dir and proxy from every test.
-func TestMain(m *testing.M) { os.Exit(testsupport.Main(m)) }
+func TestMain(m *testing.M) {
+	code := testsupport.Main(m)
+	// The tests that need a real binary build it into a stackfork-bin-* temp
+	// dir (about 15 MB); remove it so runs do not pile up in $TMPDIR.
+	for _, bin := range []string{builtPath, liveBinaryPath} {
+		if dir := filepath.Dir(bin); strings.HasPrefix(filepath.Base(dir), "stackfork-bin-") {
+			os.RemoveAll(dir)
+		}
+	}
+	os.Exit(code)
+}
 
 func TestRealConfigAndProxyAreIsolated(t *testing.T) {
 	if !testsupport.Isolated() {

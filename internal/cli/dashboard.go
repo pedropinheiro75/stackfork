@@ -41,21 +41,24 @@ func dashboardStateDir(stateBase string) string { return filepath.Join(stateBase
 // design.md D7 layer 2's allocator reused here for task 2.3) and persists
 // it.
 func stableDashboardPort(stateBase string) (int, error) {
-	return stablePort(stateBase, "port", "dashboard")
+	return stablePort(stateBase, "port", "dashboard", 0)
 }
 
 // stablePort is stableDashboardPort for any file under <state>/dashboard and
 // any allocator key: `--supervised` keeps its own ("app-port",
 // "dashboard-app") so the CLI dashboard's URL never moves (add-macos-app D4).
-func stablePort(stateBase, fileName, key string) (int, error) {
+//
+// reserved is a port that counts as taken (0: none): the supervised app keeps
+// off the port the CLI dashboard recorded, even while that one is stopped.
+func stablePort(stateBase, fileName, key string, reserved int) (int, error) {
 	file := filepath.Join(dashboardStateDir(stateBase), fileName)
 	if data, err := os.ReadFile(file); err == nil {
-		if p, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && !ports.Bound(p) {
+		if p, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && p != reserved && !ports.Bound(p) {
 			return p, nil
 		}
 	}
 	rng := ports.RangeFromEnv()
-	p, err := ports.Allocate("stackfork", key, 0, rng, ports.Bound)
+	p, err := ports.Allocate("stackfork", key, 0, rng, func(p int) bool { return p == reserved || ports.Bound(p) })
 	if err != nil {
 		return 0, err
 	}
@@ -115,7 +118,11 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	if *supervised {
 		// Its own stable port; when the range is full or the bind races,
 		// the kernel chooses and nothing is recorded (add-macos-app D4).
-		if p, perr := stablePort(newStateBase, "app-port", "dashboard-app"); perr == nil {
+		cliPort := 0
+		if data, rerr := os.ReadFile(filepath.Join(dashboardStateDir(newStateBase), "port")); rerr == nil {
+			cliPort, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+		}
+		if p, perr := stablePort(newStateBase, "app-port", "dashboard-app", cliPort); perr == nil {
 			ln, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
 		}
 		if ln == nil {

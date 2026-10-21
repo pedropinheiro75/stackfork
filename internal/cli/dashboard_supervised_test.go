@@ -119,11 +119,11 @@ func (r *supervisedRun) waitExit(t *testing.T, within time.Duration) int {
 
 func TestStablePortFilesAreIndependent(t *testing.T) {
 	dir := t.TempDir()
-	p1, err := stablePort(dir, "port", "dashboard")
+	p1, err := stablePort(dir, "port", "dashboard", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p2, err := stablePort(dir, "app-port", "dashboard-app")
+	p2, err := stablePort(dir, "app-port", "dashboard-app", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,4 +332,24 @@ func TestSupervisedShutdownWaitsForRunningAction(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	<-postDone
+}
+
+// The CLI dashboard's recorded port counts as taken, even while the CLI
+// dashboard is stopped: the next `stackfork dashboard` must find its URL free.
+func TestSupervisedAvoidsTheCLIDashboardsRecordedPort(t *testing.T) {
+	probe, err := stablePort(t.TempDir(), "app-port", "dashboard-app", 0) // the app's first choice
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	os.MkdirAll(filepath.Join(state, "dashboard"), 0o700)
+	os.WriteFile(filepath.Join(state, "dashboard", "port"), []byte(strconv.Itoa(probe)+"\n"), 0o600)
+	r := startSupervised(t, state)
+	rl := r.ready(t)
+	if rl.Port == probe {
+		t.Fatalf("supervised dashboard took the CLI dashboard's recorded port %d", probe)
+	}
+	if got, _ := os.ReadFile(filepath.Join(state, "dashboard", "port")); strings.TrimSpace(string(got)) != strconv.Itoa(probe) {
+		t.Fatalf("dashboard/port changed: %q", got)
+	}
 }
