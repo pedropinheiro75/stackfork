@@ -87,10 +87,22 @@ func CheckSecretsStatus(instanceDir string, info *state.Manifest) (SecretValues,
 	return values, status, nil
 }
 
+// gateError is ErrCheckSecrets with a sentence per reason, for the page.
+type gateError struct{ detail []string }
+
+func (e gateError) Error() string {
+	return strings.Join(append([]string{ErrCheckSecrets.Error()}, e.detail...), "\n")
+}
+
+func (e gateError) Is(target error) bool { return target == ErrCheckSecrets }
+
 // LogSecrets are the values the dashboard redacts a log with, obtained
-// without a prompt: the remembered values, plus references that never
-// prompt. When an op:// value is not remembered it returns ErrCheckSecrets,
-// because showing the log unredacted would show the value.
+// without a prompt: the remembered values of the same reference, plus
+// references that resolve without one. Any reference that yields no value
+// and has none remembered (an op:// that needs a prompt, an env: or npmrc:
+// ${VAR} the dashboard cannot see, a locked or missing keychain item)
+// returns ErrCheckSecrets: showing the log unredacted could show the value
+// (design D11, review I4).
 func LogSecrets(instanceDir string, info *state.Manifest) ([]redact.Secret, error) {
 	mapped, err := MappedSecrets(info.Root)
 	if err != nil {
@@ -99,21 +111,36 @@ func LogSecrets(instanceDir string, info *state.Manifest) ([]redact.Secret, erro
 	refs, _, _ := InstanceSecrets(info, mapped)
 	cached, _ := CachedSecrets(instanceDir)
 	values := SecretValues{}
-	need := false
+	var env, keychain bool
+	gated := false
 	for name, ref := range refs {
-		switch v, ok := cached[name]; {
-		case ok:
-			values[name] = v
-		case strings.HasPrefix(ref, "op://"):
-			need = true
-		default:
+		if c, ok := cached[name]; ok && c.Ref == ref { // a value of another reference is not this one's
+			values[name] = c
+			continue
+		}
+		if !strings.HasPrefix(ref, "op://") {
 			if v, _, _ := compose.CheckSecret(ref); v != "" {
 				values[name] = SecretValue{Ref: ref, Value: v}
+				continue
 			}
 		}
+		gated = true
+		switch {
+		case strings.HasPrefix(ref, "env:"), strings.HasPrefix(ref, "npmrc:"):
+			env = true
+		case strings.HasPrefix(ref, "keychain:"):
+			keychain = true
+		}
 	}
-	if need {
-		return nil, ErrCheckSecrets
+	if gated {
+		var e gateError
+		if env {
+			e.detail = append(e.detail, "Some secrets come from your shell environment, which the dashboard does not see. Start the environment from this page, or move each value to the keychain (stackfork secret set ITEM, then stackfork secret map REPO NAME=keychain:ITEM).")
+		}
+		if keychain {
+			e.detail = append(e.detail, "Unlock the keychain, or store the missing item, then check again.")
+		}
+		return nil, e
 	}
 	return values.Redactions(), nil
 }

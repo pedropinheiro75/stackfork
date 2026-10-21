@@ -59,3 +59,32 @@ func TestLogViewWaitsForASecretCheckWhenOPValuesAreUnknown(t *testing.T) {
 		t.Fatalf("after the check: %d %q", rec.Code, rec.Body.String())
 	}
 }
+
+// Review I4: an env: reference the dashboard cannot see gates the log view
+// too, with the way out in the body; it used to show the log unredacted.
+func TestLogViewGatesAnUnresolvedEnvReference(t *testing.T) {
+	newBase, legacyBase, project := preparedFixture(t)
+	m, err := state.ReadManifest(filepath.Join(newBase, project, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const val = "env-canary-dashboard-9-9"
+	t.Setenv("SF_TEST_DASH_ENV", val)
+	var out, errBuf bytes.Buffer
+	if code := cli.Run([]string{"--root", m.Root, "--state-dir", newBase, "--secret", "tok=env:SF_TEST_DASH_ENV",
+		"prepare", "-f", filepath.Join(m.Root, "compose.yaml")}, &out, &errBuf); code != 0 {
+		t.Fatal(errBuf.String())
+	}
+	os.Unsetenv("SF_TEST_DASH_ENV") // the dashboard process has no shell environment
+	t.Setenv("DOCKER_FAKE_LOGS", "app-1  | key "+val+"\n")
+	srv, err := dashboard.New(newBase, legacyBase, "test", 55412)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := getLogs(t, srv, "127.0.0.1:55412", project, "")
+	body := rec.Body.String()
+	if rec.Code != 409 || rec.Header().Get("X-Stackfork-Needs") != "secret-check" || strings.Contains(body, val) ||
+		!strings.Contains(body, "Check secrets to view logs") || !strings.Contains(body, "shell environment") || !strings.Contains(body, "keychain") {
+		t.Fatalf("gate: %d %q", rec.Code, body)
+	}
+}

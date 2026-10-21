@@ -370,7 +370,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		secrets, serr := lifecycle.LogSecrets(instanceDir, info)
 		if serr != nil {
-			needSecretCheck(w)
+			needSecretCheck(w, serr)
 			return
 		}
 		redacted := redact.NewWriter(w, secrets)
@@ -403,7 +403,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 
 	secrets, serr := lifecycle.LogSecrets(instanceDir, info)
 	if serr != nil {
-		needSecretCheck(w)
+		needSecretCheck(w, serr)
 		return
 	}
 	cmd := exec.CommandContext(r.Context(), "docker", args...)
@@ -420,11 +420,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 
 // needSecretCheck answers a log request that cannot be redacted without a
 // prompt (design D11): no log is shown until the person starts a check.
-func needSecretCheck(w http.ResponseWriter) {
+func needSecretCheck(w http.ResponseWriter, why error) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Stackfork-Needs", "secret-check")
 	w.WriteHeader(http.StatusConflict)
-	fmt.Fprintln(w, lifecycle.ErrCheckSecrets.Error())
+	fmt.Fprintln(w, why.Error()) // the gate sentence, then one line per reason
 }
 
 // flushWriter flushes the underlying ResponseWriter after every write, so

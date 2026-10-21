@@ -833,9 +833,15 @@
     fetch(url, { credentials: "same-origin" })
       .then(function (r) {
         if (needsSecretCheck(r)) {
-          // still gated after a check: a 1Password reference did not resolve, so its value cannot be masked
-          setLogGate({ project: project, service: service, opener: opener, note: afterCheck ? "The check ran, but a 1Password reference did not resolve (locked or missing). Unlock 1Password, then check again." : "" });
-          return null;
+          // still gated after a check: a reference did not resolve, so its value cannot be masked.
+          // The body is the gate sentence, then one line per reason.
+          return r.text().then(function (text) {
+            var detail = text.split("\n").slice(1).join(" ").trim();
+            var note = detail;
+            if (!note && afterCheck) note = "The check ran, but a 1Password reference did not resolve (locked or missing). Unlock 1Password, then check again.";
+            setLogGate({ project: project, service: service, opener: opener, note: note });
+            return null;
+          });
         }
         setLogGate(null);
         return r.text().then(function (text) { body.textContent = text || "(no output)"; });
