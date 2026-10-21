@@ -451,17 +451,12 @@ func Prepare(t Target) ([]Entry, knowledge.Plan, error) {
 }
 
 // Inspect is a one-shot look at a repository for `live status`, without a
-// loop: its instances, what is pending against each baseline, the newest
+// loop: the given instances (from Targets), what is pending against each baseline, the newest
 // live run. The pause comes from the caller (ReadPause).
-func Inspect(newBase, legacyBase, version, main string) RepoStatus {
+func Inspect(newBase, main string, ts []Target) RepoStatus {
 	out := RepoStatus{Main: main, State: StateOK, Targets: []TargetStatus{}}
 	if p, err := ReadPause(newBase, main); err == nil && p != nil {
 		out.State, out.Reason, out.Pause = StatePaused, p.Reason, p
-	}
-	ts, err := Targets(newBase, legacyBase, main, version)
-	if err != nil {
-		out.Error = err.Error()
-		return out
 	}
 	for _, t := range ts {
 		st := TargetStatus{Project: t.Project, Root: t.Root, Branch: t.Branch, State: t.State, Pending: []Change{}, LastRun: LastLiveRun(t.InstanceDir)}

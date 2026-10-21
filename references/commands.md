@@ -236,6 +236,20 @@ stackfork secret map . STRIPE_TEST_KEY=op://Dev/acme-stripe/test-key
 stackfork secret check --json
 ```
 
+### live
+Live mode: while the dashboard runs, the repository follows its upstream and rebuilds what changed. Per repository and per machine; off by default.
+- `live on [REPO]`: REPO is a path or a scanned repo name; the default is this checkout's repository. It refuses when the watch set is over 2,000 files, a `live` override in `knowledge.json` is invalid, any effective secret reference is `env:` (the dashboard does not see your shell environment; use `secret set` and `secret map`), or the plan's host or prepare steps are not trusted (`plan --trust`, with the step diff). It clears a pause, prints what the setting means and, with no dashboard running, `paused: dashboard not running; start it with stackfork dashboard`. An `op://` reference may show a 1Password prompt during a live run; unanswered for 30 seconds, the run fails at `secrets` and live mode pauses.
+- `live off [REPO]`: removes the setting; a live run in progress finishes.
+- `live status [REPO] [--json]`: one block per repository with live mode on (or REPO only): `off`, `on`, `on, paused: REASON` (a failed run, `plan needs trust`, a rate limit, or `dashboard not running`), the cleanup mode, and each instance with its pending changes by category, its last live run and any warning. `--instance` is not accepted.
+- `live cleanup off|suggest|auto [REPO] [--grace HOURS] [--delete-branch|--keep-branch]`: the branch-cleanup setting. Default with live mode on: `suggest`, 24 hours, keep the branch. `--grace` is 1 to 720.
+Only people may turn live mode on or choose `auto` or `--delete-branch` (the guard blocks them for agents); `live off`, `live status`, `live cleanup off|suggest` and `--keep-branch` stay allowed. Nothing in the CLI reconciles: only the dashboard does.
+Flags: `--json`, `--grace`, `--delete-branch`, `--keep-branch`
+```sh
+stackfork live on
+stackfork live status --json
+stackfork live cleanup suggest --grace 48
+```
+
 ### repos
 List the git repos under the configured roots: group, readiness (`ready` = verified learned knowledge in any checkout; `needs-learn` = it could run from an adapter, a prepared instance or a profile reference, but nobody verified how; `draft`; `unknown`), running count, worktrees, branches without a worktree, last commit. Local git only, never a network call; results are cached per repo while its git metadata is unchanged. With no roots it says how to add one. `--prompt REPO BRANCH` prints the text to give an agent to learn and verify a project that is not `ready`.
 Flags: `--json`, `--rescan`, `--prompt`

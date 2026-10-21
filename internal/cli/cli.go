@@ -169,6 +169,12 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if action == "worktree" {
 		return cmdWorktree(stdout, subArgs, newStateBase, legacyStateBase)
 	}
+	if action == "live" {
+		if *instanceFlag != "" {
+			return 2, errors.New("--instance is not supported by live")
+		}
+		return cmdLive(stdout, stderr, subArgs, rootArg, newStateBase, legacyStateBase)
+	}
 	if action == "config" {
 		return cmdConfig(stdout, subArgs)
 	}
