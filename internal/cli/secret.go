@@ -51,7 +51,7 @@ var secretIsTerminal = func(r io.Reader) bool {
 // secretSetEcho switches the terminal echo with stty; tests replace it.
 var secretSetEcho = func(on bool) error {
 	if runtime.GOOS == "windows" {
-		return errors.New("reading a value from a terminal is not supported on Windows yet; pipe it in: printenv NAME | stackfork secret set ITEM")
+		return winEcho(on)
 	}
 	arg := "-echo"
 	if on {
@@ -66,6 +66,26 @@ var secretSetEcho = func(on bool) error {
 		return cmd.Run()
 	}
 	return errors.New("stty not found; pipe the value in: printenv NAME | stackfork secret set ITEM")
+}
+
+// winRestore undoes WithoutEcho on the Windows console.
+var winRestore func()
+
+// winEcho is secretSetEcho on Windows: SetConsoleMode through secretstore.
+func winEcho(on bool) error {
+	if on {
+		if winRestore != nil {
+			winRestore()
+			winRestore = nil
+		}
+		return nil
+	}
+	restore, err := secretstore.WithoutEcho(os.Stdin)
+	if err != nil {
+		return fmt.Errorf("%v; pipe the value in: printenv NAME | stackfork secret set ITEM", err)
+	}
+	winRestore = restore
+	return nil
 }
 
 // cmdSecret is `stackfork secret ...`. It never prints a value and has no

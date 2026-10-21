@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
+
+	"github.com/pedropinheiro75/stackfork/internal/secretstore"
 )
 
 // secretDialogScript asks for one value with a hidden answer. Everything it
@@ -50,6 +53,9 @@ func init() {
 // askSecretValueNative opens the macOS hidden-answer dialog and returns what
 // the person typed. Errors never contain the value.
 func askSecretValueNative(repo, name, item string) (string, error) {
+	if runtime.GOOS == "windows" {
+		return secretstore.Default.HiddenValueDialog(repo, name, item)
+	}
 	prompt, title := secretDialogText(repo, name, item)
 	ctx, cancel := context.WithTimeout(context.Background(), 330*time.Second)
 	defer cancel()

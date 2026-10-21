@@ -28,6 +28,10 @@ func DenyMessage(command, cwd string) string {
 func secretForbidden(command, cwd string) bool {
 	// The host-run assignment sanctions a dev server, never a secret read.
 	command = strings.ReplaceAll(command, HostRunEnv+"=", "SF_X=")
+	// PowerShell may be unwrapped on Windows only, so look at the whole line.
+	if powershellReadsStackfork(command) {
+		return true
+	}
 	for _, seg := range guardSegments(command, cwd) {
 		w := seg.Words
 		switch progBase(w[0]) {
@@ -41,6 +45,10 @@ func secretForbidden(command, cwd string) bool {
 			}
 		case "secret-tool":
 			if secretToolReadsStackfork(w[1:]) {
+				return true
+			}
+		case "cmdkey":
+			if cmdkeyListsStackfork(w[1:]) {
 				return true
 			}
 		case "op":
@@ -140,6 +148,34 @@ func secretToolReadsStackfork(args []string) bool {
 	}
 	for i := 1; i+1 < len(args); i++ {
 		if args[i] == "service" && args[i+1] == "stackfork" {
+			return true
+		}
+	}
+	return false
+}
+
+// cmdkeyListsStackfork matches `cmdkey /list:TARGET` for a stackfork target
+// (Windows Credential Manager target stackfork/ITEM; options are any case).
+func cmdkeyListsStackfork(args []string) bool {
+	for _, a := range args {
+		a = strings.ToLower(a)
+		if strings.HasPrefix(a, "/list") && strings.Contains(a, "stackfork") {
+			return true
+		}
+	}
+	return false
+}
+
+// powershellReadsStackfork matches a command line that reads a
+// `stackfork/` Credential Manager target: CredRead through advapi32, the
+// CredentialManager module, PasswordVault, or cmdkey.
+func powershellReadsStackfork(command string) bool {
+	text := strings.ToLower(command) // the whole line: pipes and parentheses split the segments
+	if !strings.Contains(text, "stackfork/") && !strings.Contains(text, `stackfork\`) {
+		return false
+	}
+	for _, k := range []string{"credread", "storedcredential", "credentialmanager", "passwordvault", "advapi32", "cmdkey"} {
+		if strings.Contains(text, k) {
 			return true
 		}
 	}

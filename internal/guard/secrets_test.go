@@ -59,6 +59,18 @@ func TestSecretCommandsForPeopleOnly(t *testing.T) {
 		"secret-tool search service stackfork":                        true,
 		"secret-tool lookup service other account x":                  false,
 		"secret-tool store --label x service stackfork account y":     false,
+		// Windows Credential Manager
+		"cmdkey /list:stackfork/acme-npm-token": true,
+		"cmdkey /LIST:StackFork/acme":           true,
+		"cmdkey /list:*stackfork*":              true,
+		"cmdkey /list":                          false,
+		"cmdkey /list:other-app":                false,
+		"powershell -Command \"[Win32]::CredRead('stackfork/acme',1,0,[ref]$p)\"":                                                   true,
+		"pwsh -c \"Get-StoredCredential -Target stackfork/acme | Format-List\"":                                                     true,
+		"powershell -NoProfile -Command \"(New-Object Windows.Security.Credentials.PasswordVault).Retrieve('stackfork/acme','x')\"": true,
+		"powershell -Command \"cmdkey /list:stackfork/acme\"":                                                                       true,
+		"powershell -Command \"Get-StoredCredential -Target other/acme\"":                                                           false,
+		"powershell -Command \"Get-ChildItem stackfork/docs\"":                                                                      false,
 		// 1Password
 		"op read op://Dev/acme-stripe/test-key":                          true,
 		"op read --no-newline 'op://Dev/acme-stripe/test-key'":           true,

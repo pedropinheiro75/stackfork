@@ -25,7 +25,7 @@ const shellOnlyNote = "the dashboard does not see your shell environment"
 // SecretDialogAvailable reports whether this system has a native
 // hidden-answer dialog; without one a row shows the command instead. A var
 // so tests can answer it.
-var SecretDialogAvailable = func() bool { return runtime.GOOS == "darwin" }
+var SecretDialogAvailable = func() bool { return runtime.GOOS == "darwin" || runtime.GOOS == "windows" }
 
 // AskSecretValue opens the dialog that asks a person for a value and returns
 // what they typed. It names the repository, the secret and the item so a
