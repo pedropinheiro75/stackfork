@@ -110,6 +110,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `start-env`, `reset` and `prepare` in a linked worktree copy the untracked adapter files the prepare args name (`-f`, `--env-file`, e.g. `.agent-dev/compose.yml`) from the main checkout when the worktree lacks them, with the sibling recipe's rules (runtime env paths rewritten, no `.env`, keys or token-bearing `.npmrc`, never over an existing file). A missing file that git tracks in the main checkout is refused by name.
+- `seed` in a stack that lacks its service says so and names the stack's services and the `learn record step` command, instead of "Specify a service in this snapshot and a command".
 - A stopped or exited host app stays as an exited row with Start; `down` forgets it.
 - The card's Start on a hybrid instance runs the startup plan, not a plain `compose up`.
 

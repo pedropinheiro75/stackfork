@@ -216,6 +216,9 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		if err != nil {
 			return err
 		}
+		if err := copyAdapterFromMain(out, root, main, args); err != nil {
+			return err
+		}
 		// Sibling references go BEFORE the person's flags: the last --secret
 		// of a name wins, and an explicit flag must beat a sibling (D7).
 		pbase := slices.Clone(head)
@@ -466,15 +469,7 @@ func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instanc
 		fmt.Fprintf(out, "; env file %s", r.EnvFile)
 	}
 	fmt.Fprintln(out)
-	for _, c := range rep.Copied {
-		fmt.Fprintf(out, "copied %s\n", c)
-	}
-	if len(rep.Rewritten) > 0 {
-		fmt.Fprintf(out, "rewrote %s in %s to point at %s\n", strings.Join(rep.Rewritten, ", "), r.EnvFile, root)
-	}
-	for _, sk := range rep.Skipped {
-		fmt.Fprintf(out, "skipped %s\n", sk)
-	}
+	printApplied(out, rep, r.EnvFile, root, "")
 	seedCmd, seedSvc = r.SeedOnce, r.SeedService
 	if seedCmd == "" {
 		// the sibling's decision may live only in its knowledge file
@@ -484,6 +479,35 @@ func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instanc
 		fmt.Fprintln(out, "carrying the seed_once recipe (runs once, when this instance's data is first created)")
 	}
 	return args, seedCmd, seedSvc, nil
+}
+
+// printApplied prints what Apply did, one line per file.
+func printApplied(out io.Writer, rep repos.SiblingReport, envFile, root, from string) {
+	for _, c := range rep.Copied {
+		fmt.Fprintf(out, "copied %s%s\n", c, from)
+	}
+	if len(rep.Rewritten) > 0 {
+		fmt.Fprintf(out, "rewrote %s in %s to point at %s\n", strings.Join(rep.Rewritten, ", "), envFile, root)
+	}
+	for _, sk := range rep.Skipped {
+		fmt.Fprintf(out, "skipped %s\n", sk)
+	}
+}
+
+// copyAdapterFromMain copies, from the main checkout, the untracked adapter
+// files the prepare args name and a linked worktree lacks (untracked files
+// are not in a new worktree). A missing file tracked in main is an error.
+func copyAdapterFromMain(out io.Writer, root, main string, args []string) error {
+	r, err := repos.AdapterRecipeFromMain(main, root, args)
+	if err != nil || r == nil {
+		return err
+	}
+	rep, err := r.Apply(root)
+	if err != nil {
+		return fmt.Errorf("copying the adapter files from the main checkout: %w", err)
+	}
+	printApplied(out, rep, r.EnvFile, root, " from the main checkout")
+	return nil
 }
 
 func fileArgs(files []string) []string {

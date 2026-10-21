@@ -589,6 +589,15 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 		}
 	}
 
+	if len(files) > 0 {
+		pargs := fileArgs(files)
+		if *envFileFlag != "" {
+			pargs = append(pargs, "--env-file", *envFileFlag)
+		}
+		if err := copyAdapterFromMain(stdout, root, repos.MainRepoOf(root), pargs); err != nil {
+			return err
+		}
+	}
 	for _, f := range resolvedFiles {
 		fi, err := os.Stat(f)
 		if err != nil || fi.IsDir() {

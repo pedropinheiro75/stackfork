@@ -397,3 +397,71 @@ func SiblingSecrets(main, target string, insts []inventory.Instance) map[string]
 	}
 	return best.Secrets
 }
+
+// AdapterRecipeFromMain builds the recipe that copies, from the main
+// checkout into the linked worktree root, the untracked files that prepare
+// args (-f, --file, --env-file) name and root lacks. It returns (nil, nil)
+// when nothing is missing, and an error naming the file when a missing file
+// is tracked in main (a real missing file) or is never copied. Apply does
+// the copying, so the denylist, the registry rules and the runtime env
+// rewrite are the sibling path's.
+func AdapterRecipeFromMain(main, root string, args []string) (*SiblingRecipe, error) {
+	if main == "" || sameDir(main, root) {
+		return nil, nil
+	}
+	r := &SiblingRecipe{Source: main}
+	// missing returns the slash path of a named file that root lacks and main has.
+	missing := func(p string) (string, error) {
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(root, filepath.FromSlash(p))
+		}
+		x, err := filepath.Rel(root, p)
+		if err != nil || x == ".." || strings.HasPrefix(x, ".."+string(filepath.Separator)) {
+			return "", nil
+		}
+		if _, err := os.Stat(p); err == nil {
+			return "", nil
+		}
+		x = filepath.ToSlash(x)
+		if _, err := os.Stat(filepath.Join(main, filepath.FromSlash(x))); err != nil {
+			return "", nil // prepare reports a file that is nowhere
+		}
+		if _, err := gitRun(main, "ls-files", "--error-unmatch", "--", x); err == nil {
+			return "", fmt.Errorf("%s is tracked in the main checkout but missing in %s; restore it there (it is not an adapter file, so it is not copied)", x, root)
+		}
+		return x, nil
+	}
+	for i := 0; i+1 < len(args); i++ {
+		switch args[i] {
+		case "-f", "--file":
+			x, err := missing(args[i+1])
+			if err != nil {
+				return nil, err
+			}
+			if x == "" {
+				continue
+			}
+			if why := Denied(x, filepath.Join(main, filepath.FromSlash(x))); why != "" {
+				return nil, fmt.Errorf("%s is a %s and is never copied; create it in %s", x, why, root)
+			}
+			r.Files, r.untracked = append(r.Files, x), append(r.untracked, x)
+		case "--env-file":
+			x, err := missing(args[i+1])
+			if err != nil {
+				return nil, err
+			}
+			if x == "" {
+				continue
+			}
+			d := filepath.Base(filepath.Dir(x))
+			if filepath.Base(x) != "runtime.env" || (d != ".agent-dev" && d != ".stackfork") {
+				return nil, fmt.Errorf("env file %s is not a stackfork runtime env, so it is never copied; create it in %s", x, root)
+			}
+			r.EnvFile, r.untracked = x, append(r.untracked, x)
+		}
+	}
+	if len(r.untracked) == 0 {
+		return nil, nil
+	}
+	return r, nil
+}
