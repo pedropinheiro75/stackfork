@@ -129,6 +129,7 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 	}
 
 	var envFilePaths []string
+	var buildContexts []string
 	if len(composeFiles) > 0 {
 		abs := make([]string, len(composeFiles))
 		for i, f := range composeFiles {
@@ -145,6 +146,7 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 			return nil, err
 		}
 		k.Facts.Services = servicesFromRendered(rendered)
+		buildContexts = buildContextsUnderRoot(rendered, root)
 		// A project's real env_file (e.g. .env) is typically gitignored, so
 		// a fresh checkout commonly declares one that doesn't exist yet;
 		// that's a fact for the recipe/gotchas step, not a scan failure.
@@ -182,6 +184,8 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 			inputs[filepath.Join(root, name)] = true
 		}
 	}
+
+	k.Facts.MigrationDirs = detectMigrationDirs(root, buildContexts)
 
 	k.Facts.Scripts = detectScripts(root)
 	for _, name := range []string{"Makefile", "justfile"} {
