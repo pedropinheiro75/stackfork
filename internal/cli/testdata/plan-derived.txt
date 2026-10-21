@@ -1,0 +1,4 @@
+plan (derived — not recorded; run learn to record it, mode container)
+  prepare [prepare] - adapter .stackfork/dev.compose.yaml
+  up [compose-up] - implicit: starts every service
+  seed [exec] npm run db:migrate && npm run db:seed - auto-detected: npm run db:migrate && npm run db:seed; runs once, on a new database

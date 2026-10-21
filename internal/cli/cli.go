@@ -129,7 +129,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		return cmdPlan(stdout, stderr, subArgs, root, newStateBase)
+		return cmdPlan(stdout, stderr, subArgs, root, newStateBase, legacyStateBase)
 	}
 	// proxy and doctor operate on the tool's shared state, not one instance,
 	// so they too skip the Git checkout/branch resolution below (task

@@ -1,0 +1,2 @@
+plan (derived — not recorded; run learn to record it, mode container)
+start-env would refuse this checkout: acme-web is needs-learn (adapter .stackfork/dev.compose.yaml in acme-web but no verified knowledge; run stackfork learn to verify how it starts); stackfork only starts projects whose startup was learned and verified. Ask your agent to learn it: `stackfork repos --prompt acme-web main`

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -15,7 +14,7 @@ import (
 // cmdPlan prints the startup plan for a mode, or (--trust) records this
 // machine's trust in its host and prepare steps. --trust never prompts: the
 // dashboard runs it after its own native confirmation.
-func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string) (int, error) {
+func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase, legacyStateBase string) (int, error) {
 	fs := newFlagSet(stdout, "plan")
 	modeFlag := fs.String("mode", "", "")
 	jsonFlag := fs.Bool("json", false, "")
@@ -29,11 +28,11 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 	}
 	// same lookup as start-env: the checkout's own file, then the main repo's
 	k, err := knowledge.LoadFirst(root, main)
-	if err == nil && k == nil {
-		err = errors.New("knowledge.json not found")
-	}
-	if err != nil {
+	if err != nil { // a broken file is not an empty plan
 		return 2, fmt.Errorf("no startup plan; run `stackfork learn` first: %w", err)
+	}
+	if k == nil || len(k.Plan.Steps) == 0 { // nothing recorded: show what a Start would run
+		return planDerived(stdout, stderr, root, stateBase, legacyStateBase, *modeFlag, *jsonFlag, *trustFlag)
 	}
 
 	if *trustFlag {
@@ -81,6 +80,61 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 		}
 	}
 	return 0, nil
+}
+
+// planDerived prints the plan a Start would run for a checkout with no
+// recorded plan steps (add-derived-plan-view D5). It exits 0 whether the
+// start would run or be refused.
+func planDerived(stdout, stderr io.Writer, root, stateBase, legacyStateBase, mode string, asJSON, trust bool) (int, error) {
+	if trust {
+		fmt.Fprintln(stderr, "stackfork: nothing to trust: this plan runs only in containers")
+		return 2, nil
+	}
+	if mode != "" && mode != knowledge.ModeContainer && mode != knowledge.ModeHybrid {
+		return 1, fmt.Errorf("unknown mode %q (%s or %s)", mode, knowledge.ModeContainer, knowledge.ModeHybrid)
+	}
+	profiles, err := resolveProfileDirs(nil)
+	if err != nil {
+		return 1, err
+	}
+	var note io.Writer = stderr
+	if asJSON {
+		note = io.Discard
+	}
+	d, err := DerivePlan(DeriveOptions{Checkout: root, NewStateBase: stateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles, Mode: mode, Out: note})
+	if err != nil {
+		return 1, err
+	}
+	if asJSON {
+		return 0, printJSON(stdout, d.View())
+	}
+	fmt.Fprintf(stdout, "plan (derived — not recorded; run learn to record it, mode %s)\n", d.Mode)
+	if d.Refusal != "" {
+		fmt.Fprintln(stdout, "start-env would refuse this checkout: "+d.Refusal)
+		return 0, nil
+	}
+	for _, s := range d.Steps {
+		fmt.Fprintln(stdout, "  "+derivedLine(s))
+	}
+	if d.Gap != "" {
+		fmt.Fprintln(stdout, d.Gap)
+	}
+	return 0, nil
+}
+
+// derivedLine is a derived step: "id [kind] command - source".
+func derivedLine(s lifecycle.PlanStep) string {
+	l := s.ID + " [" + s.Kind + "]"
+	if s.Cmd != "" {
+		l += " " + s.Cmd
+	}
+	if s.Service != "" {
+		l += " (service " + s.Service + ")"
+	}
+	if s.Step.IsHostExec() {
+		l += " (on host)"
+	}
+	return l + " - " + s.Source
 }
 
 func orDash(s string) string {

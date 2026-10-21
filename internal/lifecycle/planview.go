@@ -68,6 +68,18 @@ type PlanOut struct {
 	Steps       []PlanStep `json:"steps"`
 	Skipped     []PlanStep `json:"skipped"`
 	Diff        []string   `json:"-"`
+	// A derived plan (add-derived-plan-view) has Status "derived".
+	Derived     bool   `json:"derived,omitempty"`
+	PrepareFrom string `json:"prepare_from,omitempty"`
+	Refusal     string `json:"refusal,omitempty"`
+	Gap         string `json:"gap,omitempty"`
+}
+
+// View is the derived plan in the shape of `plan --json`: a plan with no host
+// step needs no trust, so it is trusted and needs none.
+func (d DerivedPlan) View() PlanOut {
+	return PlanOut{Mode: d.Mode, Status: StateDerived, Trusted: true, Steps: append([]PlanStep{}, d.Steps...), Skipped: []PlanStep{},
+		Derived: true, PrepareFrom: d.PrepareFrom, Refusal: d.Refusal, Gap: d.Gap}
 }
 
 // PlanView computes the plan for mode. The CLI (`plan --json`) and the

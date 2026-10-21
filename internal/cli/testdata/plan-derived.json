@@ -1,0 +1,39 @@
+{
+  "mode": "container",
+  "status": "derived",
+  "verified": false,
+  "trusted": true,
+  "trust_needed": false,
+  "steps": [
+    {
+      "id": "prepare",
+      "kind": "prepare",
+      "args": [
+        "-f",
+        ".stackfork/dev.compose.yaml"
+      ],
+      "state": "derived",
+      "trust": "",
+      "source": "adapter .stackfork/dev.compose.yaml"
+    },
+    {
+      "id": "up",
+      "kind": "compose-up",
+      "state": "derived",
+      "trust": "",
+      "source": "implicit: starts every service"
+    },
+    {
+      "id": "seed",
+      "kind": "exec",
+      "cmd": "npm run db:migrate \u0026\u0026 npm run db:seed",
+      "once": "data",
+      "state": "derived",
+      "trust": "",
+      "source": "auto-detected: npm run db:migrate \u0026\u0026 npm run db:seed; runs once, on a new database"
+    }
+  ],
+  "skipped": [],
+  "derived": true,
+  "prepare_from": "adapter"
+}
