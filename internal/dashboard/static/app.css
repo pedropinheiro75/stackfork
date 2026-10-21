@@ -223,9 +223,9 @@ a.app-chip::after { content: " \2197" / ""; }
 a.app-chip:hover { background: var(--accent-soft); }
 a.app-chip-link::after { content: none; }
 .app-chip-link { min-height: 24px; }
-.app-chip-warn { border-color: var(--attention-line); background: var(--attention-bg); color: var(--attention); }
 .app-chip-warn .chip-glyph { margin-right: var(--space-1); }
 .app-chip.stopped { border-color: var(--off-line); background: var(--off-bg); color: var(--off); }
+.app-chip.stopped.app-chip-warn { border-color: var(--attention-line); background: var(--attention-bg); color: var(--attention); }
 
 /* OverflowMenu */
 .menu-anchor { position: relative; }

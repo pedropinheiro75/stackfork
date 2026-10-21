@@ -255,14 +255,17 @@
     return '<span class="app-chip stopped" title="Starts with the stack">' + l + "</span>";
   }
 
-  // Open App opens the entry; a link never stands in for it. Must match dot.go's openApp.
+  // Open App opens the entry; a link never stands in for it. Must match inventory.OpenApp (dot.go's openApp).
   function pickOpenApp(apps) {
     var list = apps || [], i;
     for (i = 0; i < list.length; i++) {
       if (list[i].source === "entry") return isWebUrl(list[i].url) && list[i].running ? list[i] : null;
     }
-    for (i = 0; i < list.length; i++) {
-      if (list[i].source !== "link" && isWebUrl(list[i].url) && list[i].running) return list[i];
+    var labels = ["App", ""];
+    for (var j = 0; j < labels.length; j++) {
+      for (i = 0; i < list.length; i++) {
+        if (list[i].source !== "link" && isWebUrl(list[i].url) && list[i].running && (!labels[j] || list[i].label === labels[j])) return list[i];
+      }
     }
     return null;
   }
@@ -2233,7 +2236,7 @@
   // The script tests (appscript_runs_test.go) load this file in Node and ask
   // for the functions they exercise; a browser never defines __sfExport.
   if (typeof window.__sfExport === "function") {
-    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, cleanupNoteHtml: cleanupNoteHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, noteLiveRuns: noteLiveRuns, liveOp: liveOp, paintLive: paintLive, loadRepos: loadRepos, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip });
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, cleanupNoteHtml: cleanupNoteHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, noteLiveRuns: noteLiveRuns, liveOp: liveOp, paintLive: paintLive, loadRepos: loadRepos, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip, pickOpenApp: pickOpenApp });
   }
 
   if (document.readyState === "loading") {

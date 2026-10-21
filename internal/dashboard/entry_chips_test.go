@@ -1,6 +1,10 @@
 package dashboard
 
 import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
@@ -85,5 +89,47 @@ func TestOpenAppPrefersEntry(t *testing.T) {
 	}
 	if a := openApp([]inventory.AppLink{link}); a != nil {
 		t.Fatalf("a link alone is not the app: %+v", a)
+	}
+}
+
+// app.js's pickOpenApp picks what dot.go's openApp picks, for every shape of
+// app strip.
+func TestOpenAppScriptAgrees(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	link := inventory.AppLink{Label: "Dashboard", Source: "link", Running: true, URL: "http://l"}
+	svc := inventory.AppLink{Label: "web", Source: "service", Running: true, URL: "http://s"}
+	app := inventory.AppLink{Label: "App", Source: "service", Running: true, URL: "http://a", Guessed: true}
+	mail := inventory.AppLink{Label: "Mail inbox", Source: "service", Running: true, URL: "http://m"}
+	ent := inventory.AppLink{Label: "App", Source: "entry", Running: true, URL: "http://e"}
+	stoppedEnt := inventory.AppLink{Label: "App", Source: "entry", URL: "http://e"}
+	lists := [][]inventory.AppLink{
+		{link, ent, svc}, {{Label: "App", Source: "entry", Warning: "w"}, link, svc}, {stoppedEnt, svc},
+		{link, svc}, {link}, {mail, app}, {mail, svc}, {}, nil,
+	}
+	dir := t.TempDir()
+	in, out := filepath.Join(dir, "in.json"), filepath.Join(dir, "out.json")
+	b, _ := json.Marshal(lists)
+	os.WriteFile(in, b, 0o600)
+	cmd := exec.Command(node, abs(t, "testdata/appjs_harness.js"), abs(t, "static/app.js"), abs(t, "testdata/open_app.case.js"))
+	cmd.Env = append(os.Environ(), "SF_PARITY_IN="+in, "SF_PARITY_OUT="+out)
+	if o, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, o)
+	}
+	var js []string
+	raw, _ := os.ReadFile(out)
+	if err := json.Unmarshal(raw, &js); err != nil || len(js) != len(lists) {
+		t.Fatalf("%v %s", err, raw)
+	}
+	for i, apps := range lists {
+		want := ""
+		if a := openApp(apps); a != nil {
+			want = a.URL
+		}
+		if js[i] != want {
+			t.Errorf("list %d: app.js picks %q, openApp %q", i, js[i], want)
+		}
 	}
 }

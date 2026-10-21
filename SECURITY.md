@@ -116,7 +116,7 @@ Known limits:
 
 The `entry` and `links` of a committed `.stackfork/knowledge.json` are not covered by the trust hash and need no `plan --trust`. They run nothing: stackfork builds every URL from the instance's own hostname (or `127.0.0.1`), a port the instance publishes and a path that load-time validation keeps relative (one leading `/`, printable ASCII, no `//`, backslash or `..` segment). The file cannot make stackfork open another site, and error messages never repeat a refused value.
 
-Known limit: a hostile pull request can point **App** or a named link at another page or service of the same instance, for example a database console's "reset" link, and opening it sends a GET. The person can already open every one of those endpoints from the card. `learn verify` sends one GET to the entry and to each link on `127.0.0.1` with the instance hostname in `Host`, and does not follow redirects or check certificates.
+Known limit: a hostile pull request can point **App** or a named link at another page or service of the same instance, for example a database console's "reset" link, and opening it sends a GET. The person can already open every one of those endpoints from the card. `learn verify` sends one GET to the entry and to each link on `127.0.0.1` with the instance hostname in `Host`, and does not follow redirects or check certificates. It does this automatically, so a link added by someone else (for example in a pull request) is requested when you run `learn verify`, without a click. The entry waits at most 10 s and each link at most 3 s.
 
 ## Secrets
 
