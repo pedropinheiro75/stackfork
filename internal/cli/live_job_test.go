@@ -210,3 +210,45 @@ func TestLiveRunSkipsHostExecSteps(t *testing.T) {
 	}
 	assertGolden(t, "run-live-host-exec.json", normalizedRun(t, state, 2, repo))
 }
+
+// A live compose change on a new volume would seed; with the data step on the
+// host, no seed runs (live runs no host command) and the run says it was skipped.
+func TestLiveRunNewVolumeSkipsAHostSeed(t *testing.T) {
+	steps := []knowledge.Step{
+		{ID: "prepare", Kind: knowledge.KindPrepare, Args: []string{"-f", ".agent-dev/app.compose.yaml"}},
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		hostStep("seed", knowledge.OnceData, "bun run db:seed", ""),
+	}
+	calls := stubHostExec(t, 0)
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, steps)
+	installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "0")
+	if out, e, code := runCLI(t, append(base, "start-env", repo)...); code != 0 {
+		t.Fatalf("%d %s %s", code, out, e)
+	}
+	before := len(*calls)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1") // the volume is new
+	os.WriteFile(repo+"/.agent-dev/app.compose.yaml", []byte(planCompose+"# edited\n"), 0o644)
+	mf := filepath.Join(onlyRunDir(t, state), "manifest.json")
+	m, _ := state_.ReadManifest(mf)
+	m.Seeded = nil // a new database leaves the decision open
+	if err := state_.WritePrivate(mf, m); err != nil {
+		t.Fatal(err)
+	}
+	opts := StartOptions{Checkout: repo, NewStateBase: state, LegacyStateBase: t.TempDir(), Mode: knowledge.ModeContainer}
+	job := live.BuildJob(knowledge.Plan{Steps: steps}, knowledge.ModeContainer, []live.Change{lc("docker-compose.yml", live.CatCompose, "")}, allStarted)
+	out, err := runLive(t, opts, job)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if len(*calls) != before {
+		t.Fatalf("a live run ran a host command: %v", *calls)
+	}
+	r, _ := runs.Get(onlyRunDir(t, state), 2)
+	if got := stepStates(r); !strings.Contains(got, "seed=skipped:"+live.HostSkipReason) {
+		t.Fatalf("%s", got)
+	}
+}
