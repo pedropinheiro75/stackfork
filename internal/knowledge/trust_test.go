@@ -67,10 +67,18 @@ func TestPlanHashCoversHostExec(t *testing.T) {
 	if got := TrustSteps(steps); len(got) != 1 || got[0].On != OnHost {
 		t.Fatalf("host exec step must be trusted: %+v", got)
 	}
-	h := PlanHash(steps)
-	steps[0].Cmd = "other"
-	if PlanHash(steps) == h {
-		t.Error("host exec cmd must change the hash")
+	for name, change := range map[string]func(*Step){
+		"cmd":  func(s *Step) { s.Cmd = "other" },
+		"dir":  func(s *Step) { s.Dir = "apps/api" },
+		"once": func(s *Step) { s.Once = OnceData },
+		"on":   func(s *Step) { s.On = "" },
+	} {
+		changed := []Step{steps[0], {ID: "host", Kind: KindHost, Name: "app", Cmd: "npm run dev"}}
+		base := PlanHash(changed)
+		change(&changed[0])
+		if PlanHash(changed) == base {
+			t.Errorf("host exec %s must change the hash", name)
+		}
 	}
 	if got := (Plan{Steps: []Step{{ID: "c", Kind: KindExec, Cmd: "x"}, steps[0]}}).HostRunSteps(); len(got) != 1 || got[0].ID != "mig" {
 		t.Fatalf("HostRunSteps %+v", got)
