@@ -103,3 +103,33 @@ func TestDockerEnvAddsValuesUnderEveryAliasOnly(t *testing.T) {
 		}
 	}
 }
+
+// Review M1: a secret name cannot be one that steers Docker or the shell.
+func TestReservedSecretNamesAreRefused(t *testing.T) {
+	for _, n := range []string{"COMPOSE_FILE", "COMPOSE_PROJECT_NAME", "DOCKER_HOST", "DOCKER_CONFIG", "PATH", "path", "HOME", "USER", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE"} {
+		if ValidSecretName(n) {
+			t.Errorf("%s accepted", n)
+		}
+		if _, _, err := ParseSecretFlag(n + "=env:X"); err == nil {
+			t.Errorf("--secret %s accepted", n)
+		}
+	}
+	for _, n := range []string{"NPM_TOKEN", "npm_token", "STRIPE_TEST_KEY", "DOCKERHUB_TOKEN", "COMPOSER_AUTH", "PATHS", "HOMEBREW_TOKEN", "LCX"} {
+		if !ValidSecretName(n) {
+			t.Errorf("%s refused", n)
+		}
+	}
+}
+
+func TestDockerEnvSkipsReservedSecretNames(t *testing.T) {
+	env := DockerEnv(map[string]string{"COMPOSE_FILE": "evil.yml", "DOCKER_HOST": "tcp://evil", "PATH": "/evil", "LC_ALL": "x", "NPM_TOKEN": "ok"})
+	joined := "\n" + strings.Join(env, "\n") + "\n"
+	for _, bad := range []string{"\nCOMPOSE_FILE=evil.yml\n", "\nDOCKER_HOST=tcp://evil\n", "\nPATH=/evil\n", "\nLC_ALL=x\n"} {
+		if strings.Contains(joined, bad) {
+			t.Errorf("env holds %q", strings.TrimSpace(bad))
+		}
+	}
+	if !strings.Contains(joined, "\nNPM_TOKEN=ok\n") {
+		t.Error("an ordinary name must still be passed")
+	}
+}

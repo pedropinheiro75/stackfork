@@ -37,6 +37,9 @@ func DockerEnv(values map[string]string) []string {
 	sort.Strings(names)
 	for _, n := range names {
 		for _, alias := range SecretEnvAliases(n) {
+			if ReservedSecretName(alias) { // a manifest from before the name check could hold one
+				continue
+			}
 			env = append(env, alias+"="+values[n])
 		}
 	}

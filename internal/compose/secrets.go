@@ -11,8 +11,24 @@ import (
 
 var secretNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// ValidSecretName reports whether name is a valid secret name.
-func ValidSecretName(name string) bool { return secretNamePattern.MatchString(name) }
+// ValidSecretName reports whether name is a valid secret name: a plain
+// identifier that is not a variable steering Docker Compose or the shell.
+func ValidSecretName(name string) bool {
+	return secretNamePattern.MatchString(name) && !ReservedSecretName(name)
+}
+
+// ReservedSecretName is true for the names a secret value must never be
+// exported under to the Compose child: COMPOSE_* and DOCKER_* (they select
+// the project, the daemon and the config) and PATH, HOME, USER, SHELL, TMPDIR,
+// LANG and LC_* (compared without case, as Windows does).
+func ReservedSecretName(name string) bool {
+	n := strings.ToUpper(name)
+	switch n {
+	case "PATH", "HOME", "USER", "SHELL", "TMPDIR", "LANG":
+		return true
+	}
+	return strings.HasPrefix(n, "COMPOSE_") || strings.HasPrefix(n, "DOCKER_") || strings.HasPrefix(n, "LC_")
+}
 
 // ParseSecretFlag splits a --secret NAME=REF argument (design.md D6) into
 // its name and reference, validating only the shape (env:VAR, npmrc:PATH#HOST,
@@ -25,7 +41,7 @@ func ParseSecretFlag(raw string) (name, ref string, err error) {
 		return "", "", fmt.Errorf("--secret: expected NAME=REF where REF is env:VAR, npmrc:PATH#HOST, keychain:ITEM or op://VAULT/ITEM/FIELD")
 	}
 	if !ValidSecretName(name) {
-		return "", "", fmt.Errorf("--secret: secret name must match [A-Za-z_][A-Za-z0-9_]*")
+		return "", "", fmt.Errorf("--secret: secret name must match [A-Za-z_][A-Za-z0-9_]* and not be COMPOSE_*, DOCKER_*, LC_*, PATH, HOME, USER, SHELL, TMPDIR or LANG")
 	}
 	if err := ValidateSecretRef(ref); err != nil {
 		return "", "", fmt.Errorf("--secret %s: %w", name, err)
