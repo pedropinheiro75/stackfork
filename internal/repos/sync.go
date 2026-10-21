@@ -135,7 +135,7 @@ func incomingOverwrites(checkout string) []string {
 		if p == "" {
 			continue
 		}
-		if _, err := os.Lstat(filepath.Join(checkout, filepath.FromSlash(p))); err == nil {
+		if clashes(checkout, p) {
 			if len(clash) == 5 {
 				return append(clash, "...")
 			}
@@ -143,6 +143,23 @@ func incomingOverwrites(checkout string) []string {
 		}
 	}
 	return clash
+}
+
+// clashes reports whether adding p would overwrite something: p itself
+// exists, or a parent of p exists and is not a directory (an ignored file
+// `conf` where upstream adds conf/app.yml; a symlink counts too).
+func clashes(checkout, p string) bool {
+	parts := strings.Split(p, "/")
+	for i := range parts {
+		fi, err := os.Lstat(filepath.Join(checkout, filepath.FromSlash(strings.Join(parts[:i+1], "/"))))
+		if err != nil {
+			return false
+		}
+		if i == len(parts)-1 || !fi.IsDir() {
+			return true
+		}
+	}
+	return false
 }
 
 func plural(n int, word string) string {

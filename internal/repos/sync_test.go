@@ -200,6 +200,23 @@ func TestSyncUnattendedBlocksWhenIncomingFilesWouldOverwriteLocalOnes(t *testing
 	if b, _ := os.ReadFile(filepath.Join(repo, "upa")); string(b) != "my local secret" {
 		t.Errorf("the ignored file was overwritten: %q", b)
 	}
+	// an ignored FILE where upstream adds a file under that name as a directory
+	repoD, originD := mkWithOrigin(t)
+	cloneD := filepath.Join(tempRoot(t), "dir")
+	git(t, filepath.Dir(cloneD), "clone", "-q", originD, cloneD)
+	os.MkdirAll(filepath.Join(cloneD, "conf"), 0o755)
+	os.WriteFile(filepath.Join(cloneD, "conf", "app.yml"), []byte("x"), 0o644)
+	git(t, cloneD, "add", ".")
+	git(t, cloneD, "commit", "-q", "-m", "conf dir")
+	git(t, cloneD, "push", "-q", "origin", "main")
+	os.WriteFile(filepath.Join(repoD, ".git", "info", "exclude"), []byte("/conf\n"), 0o644)
+	os.WriteFile(filepath.Join(repoD, "conf"), []byte("my local file"), 0o644)
+	if res := SyncUnattended(repoD, 10*time.Second); res.Updated || !res.Blocked || !strings.Contains(res.Line, "conf") {
+		t.Fatalf("parent file: %+v", res)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repoD, "conf")); string(b) != "my local file" {
+		t.Errorf("the ignored file was lost: %q", b)
+	}
 	// without a collision the unattended sync fast-forwards as before
 	repo2, origin2 := mkWithOrigin(t)
 	pushAhead(t, origin2, 1)
