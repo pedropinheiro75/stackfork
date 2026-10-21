@@ -34,6 +34,10 @@ type Check struct {
 	// Locked reports why the instance's run lock or the dashboard's action
 	// lock is held ("" when both are free). nil: free.
 	Locked func() string
+	// Others are the branches of other instances prepared in the same
+	// worktree. Their containers and volumes are not this cleanup's to
+	// remove, and the worktree would orphan them.
+	Others []string
 }
 
 // Verdict is the answer to a Check.
@@ -73,6 +77,10 @@ func Evaluate(c Check) Verdict {
 		return v
 	}
 
+	if len(c.Others) > 0 {
+		v.Warning = "PR merged, but this worktree also has an instance of " + strings.Join(c.Others, ", ") + "; clean it up yourself"
+		return v
+	}
 	v.Dirty = dirty(c.Main, path, c.Adapter)
 	if len(v.Dirty) > 0 {
 		v.Warning = "PR merged, but this worktree has uncommitted changes"

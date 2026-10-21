@@ -25,6 +25,9 @@ type CleanupJob struct {
 	Adapter []string // knowledge adapter_files
 	// Instance is the candidate's instance, nil when it has none.
 	Instance *Target
+	// Others are the branches of other instances in the candidate's worktree:
+	// removing the worktree would orphan them, so the cleanup is refused.
+	Others []string
 	// ActionLocked tells whether the dashboard's per-project action lock is
 	// held for the instance; nil means never.
 	ActionLocked func(project string) bool
@@ -66,7 +69,7 @@ func (j CleanupJob) now() time.Time {
 
 // CheckFor is the eligibility question for this job.
 func (j CleanupJob) CheckFor() cleanup.Check {
-	return cleanup.Check{Main: j.Main, Candidate: j.Candidate, Result: j.Result, Auto: j.Auto, Adapter: j.Adapter,
+	return cleanup.Check{Main: j.Main, Candidate: j.Candidate, Result: j.Result, Auto: j.Auto, Adapter: j.Adapter, Others: j.Others,
 		Locked: func() string {
 			if j.Instance == nil {
 				return ""

@@ -39,6 +39,9 @@ type CandidateStatus struct {
 	Warning  string   `json:"warning,omitempty"`
 	Ignored  []string `json:"ignored,omitempty"` // ignored files that go with the worktree
 	Kept     bool     `json:"kept,omitempty"`
+	// Others are the branches of other instances prepared in the same
+	// worktree. They are never downed, so they block the cleanup.
+	Others []string `json:"other_instances,omitempty"`
 	// Since is when the candidate first became eligible; CleanAt is Since plus
 	// the grace period, set in auto mode only.
 	Since   time.Time `json:"eligible_since,omitzero"`
@@ -66,13 +69,21 @@ func adapterFiles(main string) []string {
 	return nil
 }
 
-func (in ScanInput) instance(path string) *Target {
+// instance is the candidate's instance: same checkout and same branch (a
+// project name is hash(root+branch), so one worktree can have several). The
+// branches of the other instances in the same checkout come back as others.
+func (in ScanInput) instance(path, branch string) (t *Target, others []string) {
 	for i := range in.Targets {
-		if sameFile(in.Targets[i].Root, path) {
-			return &in.Targets[i]
+		if !sameFile(in.Targets[i].Root, path) {
+			continue
+		}
+		if in.Targets[i].Branch == branch {
+			t = &in.Targets[i]
+		} else {
+			others = append(others, in.Targets[i].Branch)
 		}
 	}
-	return nil
+	return t, others
 }
 
 // ScanCleanup lists the merged and closed candidates of the repository from
@@ -100,9 +111,11 @@ func ScanCleanup(in ScanInput) ([]CandidateStatus, error) {
 			Kept: st.Kept(c.Branch, c.Head)}
 		job := CleanupJob{Main: in.Main, NewBase: in.NewBase, Candidate: c, Result: res, Settings: in.Settings, Adapter: adapter,
 			Auto: in.Settings.Mode == config.CleanupAuto, ActionLocked: in.ActionLocked}
-		if t := in.instance(c.Path); t != nil {
+		t, others := in.instance(c.Path, c.Branch)
+		if t != nil {
 			cs.Project, job.Instance = t.Project, t
 		}
+		cs.Others, job.Others = others, others
 		v := cleanup.Evaluate(job.CheckFor())
 		cs.Eligible, cs.Warning, cs.Ignored = v.Eligible, v.Warning, v.Ignored
 		if v.State == cleanup.Merged && v.Eligible && !cs.Kept {
@@ -150,7 +163,7 @@ func (in ScanInput) Job(c CandidateStatus, auto bool) CleanupJob {
 	j := CleanupJob{Main: in.Main, NewBase: in.NewBase, Settings: in.Settings, Auto: auto, Adapter: adapterFiles(in.Main), ActionLocked: in.ActionLocked,
 		Candidate: cleanup.Candidate{Path: c.Path, Branch: c.Branch, Head: c.Head},
 		Result:    cleanup.Result{Branch: c.Branch, State: c.State, Via: c.Via, PR: c.PR, URL: c.URL, Forge: c.Forge}}
-	j.Instance = in.instance(c.Path)
+	j.Instance, j.Others = in.instance(c.Path, c.Branch)
 	return j
 }
 
