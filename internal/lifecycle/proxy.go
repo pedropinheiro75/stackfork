@@ -7,11 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
@@ -123,11 +123,12 @@ func GatherRoutes(newStateBase, legacyStateBase, mode string) ([]proxy.Route, er
 	return routes, nil
 }
 
-// instanceRoute resolves one instance's manifest to a proxy Route: a
-// registered host-run route wins when present (task 9.3), else the primary
-// HTTP service's currently published port, re-resolved via `docker compose
-// ps` every time (task 9.2) so a random-port/legacy instance's route never
-// goes stale. Only a RUNNING instance yields a route. mode picks the
+// instanceRoute resolves one instance's manifest to a proxy Route through
+// knowledge.ResolveEntry: a registered host-run route wins when present
+// (task 9.3), else the recorded entry, else the primary HTTP service, on its
+// currently published port, re-resolved via `docker compose ps` every time
+// (task 9.2) so a random-port/legacy instance's route never goes stale.
+// `none` and a recorded entry the stack lacks yield no route. Only a RUNNING instance yields a route. mode picks the
 // target's address (proxy.HostTarget, design.md D7).
 func instanceRoute(info *state.Manifest, instanceDir, mode string) (proxy.Route, bool) {
 	hostname, err := identity.BrowserHostname(info.Project, info.Hostname)
@@ -140,16 +141,6 @@ func instanceRoute(info *state.Manifest, instanceDir, mode string) (proxy.Route,
 		return proxy.Route{}, false
 	}
 
-	if len(info.Routes) > 0 {
-		names := make([]string, 0, len(info.Routes))
-		for name := range info.Routes {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		port := info.Routes[names[0]]
-		return proxy.Route{Hostname: hostname, Target: proxy.HostTarget(mode, port)}, true
-	}
-
 	configPath := filepath.Join(instanceDir, "compose.json")
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
@@ -159,11 +150,16 @@ func instanceRoute(info *state.Manifest, instanceDir, mode string) (proxy.Route,
 	if err != nil {
 		return proxy.Route{}, false
 	}
-	service, target, _, ok := compose.PrimaryHTTPService(model)
-	if !ok {
+	// A knowledge file that does not load counts as no entry (D6).
+	k, _ := knowledge.LoadForCheckout(info.Root)
+	entry := knowledge.ResolveEntry(k, model, info.Routes)
+	if !entry.OK {
 		return proxy.Route{}, false
 	}
-	hostPort, ok := compose.PublishedHostPort(rows, service, target)
+	if entry.Source == knowledge.SourceHostRoute {
+		return proxy.Route{Hostname: hostname, Target: proxy.HostTarget(mode, entry.Port)}, true
+	}
+	hostPort, ok := compose.PublishedHostPort(rows, entry.Service, entry.Port)
 	if !ok {
 		return proxy.Route{}, false
 	}

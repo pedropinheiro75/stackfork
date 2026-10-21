@@ -825,26 +825,40 @@ func cmdStatusURLs(stdout, stderr io.Writer, action string, subArgs []string, ro
 			return err
 		}
 		lines := compose.EndpointLines(rows, hostname, info.HTTPPorts, info.HTTPSPorts)
+		var model interface{}
+		if configData, err := os.ReadFile(configPath); err == nil {
+			model, _ = compose.DecodeJSON(configData)
+		}
+		// The recorded entry replaces the guessed primary service everywhere
+		// (entry-links D6); a project with none behaves as before.
+		k, _ := knowledge.LoadForCheckout(root)
+		entry := knowledge.ResolveEntry(k, model, info.Routes)
+		where := knowledge.Where{Hostname: hostname, Rows: rows, Stable: info.Ports}
 		// Task 9.4, design.md D7 layer 3: once the shared proxy is running
 		// and actually publishing this instance's primary HTTP service, that
 		// service's line switches to the portless (or proxy-port) URL, since
 		// that's the URL that actually works. Every other published line
 		// (a database port, a secondary service, ...) is unaffected.
-		if running {
-			if configData, err := os.ReadFile(configPath); err == nil {
-				if model, err := compose.DecodeJSON(configData); err == nil {
-					if service, target, https, ok := compose.PrimaryHTTPService(model); ok {
-						if _, found := compose.PublishedHostPort(rows, service, target); found {
-							proxyPort, err := proxy.ReadPort(newStateBase)
-							if err == nil {
-								lines = replacePrimaryLine(lines, service, https,
-									compose.PrimaryLine(service, hostname, https, proxyPort))
-							}
-						}
+		if running && model != nil {
+			service, target, https, ok := compose.PrimaryHTTPService(model)
+			if entry.Source != knowledge.SourceHostRoute {
+				service, target, https, ok = entry.Service, entry.Port, entry.HTTPS, entry.OK
+			}
+			if ok {
+				if _, found := compose.PublishedHostPort(rows, service, target); found {
+					if proxyPort, err := proxy.ReadPort(newStateBase); err == nil {
+						lines = replacePrimaryLine(lines, service, https,
+							compose.PrimaryLine(service, hostname, https, proxyPort))
+						where.ProxyPort = proxyPort
 					}
 				}
 			}
 		}
+		entryLines, warnings := entryURLLines(entry, where)
+		for _, w := range warnings {
+			fmt.Fprintf(stderr, "stackfork: warning: %s\n", w)
+		}
+		lines = append(entryLines, lines...)
 		if len(lines) == 0 {
 			fmt.Fprintln(stdout, "No published endpoints; check status or start the stack.")
 		} else {

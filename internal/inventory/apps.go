@@ -18,9 +18,14 @@ type AppLink struct {
 	Service string `json:"service,omitempty"` // the service a Source "service" link belongs to
 	URL     string `json:"url,omitempty"`
 	Direct  string `json:"direct,omitempty"`
-	Source  string `json:"source"` // service | route | knowledge
+	Source  string `json:"source"` // service | route | knowledge | entry | link
 	Running bool   `json:"running"`
 	Hint    string `json:"hint,omitempty"`
+	// Guessed marks the heuristic's App chip while knowledge exists but
+	// records no confirmed entry (entry-links D10). Warning says why a
+	// recorded entry or link has no URL; it is also in Instance.Warnings.
+	Guessed bool   `json:"guessed,omitempty"`
+	Warning string `json:"warning,omitempty"`
 }
 
 // buildApps collects every service-sourced app link: one per distinct
@@ -35,7 +40,10 @@ type AppLink struct {
 // portless one shown first); the direct one, if any, rides along as
 // AppLink.Direct for the template to show as a tooltip/secondary link,
 // never a second chip.
-func buildApps(services []Service, info *state.Manifest, primaryService string, hasPrimary bool) []AppLink {
+//
+// covered holds the "service:port" targets that the recorded entry or a link
+// already shows; their service chips are dropped.
+func buildApps(services []Service, info *state.Manifest, primaryService string, hasPrimary bool, covered map[string]bool) []AppLink {
 	var apps []AppLink
 	for _, svc := range services {
 		label := appLabel(svc, hasPrimary && svc.Name == primaryService)
@@ -51,6 +59,9 @@ func buildApps(services []Service, info *state.Manifest, primaryService string, 
 			byTarget[ep.Container] = append(byTarget[ep.Container], ep)
 		}
 		for _, target := range targets {
+			if covered[fmt.Sprintf("%s:%d", svc.Name, target)] {
+				continue
+			}
 			group := byTarget[target]
 			sort.SliceStable(group, func(i, j int) bool {
 				return group[i].Proxied && !group[j].Proxied
@@ -103,7 +114,12 @@ func appLabel(svc Service, isPrimary bool) string {
 // command, never a clickable link or a filled-in `route add <port>` - the
 // upgrade path is teaching `learn` to capture a dev script's port.
 func appendRouteAndKnowledgeApps(apps []AppLink, info *state.Manifest) []AppLink {
-	if len(info.Routes) > 0 {
+	// A recorded entry already shows the host route as its App chip.
+	entryShown := false
+	for _, a := range apps {
+		entryShown = entryShown || a.Source == "entry"
+	}
+	if len(info.Routes) > 0 && !entryShown {
 		names := make([]string, 0, len(info.Routes))
 		for name := range info.Routes {
 			names = append(names, name)
@@ -240,4 +256,69 @@ func envKeyForService(name string) string {
 		key = "_" + key
 	}
 	return key
+}
+
+// entryApps is the part of the App strip that comes from the resolved entry
+// and links (entry-links D10): the chips, the warnings for targets the stack
+// lacks, and the service:port targets they cover. A recorded entry (or
+// `none`) is "in play"; with a guessed one only the link chips are added.
+func entryApps(r knowledge.Resolved, inPlay bool, w knowledge.Where, services []Service) (chips []AppLink, warnings []string, covered map[string]bool) {
+	covered = map[string]bool{}
+	running := func(service string) bool {
+		if service == "" {
+			return true // a host route
+		}
+		for _, s := range services {
+			if s.Name == service {
+				return s.State == "running"
+			}
+		}
+		return false
+	}
+	if inPlay {
+		if r.OK {
+			url, direct := r.AppURL(w)
+			chip := AppLink{Label: knowledge.ReservedLinkName, Service: r.Service, URL: url, Direct: direct, Source: "entry", Running: running(r.Service)}
+			if url == "" {
+				chip.Hint = "port assigned on start"
+			}
+			chips = append(chips, chip)
+			if r.Service != "" {
+				covered[fmt.Sprintf("%s:%d", r.Service, r.Port)] = true
+			}
+		} else if r.Warning != "" {
+			chips = append(chips, AppLink{Label: knowledge.ReservedLinkName, Source: "entry", Warning: r.Warning})
+			warnings = append(warnings, r.Warning)
+		}
+	}
+	for _, l := range r.Links {
+		if !l.OK {
+			chips = append(chips, AppLink{Label: l.Name, Source: "link", Warning: l.Warning})
+			warnings = append(warnings, l.Warning)
+			continue
+		}
+		url, direct := r.LinkURL(l, w)
+		chip := AppLink{Label: l.Name, Service: l.Service, URL: url, Direct: direct, Source: "link", Running: running(l.Service)}
+		if url == "" {
+			chip.Hint = "port assigned on start"
+		}
+		chips = append(chips, chip)
+		covered[fmt.Sprintf("%s:%d", l.Service, l.Port)] = true
+	}
+	return chips, warnings, covered
+}
+
+// withLinkChips places link chips right after the heuristic's App chip (or
+// first when it has none), for an instance whose entry is only guessed.
+func withLinkChips(apps, links []AppLink) []AppLink {
+	at := 0
+	for i, a := range apps {
+		if a.Label == knowledge.ReservedLinkName {
+			at = i + 1
+			break
+		}
+	}
+	out := append([]AppLink{}, apps[:at]...)
+	out = append(out, links...)
+	return append(out, apps[at:]...)
 }

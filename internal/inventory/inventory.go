@@ -347,10 +347,11 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		inst.State = StateMissingBranch
 		inst.Warnings = append(inst.Warnings, fmt.Sprintf("branch %s no longer exists in %s; run `stackfork gc`", info.Branch, info.Root))
 	default:
-		services, serviceState, apps := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
+		services, serviceState, apps, appWarnings := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
 		inst.Services = append(append([]Service{}, services...), hostServices(info)...)
 		inst.State = serviceState
 		inst.Warnings = append(inst.Warnings, serviceWarnings(project, services)...)
+		inst.Warnings = append(inst.Warnings, appWarnings...)
 		fillOneOffs(&inst, rows)
 		inst.Apps = appendRouteAndKnowledgeApps(apps, info)
 		inst.EnvBlock = buildEnvBlock(services)
@@ -423,11 +424,11 @@ func ReadComposeServices(instanceDir string) (map[string]interface{}, error) {
 // servicesForInstance reads the instance's snapshot for its declared
 // service list (so a never-started service still gets a row) and matches
 // each one against its container, if any.
-func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname string, info *state.Manifest, proxyStatus ProxyStatus) ([]Service, string, []AppLink) {
+func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname string, info *state.Manifest, proxyStatus ProxyStatus) ([]Service, string, []AppLink, []string) {
 	instanceDir := filepath.Dir(manifestPath)
 	svcMap, err := readComposeServices(instanceDir)
 	if err != nil {
-		return nil, StateStopped, nil
+		return nil, StateStopped, nil, nil
 	}
 	names := make([]string, 0, len(svcMap))
 	for name := range svcMap {
@@ -448,7 +449,15 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 	for _, r := range rows {
 		rowByService[r.Service] = r
 	}
-	primaryService, primaryTarget, primaryHTTPS, hasPrimary := compose.PrimaryHTTPService(map[string]interface{}{"services": svcMap})
+	model := map[string]interface{}{"services": svcMap}
+	primaryService, primaryTarget, primaryHTTPS, hasPrimary := compose.PrimaryHTTPService(model)
+	// The recorded entry (or the host route) replaces the guess (entry-links D6).
+	k, _ := knowledge.LoadForCheckout(info.Root)
+	entry := knowledge.ResolveEntry(k, model, info.Routes)
+	inPlay := k != nil && k.Entry != nil && !k.Entry.Proposed
+	if inPlay && entry.Source != knowledge.SourceHostRoute {
+		primaryService, primaryTarget, primaryHTTPS, hasPrimary = entry.Service, entry.Port, entry.HTTPS, entry.OK
+	}
 
 	var services []Service
 	running, total := 0, len(names)
@@ -494,16 +503,54 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 	}
 
 	markWaiting(services)
-	apps := buildApps(services, info, primaryService, hasPrimary)
+	where := knowledge.Where{Hostname: hostname, Rows: rows, Stable: stablePorts(services)}
+	if proxyStatus.Running && entry.OK && (entry.Service == "" || serviceRunning(services, entry.Service)) {
+		where.ProxyPort = proxyStatus.Port
+	}
+	chips, appWarnings, covered := entryApps(entry, inPlay, where, services)
+	apps := buildApps(services, info, primaryService, hasPrimary && !inPlay, covered)
+	if inPlay {
+		apps = append(chips, apps...)
+	} else {
+		if k != nil {
+			for i := range apps {
+				apps[i].Guessed = apps[i].Label == knowledge.ReservedLinkName
+			}
+		}
+		apps = withLinkChips(apps, chips)
+	}
 
 	switch {
 	case total == 0 || running == 0:
-		return services, StateStopped, apps
+		return services, StateStopped, apps, appWarnings
 	case running == total:
-		return services, StateRunning, apps
+		return services, StateRunning, apps, appWarnings
 	default:
-		return services, StatePartial, apps
+		return services, StatePartial, apps, appWarnings
 	}
+}
+
+// stablePorts lists each service's snapshot-published host ports, the
+// fallback for a service that is not running.
+func stablePorts(services []Service) []state.PortAlloc {
+	var out []state.PortAlloc
+	for _, s := range services {
+		for _, p := range s.Ports {
+			if p.Host > 0 {
+				out = append(out, state.PortAlloc{Service: s.Name, Target: p.Container, Host: p.Host})
+			}
+		}
+	}
+	return out
+}
+
+func serviceRunning(services []Service, name string) bool {
+	for _, s := range services {
+		if s.Name == name {
+			return s.State == "running"
+		}
+	}
+	return false
 }
 
 // buildServiceEndpoints resolves one endpoint per declared port (task 3.6).

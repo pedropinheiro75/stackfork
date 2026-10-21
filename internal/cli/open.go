@@ -1,12 +1,13 @@
 // open.go implements `stackfork open [SERVICE] [--instance NAME] [--print]`:
-// the instance's primary app URL (the portless one when the proxy routes
-// it), opened in the browser or just printed.
+// the instance's app URL (the portless one when the proxy routes it), or the
+// URL of a named link or service, opened in the browser or just printed.
 package cli
 
 import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 )
@@ -45,14 +46,25 @@ func cmdOpen(stdout io.Writer, subArgs []string, project, newStateBase, legacySt
 	}
 
 	url := ""
+	if service != "" {
+		// An app or link name wins over a service of the same name (D11).
+		for _, app := range inst.Apps {
+			if (app.Source == "entry" || app.Source == "link" || app.Label == "App") && strings.EqualFold(app.Label, service) {
+				if app.URL == "" {
+					return fmt.Errorf("%s has no URL yet%s", app.Label, openWhy(app))
+				}
+				url = app.URL
+				break
+			}
+		}
+	}
 	for _, app := range inst.Apps {
-		if app.URL == "" {
+		if url != "" || app.URL == "" {
 			continue
 		}
 		if service != "" {
 			if app.Service == service {
 				url = app.URL
-				break
 			}
 			continue
 		}
@@ -76,4 +88,15 @@ func cmdOpen(stdout io.Writer, subArgs []string, project, newStateBase, legacySt
 		openBrowser(url)
 	}
 	return nil
+}
+
+// openWhy names why a chip has no URL.
+func openWhy(a inventory.AppLink) string {
+	switch {
+	case a.Warning != "":
+		return ": " + a.Warning
+	case a.Hint != "":
+		return ": " + a.Hint
+	}
+	return ""
 }

@@ -35,6 +35,8 @@ type verifyEnv struct {
 	flags []string
 	path  string
 	host  string
+	// project is the prepared instance's name.
+	project string
 }
 
 func serverPort(t *testing.T, s *probeServer) int {
@@ -73,6 +75,7 @@ func newVerifyEnv(t *testing.T, webPort, mailPort int, e *knowledge.Entry, links
 	var prepared map[string]interface{}
 	json.Unmarshal([]byte(out), &prepared)
 	host, _ := prepared["hostname"].(string)
+	project, _ := prepared["project"].(string)
 	k := &knowledge.Knowledge{Status: knowledge.StatusDraft, Entry: e, Links: links, Plan: knowledge.Plan{
 		Status: knowledge.PlanRecorded, Steps: []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp}},
 	}}
@@ -84,7 +87,7 @@ func newVerifyEnv(t *testing.T, webPort, mailPort int, e *knowledge.Entry, links
 		return fmt.Sprintf(`{"ID":"c-%s","Name":"%s-1","Service":"%s","State":"running","Health":"","Publishers":[{"Protocol":"tcp","PublishedPort":%d,"TargetPort":%d,"URL":"127.0.0.1"}]}`, svc, svc, svc, published, target)
 	}
 	t.Setenv("DOCKER_FAKE_STATUS", rows("web", 8080, webPort)+"\n"+rows("mail", 80, mailPort)+"\n")
-	return verifyEnv{root: root, flags: flags, path: path, host: host}
+	return verifyEnv{root: root, flags: flags, path: path, host: host, project: project}
 }
 
 func (v verifyEnv) verify(t *testing.T) (string, string, int) {

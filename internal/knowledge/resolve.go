@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -137,6 +138,12 @@ func (r Resolved) resolveLink(l Link, e *Entry, targets map[string][]int, https 
 	}
 	rl.OK, rl.HTTPS = true, https(rl.Port)
 	return rl
+}
+
+// LoadForCheckout reads knowledge.json from root, else from root's repo
+// main checkout, as start-env does (D6). nil, nil when neither has one.
+func LoadForCheckout(root string) (*Knowledge, error) {
+	return LoadFirst(root, identity.MainRepoOf(root))
 }
 
 // Where is what the URL builder needs to know about one instance (D7).
