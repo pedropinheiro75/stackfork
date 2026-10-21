@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
+	"github.com/pedropinheiro75/stackfork/internal/live"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 )
 
@@ -142,5 +143,24 @@ func TestLiveStatusListsCandidates(t *testing.T) {
 	out, _, _ = f.sf(t, "live", "status", f.Main)
 	if !strings.Contains(out, "feature-login: merged, PR merged, but this worktree has uncommitted changes") {
 		t.Fatalf("%s", out)
+	}
+}
+
+// While a repository is paused nothing is checked or cleaned, a person's
+// cleanup included; Keep only records a choice and stays allowed.
+func TestLiveCleanRefusesWhilePaused(t *testing.T) {
+	f := newCleanupCLIFx(t)
+	liveOnFor(t, f.Main, &config.Cleanup{Mode: config.CleanupSuggest, GraceHours: 24})
+	if err := live.WritePause(f.State, f.Main, live.Pause{Kind: live.PauseFailed, Reason: "run 3 failed at step rebuild"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"live", "clean", f.Main, "feature-login"}, {"live", "clean", f.Main, "feature-login", "--yes"}} {
+		_, e, code := f.sf(t, args...)
+		if code == 0 || !strings.Contains(e, "paused") || !strings.Contains(e, "stackfork live on") {
+			t.Fatalf("%v: %d %s", args, code, e)
+		}
+	}
+	if _, err := os.Stat(f.WT); err != nil {
+		t.Fatal("a paused repository was cleaned")
 	}
 }

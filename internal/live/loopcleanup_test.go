@@ -219,9 +219,10 @@ func TestAKeepMadeWhileTheFetchFailsStopsTheAutoCleanup(t *testing.T) {
 	}
 }
 
-func TestRunCleanupRefusesAKeptBranchAndAMovedHead(t *testing.T) {
+func TestRunCleanupRefusesAKeptBranchForAutoAndAMovedHead(t *testing.T) {
 	f := newCleanupFx(t)
 	j := f.job(t)
+	j.Auto = true
 	if err := KeepBranch(f.State, f.Main, j.Candidate.Branch, j.Candidate.Head); err != nil {
 		t.Fatal(err)
 	}

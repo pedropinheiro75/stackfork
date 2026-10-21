@@ -97,9 +97,10 @@ func RunCleanup(ctx context.Context, j CleanupJob) CleanupOutcome {
 		out.Err = fmt.Errorf("%w: %s", ErrNotEligible, out.Verdict.Warning)
 		return out
 	}
-	// Keep is read from disk now: the candidate may come from a scan that
-	// is older than a person's click.
-	if st, _ := LoadCleanupState(j.NewBase, j.Main); st.Kept(j.Candidate.Branch, j.Candidate.Head) {
+	// Keep is read from disk now: the candidate may come from a scan that is
+	// older than the person's click. It stops an automatic cleanup; a person
+	// who asks for this branch explicitly is not stopped by their own Keep.
+	if st, _ := LoadCleanupState(j.NewBase, j.Main); j.Auto && st.Kept(j.Candidate.Branch, j.Candidate.Head) {
 		out.Err = fmt.Errorf("%w: %s is kept", ErrNotEligible, j.Candidate.Branch)
 		return out
 	}

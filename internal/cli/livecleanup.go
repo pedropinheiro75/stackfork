@@ -116,7 +116,10 @@ func (p CleanupPreview) Describe() string {
 // personScan is the scan that a person's command or click acts on. Live mode
 // and cleanup must be on; ignored files are listed in the confirmation
 // instead of blocking, because a person confirms.
-func personScan(main, newBase, legacyBase string) (live.ScanInput, []live.CandidateStatus, config.Cleanup, error) {
+//
+// While the repository is paused nothing is checked or cleaned, a person's
+// cleanup included: allowPaused is only for Keep, which writes one choice.
+func personScan(main, newBase, legacyBase string, allowPaused bool) (live.ScanInput, []live.CandidateStatus, config.Cleanup, error) {
 	var in live.ScanInput
 	cfg, err := config.Load()
 	if err != nil {
@@ -128,6 +131,9 @@ func personScan(main, newBase, legacyBase string) (live.ScanInput, []live.Candid
 	cl := cfg.CleanupFor(main)
 	if cl.Mode == config.CleanupOff {
 		return in, nil, cl, fmt.Errorf("branch cleanup is off for %s; choose it with stackfork live cleanup suggest", main)
+	}
+	if p, _ := live.ReadPause(newBase, main); p != nil && !allowPaused {
+		return in, nil, cl, fmt.Errorf("live mode is paused for %s (%s), so no branch is checked or cleaned; resume it first with stackfork live on, or Resume on the dashboard", main, p.Reason)
 	}
 	ts, err := liveTargets(newBase, legacyBase, main)
 	if err != nil {
@@ -163,7 +169,7 @@ func eligibleAt(cs []live.CandidateStatus, key string, byBranch bool) (live.Cand
 // it prints what a cleanup would delete and deletes nothing; with it, it runs
 // the D18 re-check and the cleanup run.
 func liveClean(stdout io.Writer, main, branch string, yes bool, newBase, legacyBase string) (int, error) {
-	in, cs, cl, err := personScan(main, newBase, legacyBase)
+	in, cs, cl, err := personScan(main, newBase, legacyBase, false)
 	if err != nil {
 		return 1, err
 	}
@@ -197,7 +203,7 @@ func liveClean(stdout io.Writer, main, branch string, yes bool, newBase, legacyB
 func dashboardCleanup(newBase, legacyBase string) *dashboard.LiveCleanup {
 	return &dashboard.LiveCleanup{
 		CleanText: func(main, path string) (string, error) {
-			_, cs, cl, err := personScan(main, newBase, legacyBase)
+			_, cs, cl, err := personScan(main, newBase, legacyBase, false)
 			if err != nil {
 				return "", err
 			}
@@ -209,7 +215,7 @@ func dashboardCleanup(newBase, legacyBase string) *dashboard.LiveCleanup {
 			return pv.Describe(), err
 		},
 		Clean: func(out io.Writer, main, path string, locked func(string) bool) error {
-			in, cs, cl, err := personScan(main, newBase, legacyBase)
+			in, cs, cl, err := personScan(main, newBase, legacyBase, false)
 			if err != nil {
 				return err
 			}
@@ -225,7 +231,7 @@ func dashboardCleanup(newBase, legacyBase string) *dashboard.LiveCleanup {
 			return live.RunCleanup(context.Background(), job).Err
 		},
 		Keep: func(main, path string) error {
-			_, cs, _, err := personScan(main, newBase, legacyBase)
+			_, cs, _, err := personScan(main, newBase, legacyBase, true)
 			if err != nil {
 				return err
 			}
