@@ -102,6 +102,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	}
 	if o.Live != nil { // the full plan was checked; the run executes the steps of the job
 		runner.Plan, runner.Exact = o.Live.Plan(plan), true
+		runner.HostSkipped, runner.HostSkipReason = o.Live.HostSkipped(plan), live.HostSkipReason
 	}
 	insts := collectInstances(o.NewStateBase, o.LegacyStateBase)
 	project, instanceDir, err := checkoutInstance(root, branch, o.NewStateBase, o.LegacyStateBase)

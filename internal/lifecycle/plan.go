@@ -47,6 +47,11 @@ type PlanRunner struct {
 	// prepare, no implicit compose-up. A live run sets it with a plan it cut
 	// from the full plan; its caller checked and trusted the full one.
 	Exact bool
+	// HostSkipped are host exec steps a live run leaves out of Plan: they are
+	// listed skipped with HostSkipReason, and a data step among them keeps this
+	// run from deciding or running the seed.
+	HostSkipped    []knowledge.Step
+	HostSkipReason string
 }
 
 // Check refuses an untrusted host step and an unsupported mode; it touches nothing.
@@ -94,6 +99,9 @@ func (r PlanRunner) Execute() error {
 		steps = withImplicitPrepare(steps)
 	}
 	r.declare(steps)
+	for _, s := range r.HostSkipped {
+		r.skip(s, r.HostSkipReason)
+	}
 	prepared, seeded := false, false
 	for _, s := range steps {
 		var err error
@@ -205,7 +213,7 @@ func (r PlanRunner) composeUp(s knowledge.Step) (seeded bool, err error) {
 	res := UpAndSeed(r.Out, r.Err, UpSeed{
 		Run: r.Run, Root: r.Root, Main: r.Main, Branch: r.Branch, Project: r.Project, InstanceDir: r.InstanceDir,
 		NewBase: r.NewBase, LegacyBase: r.LegacyBase, Mode: r.Mode, Plan: r.Plan,
-		UpID: s.ID, UpText: StepText(s), Seed: true, Lock: true, FreshData: r.FreshData,
+		UpID: s.ID, UpText: StepText(s), Seed: !r.skipsHostSeed(), Lock: true, FreshData: r.FreshData,
 		Compose: func(stdout, stderr io.Writer) (int, error) {
 			services, err := r.upServices(stdout, s)
 			if err != nil {
@@ -224,6 +232,17 @@ func (r PlanRunner) composeUp(s knowledge.Step) (seeded bool, err error) {
 		return false, seedFailure(r.Plan, r.Root, r.Main, r.InstanceDir, r.Mode, res.SeedErr)
 	}
 	return res.Seeded, nil
+}
+
+// skipsHostSeed: a live run leaves the host data step out, so it must not
+// decide or run a seed of its own.
+func (r PlanRunner) skipsHostSeed() bool {
+	for _, s := range r.HostSkipped {
+		if s.Once == knowledge.OnceData {
+			return true
+		}
+	}
+	return false
 }
 
 // stepError is an error that already names its step and its retry.

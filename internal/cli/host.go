@@ -168,10 +168,16 @@ func hostEnviron(block string, extra ...string) []string {
 // checkHostArgv applies checkBatchArgs on Windows, where cmd.exe would
 // interpret the arguments of a .cmd or .bat target.
 func checkHostArgv(argv []string) error {
-	if runtime.GOOS != "windows" {
+	return checkHostArgvFor(runtime.GOOS, argv, exec.LookPath)
+}
+
+// checkHostArgvFor is checkHostArgv for an explicit OS and lookup, so every OS
+// can test the Windows refusal.
+func checkHostArgvFor(goos string, argv []string, lookPath func(string) (string, error)) error {
+	if goos != "windows" {
 		return nil
 	}
-	return checkBatchArgs(argv, exec.LookPath)
+	return checkBatchArgs(argv, lookPath)
 }
 
 // checkBatchArgs refuses, for a command that resolves to a .cmd or .bat file,

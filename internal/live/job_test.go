@@ -107,3 +107,35 @@ func TestJobCauseCoversChanges(t *testing.T) {
 		t.Fatalf("%+v", j.Cause)
 	}
 }
+
+// Live mode runs no host command: Plan leaves host exec steps out and
+// HostSkipped lists them, so the run can show them skipped.
+func TestJobPlanLeavesOutHostExecSteps(t *testing.T) {
+	plan := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "migrate", Kind: knowledge.KindExec, On: knowledge.OnHost, Once: knowledge.OnceSchema, Cmd: "bun run db:migrate"},
+		{ID: "seed", Kind: knowledge.KindExec, On: knowledge.OnHost, Once: knowledge.OnceData, Cmd: "bun run db:seed"},
+		{ID: "cmigrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Service: "db", Cmd: "m"},
+	}}
+	all := func(string) bool { return true }
+	j := BuildJob(plan, "container", []Change{ch("db/migrations/1/m.sql", CatMigrations, "")}, all)
+	if got := ids(j.Plan(plan)); got != "cmigrate" {
+		t.Fatalf("plan %q", got)
+	}
+	if got := ids(knowledge.Plan{Steps: j.HostSkipped(plan)}); got != "migrate" {
+		t.Fatalf("skipped %q", got)
+	}
+	j = BuildJob(plan, "container", []Change{ch("docker-compose.yml", CatCompose, "")}, all)
+	if got := ids(j.Plan(plan)); got != "prepare up" {
+		t.Fatalf("plan %q", got)
+	}
+	if got := ids(knowledge.Plan{Steps: j.HostSkipped(plan)}); got != "seed" {
+		t.Fatalf("skipped %q", got)
+	}
+	// only host steps to skip: the run is still recorded, to show why nothing ran
+	hostOnly := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: plan.Steps[:2]}
+	j = BuildJob(hostOnly, "container", []Change{ch("db/migrations/1/m.sql", CatMigrations, "")}, all)
+	if len(j.Plan(hostOnly).Steps) != 0 || j.Empty(hostOnly) {
+		t.Fatalf("plan %q empty=%v", ids(j.Plan(hostOnly)), j.Empty(hostOnly))
+	}
+}

@@ -1,0 +1,47 @@
+{
+  "branch": "BRANCH",
+  "cause": {
+    "changed": [
+      {
+        "category": "migrations",
+        "path": "db/migrations/2/m.sql"
+      }
+    ]
+  },
+  "command": "live",
+  "ended_at": "TIME",
+  "id": 2,
+  "mode": "container",
+  "outcome": "succeeded",
+  "pid": 0,
+  "project": "PROJECT",
+  "schema": 1,
+  "started_at": "TIME",
+  "steps": [
+    {
+      "ended_at": "TIME",
+      "id": "secrets",
+      "kind": "secrets",
+      "reason": "no secrets",
+      "started_at": "TIME",
+      "state": "skipped",
+      "text": "resolve secrets"
+    },
+    {
+      "id": "seed",
+      "kind": "exec",
+      "state": "pending",
+      "text": "bun run db:migrate; then bun run db:seed"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "migrate",
+      "kind": "exec",
+      "reason": "runs on the host; live mode runs no host command; run stackfork start-env",
+      "started_at": "TIME",
+      "state": "skipped",
+      "text": "bun run db:migrate  on host"
+    }
+  ],
+  "trigger": "live"
+}

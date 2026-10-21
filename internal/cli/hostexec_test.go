@@ -100,3 +100,29 @@ func TestHostExecFailsWhenTheInstanceEnvironmentIsUnavailable(t *testing.T) {
 		t.Fatalf("err %v out %q", err, out.String())
 	}
 }
+
+// On Windows a .cmd or .bat target runs through cmd.exe: a metacharacter in
+// its arguments is refused before anything starts. Every OS runs this check
+// with the OS and the lookup injected.
+func TestHostExecWindowsRefusesBatchMetacharacters(t *testing.T) {
+	cmdFile := func(string) (string, error) { return `C:\proj\node_modules\.bin\migrate.cmd`, nil }
+	exeFile := func(string) (string, error) { return `C:\Program Files\bun\bun.exe`, nil }
+	for _, c := range []string{"&", "|", "<", ">", "^", "%", "!"} {
+		err := checkHostArgvFor("windows", []string{"migrate.cmd", "up" + c + "x"}, cmdFile)
+		if err == nil || !strings.Contains(err.Error(), "cmd.exe") {
+			t.Errorf("%q: %v", c, err)
+		}
+	}
+	argv := []string{"migrate.cmd", "up%PATH%"}
+	if err := checkHostArgvFor("windows", argv, cmdFile); err == nil || !strings.Contains(err.Error(), `"up%PATH%"`) {
+		t.Fatalf("batch file with %%: %v", err)
+	}
+	if checkHostArgvFor("linux", argv, cmdFile) != nil || checkHostArgvFor("windows", []string{"bun", "run", "a&b"}, exeFile) != nil {
+		t.Fatal("only a batch target on Windows is checked")
+	}
+	// a quoted program path with spaces stays one argument
+	got, err := knowledge.SplitArgv(`"C:\Program Files\bun\bun.exe" run db:migrate`)
+	if err != nil || len(got) != 3 || got[0] != `C:\Program Files\bun\bun.exe` {
+		t.Fatalf("%q %v", got, err)
+	}
+}

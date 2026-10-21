@@ -29,11 +29,11 @@ func runHostExec(w io.Writer, project, root, instanceDir, newBase, legacyBase st
 			return 0, err
 		}
 	}
-	block, err := envBlock(project, instanceDir, newBase, legacyBase, true)
-	if err != nil {
+	if err := checkHostArgv(argv); err != nil {
 		return 0, err
 	}
-	if err := checkHostArgv(argv); err != nil {
+	block, err := envBlock(project, instanceDir, newBase, legacyBase, true)
+	if err != nil {
 		return 0, err
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)

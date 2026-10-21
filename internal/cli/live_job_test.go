@@ -171,3 +171,42 @@ func TestLiveRunNeverRunsHostSteps(t *testing.T) {
 		t.Fatal("a live run started a host step")
 	}
 }
+
+// Live mode runs no host command: a changed migration file lists the host
+// migrate as skipped, with the reason, and calls no HostExec.
+func TestLiveRunSkipsHostExecSteps(t *testing.T) {
+	steps := []knowledge.Step{
+		{ID: "prepare", Kind: knowledge.KindPrepare, Args: []string{"-f", ".agent-dev/app.compose.yaml"}},
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		hostStep("migrate", knowledge.OnceSchema, "bun run db:migrate", ""),
+		hostStep("seed", knowledge.OnceData, "bun run db:seed", ""),
+	}
+	calls := stubHostExec(t, 0)
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, steps)
+	installFakeDocker(t)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "0")
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+	if out, e, code := runCLI(t, append(base, "start-env", repo)...); code != 0 {
+		t.Fatalf("%d %s %s", code, out, e)
+	}
+	before := len(*calls)
+	opts := StartOptions{Checkout: repo, NewStateBase: state, LegacyStateBase: t.TempDir(), Mode: knowledge.ModeContainer}
+	job := live.BuildJob(knowledge.Plan{Steps: steps}, knowledge.ModeContainer, []live.Change{lc("db/migrations/2/m.sql", live.CatMigrations, "")}, allStarted)
+	if out, err := runLive(t, opts, job); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if len(*calls) != before {
+		t.Fatalf("a live run ran a host command: %v", *calls)
+	}
+	r, err := runs.Get(onlyRunDir(t, state), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const reason = "runs on the host; live mode runs no host command; run stackfork start-env"
+	if got := stepStates(r); !strings.Contains(got, "migrate=skipped:"+reason) {
+		t.Fatalf("%s", got)
+	}
+	assertGolden(t, "run-live-host-exec.json", normalizedRun(t, state, 2, repo))
+}

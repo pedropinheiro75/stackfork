@@ -128,20 +128,52 @@ func (j Job) Plan(full knowledge.Plan) knowledge.Plan {
 	out.Steps = append(out.Steps, up...)
 	if len(up) > 0 {
 		for _, s := range run {
-			if s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData {
+			if s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData && !s.IsHostExec() {
 				out.Steps = append(out.Steps, s)
 			}
 		}
 	}
 	if j.Migrate {
-		out.Steps = append(out.Steps, schemaSteps(run)...)
+		for _, s := range schemaSteps(run) {
+			if !s.IsHostExec() {
+				out.Steps = append(out.Steps, s)
+			}
+		}
 	}
 	return out
 }
 
-// Empty is true when the job has nothing to run: the changes only had notes
-// or a plan edit. No run is recorded for it.
-func (j Job) Empty(full knowledge.Plan) bool { return len(j.Plan(full).Steps) == 0 }
+// HostSkipReason is why a live run lists a host exec step as skipped.
+const HostSkipReason = "runs on the host; live mode runs no host command; run stackfork start-env"
+
+// HostSkipped are the host exec steps Plan leaves out although the job would
+// have run them: the data step beside an up, the schema steps. The run lists
+// them skipped, with HostSkipReason (design D10).
+func (j Job) HostSkipped(full knowledge.Plan) []knowledge.Step {
+	run, _ := full.ForMode(j.Mode)
+	var out []knowledge.Step
+	if j.Compose || len(j.Rebuild) > 0 {
+		for _, s := range run {
+			if s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData && s.IsHostExec() {
+				out = append(out, s)
+			}
+		}
+	}
+	if j.Migrate {
+		for _, s := range schemaSteps(run) {
+			if s.IsHostExec() {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// Empty is true when the job has nothing to run or to show: the changes only
+// had notes or a plan edit. No run is recorded for it.
+func (j Job) Empty(full knowledge.Plan) bool {
+	return len(j.Plan(full).Steps) == 0 && len(j.HostSkipped(full)) == 0
+}
 
 // UpArgs are the build flag and the service list for the live run's `up`.
 // services is what the compose-up step starts (nil: all).
