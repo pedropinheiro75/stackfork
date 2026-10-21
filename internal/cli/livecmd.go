@@ -151,64 +151,11 @@ func liveRepo(arg, rootArg, newBase, legacyBase string) (string, error) {
 }
 
 func liveOn(stdout io.Writer, main, newBase, legacyBase string) (int, error) {
-	cfg, err := config.Load()
+	hasOP, code, err := liveOnCheck(main, newBase, legacyBase)
 	if err != nil {
-		return 0, err
+		return code, err
 	}
-	// Secrets: the dashboard has no shell environment (add-secret-vault D4).
-	rows, err := lifecycle.SecretRows(main, false, nil, nil, newBase, legacyBase)
-	if err != nil {
-		return 0, err
-	}
-	var envRefs []string
-	hasOP := false
-	for _, r := range rows {
-		switch {
-		case strings.HasPrefix(r.Reference, "env:"):
-			envRefs = append(envRefs, r.Name)
-		case strings.HasPrefix(r.Reference, "op://"):
-			hasOP = true
-		}
-	}
-	if len(envRefs) > 0 {
-		return 1, fmt.Errorf("live mode cannot resolve env: references (the dashboard does not see your shell environment): %s\n"+
-			"store each value with `stackfork secret set ITEM`, then map it with `stackfork secret map %s NAME=keychain:ITEM`",
-			strings.Join(envRefs, ", "), main)
-	}
-	// Trust: a plan whose host or prepare steps are not trusted here never runs.
-	var plan knowledge.Plan
-	k, err := knowledge.LoadFirst(main, main)
-	if err != nil {
-		return 1, fmt.Errorf("knowledge.json: %w", err)
-	}
-	if k != nil {
-		plan = k.Plan
-	}
-	if ok, _ := lifecycle.HashTrusted(newBase, main, plan); !ok {
-		return 1, fmt.Errorf("the plan needs trust on this machine before live mode can run it:\n%s\nreview it, then run `stackfork plan --trust`",
-			strings.Join(lifecycle.ReadableDiff(newBase, main, plan), "\n"))
-	}
-	// Watch set and overrides, for every instance (or the checkout alone).
-	ts, err := liveTargets(newBase, legacyBase, main)
-	if err != nil {
-		return 0, err
-	}
-	if len(ts) == 0 {
-		ts = []live.Target{{Main: main, Root: main}}
-	}
-	for _, t := range ts {
-		if _, _, err := live.Prepare(t); err != nil {
-			return 1, fmt.Errorf("live mode cannot watch %s: %w", t.Root, err)
-		}
-	}
-
-	if err := cfg.SetLive(main); err != nil {
-		return 0, err
-	}
-	if err := cfg.Save(); err != nil {
-		return 0, err
-	}
-	if err := live.Resume(newBase, main); err != nil {
+	if err := liveOnWrite(main, newBase); err != nil {
 		return 0, err
 	}
 	fmt.Fprintf(stdout, "live mode on for %s\n", main)
@@ -221,6 +168,74 @@ func liveOn(stdout io.Writer, main, newBase, legacyBase string) (int, error) {
 		fmt.Fprintln(stdout, "paused: dashboard not running; start it with stackfork dashboard")
 	}
 	return 0, nil
+}
+
+// liveOnCheck runs the checks before live mode is turned on (D12, D13): the
+// secret references, the trust of the plan, and the watch set. The dashboard
+// runs it before its dialog. code is the exit code of a refusal.
+func liveOnCheck(main, newBase, legacyBase string) (hasOP bool, code int, err error) {
+	// Secrets: the dashboard has no shell environment (add-secret-vault D4).
+	rows, err := lifecycle.SecretRows(main, false, nil, nil, newBase, legacyBase)
+	if err != nil {
+		return false, 0, err
+	}
+	var envRefs []string
+	for _, r := range rows {
+		switch {
+		case strings.HasPrefix(r.Reference, "env:"):
+			envRefs = append(envRefs, r.Name)
+		case strings.HasPrefix(r.Reference, "op://"):
+			hasOP = true
+		}
+	}
+	if len(envRefs) > 0 {
+		return false, 1, fmt.Errorf("live mode cannot resolve env: references (the dashboard does not see your shell environment): %s\n"+
+			"store each value with `stackfork secret set ITEM`, then map it with `stackfork secret map %s NAME=keychain:ITEM`",
+			strings.Join(envRefs, ", "), main)
+	}
+	// Trust: a plan whose host or prepare steps are not trusted here never runs.
+	var plan knowledge.Plan
+	k, err := knowledge.LoadFirst(main, main)
+	if err != nil {
+		return false, 1, fmt.Errorf("knowledge.json: %w", err)
+	}
+	if k != nil {
+		plan = k.Plan
+	}
+	if ok, _ := lifecycle.HashTrusted(newBase, main, plan); !ok {
+		return false, 1, fmt.Errorf("the plan needs trust on this machine before live mode can run it:\n%s\nreview it, then run `stackfork plan --trust`",
+			strings.Join(lifecycle.ReadableDiff(newBase, main, plan), "\n"))
+	}
+	// Watch set and overrides, for every instance (or the checkout alone).
+	ts, err := liveTargets(newBase, legacyBase, main)
+	if err != nil {
+		return false, 0, err
+	}
+	if len(ts) == 0 {
+		ts = []live.Target{{Main: main, Root: main}}
+	}
+	for _, t := range ts {
+		if _, _, err := live.Prepare(t); err != nil {
+			return false, 1, fmt.Errorf("live mode cannot watch %s: %w", t.Root, err)
+		}
+	}
+
+	return hasOP, 0, nil
+}
+
+// liveOnWrite stores the setting and clears a pause.
+func liveOnWrite(main, newBase string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if err := cfg.SetLive(main); err != nil {
+		return err
+	}
+	if err := cfg.Save(); err != nil {
+		return err
+	}
+	return live.Resume(newBase, main)
 }
 
 // liveRepoJSON is one repository of `live status --json`.

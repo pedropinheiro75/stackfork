@@ -43,6 +43,9 @@ type actionResponse struct {
 	// Run and FailedStep end a streamed Start (design.md D12).
 	Run        int    `json:"run,omitempty"`
 	FailedStep string `json:"failed_step,omitempty"`
+	// Command is what a person runs in a terminal when the page cannot
+	// (no native dialog): the page shows it to copy.
+	Command string `json:"command,omitempty"`
 }
 
 // validActions is design.md D4's whole action set. Nothing outside this

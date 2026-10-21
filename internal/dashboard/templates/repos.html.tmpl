@@ -32,7 +32,7 @@
     <div class="repo-row">
       <button type="button" class="repo-toggle" data-key="{{$r.Path}}/toggle" data-toggle-repo aria-expanded="false" aria-controls="repo-panel-{{$i}}" title="{{$r.Path}}">
         <span class="chevron-glyph" aria-hidden="true"></span>
-        <span class="repo-id"><span class="repo-name">{{$r.Name}}</span>{{if $r.Group}}<span class="repo-folder">{{$r.Group}}</span>{{end}}</span>
+        <span class="repo-id"><span class="repo-name">{{$r.Name}}</span>{{if and $row.Live.Show $row.Live.Enabled}}<span class="live-tag{{if eq $row.Live.State "paused"}} live-tag-attention{{end}}" title="Live mode: {{$row.Live.Chip.Label}}">Live</span>{{end}}{{if $r.Group}}<span class="repo-folder">{{$r.Group}}</span>{{end}}</span>
       </button>
       <span class="repo-status"><span class="chip chip-{{$c.Class}}" title="{{if $c.Title}}{{$c.Title}}{{else}}{{$r.ReadinessReason}}{{end}}"><span class="chip-glyph" aria-hidden="true">{{$c.Glyph}}</span>{{$c.Label}}</span></span>
       <span class="repo-counts">
@@ -54,6 +54,20 @@
     <div class="repo-panel" id="repo-panel-{{$i}}" hidden>
       <div class="repo-errors" data-repo-errors></div>
       <p class="repo-meta"><span class="mono" title="{{$r.Path}}">{{tilde $r.Path}}</span><span class="dot" aria-hidden="true">&middot;</span><span>default <code class="mono">{{$r.DefaultBranch}}</code></span></p>
+      {{with $row.Live}}{{if .Show}}
+      <div class="live-bar" data-live="{{.State}}" data-live-repo="{{$r.Path}}">
+        <button type="button" role="switch" class="switch" aria-checked="{{.Enabled}}" data-live-op="{{if .Enabled}}off{{else}}on{{end}}" data-repo="{{$r.Path}}" data-key="{{$r.Path}}/live"{{if eq .State "elsewhere"}} disabled title="Another dashboard runs live mode"{{end}} aria-label="Live mode for {{$r.Name}}"><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span><span class="switch-label">Live</span></button>
+        <span class="chip chip-{{.Chip.Class}}"{{if .Chip.Title}} title="{{.Chip.Title}}"{{end}}><span class="chip-glyph" aria-hidden="true">{{.Chip.Glyph}}</span>{{.Chip.Label}}</span>
+        {{if eq .State "paused"}}<span class="small muted live-reason">{{.Reason}}</span>
+        <button type="button" class="btn" data-live-op="resume" data-repo="{{$r.Path}}" data-key="{{$r.Path}}/live/resume">Resume</button>
+        {{if .Trust}}<button type="button" class="btn" data-key="{{$r.Path}}/live/trust" data-run="stackfork --root {{shq $r.Path}} plan --trust" title="asks for confirmation and shows every step it trusts">Trust on this machine</button>{{end}}{{end}}
+        {{if .Enabled}}<span class="live-cleanup"><label class="plan-mode"><span class="small muted">Branch cleanup</span> <select data-cleanup-for="{{$r.Path}}" data-key="{{$r.Path}}/cleanup" aria-label="Branch cleanup for {{$r.Name}}">{{$m := .Setting.Mode}}{{range $.CleanupModes}}<option value="{{.}}"{{if eq . $m}} selected{{end}}>{{.}}</option>{{end}}</select></label>
+        {{if eq .Setting.Mode "auto"}}<label class="plan-mode"><span class="small muted">after</span> <input type="number" min="1" max="720" value="{{.Setting.GraceHours}}" data-cleanup-grace data-key="{{$r.Path}}/cleanup/grace" aria-label="Grace period in hours for {{$r.Name}}"> <span class="small muted">h</span></label>{{end}}
+        {{if ne .Setting.Mode "off"}}<label class="plan-mode"><input type="checkbox" data-cleanup-delete data-key="{{$r.Path}}/cleanup/delete"{{if .Setting.DeleteBranch}} checked{{end}} aria-label="Also delete the local branch of {{$r.Name}}"> <span class="small muted">delete branch</span></label>{{end}}</span>{{end}}
+      </div>
+      {{if .Trust}}{{if .Diff}}<pre class="mono-log live-diff">{{range .Diff}}{{.}}
+{{end}}</pre>{{end}}{{end}}
+      {{end}}{{end}}
       {{if not $ready}}
       <div class="callout" data-setup-callout>
         <span class="callout-glyph" aria-hidden="true">&#9675;</span>
@@ -151,7 +165,7 @@
           </span>
           <span class="wt-path mono" title="{{$w.Path}}">{{relPath $r.Path $w.Path}}</span>
           <span class="wt-ab">{{template "aheadbehind" $w}}</span>
-          <span class="wt-state">{{if $w.Instance}}{{$c := stateChip $w.Instance.State}}<a href="#" class="instance-link" data-project="{{$w.Instance.Project}}" data-key="{{$r.Path}}/wt/{{$w.Path}}/state" title="Show {{$w.Instance.Project}} on Instances"><span class="chip chip-{{$c.Class}}"><span class="chip-glyph" aria-hidden="true">{{$c.Glyph}}</span>{{$c.Label}}</span></a>{{else}}<span class="chip chip-off"><span class="chip-glyph" aria-hidden="true">&#9675;</span>No stack</span>{{end}}</span>
+          {{$lw := $row.Live.WorktreeFor $w.Path}}<span class="wt-state"{{if and $lw $lw.Behind}} title="&#9650; {{$lw.Behind}}"{{else if and $lw $lw.Switched}} title="&#9650; Branch switched"{{end}}>{{if $w.Instance}}{{$c := stateChip $w.Instance.State}}<a href="#" class="instance-link" data-project="{{$w.Instance.Project}}" data-key="{{$r.Path}}/wt/{{$w.Path}}/state" title="Show {{$w.Instance.Project}} on Instances"><span class="chip chip-{{$c.Class}}"><span class="chip-glyph" aria-hidden="true">{{$c.Glyph}}</span>{{$c.Label}}</span></a>{{else}}<span class="chip chip-off"><span class="chip-glyph" aria-hidden="true">&#9675;</span>No stack</span>{{end}}</span>
           <span class="wt-actions">
             {{if and $w.Instance (isRunning $w.Instance.State)}}<a href="#" class="btn instance-link" data-project="{{$w.Instance.Project}}" data-key="{{$r.Path}}/wt/{{$w.Path}}/show">Show instance</a>
             {{else if $ready}}<button type="button" class="btn" data-key="{{$r.Path}}/wt/{{$w.Path}}/start" data-repo-action="start" data-repo="{{$r.Path}}" data-path="{{$w.Path}}">Start</button>
@@ -165,6 +179,9 @@
 </div></div>
           </span>
         </div>
+        {{with $lw}}{{if or .Note .Switched}}
+        <div class="callout callout-attention wt-note" data-wt-note="{{$w.Path}}"><span class="callout-glyph" aria-hidden="true">&#9650;</span><div class="callout-body"><p class="callout-title">{{if .Switched}}Branch switched{{else if .Behind}}{{.Behind}}{{else}}Live mode{{end}}</p>{{if .Note}}<p class="callout-detail">{{.Note}}</p>{{end}}{{if .Command}}<p class="command-row"><code class="mono copyable" data-copy="{{.Command}}" data-key="{{$r.Path}}/wt/{{$w.Path}}/note/cmd" title="click to copy">{{.Command}}</code></p>{{end}}</div></div>{{end}}{{end}}
+        {{with $row.Live.CleanupNoteFor $w.Path}}{{template "cleanupnote" .}}{{end}}
         {{end}}
       </div>
 

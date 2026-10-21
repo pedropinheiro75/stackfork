@@ -2,9 +2,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
+	"strings"
+	"sync/atomic"
 
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/live"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -70,3 +75,36 @@ func startLiveLoop(newBase, legacyBase string, profiles []string, srv *dashboard
 
 // heldLock is state.Held under a name the live commands share.
 func heldLock(path string) bool { return state.Held(path) }
+
+// dashboardLive backs the page's Live switch (add-live-mode D14). The loop
+// does not exist yet when the server is built, so Status reads it through a
+// pointer the dashboard command fills once the loop runs.
+func dashboardLive(newBase, legacyBase string, loop *atomic.Pointer[live.Loop]) *dashboard.LiveOps {
+	return &dashboard.LiveOps{
+		Status: func() live.Status {
+			if l := loop.Load(); l != nil {
+				return l.Status()
+			}
+			return live.Status{}
+		},
+		Prepare: func(main string) error {
+			_, _, err := liveOnCheck(main, newBase, legacyBase)
+			return err
+		},
+		Enable: func(main string) error { return liveOnWrite(main, newBase) },
+		Resume: func(main string) error {
+			var plan knowledge.Plan
+			k, err := knowledge.LoadFirst(main, main)
+			if err != nil {
+				return err
+			}
+			if k != nil {
+				plan = k.Plan
+			}
+			if ok, _ := lifecycle.HashTrusted(newBase, main, plan); !ok {
+				return errors.New("Plan changed; host steps need trust:\n" + strings.Join(lifecycle.ReadableDiff(newBase, main, plan), "\n"))
+			}
+			return live.Resume(newBase, main)
+		},
+	}
+}

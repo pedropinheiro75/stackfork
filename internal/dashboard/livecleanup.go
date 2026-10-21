@@ -34,7 +34,7 @@ type LiveCleanup struct {
 	SettingText func(main string, cl config.Cleanup) (string, error)
 }
 
-// liveRequest is POST /api/live's body. 6.1 adds on, off and resume.
+// liveRequest is POST /api/live's body.
 type liveRequest struct {
 	Repo         string `json:"repo"`
 	Op           string `json:"op"`
@@ -77,6 +77,9 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Op {
+	case "on", "off", "resume":
+		s.handleLiveSwitch(w, repo, req.Op)
+		return
 	case "cleanup", "clean", "keep":
 	default:
 		writeActionResult(w, http.StatusBadRequest, actionResponse{Message: "unknown op"})

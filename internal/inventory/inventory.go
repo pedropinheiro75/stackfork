@@ -210,6 +210,9 @@ type Instance struct {
 	SeedStep string `json:"seed_step,omitempty"`
 	// LastRun is the newest run of the instance (design.md D14); nil when it has none.
 	LastRun *LastRun `json:"last_run,omitempty"`
+	// Cleanup is the branch-cleanup callout of this instance's worktree
+	// (add-live-mode D20); the dashboard fills it from the live loop.
+	Cleanup *CleanupNote `json:"cleanup,omitempty"`
 
 	// Recipe inputs recorded at prepare, kept out of the JSON: a sibling
 	// worktree's recipe is derived from them (add-repo-browser D6a).
@@ -862,6 +865,19 @@ func toStatusRows(rows []containerRow) []compose.StatusRow {
 		})
 	}
 	return out
+}
+
+// CleanupNote is what the card says about a merged or closed branch: Title is
+// the callout's words, Ask names its buttons ("suggest": Clean up and Keep;
+// "auto": Clean up now and Keep; "": a warning only).
+type CleanupNote struct {
+	Repo   string `json:"repo"` // main checkout
+	Path   string `json:"path"` // the worktree
+	Branch string `json:"branch"`
+	Title  string `json:"title"`
+	PR     int    `json:"pr,omitempty"`
+	URL    string `json:"url,omitempty"`
+	Ask    string `json:"ask,omitempty"`
 }
 
 // LastRun summarizes the newest run recorded for an instance. Beyond the

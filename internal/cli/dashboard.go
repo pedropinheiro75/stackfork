@@ -26,6 +26,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/live"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/proxy"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
@@ -103,6 +104,8 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 		return p.Describe(), p.Blocked, err
 	}
 	srv.LiveCleanup = dashboardCleanup(newStateBase, legacyStateBase)
+	var liveLoop atomic.Pointer[live.Loop]
+	srv.Live = dashboardLive(newStateBase, legacyStateBase, &liveLoop)
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
 
@@ -162,6 +165,7 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	go startRegistration()
 	go srv.Warm() // first collection and repo scan, off the request path
 	loop, stopLoop, loopDone := startLiveLoop(newStateBase, legacyStateBase, profiles, srv)
+	liveLoop.Store(loop)
 	defer func() { stopLoop(); <-loopDone }()
 	if *openFlag {
 		openBrowser("http://" + addr)

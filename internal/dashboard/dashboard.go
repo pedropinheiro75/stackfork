@@ -29,7 +29,7 @@ import (
 //go:embed static
 var staticFS embed.FS
 
-//go:embed templates/index.html.tmpl templates/instances.html.tmpl
+//go:embed templates/index.html.tmpl templates/instances.html.tmpl templates/cleanup.html.tmpl
 var indexTemplateSrc embed.FS
 
 // indexFuncs is the small set of view helpers the template needs beyond
@@ -71,7 +71,12 @@ func parseIndexTemplate() *template.Template {
 	if err != nil {
 		panic(err)
 	}
+	note, err := indexTemplateSrc.ReadFile("templates/cleanup.html.tmpl")
+	if err != nil {
+		panic(err)
+	}
 	template.Must(t.Parse(string(page)))
+	template.Must(t.New("cleanup.html.tmpl").Parse(string(note)))
 	template.Must(t.New("instances.html.tmpl").Parse(leadingBreaks.ReplaceAllString(string(cards), "")))
 	return t
 }
@@ -98,6 +103,8 @@ type Server struct {
 	ResetPreview ResetPreviewFunc
 	// LiveCleanup backs the cleanup ops of POST /api/live; nil answers 503.
 	LiveCleanup *LiveCleanup
+	// Live backs the Live switch and the live state on the page; nil hides it.
+	Live *LiveOps
 
 	mux      http.Handler
 	cache    *inventoryCache
@@ -196,9 +203,11 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 // collect returns the cached inventory (2 s TTL, one collection in flight
 // at a time - design.md D2), scoped to this server's state directories.
 func (s *Server) collect() (inventory.Inventory, error) {
-	return s.cache.get(inventory.Options{
+	inv, err := s.cache.get(inventory.Options{
 		NewStateBase: s.NewStateBase, LegacyStateBase: s.LegacyStateBase, Version: s.Version,
 	})
+	inv.Instances = s.decorateCleanup(inv.Instances)
+	return inv, err
 }
 
 func (s *Server) handleInstances(w http.ResponseWriter, r *http.Request) {

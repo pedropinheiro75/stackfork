@@ -26,7 +26,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 )
 
-//go:embed templates/repos.html.tmpl
+//go:embed templates/repos.html.tmpl templates/cleanup.html.tmpl
 var reposTemplateSrc embed.FS
 
 var reposFuncs = template.FuncMap{
@@ -268,7 +268,7 @@ func firstSetup(rs []repoView) string {
 }
 
 var reposTemplate = template.Must(
-	template.New("repos.html.tmpl").Funcs(reposFuncs).ParseFS(reposTemplateSrc, "templates/repos.html.tmpl"))
+	template.New("repos.html.tmpl").Funcs(reposFuncs).ParseFS(reposTemplateSrc, "templates/repos.html.tmpl", "templates/cleanup.html.tmpl"))
 
 // StartFunc starts the instance of one checkout, writing progress lines to
 // out. The CLI supplies it (cli.StartEnv), so the page and the command run
@@ -369,7 +369,8 @@ func (s *Server) handleRepos(w http.ResponseWriter, r *http.Request) {
 	res, scanning := s.currentRepos()
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Stackfork-Scanning", strconv.FormatBool(scanning))
-	w.Write(repos.Marshal(res)) //nolint:errcheck // client gone
+	cfg, _ := config.Load()
+	w.Write(s.reposJSON(res, cfg)) //nolint:errcheck // client gone
 }
 
 type repoView struct {
@@ -378,6 +379,7 @@ type repoView struct {
 	Recipe  recipeView
 	Plan    *planView
 	Secrets []secretView
+	Live    liveView
 }
 
 type reposPage struct {
@@ -385,12 +387,15 @@ type reposPage struct {
 	Rows       []repoView
 	FirstSetup string
 	Scanning   bool
+	// CleanupModes are the options of the cleanup selector.
+	CleanupModes []string
 }
 
 func (s *Server) handleReposFragment(w http.ResponseWriter, r *http.Request) {
 	res, scanning := s.currentRepos()
-	page := reposPage{Result: res, Scanning: scanning}
+	page := reposPage{Result: res, Scanning: scanning, CleanupModes: []string{config.CleanupOff, config.CleanupSuggest, config.CleanupAuto}}
 	cfg, _ := config.Load()
+	lives := s.liveViews(res.Repos, cfg)
 	for _, repo := range sortRepos(res.Repos) {
 		var b strings.Builder
 		b.WriteString(repo.Group + " " + repo.Name)
@@ -400,7 +405,7 @@ func (s *Server) handleReposFragment(w http.ResponseWriter, r *http.Request) {
 		for _, w := range repo.Worktrees {
 			b.WriteString(" " + w.Branch)
 		}
-		page.Rows = append(page.Rows, repoView{Repo: repo, Search: strings.ToLower(b.String()), Recipe: s.repoRecipe(repo), Plan: s.repoPlan(repo, cfg), Secrets: s.repoSecrets(repo, cfg)})
+		page.Rows = append(page.Rows, repoView{Repo: repo, Search: strings.ToLower(b.String()), Recipe: s.repoRecipe(repo), Plan: s.repoPlan(repo, cfg), Secrets: s.repoSecrets(repo, cfg), Live: lives[repo.Path]})
 	}
 	page.FirstSetup = firstSetup(page.Rows)
 	s.renderFragment(w, "repos", page)
