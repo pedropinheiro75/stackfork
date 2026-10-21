@@ -18,6 +18,8 @@ You open a second Git worktree of a project and run `docker compose up`. It coll
 
 **stackfork takes the Compose stack you already have and isolates it for each checkout and branch.** Each copy gets its own ports, volumes, network and container names. A person and an agent, or five agents, can run the same project at the same time on one machine without coordination.
 
+With live mode, stackfork is also GitOps for your local environments: the repository is the only desired state, and running instances follow it. Live mode reconciles only while the dashboard runs.
+
 <img src="docs/demo.gif" alt="Terminal demo: two Git worktrees of one project each start with stackfork up, then stackfork list shows both instances running, and both app URLs answer in the browser">
 
 ## Install
@@ -153,6 +155,19 @@ stackfork secret check                                        # resolves | missi
 ```
 
 `keychain:` uses the macOS Keychain, the Linux Secret Service (`secret-tool`) or the Windows Credential Manager (target `stackfork/ITEM`, at most 2560 bytes). `op://VAULT/ITEM/FIELD` reads from 1Password with `op`. Every run starts with a `secrets` step that fails before any Docker command and lists each problem with the command that fixes it. A Start from the dashboard does not see your shell, so use the keychain or 1Password for those values. The dashboard's Repos panel has a Secrets table with a hidden-answer **Set value…** dialog.
+
+## Live mode
+
+Live mode keeps the running instances of one repository in step with their checkouts. Turn it on with `stackfork live on` or the **Live** switch in the Repos view. While the dashboard runs, stackfork fetches each upstream, fast-forwards a clean checkout, and then rebuilds or restarts what changed: images when a Dockerfile or lockfile changes, the Compose model when a Compose or adapter file changes, and the schema when a migration file changes. Each reconcile is a recorded run (`stackfork runs`).
+
+Live mode has limits:
+
+- It runs only while the dashboard process runs. When the dashboard stops, nothing reconciles. On its next start, the dashboard reconciles what changed meanwhile, once.
+- The repository is the only desired state. Live mode does not start a stopped instance, create an instance for a new branch, follow a branch switch, run host steps, or roll back a failed change.
+- A failed run pauses live mode for the repository until you choose **Resume**.
+- A person turns live mode on. The guard blocks `live on` for agents. Read [SECURITY.md](SECURITY.md) first: a commit pushed upstream runs on this machine after `live on`.
+
+When a worktree's branch is merged into the default branch, live mode can offer to clean it up (the worktree, the instance's volumes and, optionally, the local branch). See `stackfork live cleanup` in [references/commands.md](references/commands.md).
 
 ## Dashboard
 
