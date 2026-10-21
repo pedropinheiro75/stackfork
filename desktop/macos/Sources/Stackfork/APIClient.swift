@@ -69,6 +69,8 @@ enum ActionOutcome: Equatable, Sendable {
     case failed(String)
     /// 403: the token changed; wait for the next ready line instead of retrying.
     case tokenChanged
+    /// Another 403 (`origin not allowed`, a `Host` refusal): not a token change.
+    case refused(String)
     case transport(String)
 }
 
@@ -117,7 +119,9 @@ final class APIClient: Sendable {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             switch status {
             case 409: return .alreadyRunning
-            case 403: return .tokenChanged
+            case 403:
+                let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                return text.contains("token") ? .tokenChanged : .refused(text.isEmpty ? "forbidden" : text)
             default: break
             }
             struct Reply: Decodable { let ok: Bool?; let message: String? }

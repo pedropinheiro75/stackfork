@@ -109,10 +109,13 @@ final class DashboardWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, W
         route(navigationAction.request.url, mainFrame: navigationAction.targetFrame?.isMainFrame ?? true)
     }
 
-    /// `target="_blank"` and `window.open`: the same rule, and never a new web view.
+    /// `target="_blank"` and `window.open`: the same rule, and never a new web
+    /// view. A link of the dashboard's own origin loads in the current one.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        _ = route(navigationAction.request.url, mainFrame: true)
+        if route(navigationAction.request.url, mainFrame: true) == .allow {
+            webView.load(navigationAction.request)
+        }
         return nil
     }
 

@@ -52,6 +52,8 @@ import Testing
         #expect(await client().perform(.up, project: "p") == .alreadyRunning)
         FakeURLProtocol.reset { _ in (403, Data("missing or invalid token\n".utf8)) }
         #expect(await client().perform(.up, project: "p") == .tokenChanged)
+        FakeURLProtocol.reset { _ in (403, Data("origin not allowed\n".utf8)) }
+        #expect(await client().perform(.up, project: "p") == .refused("origin not allowed"))
         FakeURLProtocol.reset { _ in (200, Data(#"{"ok":false,"message":"compose failed"}"#.utf8)) }
         #expect(await client().perform(.up, project: "p") == .failed("compose failed"))
         FakeURLProtocol.reset { _ in (500, Data("boom\n".utf8)) }

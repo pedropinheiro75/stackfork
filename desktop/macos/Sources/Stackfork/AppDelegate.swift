@@ -12,7 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pending: [String: InstanceAction] = [:]
     private var usedDefaultPath = false
     private var startupError: String?
-    private var quitAlert: NSAlert?
+    private let presenter: any AlertPresenting = PanelAlertPresenter()
+    private var quit: QuitCoordinator?
     private var logWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -52,7 +53,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let supervisor = Supervisor(launcher: launcher, scheduler: scheduler)
         supervisor.onChange = { [weak self] in self?.statusMenu?.rebuildIfOpen() }
         supervisor.onReady = { [weak self] ready in self?.dashboardReady(ready) }
-        supervisor.onWaiting = { [weak self] count in self?.showQuitSheet(count) }
         self.supervisor = supervisor
         supervisor.start()
     }
@@ -104,19 +104,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             break // a changed token means a new ready line is coming
         case .alreadyRunning:
             alert("An action is already running for this instance.", offerDashboard: false)
+        case .refused(let message):
+            alert("The dashboard refused the request: \(message)", offerDashboard: true)
         case .failed(let message), .transport(let message):
             alert(message, offerDashboard: true)
         }
     }
 
     private func alert(_ message: String, offerDashboard: Bool) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = message
-        alert.addButton(withTitle: "OK")
-        if offerDashboard { alert.addButton(withTitle: "Open Dashboard") }
-        NSApp.activate()
-        if alert.runModal() == .alertSecondButtonReturn { window.show() }
+        // Never modal: see AlertPresenting.
+        _ = presenter.present(AlertSpec(message: message, buttons: offerDashboard ? ["OK", "Open Dashboard"] : ["OK"])) { [weak self] index in
+            if index == 1 { self?.window.show() }
+        }
     }
 
     private func toggleLogin() {
@@ -148,28 +147,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Quit (D7)
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let supervisor, supervisor.state != .quitting else {
-            return supervisor == nil ? .terminateNow : .terminateLater
-        }
-        supervisor.quit { [weak self] in
-            if let self, self.quitAlert != nil { NSApp.abortModal() }
-            Task { @MainActor in NSApp.reply(toApplicationShouldTerminate: true) } // never inside applicationShouldTerminate
+        guard let supervisor else { return .terminateNow }
+        if quit == nil {
+            quit = QuitCoordinator(supervisor: supervisor, presenter: presenter) {
+                Task { @MainActor in NSApp.reply(toApplicationShouldTerminate: true) } // never inside applicationShouldTerminate
+            }
+            quit?.begin()
         }
         return .terminateLater
-    }
-
-    private func showQuitSheet(_ count: Int) {
-        guard quitAlert == nil else { return }
-        let alert = NSAlert()
-        alert.messageText = "Waiting for \(count) running action(s) to finish"
-        alert.informativeText = "Quit Now stops them."
-        alert.addButton(withTitle: "Quit Now")
-        quitAlert = alert
-        Task { [weak self] in
-            NSApp.activate()
-            if alert.runModal() == .alertFirstButtonReturn { self?.supervisor?.quitNow() }
-            self?.quitAlert = nil
-        }
     }
 
     // MARK: Main menu: App, Edit and Window, so Command-C and Command-V work in the web view
