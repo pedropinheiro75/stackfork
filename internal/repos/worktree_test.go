@@ -186,3 +186,13 @@ func TestPromptUsesTheCheckoutThatHasTheBranch(t *testing.T) {
 		t.Fatalf("a branch checked out nowhere needs a worktree:\n%s", p)
 	}
 }
+
+// entry-links task 6.1: the copied prompt asks for the entry and the links.
+func TestPromptNamesEntryAndLinks(t *testing.T) {
+	p := Prompt("acme-web", t.TempDir(), "main")
+	for _, want := range []string{"the local URLs that matter", "stackfork learn record entry", "learn record link", "Storybook"} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("prompt lacks %q:\n%s", want, p)
+		}
+	}
+}

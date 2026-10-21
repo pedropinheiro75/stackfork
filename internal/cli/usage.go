@@ -38,7 +38,7 @@ var commandSummaries = []struct{ name, summary string }{
 	{"learn", "scan a project; record/verify what you learned"},
 	{"plan", "print the startup plan for a mode; --trust records per-machine trust in its host steps"},
 	{"host", "run a host app on a stable port, routed and with this instance's env"},
-	{"open", "open this instance's app in the browser (--print: just the URL)"},
+	{"open", "open this instance's app, a named link or a service in the browser (--print: just the URL)"},
 	{"env", "print this instance's env vars (for a host-run app)"},
 	{"clone-db", "seed this instance's database from another instance or a dump"},
 	{"seed", "run the recorded seed_once command once (--force to rerun, --mark-done to record it as done)"},

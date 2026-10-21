@@ -35,7 +35,7 @@ stackfork status
 ```
 
 ### urls
-This instance's URLs.
+This instance's URLs. The recorded entry (`App: ...`) and the named links come first, then the endpoint lines; an entry that is only guessed is marked `guessed` with the `learn record entry` command, and a recorded target the stack lacks is a warning on stderr.
 ```sh
 stackfork urls
 ```
@@ -81,9 +81,11 @@ stackfork logs app --tail 200 --follow
 
 ### learn
 Scan a project and record/verify what you learned (`.stackfork/knowledge.json`).
-Sub-forms: `learn` (scan), `learn record answer <question> <answer>`, `learn record gotcha <problem> <fix>`, `learn record recipe --prepare ... --up ... [--migrate ...] [--seed-once ...|none] [--seed-service ...] [--login ...]` (an alias that writes steps and marks the plan recorded; a seed step the scan proposed stays in the recorded plan, so it will run, until you record `--seed-once none`), `learn record step --id ID --kind K [--cmd ...] [--service ...] [--once data|schema|none] [--modes a,b] [--exclude a,b] [--name ...] [--dir ...] [--port-env A,B] [--port N] [--args A,B] [--text ...] [--before ID]` or `--remove ID`, `learn record secret NAME [--hint TEXT]` or `--remove NAME` (declares a secret NAME the project needs, with a hint for the person; names only, never a reference or a value, which stay in the machine config), `learn record live-watch PATH --action rebuild|prepare|migrate [--service S]` or `--remove PATH` (a live-mode watch override; `rebuild` needs `--service`; PATH is relative to the checkout), `learn record live-ignore PATH` or `--remove PATH` (stop watching a default path), `learn record fact migration-dir PATH` or `--remove PATH` (a migration directory the scan missed), `learn verify --check ... --confirm ...`
+Sub-forms: `learn` (scan), `learn record answer <question> <answer>`, `learn record gotcha <problem> <fix>`, `learn record recipe --prepare ... --up ... [--migrate ...] [--seed-once ...|none] [--seed-service ...] [--login ...]` (an alias that writes steps and marks the plan recorded; a seed step the scan proposed stays in the recorded plan, so it will run, until you record `--seed-once none`), `learn record step --id ID --kind K [--cmd ...] [--service ...] [--once data|schema|none] [--modes a,b] [--exclude a,b] [--name ...] [--dir ...] [--port-env A,B] [--port N] [--args A,B] [--text ...] [--before ID]` or `--remove ID`, `learn record entry --service S --port N [--path P]` or `--none` or `--remove` (the app's entry: a Compose service and its container port; checked against the prepared instance), `learn record link NAME (--path P | --service S --port N [--path P])` or `--remove NAME` (a named quick link: a path on the entry, or another service of the stack; a path is relative and starts with one `/`), `learn record secret NAME [--hint TEXT]` or `--remove NAME` (declares a secret NAME the project needs, with a hint for the person; names only, never a reference or a value, which stay in the machine config), `learn record live-watch PATH --action rebuild|prepare|migrate [--service S]` or `--remove PATH` (a live-mode watch override; `rebuild` needs `--service`; PATH is relative to the checkout), `learn record live-ignore PATH` or `--remove PATH` (stop watching a default path), `learn record fact migration-dir PATH` or `--remove PATH` (a migration directory the scan missed), `learn verify --check ... --confirm ...` (needs a recorded entry or `none`, and a running instance: the entry and each link are probed once; see `references/learning.md`)
 ```sh
 stackfork learn
+stackfork learn record entry --service nginx --port 80 --path /app
+stackfork learn record link Email --service smtp4dev --port 80
 stackfork learn record secret NPM_TOKEN --hint "GitHub Packages read token"
 stackfork learn verify --check "database identity" --check "app readiness" --confirm "yes, it works"
 ```
@@ -107,7 +109,7 @@ stackfork env --format dotenv > .env.local
 ```
 
 ### open
-Open this instance's primary app URL in the browser (the portless one when the proxy routes it); `--print` only prints it. Add a SERVICE to open that service's URL instead.
+Open this instance's app URL in the browser (the recorded entry, the portless one when the proxy routes it); `--print` only prints it. Add a NAME to open a named link (`stackfork open email`) or `app`, then a service's URL (`stackfork open mailpit`); names match without regard to case.
 Flags: `--print`
 ```sh
 stackfork open --print

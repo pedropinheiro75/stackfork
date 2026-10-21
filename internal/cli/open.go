@@ -1,4 +1,4 @@
-// open.go implements `stackfork open [SERVICE] [--instance NAME] [--print]`:
+// open.go implements `stackfork open [NAME] [--instance NAME] [--print]`:
 // the instance's app URL (the portless one when the proxy routes it), or the
 // URL of a named link or service, opened in the browser or just printed.
 package cli

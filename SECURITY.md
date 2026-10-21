@@ -112,6 +112,12 @@ Known limits:
 - If you kill a host supervisor with `kill -9`, its app keeps running. `doctor` reports it (the `host apps` check) when its port still answers.
 - A foreground `host NAME` command that ignores SIGTERM is orphaned after its stackfork gets SIGKILL.
 
+## Entry and links in knowledge.json
+
+The `entry` and `links` of a committed `.stackfork/knowledge.json` are not covered by the trust hash and need no `plan --trust`. They run nothing: stackfork builds every URL from the instance's own hostname (or `127.0.0.1`), a port the instance publishes and a path that load-time validation keeps relative (one leading `/`, printable ASCII, no `//`, backslash or `..` segment). The file cannot make stackfork open another site, and error messages never repeat a refused value.
+
+Known limit: a hostile pull request can point **App** or a named link at another page or service of the same instance, for example a database console's "reset" link, and opening it sends a GET. The person can already open every one of those endpoints from the card. `learn verify` sends one GET to the entry and to each link on `127.0.0.1` with the instance hostname in `Host`, and does not follow redirects or check certificates.
+
 ## Secrets
 
 stackfork reads named secrets (an npm token, a test API key) from places the person already trusts and hands them to the Compose child only. A `secret` command never prints a value and takes none as an argument. A reference is `env:VAR`, `npmrc:PATH#HOST`, `keychain:ITEM` (macOS Keychain, Linux Secret Service, Windows Credential Manager, service or target prefix `stackfork`) or `op://VAULT/ITEM/FIELD` (1Password). References live in the machine's `config.json`; the committed `knowledge.json` names secrets and hints only.
