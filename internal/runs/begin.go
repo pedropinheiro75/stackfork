@@ -129,3 +129,6 @@ func load(dir string, id int) (*Run, error) {
 	}
 	return &r, nil
 }
+
+// Busy reports whether a run holds the instance's run lock right now.
+func Busy(dir string) bool { return state.Held(lockPath(dir)) }

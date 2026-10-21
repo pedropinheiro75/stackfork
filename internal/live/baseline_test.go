@@ -4,7 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
 func setup(t *testing.T) (root, inst string, p *Poller) {
@@ -92,5 +95,25 @@ func TestBaselineRemovedPathLeavesTheBaseline(t *testing.T) {
 	}
 	if got, _ := LoadBaseline(inst); got.Digests["Dockerfile"] != "" {
 		t.Fatal("removed path kept")
+	}
+}
+
+func TestInitBaselineStoresPlanDigestsOnFirstSight(t *testing.T) {
+	dir := tmp(t)
+	root := tmp(t)
+	write(t, root, "bun.lock", "v1")
+	p := NewPoller(root, []Entry{{Path: root + "/bun.lock", Rel: "bun.lock", Category: CatBuild, Service: "web"}}, nil)
+	p.Poll()
+	plan := knowledge.Plan{Steps: []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp}}}
+	b, created, err := InitBaseline(dir, "feature-login", "", p, plan)
+	if err != nil || !created || b.Plan["up"] == "" || b.Digests["bun.lock"] == "" {
+		t.Fatalf("%+v %v %v", b, created, err)
+	}
+	again, created, _ := InitBaseline(dir, "feature-login", "", p, knowledge.Plan{})
+	if created || again.Plan["up"] != b.Plan["up"] {
+		t.Fatalf("a second call must keep the stored baseline: %+v", again)
+	}
+	if got := again.PlanChanged(knowledge.Plan{Steps: []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp, Exclude: []string{"web"}}, {ID: "x", Kind: knowledge.KindNote, Text: "t"}}}); strings.Join(got, ",") != "up,x" {
+		t.Fatalf("%v", got)
 	}
 }

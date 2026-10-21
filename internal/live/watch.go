@@ -1,5 +1,12 @@
-// Package live holds the pure parts of live mode: the watch set, the
-// poller, the debounce and the baseline store (add-live-mode D4, D5, D7).
+// Package live holds the parts of live mode: the watch set, the poller, the
+// debounce, the baseline store (add-live-mode D4, D5, D7), the fetch schedule
+// (D8) and the reconcile step (D6, D9, D12).
+//
+// The dashboard loop (group 5) wires them: per target it calls Targets for
+// the instances, InitBaseline once, then every tick Poller.Poll, Debouncer.Observe
+// and Fetcher.Tick; when a batch is due it calls (*Reconciler).Reconcile with the
+// target's pending changes, which decides, guards and runs (through the Exec
+// that cli.LiveExec provides) or says why not. The package imports no cli code.
 package live
 
 import (

@@ -1,12 +1,16 @@
 package live
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
@@ -23,6 +27,9 @@ type Baseline struct {
 	Branch   string            `json:"branch"`
 	Upstream string            `json:"upstream,omitempty"`
 	Digests  map[string]string `json:"digests"`
+	// Plan is the digest of each plan step as of the last settled reconcile,
+	// so the next run can record which steps changed (`plan_changed`).
+	Plan map[string]string `json:"plan,omitempty"`
 }
 
 // LoadBaseline returns (nil, nil) when the instance has none yet.
@@ -112,4 +119,54 @@ func ReadBranch(checkout string) (branch string, detached bool, err error) {
 		return name, false, nil
 	}
 	return "", true, nil
+}
+
+// PlanDigests is a short digest of each step of the plan, by step id.
+func PlanDigests(p knowledge.Plan) map[string]string {
+	out := make(map[string]string, len(p.Steps))
+	for _, s := range p.Steps {
+		b, _ := json.Marshal(s)
+		sum := sha256.Sum256(b)
+		out[s.ID] = hex.EncodeToString(sum[:8])
+	}
+	return out
+}
+
+// PlanChanged lists the ids of the steps that differ from the stored digests:
+// changed, added or removed, sorted. It is nil when the baseline has no plan
+// digests yet (nothing to compare with).
+func (b *Baseline) PlanChanged(p knowledge.Plan) []string {
+	if b == nil || b.Plan == nil {
+		return nil
+	}
+	now := PlanDigests(p)
+	var out []string
+	for id, d := range now {
+		if old, ok := b.Plan[id]; !ok || old != d {
+			out = append(out, id)
+		}
+	}
+	for id := range b.Plan {
+		if _, ok := now[id]; !ok {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// SetPlan stores the plan's step digests; the next RecordRun writes them.
+func (b *Baseline) SetPlan(p knowledge.Plan) { b.Plan = PlanDigests(p) }
+
+// Save writes the baseline (0600).
+func (b *Baseline) Save(instanceDir string) error { return b.save(instanceDir) }
+
+// InitBaseline is FirstSight for the loop: on first sight it also stores the
+// plan's step digests, so a later reconcile can record `plan_changed`.
+func InitBaseline(instanceDir, branch, upstream string, p *Poller, plan knowledge.Plan) (b *Baseline, created bool, err error) {
+	if b, created, err = FirstSight(instanceDir, branch, upstream, p); err != nil || !created {
+		return b, created, err
+	}
+	b.SetPlan(plan)
+	return b, true, b.save(instanceDir)
 }
