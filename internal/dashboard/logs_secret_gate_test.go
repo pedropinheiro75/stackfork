@@ -38,7 +38,7 @@ func TestLogViewWaitsForASecretCheckWhenOPValuesAreUnknown(t *testing.T) {
 	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
 	mapTestSecret(t, m.Root, "tok", "op://Dev/acme-stripe/test-key") // a --secret flag takes only env: and npmrc:
 	if code := cli.Run([]string{"--root", m.Root, "--state-dir", newBase,
-		"prepare", "-f", filepath.Join(m.Root, "compose.yaml")}, &out, &errBuf); code != 0 {
+		"prepare", "--force", "-f", filepath.Join(m.Root, "compose.yaml")}, &out, &errBuf); code != 0 {
 		t.Fatal(errBuf.String())
 	}
 	t.Setenv("DOCKER_FAKE_LOGS", "app-1  | key "+canary+"\n")
@@ -72,7 +72,7 @@ func TestLogViewGatesAnUnresolvedEnvReference(t *testing.T) {
 	t.Setenv("SF_TEST_DASH_ENV", val)
 	var out, errBuf bytes.Buffer
 	if code := cli.Run([]string{"--root", m.Root, "--state-dir", newBase, "--secret", "tok=env:SF_TEST_DASH_ENV",
-		"prepare", "-f", filepath.Join(m.Root, "compose.yaml")}, &out, &errBuf); code != 0 {
+		"prepare", "--force", "-f", filepath.Join(m.Root, "compose.yaml")}, &out, &errBuf); code != 0 {
 		t.Fatal(errBuf.String())
 	}
 	os.Unsetenv("SF_TEST_DASH_ENV") // the dashboard process has no shell environment

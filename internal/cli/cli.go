@@ -559,6 +559,7 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	fs.Var(&files, "file", "")
 	envFileFlag := fs.String("env-file", "", "")
 	hostnameFlag := fs.String("hostname", "", "")
+	fs.Bool("force", false, "") // read by run (the learn gate); registered for help
 	reassignPortsFlag := fs.Bool("reassign-ports", false, "")
 	randomPortsFlag := fs.Bool("random-ports", false, "")
 	if err := fs.Parse(subArgs); err != nil {
@@ -975,6 +976,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 	case "up":
 		fs := newFlagSet(stdout, "up")
 		fs.BoolVar(&opts.Build, "build", false, "")
+		fs.Bool("force", false, "") // read by run (the learn gate); registered for help
 		var profiles, services stringList
 		fs.Var(&profiles, "profile", "")
 		fs.Var(&services, "service", "")

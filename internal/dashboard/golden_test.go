@@ -93,7 +93,7 @@ func TestInstancesMatchesListJSON(t *testing.T) {
 	legacyStateDir := filepath.Join(t.TempDir(), "legacy-state")
 
 	var prepOut, stderrBuf strings.Builder
-	code := cli.Run([]string{"--root", root, "--state-dir", stateDir, "prepare", "-f", composePath}, &prepOut, &stderrBuf)
+	code := cli.Run([]string{"--root", root, "--state-dir", stateDir, "prepare", "--force", "-f", composePath}, &prepOut, &stderrBuf)
 	if code != 0 {
 		t.Fatalf("prepare failed: code=%d stderr=%s", code, stderrBuf.String())
 	}

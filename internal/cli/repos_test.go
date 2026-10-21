@@ -492,7 +492,7 @@ func TestConcurrentStartEnvKeepsHostStepsApart(t *testing.T) {
 	}
 }
 
-const portCompose = "services:\n  db:\n    image: postgres:17\n    volumes:\n      - pgdata:/var/lib/postgresql/data\n  web:\n    image: nginx\n    ports:\n      - \"3000:3000\"\nvolumes:\n  pgdata: {}\n"
+const portCompose = "services:\n  db:\n    image: postgres:17\n    volumes:\n      - pgdata:/var/lib/postgresql/data\n  web:\n    image: node:22\n    ports:\n      - \"3000:3000\"\nvolumes:\n  pgdata: {}\n"
 
 // A real schema 1 file with a migrate recipe converts to an exec step with no
 // service; every start must still run it, in the primary service.

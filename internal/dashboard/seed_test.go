@@ -52,7 +52,7 @@ func seedStack(t *testing.T) (srv *dashboard.Server, newBase, project, root stri
 	os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"scripts":{"db:migrate":"m","db:seed":"s"}}`), 0o644)
 	newBase = t.TempDir()
 	var out, errBuf bytes.Buffer
-	if code := cli.Run([]string{"--root", root, "--state-dir", newBase, "prepare", "-f", composePath}, &out, &errBuf); code != 0 {
+	if code := cli.Run([]string{"--root", root, "--state-dir", newBase, "prepare", "--force", "-f", composePath}, &out, &errBuf); code != 0 {
 		t.Fatalf("prepare: %s", errBuf.String())
 	}
 	var p struct{ Project string }

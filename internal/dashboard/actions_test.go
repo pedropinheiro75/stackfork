@@ -35,7 +35,7 @@ func preparedFixture(t *testing.T) (newBase, legacyBase, project string) {
 	newBase, legacyBase = t.TempDir(), t.TempDir()
 
 	var out, errBuf bytes.Buffer
-	code := cli.Run([]string{"--root", root, "--state-dir", newBase, "prepare", "-f", composePath}, &out, &errBuf)
+	code := cli.Run([]string{"--root", root, "--state-dir", newBase, "prepare", "--force", "-f", composePath}, &out, &errBuf)
 	if code != 0 {
 		t.Fatalf("prepare failed: code=%d stderr=%s", code, errBuf.String())
 	}

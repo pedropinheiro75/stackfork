@@ -28,7 +28,7 @@ func prepareWithSecret(t *testing.T, newBase, project string) string {
 	var out, errBuf bytes.Buffer
 	code := cli.Run([]string{"--root", m.Root, "--state-dir", newBase,
 		"--secret", "npm_token=env:SF_TEST_DASHBOARD_LOGS_CANARY",
-		"prepare", "-f", composePath}, &out, &errBuf)
+		"prepare", "--force", "-f", composePath}, &out, &errBuf)
 	if code != 0 {
 		t.Fatalf("prepare with secret failed: %s", errBuf.String())
 	}
