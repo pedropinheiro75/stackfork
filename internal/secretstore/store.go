@@ -3,6 +3,7 @@ package secretstore
 import (
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -148,6 +149,9 @@ func (b *Backend) keychainTool() (string, error) {
 func (b *Backend) opTool() (string, error) {
 	if b.OpPaths != nil {
 		return resolveTool(b.OpPaths, b.roots())
+	}
+	if b.goos() == "windows" {
+		return resolveTool(opPathsWindows(os.Getenv), b.roots())
 	}
 	return resolveTool(opPaths, b.roots())
 }

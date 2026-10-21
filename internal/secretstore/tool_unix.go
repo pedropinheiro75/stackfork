@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-func ownerOK(fi os.FileInfo) bool {
+func ownerOK(_ string, fi os.FileInfo) bool {
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	if !ok {
 		return false

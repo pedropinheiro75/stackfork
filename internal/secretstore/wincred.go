@@ -28,15 +28,21 @@ func credTarget(item string) string { return credTargetPrefix + item }
 // credBlob encodes value as UTF-16LE (what cmdkey and the Credential Manager
 // UI use). The error never contains the value.
 func credBlob(value string) ([]byte, error) {
-	u := utf16.Encode([]rune(value))
-	if len(u)*2 > credMaxBlob {
+	b := utf16le(value)
+	if len(b) > credMaxBlob {
+		zero(b)
 		return nil, fmt.Errorf("the Windows Credential Manager holds at most %d characters per value", credMaxBlob/2)
 	}
+	return b, nil
+}
+
+func utf16le(s string) []byte {
+	u := utf16.Encode([]rune(s))
 	b := make([]byte, 2*len(u))
 	for i, c := range u {
 		b[2*i], b[2*i+1] = byte(c), byte(c>>8)
 	}
-	return b, nil
+	return b
 }
 
 func decodeBlob(b []byte) (string, error) {

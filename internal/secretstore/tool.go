@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -55,21 +56,18 @@ func checkTool(p string, scannedRoots []string) error {
 	if err != nil {
 		return err
 	}
-	if !fi.Mode().IsRegular() || fi.Mode().Perm()&0o111 == 0 {
-		return errors.New("not an executable file")
-	}
-	if fi.Mode().Perm()&0o022 != 0 {
-		return errors.New("the file is writable by group or others")
+	if err := toolModeOK(runtime.GOOS, fi.Mode(), p); err != nil {
+		return err
 	}
 	dir := filepath.Dir(p)
 	di, err := os.Stat(dir)
 	if err != nil {
 		return err
 	}
-	if di.Mode().Perm()&0o022 != 0 {
+	if runtime.GOOS != "windows" && di.Mode().Perm()&0o022 != 0 {
 		return errors.New("its directory is writable by group or others")
 	}
-	if !ownerOK(fi) || !ownerOK(di) {
+	if !ownerOK(p, fi) || !ownerOK(dir, di) {
 		return errors.New("its owner is neither root nor the current user")
 	}
 	for _, r := range scannedRoots {
@@ -90,6 +88,9 @@ func within(dir, p string) bool {
 // Secret Service is reached over the session bus, so the bus and display
 // variables pass through too.
 func toolEnv(goos string, forOP bool) []string {
+	if goos == "windows" {
+		return winToolEnv(os.Environ(), forOP)
+	}
 	env := []string{"PATH=/usr/bin:/bin"}
 	keep := map[string]bool{"HOME": true, "USER": true, "LANG": true}
 	if goos == "linux" && !forOP {
