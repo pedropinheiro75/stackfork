@@ -475,7 +475,7 @@ func stackforkCall(w []string) (action string, args []string) {
 }
 
 // Destructive reports whether command runs `stackfork prune` with --yes/-y or
-// --all, or `stackfork gc --apply`: the deleting forms. A dry run is not.
+// --all, `stackfork gc --apply` or `stackfork down --forget`: the deleting forms. A dry run is not.
 // Unlike Decide this applies in any directory.
 func Destructive(command, cwd string) bool {
 	if bypassesConfirmation(command) || secretForbidden(command, cwd) || liveForbidden(command, cwd) {
@@ -496,6 +496,8 @@ func Destructive(command, cwd string) bool {
 			case action == "gc" && name == "apply":
 				return true
 			case action == "plan" && name == "trust": // people trust host steps, agents never
+				return true
+			case action == "down" && name == "forget": // removes the instance from the list, volumes included
 				return true
 			case action == "seed" && name == "force":
 				return true

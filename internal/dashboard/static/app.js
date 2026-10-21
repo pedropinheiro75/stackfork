@@ -536,7 +536,7 @@
         '" data-path="' + escapeHtml(inst.root) + '" title="' + escapeHtml(FROM_MAIN_TITLE) + '"');
     }
     items += '<hr class="menu-sep" role="separator">';
-    items += menuItem(inst.project + "/menu/remove", "Remove instance and data", down, ' data-run="' + escapeHtml(down) + '"', "menu-item-danger");
+    items += menuItem(inst.project + "/menu/remove", "Remove instance and data", down + " --forget", ' data-run="' + escapeHtml(down + " --forget") + '"', "menu-item-danger");
 
     var chips = '<div class="stack-chips">' + chipHtml(startingChip(inst) || stateChip(inst.state)) + (inst.legacy ? '<span class="chip chip-off">legacy</span>' : "") +
       (inst.knowledge && (inst.knowledge.status === "draft" || inst.knowledge.status === "stale")

@@ -430,3 +430,15 @@ func SnapshotServices(instanceDir string) []string {
 	sort.Strings(names)
 	return names
 }
+
+// ForgetInstance removes an instance's state directory (manifest, snapshot,
+// runs, port records) and reloads the proxy so its route goes, the same
+// removal `gc --apply` and `prune` do for each instance. Callers run it only
+// after `down --volumes` succeeded.
+func ForgetInstance(stderr io.Writer, instanceDir, newStateBase, legacyStateBase string) error {
+	if err := os.RemoveAll(instanceDir); err != nil {
+		return fmt.Errorf("state removal failed: %w", err)
+	}
+	ReloadProxyIfRunning(stderr, newStateBase, legacyStateBase)
+	return nil
+}

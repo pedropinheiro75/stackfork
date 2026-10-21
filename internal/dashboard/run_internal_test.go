@@ -33,6 +33,7 @@ func TestPlanRunAllowlist(t *testing.T) {
 		{"stackfork prepare --reassign-ports", "/w", "--root /w prepare --reassign-ports", false},
 		{"stackfork --instance sf-a-1 seed --force", "", "--instance sf-a-1 seed --force", true},
 		{"stackfork down --instance sf-a-1 --volumes", "/w", "down --instance sf-a-1 --volumes", true},
+		{"stackfork down --instance sf-a-1 --volumes --forget", "/w", "down --instance sf-a-1 --volumes --forget", true},
 		{"stackfork prune --stopped", "", "prune --stopped --yes", true},
 		{"stackfork gc", "/w", "gc --apply", true},
 		{"git -C '/r' worktree remove '/r/.worktrees/a'", "", "-C /r worktree remove /r/.worktrees/a", true},
@@ -93,5 +94,18 @@ func TestRunChildrenCarryTheDashboardTrigger(t *testing.T) {
 	}
 	if childEnv("git") != nil || childEnv("docker") != nil {
 		t.Fatal("only stackfork children get the trigger")
+	}
+}
+
+// The confirmation for "Remove instance and data" says the instance leaves the list.
+func TestPlanRunForgetConfirmationSaysInstanceDisappears(t *testing.T) {
+	p, err := (&Server{}).planRun("stackfork down --instance sf-a-1 --volumes --forget", "/w", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{"volumes", "disappears from the list", "Start prepares it again"} {
+		if !strings.Contains(p.Confirm, w) {
+			t.Errorf("confirmation lacks %q: %q", w, p.Confirm)
+		}
 	}
 }

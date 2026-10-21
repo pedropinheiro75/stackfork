@@ -204,6 +204,9 @@ func (s *Server) planStackfork(args []string, root string) (*runPlan, error) {
 		p.Confirm = "Run this?\n\n" + full
 		if action == "down" {
 			p.Confirm += "\n\nThis deletes the stack's volumes: its database is lost."
+			if has("--forget") {
+				p.Confirm += " The instance disappears from the list; a later Start prepares it again from the recipe."
+			}
 		}
 	}
 	if action == "plan" {

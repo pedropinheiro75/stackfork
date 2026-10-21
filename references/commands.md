@@ -26,7 +26,8 @@ stackfork up --build --wait-timeout 120
 
 ### down
 Stop it (data kept unless `--volumes`).
-Flags: `--volumes`, `--instance`
+Flags: `--volumes`, `--forget`, `--instance`
+`--forget` (needs `--volumes`, else exit 2) removes the instance's state directory after a successful `down --volumes`, so it leaves the list; the next Start prepares it again. The dashboard's "Remove instance and data" runs it. The guard blocks `--forget` for agents.
 ```sh
 stackfork down --volumes
 ```

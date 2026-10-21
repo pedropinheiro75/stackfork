@@ -47,7 +47,7 @@
 <button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Project}}/menu/reset" data-repo-action="reset" data-repo="{{repoRoot .Root}}" data-path="{{.Root}}" title="deletes this environment's volumes and starts it again from the code in the worktree; asks first"><span class="menu-label">Reset environment&hellip;</span></button>
 {{if .FromMain}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Project}}/menu/resetmain" data-repo-action="reset" data-from-main="1" data-repo="{{repoRoot .Root}}" data-path="{{.Root}}" title="deletes this environment's volumes, moves this worktree's adapter files aside and starts it with the main checkout's recipe; asks first"><span class="menu-label">Reset from main checkout&hellip;</span></button>{{end}}
 <hr class="menu-sep" role="separator">
-<button type="button" role="menuitem" class="menu-item menu-item-danger" tabindex="-1" data-key="{{.Project}}/menu/remove" data-run="{{$down}}"><span class="menu-label">Remove instance and data</span><span class="menu-cmd mono">{{$down}}</span></button>
+<button type="button" role="menuitem" class="menu-item menu-item-danger" tabindex="-1" data-key="{{.Project}}/menu/remove" data-run="{{$down}} --forget"><span class="menu-label">Remove instance and data</span><span class="menu-cmd mono">{{$down}} --forget</span></button>
 </div></div>
 </div>
 <div class="stack-meta mono"><span class="stack-path" title="{{.Root}}">{{or .RelRoot .Root}}</span>{{if .Hostname}}<span class="stack-sep" aria-hidden="true"> &middot; </span><span class="stack-host" title="{{.Hostname}}">{{.Hostname}}</span>{{end}}</div>

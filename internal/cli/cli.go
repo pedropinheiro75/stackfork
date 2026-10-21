@@ -947,9 +947,10 @@ func replacePrimaryLine(lines []string, service string, https bool, newLine stri
 // to do (actually calling down) once Parse returns without error, so its
 // caller needs to tell "stop, help was printed" apart from "proceed",
 // which a plain nil error can't do here.
-func parseDownFlags(stdout io.Writer, subArgs []string) (instance string, volumes bool, err error) {
+func parseDownFlags(stdout io.Writer, subArgs []string) (instance string, volumes, forget bool, err error) {
 	fs := newFlagSet(stdout, "down")
 	fs.BoolVar(&volumes, "volumes", false, "")
+	fs.BoolVar(&forget, "forget", false, "")
 	fs.StringVar(&instance, "instance", "", "")
 	if err := fs.Parse(subArgs); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -957,11 +958,15 @@ func parseDownFlags(stdout io.Writer, subArgs []string) (instance string, volume
 			// returning this - nothing left to print, just propagate the
 			// sentinel so both callers know to stop rather than proceed
 			// with volumes=false/instance="" as if nothing was wrong.
-			return "", false, flag.ErrHelp
+			return "", false, false, flag.ErrHelp
 		}
-		return "", false, fmt.Errorf("%s (see `stackfork down --help`)", err.Error())
+		return "", false, false, fmt.Errorf("%s (see `stackfork down --help`)", err.Error())
 	}
-	return instance, volumes, nil
+	if forget && !volumes {
+		// forgetting an instance whose volumes still exist would orphan its data
+		return "", false, false, errors.New("--forget needs --volumes (see `stackfork down --help`)")
+	}
+	return instance, volumes, forget, nil
 }
 
 // cmdUpDownRunExec parses each action's flags and delegates the actual
@@ -969,8 +974,9 @@ func parseDownFlags(stdout io.Writer, subArgs []string) (instance string, volume
 // same function the dashboard's up/down/restart actions call.
 func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string) (int, error) {
 	var opts lifecycle.Options
-	inRun := false // up: StartEnv's own up; the enclosing run records it and seeds
-	planMode := "" // up: the startup mode whose data step may seed; empty = the configured mode
+	inRun := false  // up: StartEnv's own up; the enclosing run records it and seeds
+	planMode := ""  // up: the startup mode whose data step may seed; empty = the configured mode
+	forget := false // down: remove the instance's state after a successful down --volumes
 
 	switch action {
 	case "up":
@@ -1009,7 +1015,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		opts.Services = services
 	case "down":
 		var err error
-		_, opts.Volumes, err = parseDownFlags(stdout, subArgs)
+		_, opts.Volumes, forget, err = parseDownFlags(stdout, subArgs)
 		if errors.Is(err, flag.ErrHelp) {
 			return 0, nil
 		}
@@ -1041,7 +1047,8 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 	// lock, so a Start waiting on this up's lock is never blocked by a wait here.
 	var rec *runs.Run
 	var runErr error
-	var upPlan knowledge.Plan // loaded once: the plan that is checked is the plan that runs
+	unlock := func() error { return nil } // set once the instance lock is held
+	var upPlan knowledge.Plan             // loaded once: the plan that is checked is the plan that runs
 	if action == "up" {
 		upPlan = lifecycle.LoadPlan(root, repos.MainOrSelf(root))
 	}
@@ -1085,6 +1092,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 			return 0, err
 		}
 		defer lock.Release()
+		unlock = lock.Release
 	}
 
 	if action == "up" {
@@ -1105,7 +1113,15 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 		return res.Code, res.Err
 	}
-	return lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
+	code, err := lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
+	if forget && code == 0 && err == nil {
+		unlock() // Windows cannot delete the open lock file
+		if err := lifecycle.ForgetInstance(stderr, instanceDir, newStateBase, legacyStateBase); err != nil {
+			return 1, err
+		}
+		fmt.Fprintf(stdout, "removed %s\n", project)
+	}
+	return code, err
 }
 
 // inRunDirs are the instances whose StartEnv in this process is running its

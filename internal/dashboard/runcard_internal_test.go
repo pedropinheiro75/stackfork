@@ -32,7 +32,9 @@ var runCardCases = []struct {
 	want []string // fragments of the card
 	not  []string
 }{
-	{"none", runInst(nil, nil), []string{`data-repo-action="reset" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login"`, "Reset environment&hellip;"},
+	{"none", runInst(nil, nil), []string{`data-repo-action="reset" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login"`, "Reset environment&hellip;",
+		`data-key="sf-acme-web-2ffa6841c75d/menu/remove" data-run="stackfork down --instance sf-acme-web-2ffa6841c75d --volumes --forget"`,
+		`data-copy="stackfork down --instance sf-acme-web-2ffa6841c75d --volumes"`},
 		[]string{"callout", "Last run", "Starting", "Reset from main checkout"}},
 	{"worktree with a main instance", runInst(nil, func(i *inventory.Instance) { i.FromMain = true }),
 		[]string{`data-repo-action="reset" data-from-main="1" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login"`, "Reset from main checkout&hellip;", "Reset environment&hellip;"},
