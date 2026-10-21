@@ -328,7 +328,7 @@ type secretView struct {
 	Repo   string
 	SetCmd string // copy-only: printenv VAR | stackfork secret set ITEM
 	MapCmd string // copy-only: stackfork secret map REPO NAME=REF
-	Unmap  string // copy-only, only for a name the machine map holds
+	Unmap  string // copy-only, only for a name the machine map holds, on the repository or a folder
 }
 
 // secretChip is the StatusChip of a row: glyph and word, never colour alone.
@@ -374,8 +374,11 @@ func (s *Server) repoSecrets(repo repos.Repo, cfg *config.Config) []secretView {
 			v.Item = strings.TrimPrefix(r.Reference, "keychain:")
 			v.SetCmd = "printenv VAR | stackfork secret set " + v.Item
 		}
-		if r.Source == lifecycle.SourceMap {
+		switch r.Source {
+		case lifecycle.SourceMap:
 			v.Unmap = "stackfork secret unmap " + shq(repo.Path) + " " + r.Name
+		case lifecycle.SourceFolder:
+			v.Unmap = "stackfork secret unmap " + shq(r.From) + " " + r.Name
 		}
 		out = append(out, v)
 	}

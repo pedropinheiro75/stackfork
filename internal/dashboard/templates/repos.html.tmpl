@@ -142,7 +142,7 @@
           {{range .}}
           <div class="secret-row" role="row" data-key="{{.Repo}}/secret/{{.Name}}">
             <span class="secret-name" role="cell"><span class="mono secret-id">{{.Name}}</span>{{if .Hint}}<span class="small muted secret-hint">{{.Hint}}</span>{{end}}</span>
-            <span class="secret-ref" role="cell">{{if .Reference}}<code class="mono">{{.Reference}}</code>{{else}}<span class="small muted">not mapped on this machine</span>{{end}}</span>
+            <span class="secret-ref" role="cell">{{if .Reference}}<code class="mono"{{if .Source}} title="{{.Source}}{{if .From}}: {{.From}}{{end}}"{{end}}>{{.Reference}}</code>{{else}}<span class="small muted">not mapped on this machine</span>{{end}}</span>
             <span class="secret-state" role="cell"><span class="chip chip-{{.Chip.Class}}"{{if .Chip.Title}} title="{{.Chip.Title}}"{{end}}><span class="chip-glyph" aria-hidden="true">{{.Chip.Glyph}}</span>{{.Chip.Label}}</span></span>
             <span class="secret-actions" role="cell"><div class="menu-anchor"><button type="button" class="btn btn-ghost btn-icon" data-key="{{.Repo}}/secret/{{.Name}}/menu" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for {{.Name}}" title="More actions"><span aria-hidden="true">&#8943;</span></button><div class="menu" role="menu" hidden>
 {{if .CanSet}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Repo}}/secret/{{.Name}}/menu/set" data-secret-set data-repo="{{.Repo}}" data-name="{{.Name}}" title="Opens a hidden-answer dialog on this Mac; the value does not pass through this page"><span class="menu-label">Set value&hellip;</span><span class="menu-cmd mono">keychain:{{.Item}}</span></button>{{end}}

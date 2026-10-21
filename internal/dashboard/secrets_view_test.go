@@ -128,3 +128,26 @@ func TestPlanListHasNoSecretsRowWithoutSecrets(t *testing.T) {
 		t.Fatal("a repo with no secrets lists a secrets row")
 	}
 }
+
+// R4: a folder row names its source and folder, and the unmap command it
+// copies targets the folder, not the repository.
+func TestSecretsSectionShowsFolderSource(t *testing.T) {
+	e, repo, _ := secretsEnv(t)
+	k := &knowledge.Knowledge{Status: knowledge.StatusVerified, Secrets: []knowledge.SecretDecl{{Name: "FOLDER_TOK"}}}
+	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	folder := filepath.Dir(repo)
+	var out, errBuf strings.Builder
+	if code := cli.Run([]string{"secret", "map", folder, "FOLDER_TOK=keychain:idv-tok"}, &out, &errBuf); code != 0 {
+		t.Fatal(errBuf.String())
+	}
+	_, section := secretsFragment(t, e, repo)
+	if !strings.Contains(section, `title="folder: `+folder+`"`) {
+		t.Errorf("no folder source: %s", section)
+	}
+	if !strings.Contains(section, `data-copy="stackfork secret unmap `+folder+` FOLDER_TOK"`) &&
+		!strings.Contains(section, `data-copy="stackfork secret unmap &#39;`+folder) {
+		t.Errorf("unmap does not target the folder: %s", section)
+	}
+}
