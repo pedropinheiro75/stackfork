@@ -280,12 +280,13 @@ type StartFunc func(out, errOut io.Writer, checkout, trigger string, obs func(ru
 
 // ResetFunc throws away the environment of one checkout and starts it from
 // zero (cli.StartEnv with Reset). current: go on with the code as it is when
-// the checkout is behind and cannot be updated.
-type ResetFunc func(out, errOut io.Writer, checkout string, current bool, obs func(runs.Event)) error
+// the checkout is behind and cannot be updated. fromMain: prepare with the
+// main checkout's recipe, the worktree's own adapter files moved aside.
+type ResetFunc func(out, errOut io.Writer, checkout string, current, fromMain bool, obs func(runs.Event)) error
 
 // ResetPreviewFunc is what the confirmation shows: the text, and whether the
 // checkout is behind its upstream and blocked from updating.
-type ResetPreviewFunc func(checkout string) (text string, blocked bool, err error)
+type ResetPreviewFunc func(checkout string, fromMain bool) (text string, blocked bool, err error)
 
 // TriggerDashboard is the trigger of every run the dashboard starts, directly
 // or through the commands of /api/run (STACKFORK_TRIGGER).
@@ -556,6 +557,11 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, req actionRequest) {
 		return
 	}
 
+	if req.FromMain && req.Action != "reset" {
+		writeActionResult(w, http.StatusBadRequest, actionResponse{Message: "from_main applies to reset only"})
+		return
+	}
+
 	// What does the request act on?
 	var checkout, branch string
 	if req.Action != "fetch" {
@@ -630,7 +636,7 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, req actionRequest) {
 	case "start":
 		s.streamStart(w, repo, checkout, branch)
 	case "reset":
-		s.streamReset(w, repo, checkout)
+		s.streamReset(w, repo, checkout, req.FromMain)
 	}
 }
 
@@ -707,9 +713,9 @@ func (s *Server) approveHostSteps(lw io.Writer, repo *repos.Repo, checkout, verb
 
 // streamReset confirms with a native dialog that names the volumes (and the
 // blocked update), then streams the reset like a Start.
-func (s *Server) streamReset(w http.ResponseWriter, repo *repos.Repo, checkout string) {
+func (s *Server) streamReset(w http.ResponseWriter, repo *repos.Repo, checkout string, fromMain bool) {
 	lw, finish := stream(w, "reset "+repo.Name)
-	text, blocked, err := s.ResetPreview(checkout)
+	text, blocked, err := s.ResetPreview(checkout, fromMain)
 	if err != nil {
 		finish(err)
 		return
@@ -726,7 +732,7 @@ func (s *Server) streamReset(w http.ResponseWriter, repo *repos.Repo, checkout s
 		finish(err)
 		return
 	}
-	finish(s.ResetEnv(lw, lw, checkout, blocked, lw.observe))
+	finish(s.ResetEnv(lw, lw, checkout, blocked, fromMain, lw.observe))
 }
 
 // streamStart answers with newline-delimited JSON: {"line": "..."} for each

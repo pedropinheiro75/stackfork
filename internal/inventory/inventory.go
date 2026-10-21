@@ -174,6 +174,12 @@ type Instance struct {
 	Services  []Service        `json:"services,omitempty"`
 	Knowledge *KnowledgeStatus `json:"knowledge,omitempty"`
 	Warnings  []string         `json:"warnings,omitempty"`
+	// FromMain marks a linked worktree whose main checkout has a prepared
+	// instance: the dashboard offers "Reset from main checkout…". RecipeGap
+	// marks one prepared without a Compose file the main checkout uses; its
+	// warning carries the action too (improve-worktree-recipes D3, D7).
+	FromMain  bool `json:"from_main,omitempty"`
+	RecipeGap bool `json:"recipe_gap,omitempty"`
 	// Files is the instance's source Compose files, part of each service's
 	// expandable settings (design.md D3a/task 3.4).
 	Files []string `json:"files,omitempty"`
@@ -304,9 +310,10 @@ func Collect(opts Options) (Inventory, error) {
 		if in.Root == "" || len(in.Files) == 0 {
 			continue
 		}
-		if main := identity.MainRepoOf(in.Root); main != "" {
+		if main := identity.MainRepoOf(in.Root); main != "" && !sameDir(main, in.Root) {
+			in.FromMain = mainReference(main, inv.Instances) != nil
 			if w := RecipeGap(main, in.Root, in.Files, inv.Instances).Message(in.Root); w != "" {
-				in.Warnings = append(in.Warnings, w)
+				in.Warnings, in.RecipeGap = append(in.Warnings, w), true
 			}
 		}
 	}
@@ -1041,6 +1048,8 @@ func seedRunLog(instanceDir, root string) (text string, run int, step string) {
 type InstanceRef struct {
 	Project string `json:"project"`
 	State   string `json:"state"`
+	// FromMain: Instance.FromMain (a linked worktree whose main checkout is prepared).
+	FromMain bool `json:"from_main,omitempty"`
 }
 
 // fillSeed flags a failed seed: the manifest says not seeded yet, and

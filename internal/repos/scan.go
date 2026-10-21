@@ -128,7 +128,7 @@ func build(path string, roots []string, d gitData, o Options) *Repo {
 func instanceFor(insts []inventory.Instance, root, branch string) *inventory.InstanceRef {
 	for _, i := range insts {
 		if i.Root == root && i.Branch == branch {
-			return &inventory.InstanceRef{Project: i.Project, State: i.State}
+			return &inventory.InstanceRef{Project: i.Project, State: i.State, FromMain: i.FromMain}
 		}
 	}
 	return nil

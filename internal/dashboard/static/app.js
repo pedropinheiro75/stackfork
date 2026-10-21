@@ -364,7 +364,9 @@
   }
 
   function isStartEnvRetry(cmd) { return /^stackfork --root .* start-env$/.test(cmd || ""); }
-  function isResetRetry(cmd) { return /^stackfork --root .* reset --yes$/.test(cmd || ""); }
+  function isResetRetry(cmd) { return /^stackfork --root .* reset --yes( --from-main)?$/.test(cmd || ""); }
+  function isFromMainRetry(cmd) { return /^stackfork --root .* reset --yes --from-main$/.test(cmd || ""); }
+  var FROM_MAIN_TITLE = "deletes this environment's volumes, moves this worktree's adapter files aside and starts it with the main checkout's recipe; asks first";
   // A reset is a streamed repo action like a Start (runRepoAction).
   function isStreamAction(a) { return a === "start" || a === "reset"; }
 
@@ -400,7 +402,7 @@
       retry = '<button type="button" class="btn" data-live-op="resume" data-repo="' + escapeHtml(repoRoot(inst.root)) + '" data-key="' + escapeHtml(p) + '/run/retry" title="Resume live mode">Resume</button>';
     } else if (isStartEnvRetry(lr.retry) || isResetRetry(lr.retry)) {
       var again = isResetRetry(lr.retry) ? "reset" : "start";
-      retry = '<button type="button" class="btn" data-repo-action="' + again + '" data-repo="' + escapeHtml(repoRoot(inst.root)) + '" data-path="' + escapeHtml(inst.root) +
+      retry = '<button type="button" class="btn" data-repo-action="' + again + '"' + (isFromMainRetry(lr.retry) ? ' data-from-main="1"' : "") + ' data-repo="' + escapeHtml(repoRoot(inst.root)) + '" data-path="' + escapeHtml(inst.root) +
         '" data-key="' + escapeHtml(p) + '/run/retry" title="' + (again === "reset" ? "Reset" : "Start") + ' again">Retry</button>';
     } else if (lr.retry) {
       retry = '<button type="button" class="btn" data-run="' + escapeHtml(lr.retry) + '" data-key="' + escapeHtml(p) + '/run/retry" title="' + escapeHtml(lr.retry) + '">Retry</button>';
@@ -529,6 +531,10 @@
     items += menuItem(inst.project + "/menu/copydown", "Copy down command", down, ' data-copy="' + escapeHtml(down) + '"');
     items += menuItem(inst.project + "/menu/reset", "Reset environment…", "", ' data-repo-action="reset" data-repo="' + escapeHtml(repoRoot(inst.root)) + '" data-path="' + escapeHtml(inst.root) +
       '" title="deletes this environment\'s volumes and starts it again from the code in the worktree; asks first"');
+    if (inst.from_main) {
+      items += menuItem(inst.project + "/menu/resetmain", "Reset from main checkout…", "", ' data-repo-action="reset" data-from-main="1" data-repo="' + escapeHtml(repoRoot(inst.root)) +
+        '" data-path="' + escapeHtml(inst.root) + '" title="' + escapeHtml(FROM_MAIN_TITLE) + '"');
+    }
     items += '<hr class="menu-sep" role="separator">';
     items += menuItem(inst.project + "/menu/remove", "Remove instance and data", down, ' data-run="' + escapeHtml(down) + '"', "menu-item-danger");
 
@@ -545,7 +551,9 @@
 
     var warnings = (inst.warnings || []).length
       ? '<div class="callout callout-attention" data-callout="warnings"><span class="callout-glyph" aria-hidden="true">' + GLYPH.attention + '</span><div class="callout-body"><ul class="warnings">' +
-        inst.warnings.map(function (w) { return '<li class="warning">' + escapeHtml(w) + "</li>"; }).join("") + "</ul></div></div>"
+        inst.warnings.map(function (w) { return '<li class="warning">' + escapeHtml(w) + "</li>"; }).join("") + "</ul></div>" +
+        (inst.recipe_gap ? '<div class="callout-actions"><button type="button" class="btn" data-repo-action="reset" data-from-main="1" data-repo="' + escapeHtml(repoRoot(inst.root)) +
+          '" data-path="' + escapeHtml(inst.root) + '" data-key="' + p + '/warnings/resetmain" title="' + escapeHtml(FROM_MAIN_TITLE) + '">Reset from main checkout…</button></div>' : "") + "</div>"
       : "";
     var services = (inst.services || []).map(function (s) { return serviceHtml(inst, s); }).join("");
     var table = services
@@ -1775,7 +1783,7 @@
 
   function retryCommand(d, created) {
     if (d.repoAction === "fetch") return "git -C " + shq(d.repo) + " fetch --prune";
-    if (d.repoAction === "reset") return "stackfork --root " + shq(d.path) + " reset";
+    if (d.repoAction === "reset") return "stackfork --root " + shq(d.path) + " reset" + (d.fromMain ? " --from-main" : "");
     if (d.repoAction === "start" && d.path) return "stackfork start-env " + shq(d.path);
     if (created) return "stackfork start-env " + shq(created);
     return "stackfork worktree add " + shq(d.repo) + " " + shq(d.branch) + (d.repoAction === "start" ? " && stackfork start-env " + shq(d.repo + "/.worktrees/" + d.branch.replace(/\//g, "-")) : "");
@@ -1797,6 +1805,7 @@
     var d = btn.dataset;
     if (d.confirm && !window.confirm(d.confirm)) return;
     var body = { action: d.repoAction, repo: d.repo, path: d.path || "", branch: d.branch || "" };
+    if (d.fromMain) body.from_main = true;
     var name = d.repo.split("/").pop();
     var what = d.branch || (d.path && d.path !== d.repo ? d.path.split("/").pop() : "");
     var label = name + (what ? ":" + what : "") + " " + d.repoAction;

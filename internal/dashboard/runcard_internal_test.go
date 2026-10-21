@@ -33,7 +33,21 @@ var runCardCases = []struct {
 	not  []string
 }{
 	{"none", runInst(nil, nil), []string{`data-repo-action="reset" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login"`, "Reset environment&hellip;"},
-		[]string{"callout", "Last run", "Starting"}},
+		[]string{"callout", "Last run", "Starting", "Reset from main checkout"}},
+	{"worktree with a main instance", runInst(nil, func(i *inventory.Instance) { i.FromMain = true }),
+		[]string{`data-repo-action="reset" data-from-main="1" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login"`, "Reset from main checkout&hellip;", "Reset environment&hellip;"},
+		[]string{"callout", "sf-acme-web-2ffa6841c75d/warnings/resetmain"}},
+	{"recipe gap", runInst(nil, func(i *inventory.Instance) {
+		i.FromMain, i.RecipeGap = true, true
+		i.Warnings = []string{"warning: this worktree prepares with 1 Compose file (a.yaml); the main checkout's last prepare used 2 (b.yaml, a.yaml). Missing: b.yaml. To reuse the main checkout's recipe: stackfork --root /src/acme-web/.worktrees/feature-login reset --from-main"}
+	}), []string{`data-callout="warnings"`, "Missing: b.yaml", `<div class="callout-actions"><button type="button" class="btn" data-repo-action="reset" data-from-main="1" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login" data-key="sf-acme-web-2ffa6841c75d/warnings/resetmain"`, ">Reset from main checkout&hellip;<"},
+		[]string{"Run command", "Copy command"}},
+	{"warning without the action", runInst(nil, func(i *inventory.Instance) { i.Warnings = []string{"checkout removed"} }),
+		[]string{`data-callout="warnings"`}, []string{"warnings/resetmain", "Reset from main checkout"}},
+	{"failed reset from main", runInst(&inventory.LastRun{ID: 14, Command: "reset", Trigger: "dashboard", Outcome: "failed", FailedStep: "prepare", StartedAt: ago5(), EndedAt: ago5(),
+		Retry: "stackfork --root /src/acme-web/.worktrees/feature-login reset --yes --from-main", Tail: "boom"}, nil),
+		[]string{`Reset failed at step <code class="mono">prepare</code>`, `data-repo-action="reset" data-from-main="1" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login" data-key="sf-acme-web-2ffa6841c75d/run/retry" title="Reset again"`},
+		[]string{`data-run="stackfork --root`}},
 	{"resetting", runInst(&inventory.LastRun{ID: 12, Command: "reset", Trigger: "dashboard", Outcome: "running", Step: "down", StepN: 3, StepTotal: 8, StartedAt: ago5()}, nil),
 		[]string{`title="step 3 of 8: down"`, "Resetting…"}, []string{"Starting…", "callout"}},
 	{"failed reset", runInst(&inventory.LastRun{ID: 13, Command: "reset", Trigger: "dashboard", Outcome: "failed", FailedStep: "up", StartedAt: ago5(), EndedAt: ago5(),

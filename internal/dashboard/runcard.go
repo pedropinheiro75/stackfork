@@ -22,6 +22,7 @@ type runView struct {
 	RetryTitle  string
 	Repo        string // main checkout of the repo, for the Start action
 	RetryLive   bool   // a failed live run: the button is Resume, and resumes live mode
+	FromMain    bool   // RetryStart with reset: the Retry sends from_main
 }
 
 type lastRunMenu struct {
@@ -37,7 +38,12 @@ func isStartEnvRetry(cmd string) bool {
 
 // isResetRetry is the retry a failed reset records.
 func isResetRetry(cmd string) bool {
-	return strings.HasPrefix(cmd, "stackfork --root ") && strings.HasSuffix(cmd, " reset --yes")
+	return strings.HasPrefix(cmd, "stackfork --root ") && (strings.HasSuffix(cmd, " reset --yes") || isResetFromMainRetry(cmd))
+}
+
+// isResetFromMainRetry is the retry a failed reset --from-main records.
+func isResetFromMainRetry(cmd string) bool {
+	return strings.HasPrefix(cmd, "stackfork --root ") && strings.HasSuffix(cmd, " reset --yes --from-main")
 }
 
 // runVerb names a run to a person: Start, Reset for a reset, or Live run for
@@ -101,6 +107,7 @@ func (c cardData) RunCallout() *runView {
 	case isResetRetry(lr.Retry):
 		v.CanRetry, v.RetryStart, v.Repo = true, true, repoRoot(c.Root)
 		v.RetryAction, v.RetryTitle = "reset", "Reset again"
+		v.FromMain = isResetFromMainRetry(lr.Retry)
 	default:
 		v.CanRetry, v.Retry = true, lr.Retry
 	}

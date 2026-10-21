@@ -11,6 +11,10 @@ module.exports = function (ex, t) {
   assert.equal(ex.isStreamAction("reset"), true);
   assert.equal(ex.isStreamAction("fetch"), false);
   assert.equal(ex.retryCommand({ repoAction: "reset", repo: "/src/a", path: "/src/a/.worktrees/x" }), "stackfork --root '/src/a/.worktrees/x' reset");
+  const again = ex.runCalloutHtml(inst({ retry: "stackfork --root /src/a/.worktrees/x reset --yes --from-main" }), "a");
+  assert.match(again, /data-repo-action="reset" data-from-main="1" data-repo="\/src\/a"/);
+  assert.doesNotMatch(html, /data-from-main/, "a plain reset retries as a plain reset");
+  assert.equal(ex.retryCommand({ repoAction: "reset", fromMain: "1", repo: "/src/a", path: "/src/a/.worktrees/x" }), "stackfork --root '/src/a/.worktrees/x' reset --from-main");
   const chip = ex.startingChip({ last_run: { command: "reset", outcome: "running", step: "down", step_n: 3, step_total: 8 } });
   assert.equal(chip.label, "Resetting…");
 };

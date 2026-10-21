@@ -34,6 +34,8 @@ type actionRequest struct {
 	Repo   string `json:"repo,omitempty"`
 	Path   string `json:"path,omitempty"`
 	Branch string `json:"branch,omitempty"`
+	// FromMain: reset rebuilds the worktree from the main checkout's recipe.
+	FromMain bool `json:"from_main,omitempty"`
 }
 
 type actionResponse struct {

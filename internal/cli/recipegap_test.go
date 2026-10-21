@@ -138,6 +138,10 @@ func TestListWarnsOnlyForLinkedWorktreeWithAGap(t *testing.T) {
 	if _, e, code := runCLI(t, append(append([]string{}, base...), "--root", wt, "prepare", "-f", ".stackfork/dev.compose.yaml")...); code != 0 {
 		t.Fatal(e)
 	}
+	raw, _, _ := runCLI(t, append(append([]string{}, base...), "list", "--json")...)
+	if strings.Count(raw, `"recipe_gap": true`) != 1 || strings.Count(raw, `"from_main": true`) != 1 {
+		t.Fatalf("only the worktree carries recipe_gap and from_main:\n%s", raw)
+	}
 	w := listWarnings(t, base)
 	var gotWt []string
 	for root, ws := range w {
