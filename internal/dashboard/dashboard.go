@@ -96,6 +96,8 @@ type Server struct {
 	// checkout cannot be updated; the CLI supplies both.
 	ResetEnv     ResetFunc
 	ResetPreview ResetPreviewFunc
+	// LiveCleanup backs the cleanup ops of POST /api/live; nil answers 503.
+	LiveCleanup *LiveCleanup
 
 	mux      http.Handler
 	cache    *inventoryCache
@@ -176,6 +178,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/runs", s.handleRuns)
 	mux.HandleFunc("GET /api/runs/log", s.handleRunLog)
 	mux.HandleFunc("POST /api/actions", s.handleActions)
+	mux.HandleFunc("POST /api/live", s.handleLive)
 	mux.HandleFunc("POST /api/copy", s.handleCopy)
 	mux.HandleFunc("GET /static/", s.handleStatic)
 	return mux

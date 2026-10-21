@@ -102,6 +102,7 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 		p, err := PreviewReset(checkout, newStateBase, legacyStateBase)
 		return p.Describe(), p.Blocked, err
 	}
+	srv.LiveCleanup = dashboardCleanup(newStateBase, legacyStateBase)
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
 

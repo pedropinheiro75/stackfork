@@ -25,6 +25,9 @@ type Cleanup struct {
 	DeleteBranch bool   `json:"delete_branch"`
 }
 
+// Validate checks the mode and the grace bounds.
+func (c Cleanup) Validate() error { return c.validate() }
+
 func (c Cleanup) validate() error {
 	switch c.Mode {
 	case CleanupOff, CleanupSuggest, CleanupAuto:

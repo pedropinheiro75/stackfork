@@ -200,8 +200,9 @@ func TestGuardBlocksLiveOnAndAutoCleanupForEveryTool(t *testing.T) {
 	for _, tool := range []string{"claude", "codex", "copilot"} {
 		for cmd, block := range map[string]bool{
 			"stackfork live on": true, "stackfork --root . live on": true, "stackfork live cleanup auto": true,
-			"stackfork live cleanup suggest --delete-branch": true,
-			"stackfork live status":                          false, "stackfork live off": false, "stackfork live cleanup suggest": false,
+			"stackfork live cleanup suggest --delete-branch": true, "stackfork live clean acme-web x --yes": true,
+			"stackfork live clean acme-web x": false,
+			"stackfork live status":           false, "stackfork live off": false, "stackfork live cleanup suggest": false,
 		} {
 			var out, errBuf bytes.Buffer
 			code, _ := cmdGuard(strings.NewReader(payload(tool, cmd)), &out, &errBuf, []string{"--tool", tool}, t.TempDir(), t.TempDir())
