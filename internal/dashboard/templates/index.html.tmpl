@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>stackfork dashboard</title>
+<meta name="description" content="Every branch gets its own running stack.">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <script src="/static/theme-init.js"></script>
 <link rel="stylesheet" href="/static/tokens.css">
@@ -13,7 +14,7 @@
 <body>
 <div class="app">
 <nav class="rail" aria-label="Views">
-  <span class="rail-mark" aria-hidden="true">s</span>
+  <span class="rail-mark" aria-hidden="true" title="stackfork: every branch gets its own running stack">s</span>
     <button type="button" class="rail-item" data-view="instances" aria-current="page" title="Instances">
       <svg class="rail-icon" viewBox="0 0 16 16" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="2.5" width="12" height="4" rx="1"/><rect x="2" y="9.5" width="12" height="4" rx="1"/></svg><span class="sr-only">Instances</span><span class="rail-count" id="rail-count-instances">{{if .Loading}}&hellip;{{else}}{{.RunningCount}}/{{.Total}}{{end}}</span>
     </button>

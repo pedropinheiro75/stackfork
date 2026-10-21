@@ -83,7 +83,8 @@ func commandSummary(name string) string {
 // an unknown command gets alongside its own error on stderr - one shared
 // text either way.
 func printOverview(w io.Writer) {
-	fmt.Fprintln(w, "stackfork isolates a Compose stack per checkout+branch, so parallel worktrees/agents never collide on ports, volumes, networks or databases.")
+	fmt.Fprintln(w, "stackfork: every branch gets its own running stack.")
+	fmt.Fprintln(w, "It isolates a Compose stack per checkout+branch, so parallel worktrees/agents never collide on ports, volumes, networks or databases.")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Usage: stackfork [global flags] <command> [flags]")
 	fmt.Fprintln(w)
