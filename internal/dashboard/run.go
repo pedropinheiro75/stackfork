@@ -210,7 +210,7 @@ func (s *Server) planStackfork(args []string, root string) (*runPlan, error) {
 		// the dialog shows every step this approval covers, with all its fields
 		repo := global[1]
 		k, err := knowledge.Load(filepath.Join(repo, ".stackfork", "knowledge.json"))
-		if s.scannedRepo(repo) == nil || err != nil || len(k.Plan.HostSteps()) == 0 {
+		if s.scannedRepo(repo) == nil || err != nil || len(k.Plan.HostRunSteps()) == 0 {
 			return nil, errors.New("not a scanned repo with a plan that has host steps to trust")
 		}
 		diff := lifecycle.ReadableDiff(s.NewStateBase, repo, k.Plan)

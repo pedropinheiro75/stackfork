@@ -402,3 +402,68 @@ func TestCardStartOnHybridRunsThePlan(t *testing.T) {
 		})
 	}
 }
+
+// hostExecPlan records a container-mode plan whose only host-run step is a
+// host exec migrate (the database-only stack).
+func hostExecPlan(t *testing.T, repo string) knowledge.Plan {
+	t.Helper()
+	p := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "migrate", Kind: knowledge.KindExec, On: knowledge.OnHost, Once: knowledge.OnceSchema, Cmd: "bun run db:migrate", Dir: "apps/api"},
+	}}
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Plan: p}
+	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// The card's Start of a container-mode plan with a host migrate goes through
+// StartEnv (trust check, run record), not a plain compose up.
+func TestCardStartWithHostExecRunsThePlan(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := e.readyRepo("svc")
+	hostExecPlan(t, repo)
+	project := "sf-card-hostexec"
+	os.MkdirAll(filepath.Join(e.newDir, project), 0o700)
+	m := &state.Manifest{Project: project, Root: repo, Branch: "main"}
+	if err := state.WritePrivate(filepath.Join(e.newDir, project, "manifest.json"), m); err != nil {
+		t.Fatal(err)
+	}
+	e.post("/api/actions", map[string]string{"action": "up", "project": project}, reqOpts{})
+	if got := e.started(); len(got) != 1 || got[0] != repo {
+		t.Fatalf("StartEnv calls %v", got)
+	}
+}
+
+func TestPlanRowShowsHostExecStepWithTrust(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := e.readyRepo("svc")
+	p := hostExecPlan(t, repo)
+	e.get("/api/repos")
+	frag := e.get("/fragments/repos").Body.String()
+	for _, want := range []string{`data-step="migrate"`, "bun run db:migrate  on host", "untrusted", "Trust on this machine"} {
+		if !strings.Contains(frag, want) {
+			t.Errorf("missing %q in:\n%s", want, frag)
+		}
+	}
+	if _, err := lifecycle.TrustHere(e.newDir, repo, p); err != nil {
+		t.Fatal(err)
+	}
+	if frag := e.get("/fragments/repos").Body.String(); strings.Contains(frag, "untrusted") || !strings.Contains(frag, "trusted") {
+		t.Fatalf("trusted chip missing:\n%s", frag)
+	}
+}
+
+// The dashboard can trust a plan whose only host-run step is a host exec step.
+func TestTrustActionAcceptsAPlanWithOnlyAHostExecStep(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := e.readyRepo("svc")
+	hostExecPlan(t, repo)
+	e.get("/api/repos")
+	asked := stubConfirm(t, true)
+	e.post("/api/run", map[string]string{"command": "stackfork --root '" + repo + "' plan --trust"}, reqOpts{})
+	if !strings.Contains(*asked, "migrate [exec]") || !strings.Contains(*asked, "on: host") {
+		t.Fatalf("dialog %q", *asked)
+	}
+}

@@ -205,7 +205,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 }
 
 // planRunsHost reports whether the checkout's plan, in this machine's mode
-// for the repo, has a host step.
+// for the repo, runs a host command: a host step or an exec step on the host.
 func planRunsHost(root string) bool {
 	main := repos.MainRepoOf(root)
 	if main == "" {
@@ -221,7 +221,7 @@ func planRunsHost(root string) bool {
 	}
 	run, _ := k.Plan.ForMode(mode)
 	for _, st := range run {
-		if st.Kind == knowledge.KindHost {
+		if st.Kind == knowledge.KindHost || st.IsHostExec() {
 			return true
 		}
 	}
