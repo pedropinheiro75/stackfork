@@ -53,6 +53,7 @@ func newLiveLoopFx(t *testing.T) *liveLoopFx {
 	var clock atomic.Int64
 	liveLoopSetup = func(l *live.Loop) {
 		l.Every = 5 * time.Millisecond
+		l.Admit = func(*config.Config, string) string { return "" } // the fixture sits outside a configured folder
 		l.Now = func() time.Time {
 			return time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC).Add(time.Duration(clock.Add(1)) * time.Second)
 		}
