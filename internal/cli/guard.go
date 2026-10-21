@@ -10,8 +10,27 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/guard"
 )
+
+func init() {
+	// The guard learns the machine map's references from config.json, only
+	// when a 1Password command matched (design D12).
+	guard.MappedRefs = func() []string {
+		cfg, err := config.Load()
+		if err != nil {
+			return nil
+		}
+		var refs []string
+		for _, names := range cfg.Secrets {
+			for _, r := range names {
+				refs = append(refs, r)
+			}
+		}
+		return refs
+	}
+}
 
 func cmdGuard(stdin io.Reader, stdout, stderr io.Writer, subArgs []string, newStateBase, legacyStateBase string) (int, error) {
 	fs := newFlagSet(stdout, "guard")
@@ -35,7 +54,7 @@ func cmdGuard(stdin io.Reader, stdout, stderr io.Writer, subArgs []string, newSt
 		return 0, nil
 	}
 	if guard.Destructive(in.Command, in.Cwd) {
-		return denyGuard(stdout, stderr, *tool, guard.DestructiveMessage), nil
+		return denyGuard(stdout, stderr, *tool, guard.DenyMessage(in.Command, in.Cwd)), nil
 	}
 	blocked := guard.Decide(in.Command, in.Cwd, func(dir string) bool {
 		return guard.IsManaged(dir, newStateBase, legacyStateBase)

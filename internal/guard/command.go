@@ -413,7 +413,7 @@ var globalValueFlags = map[string]bool{
 // --all, or `stackfork gc --apply`: the deleting forms. A dry run is not.
 // Unlike Decide this applies in any directory.
 func Destructive(command, cwd string) bool {
-	if bypassesConfirmation(command) {
+	if bypassesConfirmation(command) || secretForbidden(command, cwd) {
 		return true
 	}
 	for _, seg := range guardSegments(command, cwd) {
@@ -465,7 +465,7 @@ func bypassesConfirmation(command string) bool {
 			continue
 		}
 		for _, w := range seg.Words[1:] {
-			for _, ep := range []string{"/api/run", "/api/actions", "/api/learn"} {
+			for _, ep := range []string{"/api/run", "/api/actions", "/api/learn", "/api/secrets"} {
 				if strings.Contains(w, ep) {
 					return true
 				}

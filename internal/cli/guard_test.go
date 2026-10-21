@@ -152,3 +152,39 @@ func TestGuardAllowsRunsCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestGuardBlocksSecretWritesAndReadsForEveryTool(t *testing.T) {
+	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
+	repo := initRepo(t)
+	mapSecret(t, repo, "STRIPE_TEST_KEY", "op://Dev/acme-stripe/test-key")
+	plain := t.TempDir()
+	payload := func(tool, cmd string) string {
+		if tool == "copilot" {
+			return `{"timestamp":1,"cwd":"` + plain + `","toolName":"bash","toolArgs":"{\"command\":\"` + cmd + `\"}"}`
+		}
+		return `{"cwd":"` + plain + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + cmd + `"}}`
+	}
+	for _, tool := range []string{"claude", "codex", "copilot"} {
+		for cmd, block := range map[string]bool{
+			"stackfork secret set acme-npm-token":                      true,
+			"stackfork --root /x secret map . NPM_TOKEN=keychain:acme": true,
+			"sh -c 'stackfork secret unmap . NPM_TOKEN'":               true,
+			"security find-generic-password -s stackfork -a acme -w":   true,
+			"secret-tool lookup service stackfork account acme":        true,
+			"op read op://Dev/acme-stripe/test-key":                    true,
+			"op read op://Dev/unmapped/key":                            false,
+			"stackfork secret ls":                                      false,
+			"stackfork secret check --json":                            false,
+		} {
+			var out, errBuf bytes.Buffer
+			code, _ := cmdGuard(strings.NewReader(payload(tool, cmd)), &out, &errBuf, []string{"--tool", tool}, t.TempDir(), t.TempDir())
+			denied := (tool == "copilot" && strings.Contains(out.String(), "deny")) || code == 2
+			if denied != block {
+				t.Errorf("%s %q: denied=%v want %v (code=%d out=%q)", tool, cmd, denied, block, code, out.String())
+			}
+			if block && !strings.Contains(errBuf.String(), "secrets are set, mapped and read by a person") {
+				t.Errorf("%s %q: stderr %q", tool, cmd, errBuf.String())
+			}
+		}
+	}
+}
