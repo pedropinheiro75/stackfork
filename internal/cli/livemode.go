@@ -57,7 +57,8 @@ var liveLoopSetup func(*live.Loop)
 // ends it; done closes once it has, which is after a live run in progress.
 func startLiveLoop(newBase, legacyBase string, profiles []string, srv *dashboard.Server) (loop *live.Loop, stop context.CancelFunc, done chan struct{}) {
 	loop = &live.Loop{NewBase: newBase, LegacyBase: legacyBase, Version: Version,
-		Exec: LiveExec(newBase, legacyBase, profiles, nil), ActionLocked: srv.ActionLocked}
+		Exec: LiveExec(newBase, legacyBase, profiles, nil), ActionLocked: srv.ActionLocked,
+		CleanupDown: cleanupDown(newBase, legacyBase)}
 	if liveLoopSetup != nil {
 		liveLoopSetup(loop)
 	}

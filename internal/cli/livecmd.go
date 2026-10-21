@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
@@ -16,7 +17,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/live"
 )
 
-const liveUsage = "live on [REPO] | live off [REPO] | live status [REPO] [--json] | live cleanup off|suggest|auto [REPO] [--grace HOURS] [--delete-branch|--keep-branch]"
+const liveUsage = "live on [REPO] | live off [REPO] | live status [REPO] [--json] | live cleanup off|suggest|auto [REPO] [--grace HOURS] [--delete-branch|--keep-branch] | live clean [REPO] BRANCH [--yes]"
 
 // liveTargets lists a repository's instances; a test replaces it.
 var liveTargets = func(newBase, legacyBase, main string) ([]live.Target, error) {
@@ -28,20 +29,22 @@ func cmdLive(stdout, stderr io.Writer, subArgs []string, rootArg, newBase, legac
 	if len(subArgs) == 0 || isHelpRequest(subArgs) {
 		printFlaglessUsage(stdout, "live", liveUsage)
 		if len(subArgs) == 0 {
-			return 2, errors.New("live needs a subcommand (on, off, status or cleanup)")
+			return 2, errors.New("live needs a subcommand (on, off, status, cleanup or clean)")
 		}
 		return 0, nil
 	}
 	verb, rest := subArgs[0], subArgs[1:]
 	switch verb {
-	case "on", "off", "status", "cleanup":
+	case "on", "off", "status", "cleanup", "clean":
 	default:
-		return 2, fmt.Errorf("unknown live subcommand %q (expected on, off, status or cleanup)", verb)
+		return 2, fmt.Errorf("unknown live subcommand %q (expected on, off, status, cleanup or clean)", verb)
 	}
 	fs := newFlagSet(stdout, "live "+verb)
-	var asJSON, delBranch, keepBranch *bool
+	var asJSON, delBranch, keepBranch, yes *bool
 	var grace *int
 	switch verb {
+	case "clean":
+		yes = fs.Bool("yes", false, "")
 	case "status":
 		asJSON = fs.Bool("json", false, "")
 	case "cleanup":
@@ -64,6 +67,20 @@ func cmdLive(stdout, stderr io.Writer, subArgs []string, rootArg, newBase, legac
 			return 2, errors.New("usage: stackfork live cleanup off|suggest|auto [REPO] [--grace HOURS] [--delete-branch|--keep-branch]")
 		}
 		mode, pos = pos[0], pos[1:]
+	}
+	if verb == "clean" { // live clean [REPO] BRANCH
+		if len(pos) < 1 || len(pos) > 2 {
+			return 2, errors.New("usage: stackfork live clean [REPO] BRANCH [--yes]")
+		}
+		repoArg := ""
+		if len(pos) == 2 {
+			repoArg = pos[0]
+		}
+		main, err := liveRepo(repoArg, rootArg, newBase, legacyBase)
+		if err != nil {
+			return 0, err
+		}
+		return liveClean(stdout, main, pos[len(pos)-1], *yes, newBase, legacyBase)
 	}
 	if len(pos) > 1 {
 		return 2, fmt.Errorf("usage: stackfork %s", liveUsage)
@@ -208,15 +225,17 @@ func liveOn(stdout io.Writer, main, newBase, legacyBase string) (int, error) {
 
 // liveRepoJSON is one repository of `live status --json`.
 type liveRepoJSON struct {
-	Repo      string              `json:"repo"`
-	Path      string              `json:"path"`
-	Enabled   bool                `json:"enabled"`
-	State     string              `json:"state"` // off, on or paused
-	Reason    string              `json:"reason,omitempty"`
-	Dashboard bool                `json:"dashboard_running"`
-	Cleanup   config.Cleanup      `json:"cleanup"`
-	Pause     *live.Pause         `json:"pause,omitempty"`
-	Targets   []live.TargetStatus `json:"targets"`
+	Repo      string         `json:"repo"`
+	Path      string         `json:"path"`
+	Enabled   bool           `json:"enabled"`
+	State     string         `json:"state"` // off, on or paused
+	Reason    string         `json:"reason,omitempty"`
+	Dashboard bool           `json:"dashboard_running"`
+	Cleanup   config.Cleanup `json:"cleanup"`
+	// Candidates are the merged and closed worktrees (branch cleanup), from the local refs.
+	Candidates []live.CandidateStatus `json:"candidates"`
+	Pause      *live.Pause            `json:"pause,omitempty"`
+	Targets    []live.TargetStatus    `json:"targets"`
 }
 
 func liveStatus(stdout io.Writer, arg, rootArg string, asJSON bool, newBase, legacyBase string) (int, error) {
@@ -235,7 +254,7 @@ func liveStatus(stdout io.Writer, arg, rootArg string, asJSON bool, newBase, leg
 	dash := heldLock(live.LockPath(newBase))
 	out := []liveRepoJSON{}
 	for _, m := range mains {
-		r := liveRepoJSON{Repo: filepath.Base(m), Path: m, Enabled: cfg.LiveFor(m), State: "off", Dashboard: dash, Cleanup: cfg.CleanupFor(m), Targets: []live.TargetStatus{}}
+		r := liveRepoJSON{Repo: filepath.Base(m), Path: m, Enabled: cfg.LiveFor(m), State: "off", Dashboard: dash, Cleanup: cfg.CleanupFor(m), Targets: []live.TargetStatus{}, Candidates: []live.CandidateStatus{}}
 		if r.Enabled {
 			ts, err := liveTargets(newBase, legacyBase, m)
 			if err != nil {
@@ -243,6 +262,7 @@ func liveStatus(stdout io.Writer, arg, rootArg string, asJSON bool, newBase, leg
 			}
 			ins := live.Inspect(newBase, m, ts)
 			r.Targets, r.Pause = ins.Targets, ins.Pause
+			r.Candidates = live.InspectCleanup(newBase, m, r.Cleanup, ts, time.Now()).Candidates
 			r.State = "on"
 			switch {
 			case !dash:
@@ -270,6 +290,9 @@ func liveStatus(stdout io.Writer, arg, rootArg string, asJSON bool, newBase, leg
 		}
 		if r.Enabled {
 			fmt.Fprintf(stdout, "  cleanup: %s\n", r.Cleanup.Mode)
+			for _, c := range r.Candidates {
+				fmt.Fprintf(stdout, "    %s\n", candidateText(r.Path, c))
+			}
 		}
 		for _, t := range r.Targets {
 			fmt.Fprintf(stdout, "  %s (%s, %s)\n", t.Project, t.Branch, t.State)
@@ -285,6 +308,23 @@ func liveStatus(stdout io.Writer, arg, rootArg string, asJSON bool, newBase, leg
 		}
 	}
 	return 0, nil
+}
+
+// candidateText is one line of `live status` for a merged or closed worktree.
+func candidateText(main string, c live.CandidateStatus) string {
+	pr := ""
+	if c.PR != 0 {
+		pr = fmt.Sprintf(" #%d", c.PR)
+	}
+	switch {
+	case c.Kept:
+		return fmt.Sprintf("%s: %s%s, kept", c.Branch, c.State, pr)
+	case !c.Eligible:
+		return fmt.Sprintf("%s: %s%s, %s", c.Branch, c.State, pr, c.Warning)
+	case !c.CleanAt.IsZero():
+		return fmt.Sprintf("%s: %s%s, cleaned up in %s", c.Branch, c.State, pr, time.Until(c.CleanAt).Round(time.Minute))
+	}
+	return fmt.Sprintf("%s: %s%s, clean up with: stackfork live clean %s %s", c.Branch, c.State, pr, main, c.Branch)
 }
 
 func liveStateText(r liveRepoJSON) string {

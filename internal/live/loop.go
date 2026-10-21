@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pedropinheiro75/stackfork/internal/cleanup"
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
@@ -39,6 +41,12 @@ type Loop struct {
 	Exec                         Exec
 	ActionLocked                 func(project string) bool // the dashboard's per-project action lock; nil: never
 
+	// Branch cleanup (design D15-D20). All optional: nil uses the real thing.
+	CleanupFetch func(main, remote string, timeout time.Duration) error // nil: cleanup.Fetch
+	GH           *cleanup.GH                                            // nil: the fixed-path gh, or none
+	CleanupDown  func(t Target) func(io.Writer) error                   // removes an instance with its volumes; nil: the step fails
+	CleanupExec  func(ctx context.Context, j CleanupJob) CleanupOutcome // nil: RunCleanup
+
 	Config  func() (*config.Config, error) // nil: config.Load, reread when config.json changes
 	Targets func(main string) ([]Target, error)
 	Sync    func(checkout string, timeout time.Duration) repos.SyncResult // nil: repos.Sync
@@ -59,6 +67,7 @@ type Loop struct {
 }
 
 type repoState struct {
+	cl        cleanupLoop
 	targets   []Target
 	refreshed time.Time
 	err       string
@@ -102,6 +111,7 @@ type RepoStatus struct {
 	Pause   *Pause         `json:"pause,omitempty"`
 	Error   string         `json:"error,omitempty"`
 	Targets []TargetStatus `json:"targets"`
+	Cleanup *CleanupStatus `json:"cleanup,omitempty"`
 }
 
 // TargetStatus is one instance of the repository.
@@ -255,7 +265,7 @@ func (l *Loop) Tick(ctx context.Context) {
 		if ctx.Err() != nil {
 			break
 		}
-		st.Repos = append(st.Repos, l.tickRepo(ctx, main))
+		st.Repos = append(st.Repos, l.tickRepo(ctx, main, cfg.CleanupFor(main)))
 	}
 	for m := range l.repos {
 		if !cfg.LiveFor(m) {
@@ -271,7 +281,7 @@ func (l *Loop) set(s Status) {
 	l.mu.Unlock()
 }
 
-func (l *Loop) tickRepo(ctx context.Context, main string) RepoStatus {
+func (l *Loop) tickRepo(ctx context.Context, main string, cl config.Cleanup) RepoStatus {
 	now := l.now()
 	rs := l.repos[main]
 	if rs == nil {
@@ -302,6 +312,7 @@ func (l *Loop) tickRepo(ctx context.Context, main string) RepoStatus {
 	if pause != nil {
 		out.State, out.Reason, out.Pause = StatePaused, pause.Reason, pause
 	}
+	out.Cleanup = l.tickCleanup(ctx, rs, main, cl, pause != nil, now)
 	return out
 }
 

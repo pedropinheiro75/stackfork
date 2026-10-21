@@ -303,3 +303,35 @@ func sameFile(a, b string) bool {
 	rb, eb := filepath.EvalSymlinks(b)
 	return ea == nil && eb == nil && ra == rb
 }
+
+// Slot reserves the one live run at a time for a cleanup of main (design
+// D20: it counts toward the 12 runs an hour). ok is false, with the reason,
+// when another live run is in progress or the hourly limit paused the
+// repository. Call release once the cleanup ran: counted is true when a run
+// began (or a worktree was removed), which uses one of the hour's slots.
+func (r *Reconciler) Slot(newBase, main string) (release func(counted bool), reason string, ok bool) {
+	now := r.now()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.last == nil {
+		r.last, r.started = map[string]time.Time{}, map[string][]time.Time{}
+	}
+	switch {
+	case r.busy:
+		return nil, "another live run is in progress", false
+	case r.recent(main, now) >= HourlyMax:
+		delete(r.started, main)
+		p := Pause{Kind: PauseRate, Reason: fmt.Sprintf("rate limit: %d live runs in the last hour", HourlyMax), At: now.UTC()}
+		WritePause(newBase, main, p)
+		return nil, p.Reason, false
+	}
+	r.busy = true
+	return func(counted bool) {
+		r.mu.Lock()
+		r.busy = false
+		if counted {
+			r.started[main] = append(r.started[main], now)
+		}
+		r.mu.Unlock()
+	}, "", true
+}
