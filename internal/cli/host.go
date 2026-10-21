@@ -115,22 +115,15 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	defer unregisterHostRoute(name, root, branch, project, instanceDir, newStateBase, legacyStateBase, stderr)
 
-	env := os.Environ()
-	for _, line := range strings.Split(block, "\n") {
-		if key, _, ok := strings.Cut(line, "="); ok && key != "" {
-			env = append(env, line)
-		}
-	}
 	p := strconv.Itoa(port)
-	env = append(env, "PORT="+p, "NUXT_PORT="+p, "NITRO_PORT="+p, "HOST=127.0.0.1", guard.HostRunEnv+"=1")
+	extra := []string{"PORT=" + p, "NUXT_PORT=" + p, "NITRO_PORT=" + p, "HOST=127.0.0.1"}
 	for _, e := range portEnv {
-		env = append(env, e+"="+p)
+		extra = append(extra, e+"="+p)
 	}
+	env := hostEnviron(block, extra...)
 
-	if runtime.GOOS == "windows" {
-		if err := checkBatchArgs(command, exec.LookPath); err != nil {
-			return 0, err
-		}
+	if err := checkHostArgv(command); err != nil {
+		return 0, err
 	}
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Env = env
@@ -156,6 +149,29 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 			return exitCode(err)
 		}
 	}
+}
+
+// hostEnviron is the environment of a command stackfork runs on the host for
+// an instance: ours, then each KEY=VALUE line of the instance's environment
+// block (exec.Cmd keeps the last of a repeated name, so the block wins), then
+// extra, then STACKFORK_HOST_RUN=1. Host steps and host exec steps share it.
+func hostEnviron(block string, extra ...string) []string {
+	env := os.Environ()
+	for _, line := range strings.Split(block, "\n") {
+		if key, _, ok := strings.Cut(line, "="); ok && key != "" {
+			env = append(env, line)
+		}
+	}
+	return append(append(env, extra...), guard.HostRunEnv+"=1")
+}
+
+// checkHostArgv applies checkBatchArgs on Windows, where cmd.exe would
+// interpret the arguments of a .cmd or .bat target.
+func checkHostArgv(argv []string) error {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	return checkBatchArgs(argv, exec.LookPath)
 }
 
 // checkBatchArgs refuses, for a command that resolves to a .cmd or .bat file,

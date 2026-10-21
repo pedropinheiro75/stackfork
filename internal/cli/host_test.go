@@ -176,3 +176,24 @@ func TestCheckBatchArgs(t *testing.T) {
 		t.Error("unresolved commands are left to exec")
 	}
 }
+
+// The block's lines come after the inherited environment, so they win
+// (exec.Cmd keeps the last of a repeated name); extras come last.
+func TestHostEnvironOrder(t *testing.T) {
+	t.Setenv("DATABASE_URL", "inherited")
+	env := hostEnviron("DATABASE_URL=from-block\nnot a line\n=skipped\nREDIS_URL=r")
+	last := map[string]string{}
+	for _, e := range env {
+		k, v, _ := strings.Cut(e, "=")
+		last[k] = v
+	}
+	if last["DATABASE_URL"] != "from-block" || last["REDIS_URL"] != "r" || last["STACKFORK_HOST_RUN"] != "1" {
+		t.Fatalf("last values %v", last)
+	}
+	if env[len(env)-1] != "STACKFORK_HOST_RUN=1" {
+		t.Fatalf("extras must come last: %v", env[len(env)-1])
+	}
+	if _, ok := last[""]; ok {
+		t.Fatal("a line without a name is dropped")
+	}
+}
