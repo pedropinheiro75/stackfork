@@ -5,6 +5,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `prepare` and `up` refuse a repository that was never learned (no knowledge file, adapter, instance or profile reference), like `start-env`; `--force` overrides it for people and the guard blocks it for agents. A draft and an existing instance are not blocked.
+- A step with no service, and an auto-detected seed, never run in a web server or proxy image (nginx, caddy, traefik, httpd, haproxy, envoy, openresty). A detected seed no service can run is skipped with a note instead of failing `up`.
+
 ### Added
 
 - macOS app (`add-macos-app`): `Stackfork.app`, a menu bar app that runs its own dashboard (`stackfork dashboard --supervised`), shows instances with **Start** and **Stop**, opens the dashboard in a window and can open at login. `--supervised` listens on its own stable port (`<state>/dashboard/app-port`), prints one JSON ready line (URL, port, token, pid, version) as its first output, registers no `stackfork.localhost` route and exits when standard input closes; it refuses `--port` and `--open` (exit 2). `scripts/build-macos-app.sh VERSION` builds a universal, ad-hoc-signed app and a DMG with a `.sha256` file; the release workflow attaches both. The app is not notarized: clear the quarantine attribute as the README says.

@@ -6,7 +6,8 @@ Global flags, accepted anywhere (before or after the command): `--root DIR`, `--
 
 ### prepare
 Isolate this checkout+branch's copy of the Compose stack.
-Flags: `-f`/`--file`, `--env-file`, `--hostname`, `--reassign-ports`, `--random-ports`
+Flags: `-f`/`--file`, `--env-file`, `--force`, `--hostname`, `--reassign-ports`, `--random-ports`
+`prepare` and `up` refuse a checkout whose repository was never learned (no knowledge file, adapter, instance or profile reference): `<repo> has not been learned yet: run stackfork learn first`. A draft (learn ran, not verified) is allowed, and `up` on an existing instance is never blocked. `--force` overrides the refusal with a warning (people only: the guard blocks it for agents, who run `stackfork learn`).
 ```sh
 stackfork --root .worktrees/pr630 prepare -f .agent-dev/nuxt.compose.yaml --env-file .agent-dev/runtime.env
 ```
@@ -17,7 +18,7 @@ Dependency caches across restarts: `prepare` turns an anonymous volume on a depe
 
 ### up
 Start the prepared stack.
-Flags: `--build`, `--mode`, `--profile`, `--service`, `--wait-timeout`
+Flags: `--build`, `--force`, `--mode`, `--profile`, `--service`, `--wait-timeout`
 `--mode container|hybrid` names the plan mode that decides whether this `up` runs the one-time seed (default: the configured mode); `start-env` sets it.
 ```sh
 stackfork up --build --wait-timeout 120
@@ -159,7 +160,7 @@ stackfork clone-db --from-dump backup.sql --replace
 ```
 
 ### seed
-Run the recipe's `seed_once` command (`learn record recipe --seed-once CMD [--seed-service SVC]`) in its service. `up` and `start-env` run it automatically, once, when that `up` creates the data volume (a script detected in the checkout counts when no decision is recorded; `--seed-once none` disables it). `seed` is the retry when that failed (the dashboard warns about a failed seed). Already seeded: does nothing; `--force` reruns it (agents: ask first, the guard blocks it). `--mark-done` records the instance as seeded without running anything, for data that is already there; the dashboard's failed-seed warning shows the end of the seed step's log of the last run that seeded (`stackfork runs show --step seed`). Instances seeded before runs existed fall back to `seed.log`.
+Run the recipe's `seed_once` command (`learn record recipe --seed-once CMD [--seed-service SVC]`) in its service. `up` and `start-env` run it automatically, once, when that `up` creates the data volume (a script detected in the checkout counts when no decision is recorded; `--seed-once none` disables it). A step with no service never runs in a web server or proxy image (nginx, caddy, traefik, httpd, haproxy, envoy, openresty); when no other service can run a detected seed, `up` skips it with a `seed not run:` note and the stack stays up. `seed` is the retry when that failed (the dashboard warns about a failed seed). Already seeded: does nothing; `--force` reruns it (agents: ask first, the guard blocks it). `--mark-done` records the instance as seeded without running anything, for data that is already there; the dashboard's failed-seed warning shows the end of the seed step's log of the last run that seeded (`stackfork runs show --step seed`). Instances seeded before runs existed fall back to `seed.log`.
 Flags: `--force`, `--mark-done`
 ```sh
 stackfork seed
