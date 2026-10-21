@@ -22,6 +22,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/redact"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
+	"github.com/pedropinheiro75/stackfork/internal/secretstore"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -549,7 +550,9 @@ func flagSecrets(global []string) map[string]string {
 // recipe to copy, the references of the sibling whose recipe will be reused
 // (read-only: Apply runs later, in prepare). With a recipe from knowledge or
 // an adapter and no --secret flag, those of the most recent sibling that has
-// any. The machine map's names and the flags' names are dropped: they win.
+// any. The machine map's names and the flags' names are dropped: they win,
+// and so is any keychain: or op:// reference (a sibling's is stale: the map
+// is where those live).
 func siblingRefs(o StartOptions, root, main, instanceDir string, insts []inventory.Instance) (map[string]string, error) {
 	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err == nil {
 		return nil, nil
@@ -570,9 +573,16 @@ func siblingRefs(o StartOptions, root, main, instanceDir string, insts []invento
 	flags := flagSecrets(o.Global)
 	out := map[string]string{}
 	for n, r := range refs {
-		if mapped[n] == "" && flags[n] == "" {
-			out[n] = r
+		if mapped[n] != "" || flags[n] != "" {
+			continue
 		}
+		if secretstore.IsStoreRef(r) {
+			// Only a person's map holds a keychain: or op:// reference, and prepare
+			// takes sibling references as --secret flags, which refuse them. A name
+			// the map holds now is dropped above and reaches prepare through it.
+			continue
+		}
+		out[n] = r
 	}
 	return out, nil
 }

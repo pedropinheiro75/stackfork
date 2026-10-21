@@ -138,3 +138,39 @@ func TestStartEnvFlagOnPreparedInstanceDoesNotSplitPreflightFromUp(t *testing.T)
 		t.Errorf("up must run with the manifest's reference:\n%s", env)
 	}
 }
+
+// Round 2: a store reference lent by a sibling worktree is dropped: only the
+// map holds those, so nothing reads the store for it and nothing fails on it.
+func TestStartEnvDropsUnmappedStoreReferencesOfASibling(t *testing.T) {
+	repo, sib, base := siblingRepo(t)
+	installFakeDocker(t)
+	kc := fakeKeychain(t, nil)
+	whereOut, _, _ := runCLI(t, append(append([]string{}, base...), "--root", sib, "where")...)
+	var w struct{ State string }
+	json.Unmarshal([]byte(whereOut), &w)
+	mp := filepath.Join(w.State, "manifest.json")
+	b, _ := os.ReadFile(mp)
+	var m map[string]any
+	json.Unmarshal(b, &m)
+	m["secrets"].(map[string]any)["kc"] = "keychain:acme-sibling-only"
+	m["secrets"].(map[string]any)["kept"] = "op://Dev/acme/kept"
+	b, _ = json.Marshal(m)
+	os.WriteFile(mp, b, 0o600)
+	mapSecret(t, repo, "other", "op://Dev/acme/kept") // a mapped name reaches prepare through the map
+	fakeOp(t, "op-value-1234567")
+	nw := newWorktree(t, repo, "feat-b")
+	out, e, code := runCLI(t, append(append([]string{}, base...), "start-env", nw)...)
+	if code != 0 {
+		t.Fatalf("%d\n%s\n%s", code, out, e)
+	}
+	if strings.Contains(out+e, "acme-sibling-only") {
+		t.Errorf("mentioned: %s %s", out, e)
+	}
+	if _, err := os.Stat(filepath.Join(kc, "args.rec")); err == nil {
+		t.Error("the keychain was read")
+	}
+	refs := instanceManifestSecrets(t, base, nw)
+	if _, ok := refs["kc"]; ok || refs["kept"] != "" || refs["other"] != "op://Dev/acme/kept" {
+		t.Errorf("manifest %v", refs)
+	}
+}
