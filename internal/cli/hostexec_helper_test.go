@@ -25,8 +25,11 @@ func init() {
 	if v := os.Getenv("HELPER_PRINT"); v != "" {
 		fmt.Fprintln(os.Stderr, "stderr "+v)
 	}
-	_, err := os.Stdin.Read(make([]byte, 1))
-	fmt.Printf("stdin=%v\n", err == io.EOF || err != nil)
+	if os.Getenv("HELPER_DUMP_ENV") == "1" {
+		fmt.Printf("env=%q\n", os.Environ())
+	}
+	n, err := os.Stdin.Read(make([]byte, 1))
+	fmt.Printf("stdin=%v\n", n == 0 && err == io.EOF) // closed: nothing to read, at once
 	code, _ := strconv.Atoi(os.Getenv("STACKFORK_TEST_HELPER_EXIT"))
 	os.Exit(code)
 }

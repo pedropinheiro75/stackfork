@@ -48,6 +48,40 @@ func TestHostExecRunsArgvWithoutShellInTheCheckout(t *testing.T) {
 	}
 }
 
+// The child's stdin is closed even when stackfork's own stdin is a pipe with data.
+func TestHostExecStdinIsClosedWhenTheParentHasInput(t *testing.T) {
+	_, _, _, run := hostExecEnv(t)
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.WriteString("input the step must not read\n")
+	old := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = old; r.Close(); w.Close() })
+	out, code, err := run(helperStep("", "a"))
+	if err != nil || code != 0 || !strings.Contains(out, "stdin=true") {
+		t.Fatalf("code %d err %v\n%s", code, err, out)
+	}
+}
+
+// A secret that a keychain or op reference resolves to is never in the host
+// command's environment; only stackfork's own environment and the block are.
+func TestHostExecEnvironmentHasNoSecretValue(t *testing.T) {
+	const canary = "host-secret-canary-value-1"
+	fakeKeychain(t, map[string]string{"acme-host-secret": canary})
+	root, _, _, run := hostExecEnv(t)
+	mapSecret(t, root, "SF_HOST_SECRET", "keychain:acme-host-secret")
+	t.Setenv("HELPER_DUMP_ENV", "1")
+	out, code, err := run(helperStep("", "a"))
+	if err != nil || code != 0 || !strings.Contains(out, "env=") {
+		t.Fatalf("code %d err %v\n%s", code, err, out)
+	}
+	if strings.Contains(out, canary) || strings.Contains(out, "SF_HOST_SECRET") {
+		t.Fatalf("a secret reached the host command:\n%s", out)
+	}
+}
+
 func TestHostExecDirConfinedToTheCheckout(t *testing.T) {
 	root, _, _, run := hostExecEnv(t)
 	if err := os.MkdirAll(filepath.Join(root, "apps", "api"), 0o755); err != nil {
@@ -61,9 +95,12 @@ func TestHostExecDirConfinedToTheCheckout(t *testing.T) {
 	if err != nil || code != 0 || !strings.Contains(out, filepath.Join("apps", "api")+"\n") {
 		t.Fatalf("inside: code %d err %v\n%s", code, err, out)
 	}
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(root), "other"), 0o755); err != nil { // it exists: only the confinement can refuse it
+		t.Fatal(err)
+	}
 	for _, dir := range []string{"..", "../other", "escape"} {
 		out, _, err := run(helperStep(dir, "a"))
-		if err == nil || !strings.Contains(err.Error(), "outside the checkout") && !strings.Contains(err.Error(), "no such file") {
+		if err == nil || !strings.Contains(err.Error(), "outside the checkout") {
 			t.Errorf("dir %q: err %v", dir, err)
 		}
 		if strings.Contains(out, "argv=") {
