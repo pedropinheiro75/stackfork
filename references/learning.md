@@ -39,16 +39,23 @@ The recipe is a startup plan: an ordered list of steps in `.stackfork/knowledge.
 |---|---|
 | `prepare` | Runs `prepare` with the recorded arguments. |
 | `compose-up` | Starts the stack. `exclude` lists services to leave out. |
-| `exec` | Runs `cmd` in `service`. `once` is `data` (seed, new database only) or `schema` (migrate). |
+| `exec` | Runs `cmd` in `service`. `once` is `data` (seed, new database only) or `schema` (migrate). With `on: host` it runs on the host instead (see below). |
 | `host` | Runs `cmd` on the host. `cmd` is an argument vector: no shell, so no pipes, redirects or `&&`. |
 | `note` | Shows `text` to the person. Runs nothing. |
 
 A `host` step has a `name`, an optional `dir` and `port` (`--port N`, 1 to 65535), and `port_env`. A `prepare` step takes `args` (`--args -f,compose.yaml`). The step always sets `PORT`, plus each name in `port_env`. `no_seed` records the answer "never seed".
 
+An `exec` step with `on: host` runs `cmd` on the host, in the checkout or in `dir` (relative, inside the checkout), with the instance's environment: the `DATABASE_URL`, `REDIS_URL`, `SMTP_HOST` and `<SERVICE>_URL` values that `stackfork env --with-passwords` prints, plus `STACKFORK_HOST_RUN=1`. Use it when no container can run the project's migrate or seed, for example when only the database runs in Compose. `cmd` is an argument vector like a `host` step: no shell, so no `&&`. A host exec step takes `cmd`, `once`, `modes` and `dir`, and no `service`, `name`, `port` or `port_env`. Put it after the `compose-up` step: it needs a running instance. It runs in `container` mode and in `hybrid` mode, and does not make `hybrid` available by itself.
+
+When the `once: data` seed and the first `once: schema` step are both `on: host` with the same `dir`, the seed entry runs the migrate first and the seed second, as two commands, and stops at the first failure. The migrate step then shows as skipped (`ran with the seed`). A migrate and a seed that do not both run on the host each run at their own place in the plan. An auto-detected seed always runs in a container.
+
+After the first Start, check that the host command used this instance's database: a tool that reads its own `.env` file can ignore `DATABASE_URL`.
+
 Record, change or remove a step:
 
 ```sh
 stackfork learn record step --id web --kind host --name web --cmd "bun run dev" --port-env VITE_PORT --modes hybrid
+stackfork learn record step --id migrate --kind exec --on host --cmd "bun run db:migrate" --once schema
 stackfork learn record step --id web --remove
 ```
 
@@ -58,7 +65,7 @@ stackfork learn record step --id web --remove
 
 Each machine runs the plan in a mode: `container` (default) or `hybrid`. Set it with `stackfork config set mode hybrid`, per repo with `stackfork config set-mode REPO hybrid`, or for one run with `start-env --mode`. Hybrid mode drops the app service and every service that depends on it, and runs the `host` step instead.
 
-A host step runs a command from a file in the repository, so a person must trust it first. Trust is needed only when the active mode runs a host step. The trust hash covers all `host` and `prepare` steps. Adding a field to a step changes the hash and needs a new trust.
+A host step runs a command from a file in the repository, so a person must trust it first. Trust is needed only when the active mode runs a host step or an `exec` step with `on: host`. The trust hash covers all `host` and `prepare` steps and all `exec` steps with `on: host`. Adding a field to a step changes the hash and needs a new trust.
 
 To trust the host steps:
 
