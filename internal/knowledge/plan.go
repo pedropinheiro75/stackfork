@@ -3,6 +3,7 @@ package knowledge
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unicode"
 )
@@ -299,6 +300,9 @@ func ValidatePlan(p Plan) error {
 			}
 			if s.Name != "" || s.Port != 0 || len(s.PortEnv) > 0 {
 				return fmt.Errorf("step %q: a host exec step takes no name, port or port_env (those belong to host steps)", s.ID)
+			}
+			if filepath.IsAbs(s.Dir) || strings.HasPrefix(s.Dir, "/") || strings.HasPrefix(s.Dir, `\`) {
+				return fmt.Errorf("step %q: the dir of a host exec step is relative to the checkout, not %q", s.ID, s.Dir)
 			}
 		}
 		if s.Kind == KindHost || s.IsHostExec() {

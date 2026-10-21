@@ -197,6 +197,8 @@ func TestValidatePlanHostExec(t *testing.T) {
 		{"shell syntax", func(s *Step) { s.Cmd = "bun run a && bun run b" }, "exec step on host"},
 		{"empty cmd", func(s *Step) { s.Cmd = "  " }, "empty"},
 		{"control in cmd", func(s *Step) { s.Cmd = "bun\x1b run" }, "control character"},
+		{"absolute dir", func(s *Step) { s.Dir = "/etc" }, "relative"},
+		{"absolute windows dir", func(s *Step) { s.Dir = `\\srv\share` }, "relative"},
 		{"control in dir", func(s *Step) { s.Dir = "a\tb" }, "control character"},
 	}
 	for _, c := range cases {
