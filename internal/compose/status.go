@@ -364,6 +364,13 @@ var utilityImages = []string{"smtp4dev", "mailhog", "mailpit", "maildev", "mailc
 
 func utilityService(raw interface{}) bool { return imageIn(raw, utilityImages) }
 
+// webServerImages are web servers and proxies: valid HTTP entries for the
+// App URL, but no place to run a project's own command. Not utility images.
+var webServerImages = []string{"nginx", "caddy", "traefik", "httpd", "haproxy", "envoy", "openresty"}
+
+// WebServerService reports whether the service's image is a web server or proxy.
+func WebServerService(raw interface{}) bool { return imageIn(raw, webServerImages) }
+
 // databaseImages are the engines whose container is data, not an app: no
 // place to run a project's own command.
 var databaseImages = []string{"postgres", "mysql", "mariadb", "mongo", "redis"}

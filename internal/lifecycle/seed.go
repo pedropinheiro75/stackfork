@@ -50,13 +50,15 @@ func ResolveExecService(instanceDir string, step knowledge.Step, plan knowledge.
 	model := snapshotModel(instanceDir)
 	top, _ := model.(map[string]interface{})
 	svcs, _ := top["services"].(map[string]interface{})
-	// a mail catcher or a console that got the HTTP route is no place to run the app's command
-	if service, _, _, _ := compose.PrimaryHTTPService(model); service != "" && !compose.UtilityService(svcs[service]) {
+	// a mail catcher, a console or a web server that got the HTTP route is no place to run the app's command
+	if service, _, _, _ := compose.PrimaryHTTPService(model); service != "" && !compose.UtilityService(svcs[service]) && !compose.WebServerService(svcs[service]) {
 		return service
 	}
 	if len(svcs) == 1 {
-		for name := range svcs { // a single-service stack has one place to run it (psql, mysql and mongosh commands run in the database)
-			return name
+		for name, raw := range svcs { // a single-service stack has one place to run it (psql, mysql and mongosh commands run in the database)
+			if !compose.WebServerService(raw) {
+				return name
+			}
 		}
 	}
 	return ""
@@ -84,7 +86,7 @@ func hostHint(instanceDir string, plan knowledge.Plan, id, cmd, once string) str
 	for name, raw := range svcs {
 		sv, _ := raw.(map[string]interface{})
 		if _, built := sv["build"]; built || name == plan.AppService ||
-			(name == primary && !compose.DatabaseService(raw) && !compose.UtilityService(raw)) {
+			(name == primary && !compose.DatabaseService(raw) && !compose.UtilityService(raw) && !compose.WebServerService(raw)) {
 			return ""
 		}
 	}
@@ -348,6 +350,20 @@ func seedRecipeIn(root, main, instanceDir, mode string) (cmd, service string, ho
 		return "", "", false
 	}
 	return withMigrate(root, main, instanceDir, detected, ""), "", false
+}
+
+// seedAutoDetected reports whether the seed of mode is the checkout's own
+// script, with no recorded decision.
+func seedAutoDetected(root, main, instanceDir, mode string) bool {
+	var m *state.Manifest
+	if instanceDir != "" {
+		m, _ = state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+	}
+	if decided, _, _ := learn.SeedDecisionIn([]string{root, main}, m, mode); decided {
+		return false
+	}
+	_, detected := learn.DetectSeed(root)
+	return detected != ""
 }
 
 // withMigrate puts the plan's first schema step before the seed, so a new

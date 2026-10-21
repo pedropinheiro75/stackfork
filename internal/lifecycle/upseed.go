@@ -151,11 +151,23 @@ func UpAndSeed(out, errOut io.Writer, a UpSeed) UpOutcome {
 		}
 		return res
 	}
+	skipped := false
 	withLock(a.Lock, a.InstanceDir, func() {
 		cmd, svc := SeedRecipeIn(a.Root, a.Main, a.InstanceDir, a.Mode)
+		if _, _, host := seedRecipeIn(a.Root, a.Main, a.InstanceDir, a.Mode); cmd != "" && svc == "" && !host &&
+			ResolveExecService(a.InstanceDir, knowledge.Step{}, a.Plan) == "" && seedAutoDetected(a.Root, a.Main, a.InstanceDir, a.Mode) {
+			// the stack is up and the script was only guessed: the person decides where it runs
+			note := fmt.Sprintf("seed not run: no service can run `%s`; record it with `stackfork learn record step --id seed --kind exec --once data --service SERVICE --cmd %q` (or --on host)", cmd, cmd)
+			fmt.Fprintln(errOut, note)
+			if seedS != nil {
+				seedS.Skip(note)
+			}
+			skipped = true
+			return
+		}
 		res.SeedErr = RunSeed(out, errOut, a.Root, a.Main, a.Branch, a.Project, a.InstanceDir, a.NewBase, a.LegacyBase, cmd, svc, a.Plan, seedS)
 	})
-	res.Seeded = res.SeedErr == nil
+	res.Seeded = res.SeedErr == nil && !skipped
 	return res
 }
 
