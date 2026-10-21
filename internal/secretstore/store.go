@@ -113,10 +113,43 @@ func (b *Backend) Store(item, value string) error {
 	if err := ValidateValue(value); err != nil {
 		return err
 	}
-	if b.goos() == "windows" {
-		return b.winStore(item, value)
+	if b.goos() == "darwin" && !isASCII(value) {
+		// `security ... -w` prints a value with non-ASCII bytes as hex; reading it
+		// back would not return what was typed, so macOS refuses it (review M3).
+		return errors.New("on macOS the keychain value must be ASCII (the security tool returns other characters as hex); use an ASCII value, or store it in 1Password and map an op:// reference")
 	}
-	return b.writeKeychain(item, value)
+	var err error
+	if b.goos() == "windows" {
+		err = b.winStore(item, value)
+	} else {
+		err = b.writeKeychain(item, value)
+	}
+	return scrubValue(err, value)
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+// scrubValue removes value, in the forms a tool may echo it (as given, and as
+// quoted for `security -i`), from an error before it reaches a caller, a
+// terminal or a log (review M2). This is the only place that has the value
+// and the tool's own words together, so it holds for every backend.
+func scrubValue(err error, value string) error {
+	if err == nil || value == "" {
+		return err
+	}
+	quoted := macQuote(value)
+	msg := strings.NewReplacer(quoted, "[value]", quoted[1:len(quoted)-1], "[value]", value, "[value]").Replace(err.Error())
+	if msg == err.Error() {
+		return err
+	}
+	return errors.New(msg)
 }
 
 var errNoBackend = errors.New("store backend not available")
