@@ -618,6 +618,13 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 		}
 	}
 
+	// A smaller recipe than the main checkout's is reported, never refused (D3).
+	if main := repos.MainRepoOf(root); main != "" {
+		if w := repos.RecipeGap(main, root, resolvedFiles, collectInstances(newStateBase, legacyStateBase)).Message(root); w != "" {
+			fmt.Fprintln(stderr, w)
+		}
+	}
+
 	hostnameArg := *hostnameFlag
 	if hostnameArg == "" && previous != nil {
 		hostnameArg = previous.Hostname

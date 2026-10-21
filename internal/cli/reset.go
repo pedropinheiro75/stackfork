@@ -15,6 +15,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
@@ -35,6 +36,9 @@ type ResetPreview struct {
 	// without touching local work; a reset would use the current code.
 	Blocked bool   `json:"blocked"`
 	Note    string `json:"note,omitempty"` // the sync line to show when Blocked
+	// Gap is the recipe-gap warning of a linked worktree whose recorded
+	// Compose files lack one the main checkout uses; empty when none.
+	Gap string `json:"gap,omitempty"`
 }
 
 // PreviewReset fetches the upstream (changing no branch) and lists the Docker
@@ -52,11 +56,16 @@ func PreviewReset(checkout, newBase, legacyBase string) (ResetPreview, error) {
 	if err != nil {
 		return ResetPreview{}, err
 	}
-	project, _, err := checkoutInstance(root, branch, newBase, legacyBase)
+	project, instanceDir, err := checkoutInstance(root, branch, newBase, legacyBase)
 	if err != nil {
 		return ResetPreview{}, err
 	}
 	p := ResetPreview{Project: project, Branch: branch, Root: root, Volumes: []string{}}
+	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
+		if main := repos.MainRepoOf(root); main != "" {
+			p.Gap = repos.RecipeGap(main, root, m.Files, collectInstances(newBase, legacyBase)).Message(root)
+		}
+	}
 	if res := syncRepo(root, 15*time.Second, false); res.Blocked {
 		p.Blocked, p.Note = true, res.Line
 	}
@@ -80,6 +89,9 @@ func (p ResetPreview) Describe() string {
 		b.WriteString("These Docker volumes and their data will be deleted:\n  " + strings.Join(p.Volumes, "\n  "))
 	}
 	b.WriteString("\nYour code is not touched.")
+	if p.Gap != "" {
+		b.WriteString("\n" + p.Gap)
+	}
 	if p.Blocked {
 		b.WriteString("\nThe checkout is behind its upstream and has local work, so it cannot be updated: the reset will use the current code.")
 	}

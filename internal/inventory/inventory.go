@@ -297,6 +297,20 @@ func Collect(opts Options) (Inventory, error) {
 		inv.Instances = append(inv.Instances, inst)
 	}
 
+	// A linked worktree prepared without a Compose file the main checkout's
+	// last prepare used carries the recipe-gap warning (improve-worktree-recipes D3).
+	for i := range inv.Instances {
+		in := &inv.Instances[i]
+		if in.Root == "" || len(in.Files) == 0 {
+			continue
+		}
+		if main := identity.MainRepoOf(in.Root); main != "" {
+			if w := RecipeGap(main, in.Root, in.Files, inv.Instances).Message(in.Root); w != "" {
+				in.Warnings = append(in.Warnings, w)
+			}
+		}
+	}
+
 	sort.Slice(inv.Instances, func(i, j int) bool {
 		a, b := inv.Instances[i], inv.Instances[j]
 		if a.Root != b.Root {
