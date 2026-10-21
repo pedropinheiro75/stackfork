@@ -15,6 +15,17 @@ import (
 // reads a cached value and refreshes it in the background at most this often.
 const diskTTL = 5 * time.Minute
 
+// fullDiskTTL: while the banner shows, re-measure often, so it clears soon
+// after space is freed (outside the dashboard too).
+const fullDiskTTL = 30 * time.Second
+
+func (d *diskState) ttl() time.Duration {
+	if d.usage != nil && d.usage.Full() {
+		return fullDiskTTL
+	}
+	return diskTTL
+}
+
 // diskState caches dockerdisk.Measure for the header banner.
 type diskState struct {
 	mu        sync.Mutex
@@ -28,7 +39,7 @@ type diskState struct {
 func (d *diskState) get() *dockerdisk.Usage {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if !d.measuring && time.Since(d.at) > diskTTL {
+	if !d.measuring && time.Since(d.at) > d.ttl() {
 		d.measuring = true
 		go d.refresh()
 	}
