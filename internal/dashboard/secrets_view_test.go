@@ -100,3 +100,31 @@ func TestSecretsHostileNameNeverRenders(t *testing.T) {
 		t.Fatal("hostile name reached the page")
 	}
 }
+
+// The live plan list carries the preflight as its first row, so a Start that
+// fails at step secrets has a row to turn Failed (add-plan-runs D13).
+func TestPlanListHasASecretsRowFirstWhenTheRepoHasSecrets(t *testing.T) {
+	e, repo, _ := secretsEnv(t)
+	hybridPlan(t, repo, "app")
+	frag := e.get("/fragments/repos").Body.String()
+	i := strings.Index(frag, `data-step="secrets"`)
+	if i < 0 {
+		t.Fatalf("no secrets row in the plan list:\n%s", frag)
+	}
+	if j := strings.Index(frag, `data-step="up"`); j >= 0 && j < i {
+		t.Error("the secrets row is not first")
+	}
+	if !strings.Contains(frag[i:i+400], "resolve secrets") {
+		t.Errorf("secrets row text: %s", frag[i:i+400])
+	}
+}
+
+func TestPlanListHasNoSecretsRowWithoutSecrets(t *testing.T) {
+	e := newBrowserEnv(t)
+	fakeKeychain(t, nil)
+	repo := e.readyRepo("acme-api")
+	hybridPlan(t, repo, "app")
+	if frag := e.get("/fragments/repos").Body.String(); strings.Contains(frag, `data-step="secrets"`) {
+		t.Fatal("a repo with no secrets lists a secrets row")
+	}
+}

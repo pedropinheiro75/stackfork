@@ -105,6 +105,12 @@ func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
 		v.TrustTitle = "Host steps changed since you trusted them"
 	}
 	v.Steps, v.Skipped = conv(out.Steps, false), conv(out.Skipped, true)
+	// A Start resolves secrets before anything else (preflight, group 4): the
+	// live list needs a row for it so a failure there has somewhere to show.
+	if hasSecretNames(repo.Path, cfg) {
+		v.Steps = append([]stepView{{ID: knowledge.KindSecrets, Kind: knowledge.KindSecrets, Text: lifecycle.PreflightText,
+			Chip: chipView{Class: "off", Glyph: glyphOff, Label: "at start", Title: "stackfork resolves the secrets before anything else runs"}}}, v.Steps...)
+	}
 	return v
 }
 

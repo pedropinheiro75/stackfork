@@ -49,8 +49,8 @@ type Preflight struct {
 	Dashboard   bool     // the dashboard does not see the shell environment
 }
 
-// preflightText is what the row says.
-const preflightText = "resolve secrets"
+// PreflightText is what the row says.
+const PreflightText = "resolve secrets"
 
 // errPreflight is the error of a failed step.
 func preflightError(failed []string) error {
@@ -76,7 +76,7 @@ func (p Preflight) Do() (SecretValues, error) {
 	}
 	var step *runs.Step
 	if p.Run != nil {
-		step = p.Run.Step(knowledge.KindSecrets, knowledge.KindSecrets, preflightText)
+		step = p.Run.Step(knowledge.KindSecrets, knowledge.KindSecrets, PreflightText)
 	}
 	if len(names) == 0 {
 		if step != nil {

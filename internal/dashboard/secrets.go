@@ -359,7 +359,7 @@ func secretChip(r secretJSON) chipView {
 // has no declared or mapped name (the section is then not shown). It starts
 // no store prompt.
 func (s *Server) repoSecrets(repo repos.Repo, cfg *config.Config) []secretView {
-	if cfg == nil || len(cfg.SecretsFor(repo.Path)) == 0 && len(lifecycle.DeclaredSecrets(repo.Path, repo.Path)) == 0 {
+	if !hasSecretNames(repo.Path, cfg) {
 		return nil
 	}
 	rows, err := s.secretRows(repo.Path)
@@ -380,4 +380,10 @@ func (s *Server) repoSecrets(repo repos.Repo, cfg *config.Config) []secretView {
 		out = append(out, v)
 	}
 	return out
+}
+
+// hasSecretNames reports whether the repository has a declared or mapped
+// secret name.
+func hasSecretNames(repo string, cfg *config.Config) bool {
+	return cfg != nil && (len(cfg.SecretsFor(repo)) > 0 || len(lifecycle.DeclaredSecrets(repo, repo)) > 0)
 }
