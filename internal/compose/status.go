@@ -304,11 +304,28 @@ func PrimaryHTTPService(model interface{}) (service string, target int, https bo
 			return name, t, isHTTPS, true
 		}
 	}
-	for _, name := range names {
-		if t, isHTTPS, found := labelled(name); found {
+	// Labelled, then guessed, first among the app services and only then
+	// among utilities (a mail catcher's UI is labelled so it gets a URL; it
+	// must not become the app).
+	for _, utilities := range []bool{false, true} {
+		for _, name := range names {
+			if utilityService(services[name]) != utilities {
+				continue
+			}
+			if t, isHTTPS, found := labelled(name); found {
+				return name, t, isHTTPS, true
+			}
+		}
+		if name, t, isHTTPS, found := guessHTTP(services, names, utilities); found {
 			return name, t, isHTTPS, true
 		}
 	}
+	return "", 0, false, false
+}
+
+// guessHTTP is the inferred fallback over the services whose utility flag
+// matches.
+func guessHTTP(services map[string]interface{}, names []string, utilities bool) (string, int, bool, bool) {
 	// Inferred fallback: the same fixed-port guess EndpointLines uses, in
 	// declaration order (80/443 first, since those are unambiguous). Guess
 	// priority must be the outer loop: an alphabetically-earlier service
@@ -322,7 +339,7 @@ func PrimaryHTTPService(model interface{}) (service string, target int, https bo
 	for _, guess := range guesses {
 		for _, name := range names {
 			svc, svcOk := asMap(services[name])
-			if !svcOk {
+			if !svcOk || utilityService(services[name]) != utilities {
 				continue
 			}
 			portsList, _ := asList(svc["ports"])
@@ -338,6 +355,35 @@ func PrimaryHTTPService(model interface{}) (service string, target int, https bo
 		}
 	}
 	return "", 0, false, false
+}
+
+// utilityImages are tools that sit beside an app (mail catchers, database
+// and queue consoles): never the primary service while an app service exists.
+var utilityImages = []string{"smtp4dev", "mailhog", "mailpit", "maildev", "mailcatcher", "inbucket",
+	"adminer", "pgadmin", "pgadmin4", "phpmyadmin", "mongo-express", "redis-commander", "redisinsight", "rabbitmq", "minio", "kafka-ui", "portainer"}
+
+func utilityService(raw interface{}) bool {
+	svc, ok := asMap(raw)
+	if !ok {
+		return false
+	}
+	image, _ := svc["image"].(string)
+	if image == "" {
+		return false
+	}
+	base := image
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	if i := strings.IndexAny(base, ":@"); i >= 0 {
+		base = base[:i]
+	}
+	for _, u := range utilityImages {
+		if base == u {
+			return true
+		}
+	}
+	return false
 }
 
 // PublishedHostPort returns the currently published host port for a

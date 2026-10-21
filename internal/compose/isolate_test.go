@@ -561,3 +561,27 @@ func TestIsolateKeepsAnonymousCacheVolumes(t *testing.T) {
 		t.Fatalf("mounts %v", mounts)
 	}
 }
+
+// A mail catcher with a stackfork HTTP label (so its UI gets a URL) must not
+// become the primary service over the web front: the App chip and the
+// portless URL opened smtp4dev instead of the app behind nginx.
+func TestPrimaryHTTPServiceSkipsUtilityImages(t *testing.T) {
+	model, err := DecodeJSON([]byte(`{
+		"services": {
+			"app": {"image": "acme-web-app:dev"},
+			"nginx": {"image": "nginx:alpine", "ports": [{"target": 80}]},
+			"smtp4dev": {"image": "rnwood/smtp4dev:latest", "ports": [{"target": 80}], "labels": {"` + identity.LabelHTTP + `": "80"}}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service, target, _, ok := PrimaryHTTPService(model); !ok || service != "nginx" || target != 80 {
+		t.Fatalf("got service=%s target=%d ok=%v", service, target, ok)
+	}
+	// alone, a utility is still the primary: there is nothing else to open
+	only, _ := DecodeJSON([]byte(`{"services": {"mail": {"image": "axllent/mailpit", "labels": {"` + identity.LabelHTTP + `": "8025"}}}}`))
+	if service, _, _, ok := PrimaryHTTPService(only); !ok || service != "mail" {
+		t.Fatalf("lone utility: %s %v", service, ok)
+	}
+}
