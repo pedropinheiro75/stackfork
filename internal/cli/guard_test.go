@@ -188,3 +188,30 @@ func TestGuardBlocksSecretWritesAndReadsForEveryTool(t *testing.T) {
 		}
 	}
 }
+
+func TestGuardBlocksLiveOnAndAutoCleanupForEveryTool(t *testing.T) {
+	plain := t.TempDir()
+	payload := func(tool, cmd string) string {
+		if tool == "copilot" {
+			return `{"timestamp":1,"cwd":"` + plain + `","toolName":"bash","toolArgs":"{\"command\":\"` + cmd + `\"}"}`
+		}
+		return `{"cwd":"` + plain + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + cmd + `"}}`
+	}
+	for _, tool := range []string{"claude", "codex", "copilot"} {
+		for cmd, block := range map[string]bool{
+			"stackfork live on": true, "stackfork --root . live on": true, "stackfork live cleanup auto": true,
+			"stackfork live cleanup suggest --delete-branch": true,
+			"stackfork live status":                          false, "stackfork live off": false, "stackfork live cleanup suggest": false,
+		} {
+			var out, errBuf bytes.Buffer
+			code, _ := cmdGuard(strings.NewReader(payload(tool, cmd)), &out, &errBuf, []string{"--tool", tool}, t.TempDir(), t.TempDir())
+			denied := (tool == "copilot" && strings.Contains(out.String(), "deny")) || code == 2
+			if denied != block {
+				t.Errorf("%s %q: denied=%v want %v", tool, cmd, denied, block)
+			}
+			if block && !strings.Contains(errBuf.String(), "ask the user to run it") {
+				t.Errorf("%s %q: stderr %q", tool, cmd, errBuf.String())
+			}
+		}
+	}
+}

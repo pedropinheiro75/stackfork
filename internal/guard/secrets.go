@@ -19,6 +19,9 @@ func DenyMessage(command, cwd string) string {
 	if secretForbidden(command, cwd) {
 		return SecretMessage
 	}
+	if liveForbidden(command, cwd) {
+		return LiveMessage
+	}
 	return DestructiveMessage
 }
 
