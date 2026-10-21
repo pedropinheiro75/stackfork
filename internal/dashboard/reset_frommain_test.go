@@ -20,7 +20,7 @@ func TestResetFromMainReachesPreviewAndRun(t *testing.T) {
 	if !strings.Contains(*asked, "Uses the main checkout's recipe") {
 		t.Fatalf("the dialog lacks the from-main text: %q", *asked)
 	}
-	if len(*calls) != 1 || (*calls)[0] != (resetCall{repo, false, true}) {
+	if len(*calls) != 1 || (*calls)[0] != (resetCall{repo, false, true, "fp-confirmed"}) {
 		t.Fatalf("%v", *calls)
 	}
 }

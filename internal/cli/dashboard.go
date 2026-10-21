@@ -93,15 +93,15 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 			Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles, Trigger: trigger, Observer: obs,
 		})
 	}
-	srv.ResetEnv = func(out, errOut io.Writer, checkout string, current, fromMain bool, obs func(runs.Event)) error {
+	srv.ResetEnv = func(out, errOut io.Writer, checkout string, current, fromMain bool, fingerprint string, obs func(runs.Event)) error {
 		return StartEnv(out, errOut, StartOptions{
 			Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles,
-			Trigger: dashboard.TriggerDashboard, Observer: obs, Reset: true, Current: current, FromMain: fromMain,
+			Trigger: dashboard.TriggerDashboard, Observer: obs, Reset: true, Current: current, FromMain: fromMain, Fingerprint: fingerprint,
 		})
 	}
-	srv.ResetPreview = func(checkout string, fromMain bool) (string, bool, error) {
+	srv.ResetPreview = func(checkout string, fromMain bool) (string, bool, string, error) {
 		p, err := PreviewReset(checkout, newStateBase, legacyStateBase, fromMain)
-		return p.Describe(), p.Blocked, err
+		return p.Describe(), p.Blocked, p.Fingerprint, err
 	}
 	srv.LiveCleanup = dashboardCleanup(newStateBase, legacyStateBase)
 	var liveLoop atomic.Pointer[live.Loop]

@@ -151,7 +151,7 @@ func TestLearnVerifyRefusesWithoutAPreparedInstance(t *testing.T) {
 	})
 	before, _ := os.ReadFile(v.path)
 	_, e, code := v.verify(t)
-	if code == 0 || !strings.Contains(e, "no prepared instance for this checkout; prepare and start it, then verify") {
+	if code == 0 || !strings.Contains(e, "no prepared instance for this checkout; prepare it, then verify") {
 		t.Fatalf("%d %s", code, e)
 	}
 	if after, _ := os.ReadFile(v.path); string(after) != string(before) {

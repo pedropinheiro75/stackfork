@@ -42,6 +42,7 @@ type StartOptions struct {
 	Mode            string           // container or hybrid; empty = the machine's configured mode
 	Trigger         string           // who started it: cli (default) or dashboard; recorded in the run
 	Reset           bool             // throw the environment away and start it from zero (command reset)
+	Fingerprint     string           // FromMain: the confirmed recipe and move list; the run refuses when they changed
 	FromMain        bool             // Reset: prepare with the main checkout's recipe, the worktree's own adapter files moved aside
 	Current         bool             // Reset: go on with the current code when it is behind and cannot be updated
 	Live            *live.Job        // a live reconcile: run only the steps of this job (command live, trigger live)
@@ -93,13 +94,16 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	if main == "" {
 		main = root
 	}
-	var mainR *repos.SiblingRecipe // reset --from-main: checked before anything runs or moves
+	var mainP *mainPlan // reset --from-main: checked before anything runs or moves
 	if o.FromMain {
 		if !o.Reset {
 			return errors.New("--from-main belongs to reset")
 		}
-		if mainR, err = mainRecipe(root, o.NewStateBase, o.LegacyStateBase); err != nil {
+		if mainP, err = mainRecipe(root, o.NewStateBase, o.LegacyStateBase); err != nil {
 			return err
+		}
+		if o.Fingerprint != "" && o.Fingerprint != mainP.fp {
+			return errors.New(errRecipeChanged)
 		}
 	}
 	plan, mode, err := startPlan(out, o, root, main)
@@ -239,25 +243,26 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 			fmt.Fprintf(out, "%s is already prepared\n", project)
 			return lifecycle.ErrAlreadyPrepared
 		}
-		args, err := prepareArgs(root, main, instanceDir)
-		if o.Reset {
-			args, err = resetPrepareArgs(root, main, instanceDir)
-		}
+		var args []string
+		var err error
 		var seedCmd, seedSvc string
-		fromSibling := errors.Is(err, errNoRecipe)
-		if fromSibling {
-			args, seedCmd, seedSvc, err = seedFromSibling(out, root, main, insts, err)
-		}
-		if mainR != nil { // inside prepare, so a failed sync, preflight or down moved nothing
-			args, err = reuseMainRecipe(out, root, mainR)
+		fromSibling := false
+		if mainP != nil { // inside prepare, so a failed sync, preflight or down moved nothing; no other recipe applies
+			args, err = reuseMainRecipe(out, root, o)
+		} else {
+			args, err = prepareArgs(root, main, instanceDir)
+			if o.Reset {
+				args, err = resetPrepareArgs(root, main, instanceDir)
+			}
+			if fromSibling = errors.Is(err, errNoRecipe); fromSibling {
+				args, seedCmd, seedSvc, err = seedFromSibling(out, root, main, insts, err)
+			}
+			if err == nil {
+				err = copyAdapterFromMain(out, root, main, args)
+			}
 		}
 		if err != nil {
 			return err
-		}
-		if mainR == nil {
-			if err := copyAdapterFromMain(out, root, main, args); err != nil {
-				return err
-			}
 		}
 		// Sibling references go BEFORE the person's flags: the last --secret
 		// of a name wins, and an explicit flag must beat a sibling (D7).
@@ -344,9 +349,18 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 }
 
 // reuseMainRecipe is the prepare step of reset --from-main (D5, D6): it
-// moves the worktree's untracked adapter files aside, copies the main
-// checkout's, and returns the main recipe's prepare args.
-func reuseMainRecipe(out io.Writer, root string, r *repos.SiblingRecipe) ([]string, error) {
+// checks the plan is still the confirmed one, moves the worktree's
+// untracked adapter files aside, copies the main checkout's, and returns the
+// main recipe's prepare args.
+func reuseMainRecipe(out io.Writer, root string, o StartOptions) ([]string, error) {
+	p, err := mainRecipe(root, o.NewStateBase, o.LegacyStateBase) // what is on disk now
+	if err != nil {
+		return nil, err
+	}
+	if o.Fingerprint != "" && o.Fingerprint != p.fp {
+		return nil, errors.New(errRecipeChanged)
+	}
+	r := p.r
 	args := recipeArgs(r)
 	if err := knowledge.CheckPrepareArgs(args); err != nil {
 		return nil, fmt.Errorf("reusing the recipe of %s: %w", r.Project, err)

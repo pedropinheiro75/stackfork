@@ -15,6 +15,7 @@ type resetCall struct {
 	checkout string
 	current  bool
 	fromMain bool
+	fp       string
 }
 
 // withReset installs a fake preview and a fake reset on the server and
@@ -26,15 +27,15 @@ func (e *browserEnv) withReset(t *testing.T, text string, blocked, answer bool) 
 	asked, calls = new(string), new([]resetCall)
 	dashboard.Confirm = func(title, body string) (bool, error) { *asked = body; return answer, nil }
 	var mu sync.Mutex
-	e.srv.ResetPreview = func(checkout string, fromMain bool) (string, bool, error) {
+	e.srv.ResetPreview = func(checkout string, fromMain bool) (string, bool, string, error) {
 		if fromMain {
-			return text + "\nUses the main checkout's recipe", blocked, nil
+			return text + "\nUses the main checkout's recipe", blocked, "fp-confirmed", nil
 		}
-		return text, blocked, nil
+		return text, blocked, "", nil
 	}
-	e.srv.ResetEnv = func(out, _ io.Writer, checkout string, current, fromMain bool, _ func(runs.Event)) error {
+	e.srv.ResetEnv = func(out, _ io.Writer, checkout string, current, fromMain bool, fp string, _ func(runs.Event)) error {
 		mu.Lock()
-		*calls = append(*calls, resetCall{checkout, current, fromMain})
+		*calls = append(*calls, resetCall{checkout, current, fromMain, fp})
 		mu.Unlock()
 		io.WriteString(out, "rebuilding it\n")
 		return nil
@@ -55,7 +56,7 @@ func TestResetAsksNamingTheVolumesThenStreams(t *testing.T) {
 	if !strings.Contains(*asked, "sf-x_db-data") {
 		t.Fatalf("dialog: %q", *asked)
 	}
-	if len(*calls) != 1 || (*calls)[0] != (resetCall{repo, false, false}) {
+	if len(*calls) != 1 || (*calls)[0] != (resetCall{repo, false, false, ""}) {
 		t.Fatalf("%v", *calls)
 	}
 }

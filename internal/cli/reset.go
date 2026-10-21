@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -45,6 +47,9 @@ type ResetPreview struct {
 	FromMain bool     `json:"from_main,omitempty"`
 	Recipe   string   `json:"recipe,omitempty"`
 	Aside    []string `json:"aside,omitempty"`
+	// Fingerprint identifies the recipe and the move list the person
+	// confirmed; the run refuses when they changed (improve-worktree-recipes I2).
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // PreviewReset fetches the upstream (changing no branch) and lists the Docker
@@ -68,14 +73,11 @@ func PreviewReset(checkout, newBase, legacyBase string, fromMain bool) (ResetPre
 	}
 	p := ResetPreview{Project: project, Branch: branch, Root: root, Volumes: []string{}}
 	if fromMain { // every check runs before Docker is called or a file moves
-		r, err := mainRecipe(root, newBase, legacyBase)
+		mp, err := mainRecipe(root, newBase, legacyBase)
 		if err != nil {
 			return p, err
 		}
-		if p.Aside, err = repos.AsideFiles(root, r); err != nil {
-			return p, err
-		}
-		p.FromMain, p.Recipe = true, strings.Join(recipeArgs(r), " ")
+		p.FromMain, p.Recipe, p.Aside, p.Fingerprint = true, strings.Join(recipeArgs(mp.r), " "), mp.aside, mp.fp
 	} else if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
 		if main := repos.MainRepoOf(root); main != "" {
 			p.Gap = repos.RecipeGap(main, root, m.Files, manifestInstances(newBase, legacyBase)).Message(root)
@@ -103,11 +105,22 @@ func recipeArgs(r *repos.SiblingRecipe) []string {
 	return args
 }
 
-// mainRecipe is the recipe of `reset --from-main` (improve-worktree-recipes
+// mainPlan is what `reset --from-main` will do: the main checkout's
+// recipe, the files it moves aside, and a fingerprint of both.
+type mainPlan struct {
+	r     *repos.SiblingRecipe
+	aside []string
+	fp    string
+}
+
+const errRecipeChanged = "main's recipe changed since you confirmed; open the dialog again"
+
+// mainRecipe computes the plan of `reset --from-main` (improve-worktree-recipes
 // D5): the main checkout's last prepare, usable in the linked worktree at
-// root. It refuses the main checkout, a main checkout with no prepared
-// instance and a recipe that cannot be reused, and calls no Docker.
-func mainRecipe(root, newBase, legacyBase string) (*repos.SiblingRecipe, error) {
+// root, and the files that move aside. It refuses the main checkout, a main
+// checkout with no prepared instance, a recipe that cannot be reused and an
+// unsafe move list, and calls no Docker.
+func mainRecipe(root, newBase, legacyBase string) (*mainPlan, error) {
 	main := repos.MainRepoOf(root)
 	if resolved, err := identity.ResolvePath(main); main == "" || err != nil || resolved == root {
 		return nil, errors.New("this is the main checkout; reset without --from-main")
@@ -119,7 +132,12 @@ func mainRecipe(root, newBase, legacyBase string) (*repos.SiblingRecipe, error) 
 	if r == nil {
 		return nil, errors.New("the main checkout has no prepared instance; start it first")
 	}
-	return r, nil
+	aside, err := repos.AsideFiles(root, r)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256([]byte(strings.Join(recipeArgs(r), "\x00") + "\n" + strings.Join(aside, "\x00")))
+	return &mainPlan{r: r, aside: aside, fp: hex.EncodeToString(sum[:])}, nil
 }
 
 // Describe is the text both confirmations show.
@@ -255,6 +273,6 @@ func cmdReset(stdout, stderr io.Writer, subArgs []string, checkout, newBase, leg
 	}
 	return 0, StartEnv(stdout, stderr, StartOptions{
 		Checkout: pv.Root, NewStateBase: newBase, LegacyStateBase: legacyBase,
-		Global: global, ProfileDirs: profiles, Reset: true, Current: current, FromMain: *fromMain,
+		Global: global, ProfileDirs: profiles, Reset: true, Current: current, FromMain: *fromMain, Fingerprint: pv.Fingerprint,
 	})
 }

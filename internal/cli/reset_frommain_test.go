@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -222,19 +223,20 @@ func TestResetFromMainDownFailureMovesNothing(t *testing.T) {
 	e := newFromMainEnv(t)
 	log := installFakeDocker(t)
 	t.Setenv("DOCKER_FAKE_EXIT", "1")
-	before := dockerLog(log)
 	_, _, code := e.reset(t, "--from-main", "--yes")
 	if code == 0 {
 		t.Fatal("a failing down must fail the reset")
 	}
-	_ = before
 	e.untouched(t, log, dockerLog(log)) // files in place, nothing aside
 	if b, _ := os.ReadFile(filepath.Join(e.wt, ".stackfork", "runtime.env")); string(b) != oldEnv {
 		t.Fatal("runtime.env changed")
 	}
 	r, err := runs.Get(e.wtDir, 1)
-	if err != nil || r.Outcome != runs.Failed || r.Retry != "stackfork --root "+e.wt+" reset --yes --from-main" {
+	if err != nil || r.Outcome != runs.Failed || r.FailedStep() != "down" || r.Retry != "stackfork --root "+e.wt+" reset --yes --from-main" {
 		t.Fatalf("%+v %v", r, err)
+	}
+	if got := stepStates(r); strings.Contains(got, "prepare=") {
+		t.Fatalf("prepare must not have run: %s", got)
 	}
 }
 
@@ -249,5 +251,154 @@ func TestResetFromMainKeepsTrackedFiles(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(e.wt, "compose.yaml")); string(b) != gapBase+"# local\n" {
 		t.Fatal("a tracked file changed")
+	}
+}
+
+// C1: an untracked recipe file at the checkout root is refused before
+// anything changes; the worktree keeps its .git and its own files.
+func TestResetFromMainRefusesAnUntrackedRootRecipeFile(t *testing.T) {
+	e := newFromMainEnv(t)
+	log := installFakeDocker(t)
+	os.WriteFile(filepath.Join(e.repo, "compose.override.yaml"), []byte(gapOverride), 0o644)
+	if _, se, code := runCLI(t, append(append([]string{}, e.base...), "--root", e.repo, "prepare", "-f", "compose.yaml", "-f", "compose.override.yaml")...); code != 0 {
+		t.Fatal(se)
+	}
+	os.WriteFile(filepath.Join(e.wt, "notes.md"), []byte("n\n"), 0o644)
+	os.WriteFile(filepath.Join(e.wt, ".env.local"), []byte("E=1\n"), 0o600)
+	before := dockerLog(log)
+	_, stderr, code := e.reset(t, "--from-main", "--yes")
+	if code == 0 || !strings.Contains(stderr, "compose.override.yaml") {
+		t.Fatalf("%d %s", code, stderr)
+	}
+	e.untouched(t, log, before)
+	if _, err := os.Stat(filepath.Join(e.wt, ".git")); err != nil {
+		t.Fatal(".git is gone")
+	}
+	if out, _ := exec.Command("git", "-C", e.wt, "rev-parse", "--show-toplevel").Output(); strings.TrimSpace(string(out)) != e.wt {
+		t.Fatalf("the worktree is detached: %s", out)
+	}
+	for _, f := range []string{"notes.md", ".env.local"} {
+		if _, err := os.Stat(filepath.Join(e.wt, f)); err != nil {
+			t.Fatalf("%s moved", f)
+		}
+	}
+}
+
+// C2: a symlinked .stackfork is refused in the preview; main keeps its files.
+func TestResetFromMainRefusesASymlinkedAdapterFolder(t *testing.T) {
+	e := newFromMainEnv(t)
+	log := installFakeDocker(t)
+	os.RemoveAll(filepath.Join(e.wt, ".stackfork"))
+	if err := os.Symlink(filepath.Join(e.repo, ".stackfork"), filepath.Join(e.wt, ".stackfork")); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	before := dockerLog(log)
+	_, stderr, code := e.reset(t, "--from-main", "--yes")
+	if code == 0 || !strings.Contains(stderr, "symbolic link") {
+		t.Fatalf("%d %s", code, stderr)
+	}
+	if dockerLog(log) != before {
+		t.Fatal("a refusal called Docker")
+	}
+	for _, f := range []string{"dev.compose.yaml", "runtime.env", "knowledge.json"} {
+		if _, err := os.Stat(filepath.Join(e.repo, ".stackfork", f)); err != nil {
+			t.Fatalf("main lost %s", f)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(e.wt, ".stackfork-aside")); err == nil {
+		t.Fatal("something moved aside")
+	}
+}
+
+// I1: with --from-main no other recipe is applied or copied: not the
+// worktree's own, and not another worktree's (seedFromSibling).
+func TestResetFromMainAppliesNoOtherRecipe(t *testing.T) {
+	root, st := reposEnv(t)
+	repo := scratchRepo(t, filepath.Join(root, "acme-web"))
+	os.WriteFile(filepath.Join(repo, "compose.yaml"), []byte(gapBase), 0o644)
+	for _, args := range [][]string{{"add", "compose.yaml"}, {"-c", "user.email=t@e.x", "-c", "user.name=t", "commit", "-q", "-m", "c"}} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("%s", out)
+		}
+	}
+	base := []string{"--state-dir", st, "--legacy-state-dir", t.TempDir()}
+	run := func(args ...string) {
+		t.Helper()
+		if out, e, code := runCLI(t, append(append([]string{}, base...), args...)...); code != 0 {
+			t.Fatalf("%v: %s %s", args, out, e)
+		}
+	}
+	// main's recipe names no *.compose.yaml, so prepareArgs finds no recipe (errNoRecipe)
+	os.MkdirAll(filepath.Join(repo, ".stackfork"), 0o755)
+	os.WriteFile(filepath.Join(repo, ".stackfork", "dev.yml"), []byte(gapOverride), 0o644)
+	run("--root", repo, "prepare", "-f", "compose.yaml", "-f", ".stackfork/dev.yml")
+	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(repo, ".worktrees", "feat-a")
+	other := filepath.Join(repo, ".worktrees", "feat-b")
+	for _, w := range [][]string{{"feat-a", wt}, {"feat-b", other}} {
+		if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", w[0], w[1]).CombinedOutput(); err != nil {
+			t.Fatalf("%s", out)
+		}
+	}
+	os.MkdirAll(filepath.Join(other, ".stackfork"), 0o755)
+	os.WriteFile(filepath.Join(other, ".stackfork", "sib.yml"), []byte(gapOverride), 0o644)
+	run("--root", other, "prepare", "-f", "compose.yaml", "-f", ".stackfork/sib.yml") // the most recent instance
+	installFakeDocker(t)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	out, e, code := runCLI(t, append(append([]string{}, base...), "--root", wt, "reset", "--from-main", "--yes")...)
+	if code != 0 {
+		t.Fatalf("%d %s %s", code, out, e)
+	}
+	if _, err := os.Stat(filepath.Join(wt, ".stackfork", "sib.yml")); err == nil {
+		t.Fatal("another worktree's recipe was copied")
+	}
+	if strings.Contains(out, "sf-feat-b") || strings.Contains(out, "seed_once") {
+		t.Fatalf("a sibling recipe was reused:\n%s", out)
+	}
+	_, dir, _ := checkoutInstance(wt, "feat-a", base[1], base[3])
+	m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json"))
+	if m == nil || strings.Join(m.Files, ",") != filepath.Join(wt, "compose.yaml")+","+filepath.Join(wt, ".stackfork", "dev.yml") || m.SeedOnce != "" {
+		t.Fatalf("manifest %+v", m)
+	}
+}
+
+// I2: what runs equals what was confirmed.
+func TestResetFromMainRefusesARecipeThatChangedSinceConfirmation(t *testing.T) {
+	e := newFromMainEnv(t)
+	log := installFakeDocker(t)
+	pv, err := PreviewReset(e.wt, e.base[1], e.base[3], true)
+	if err != nil || pv.Fingerprint == "" {
+		t.Fatalf("%v %+v", err, pv)
+	}
+	// a new untracked file in the folder changes the move list
+	os.WriteFile(filepath.Join(e.wt, ".stackfork", "late.yml"), []byte("x\n"), 0o644)
+	before := dockerLog(log)
+	err = StartEnv(io.Discard, io.Discard, StartOptions{Checkout: e.wt, NewStateBase: e.base[1], LegacyStateBase: e.base[3],
+		Reset: true, FromMain: true, Fingerprint: pv.Fingerprint})
+	if err == nil || !strings.Contains(err.Error(), "main's recipe changed since you confirmed; open the dialog again") {
+		t.Fatalf("%v", err)
+	}
+	e.untouched(t, log, before)
+	// unchanged: runs
+	os.Remove(filepath.Join(e.wt, ".stackfork", "late.yml"))
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	if err := StartEnv(io.Discard, io.Discard, StartOptions{Checkout: e.wt, NewStateBase: e.base[1], LegacyStateBase: e.base[3],
+		Reset: true, FromMain: true, Fingerprint: pv.Fingerprint}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// M2 at the run level: main's knowledge.json stays in main.
+func TestResetFromMainDoesNotCopyKnowledge(t *testing.T) {
+	e := newFromMainEnv(t)
+	installFakeDocker(t)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	if out, se, code := e.reset(t, "--from-main", "--yes"); code != 0 {
+		t.Fatalf("%s %s", out, se)
+	}
+	if _, err := os.Stat(filepath.Join(e.wt, ".stackfork", "knowledge.json")); err == nil {
+		t.Fatal("main's knowledge.json was copied")
 	}
 }

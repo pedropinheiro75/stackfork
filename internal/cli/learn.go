@@ -260,6 +260,9 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 
 	top, _, _, manifest, err := checkoutManifest(root, newStateBase, legacyStateBase)
 	if err != nil || manifest == nil {
+		if k.Entry != nil && k.Entry.None {
+			return errors.New("no prepared instance for this checkout; prepare it, then verify")
+		}
 		return errors.New("no prepared instance for this checkout; prepare and start it, then verify")
 	}
 	entry, linkChecks, warnings, err := probeEntryAndLinks(root, newStateBase, legacyStateBase, k)
