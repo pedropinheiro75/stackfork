@@ -107,7 +107,7 @@ var deriveCases = []deriveCase{
 	}, "prepare,up", "adapter_files", map[string]string{"prepare": "adapter_files in knowledge.json"}},
 	{"already prepared", func(t *testing.T, f deriveFix) string {
 		f.write(t, f.repo, "docker-compose.yml", "services:\n  app:\n    image: alpine:3.20\n")
-		if _, e, code := runCLI(t, append(f.base(), "--root", f.repo, "prepare", "-f", "docker-compose.yml")...); code != 0 {
+		if _, e, code := runCLI(t, append(f.base(), "--root", f.repo, "prepare", "--force", "-f", "docker-compose.yml")...); code != 0 {
 			t.Fatal(e)
 		}
 		return f.repo
@@ -236,7 +236,7 @@ func TestDeriveShowsTheRecipeGap(t *testing.T) {
 	f := newDeriveFix(t)
 	f.write(t, f.repo, "docker-compose.yml", "services:\n  app:\n    image: alpine:3.20\n")
 	f.write(t, f.repo, derivedAdapter, "services: {}\n")
-	if _, e, code := runCLI(t, append(f.base(), "--root", f.repo, "prepare", "-f", "docker-compose.yml", "-f", derivedAdapter)...); code != 0 {
+	if _, e, code := runCLI(t, append(f.base(), "--root", f.repo, "prepare", "--force", "-f", "docker-compose.yml", "-f", derivedAdapter)...); code != 0 {
 		t.Fatal(e)
 	}
 	nw := filepath.Join(f.repo, ".worktrees", "feat")

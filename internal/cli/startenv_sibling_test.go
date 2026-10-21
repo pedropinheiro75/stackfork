@@ -45,7 +45,7 @@ func siblingRepo(t *testing.T) (repo, sib string, base []string) {
 	os.WriteFile(filepath.Join(ad, ".env"), []byte("X="+sibCanary), 0o600)
 	os.WriteFile(filepath.Join(ad, "id_rsa"), []byte(sibCanary), 0o600)
 	_, e, code := runCLI(t, append(append([]string{}, base...), "--root", sib, "--secret", "tok=env:"+sibTokenName,
-		"prepare", "-f", "docker-compose.yml", "-f", ".agent-dev/compose.yml", "--env-file", ".agent-dev/runtime.env")...)
+		"prepare", "--force", "-f", "docker-compose.yml", "-f", ".agent-dev/compose.yml", "--env-file", ".agent-dev/runtime.env")...)
 	if code != 0 {
 		t.Fatalf("prepare sibling: %s", e)
 	}

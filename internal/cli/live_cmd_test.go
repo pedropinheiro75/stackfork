@@ -25,7 +25,7 @@ type liveCmdFx struct {
 func newLiveCmdFx(t *testing.T) *liveCmdFx {
 	t.Helper()
 	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
-	repo, _ := identity.ResolvePath(initRepo(t))
+	repo, _ := identity.ResolvePath(initBareRepo(t))
 	f := &liveCmdFx{repo: repo, nb: t.TempDir(), lb: t.TempDir()}
 	if err := (&config.Config{Roots: []string{filepath.Dir(repo)}}).Save(); err != nil { // live on needs a configured folder
 		t.Fatal(err)

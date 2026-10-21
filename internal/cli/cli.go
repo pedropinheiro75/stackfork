@@ -244,6 +244,23 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		return 0, err
 	}
 
+	if (action == "prepare" || action == "up") && !isHelpRequest(subArgs) {
+		var force bool
+		if subArgs, force = takeForce(subArgs); !slices.Contains(subArgs, "--in-run") {
+			profileDirs, err := resolveProfileDirs(*profileDirFlag)
+			if err != nil {
+				return 0, err
+			}
+			warn, err := learnRefusal(root, instanceDir, func() []inventory.Instance { return collectInstances(newStateBase, legacyStateBase) }, profileDirs, force)
+			if err != nil {
+				return 0, err
+			}
+			if warn != "" {
+				fmt.Fprintln(stderr, warn)
+			}
+		}
+	}
+
 	// A checkout with no prepared stack: say where this repository's
 	// instances are instead of a bare "run prepare".
 	if instanceActions[action] && action != "runs" && !isHelpRequest(subArgs) { // runs also lists a Start that failed before any manifest

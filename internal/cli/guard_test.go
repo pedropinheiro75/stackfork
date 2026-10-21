@@ -58,7 +58,7 @@ func TestGuardBlocksAndAllowsPerTool(t *testing.T) {
 
 func TestGuardAllowsOutsideManagedAndOnMalformed(t *testing.T) {
 	t.Setenv("STACKFORK_HOST_RUN", "")
-	plain := initRepo(t)
+	plain := initBareRepo(t)
 	state, legacy := t.TempDir(), t.TempDir()
 	args := []string{}
 	var out, errBuf bytes.Buffer

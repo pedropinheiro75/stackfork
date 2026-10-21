@@ -14,11 +14,23 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
-func initRepo(t *testing.T) string {
+// initBareRepo is a git checkout nobody has learned: prepare and up refuse it.
+func initBareRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	if out, err := exec.Command("git", "init", "-q", dir).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
+	}
+	return dir
+}
+
+// initRepo is a git checkout with a draft knowledge file (learn ran), the
+// starting point of every fixture that is not about the learn gate.
+func initRepo(t *testing.T) string {
+	t.Helper()
+	dir := initBareRepo(t)
+	if _, stderr, code := runCLI(t, "--root", dir, "--state-dir", filepath.Join(t.TempDir(), "learn-state"), "learn"); code != 0 {
+		t.Fatalf("learn failed: %s", stderr)
 	}
 	return dir
 }

@@ -331,7 +331,7 @@ func TestResetFromMainAppliesNoOtherRecipe(t *testing.T) {
 	// main's recipe names no *.compose.yaml, so prepareArgs finds no recipe (errNoRecipe)
 	os.MkdirAll(filepath.Join(repo, ".stackfork"), 0o755)
 	os.WriteFile(filepath.Join(repo, ".stackfork", "dev.yml"), []byte(gapOverride), 0o644)
-	run("--root", repo, "prepare", "-f", "compose.yaml", "-f", ".stackfork/dev.yml")
+	run("--root", repo, "prepare", "--force", "-f", "compose.yaml", "-f", ".stackfork/dev.yml")
 	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}

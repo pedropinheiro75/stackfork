@@ -162,7 +162,7 @@ func TestListWarnsOnlyForLinkedWorktreeWithAGap(t *testing.T) {
 	runCLI(t, append(append([]string{}, b2...), "worktree", "add", repo2, "x", "--from", "main")...)
 	wt2 := filepath.Join(repo2, ".worktrees", "x")
 	os.WriteFile(filepath.Join(wt2, "a.yaml"), []byte(gapBase), 0o644)
-	if _, e, code := runCLI(t, append(append([]string{}, b2...), "--root", wt2, "prepare", "-f", "a.yaml")...); code != 0 || strings.Contains(e, "Missing:") {
+	if _, e, code := runCLI(t, append(append([]string{}, b2...), "--root", wt2, "prepare", "--force", "-f", "a.yaml")...); code != 0 || strings.Contains(e, "Missing:") {
 		t.Fatalf("%d %s", code, e)
 	}
 	for _, ws := range listWarnings(t, b2) {

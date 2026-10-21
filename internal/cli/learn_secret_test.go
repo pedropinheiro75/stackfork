@@ -24,7 +24,7 @@ func seedKnowledge(t *testing.T) (root, path string) {
 }
 
 func TestLearnRecordSecretRequiresPriorScan(t *testing.T) {
-	root := initRepo(t)
+	root := initBareRepo(t)
 	_, stderr, code := runCLI(t, "--root", root, "learn", "record", "secret", "NPM_TOKEN")
 	if code == 0 || !strings.Contains(stderr, "run `stackfork learn` first") {
 		t.Fatalf("code=%d stderr=%s", code, stderr)

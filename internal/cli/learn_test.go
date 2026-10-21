@@ -16,7 +16,7 @@ import (
 // learn` has something to scan.
 func learnFixtureRoot(t *testing.T) string {
 	t.Helper()
-	root := initRepo(t)
+	root := initBareRepo(t)
 	if err := os.WriteFile(filepath.Join(root, "compose.yaml"), []byte(fixtureCompose), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func learnFixtureRoot(t *testing.T) string {
 // TestLearnRecordRequiresPriorScan covers task 13.5: nothing to record
 // into without a scan first.
 func TestLearnRecordRequiresPriorScan(t *testing.T) {
-	root := initRepo(t)
+	root := initBareRepo(t)
 	_, stderr, code := runCLI(t, "--root", root, "learn", "record", "answer", "q", "a")
 	if code == 0 || !strings.Contains(stderr, "run `stackfork learn` first") {
 		t.Fatalf("code=%d stderr=%s", code, stderr)

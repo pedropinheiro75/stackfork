@@ -90,6 +90,34 @@ func startRefusal(root, main, branch, instanceDir string, insts []inventory.Inst
 	return fmt.Sprintf("warning: %s is not verified (%s); starting anyway because of --force", filepath.Base(main), reason), nil
 }
 
+// takeForce removes --force from args and reports whether it was there.
+func takeForce(args []string) ([]string, bool) {
+	rest := slices.DeleteFunc(slices.Clone(args), func(a string) bool { return a == "--force" || a == "-force" })
+	return rest, len(rest) != len(args)
+}
+
+// learnRefusal is the gate of prepare and up: a repository that was never
+// learned (no knowledge, adapter, instance or profile reference) is refused
+// unless force. A draft, or anything that only needs learn, goes on, and so
+// does a checkout that already has an instance. It touches nothing.
+func learnRefusal(root, instanceDir string, insts func() []inventory.Instance, profileDirs []string, force bool) (warn string, err error) {
+	if _, serr := os.Stat(filepath.Join(instanceDir, "manifest.json")); serr == nil {
+		return "", nil
+	}
+	main := repos.MainOrSelf(root)
+	if kk, kerr := knowledge.LoadFirst(root, main); kk != nil || kerr != nil { // learn ran (a broken file is for learn to fix)
+		return "", nil
+	}
+	level, reason := repos.ReadinessOf(filepath.Base(main), append(repos.Checkouts(main), root), repos.DefaultBranchOf(main), insts(), profileDirs)
+	if level != repos.Unknown { // an adapter, a prepared sibling or a profile row: it needs learn, it is not unknown
+		return "", nil
+	}
+	if !force {
+		return "", fmt.Errorf("%s has not been learned yet: run `stackfork learn` first (a person can override with --force)", filepath.Base(main))
+	}
+	return fmt.Sprintf("warning: %s has not been learned (%s); going on anyway because of --force", filepath.Base(main), reason), nil
+}
+
 // StartEnv prepares (only when needed) and starts the instance of one
 // checkout, writing progress lines to out. It refuses a project stackfork
 // does not know how to run (design.md D3/D6).
@@ -307,7 +335,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		}
 		fmt.Fprintf(out, "preparing %s (%s)\n", project, branch)
 		var pOut, pErr bytes.Buffer
-		code, err := runPrepare(append(append(append([]string{}, pbase...), "prepare"), args...), &pOut, &pErr)
+		code, err := runPrepare(append(append(append([]string{}, pbase...), "prepare", "--force"), args...), &pOut, &pErr)
 		if err != nil {
 			return err
 		}

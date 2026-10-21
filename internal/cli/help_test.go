@@ -125,7 +125,7 @@ func TestFlaglessSubcommandHelpExitsZero(t *testing.T) {
 // error (never silently allowed), but now names the subcommand and where
 // to look, instead of a bare "flag provided but not defined".
 func TestRealFlagErrorPointsAtSubcommandHelp(t *testing.T) {
-	_, stderr, code := runCLI(t, "prepare", "--this-flag-does-not-exist")
+	_, stderr, code := runCLI(t, "prepare", "--force", "--this-flag-does-not-exist")
 	if code == 0 {
 		t.Fatal("expected a non-zero exit for an unknown flag")
 	}
