@@ -392,3 +392,11 @@ func TestConfirmationBypassOtherSegment(t *testing.T) {
 		`echo http://127.0.0.1:5000/api/run | xargs -n1 curl -X POST`,
 	}, []string{`echo /api/run | grep api`, `curl http://127.0.0.1:5000/api/instances | grep x`})
 }
+
+// WHATWG URL parsing turns a backslash into a slash (N4).
+func TestConfirmationBypassBackslash(t *testing.T) {
+	checkBlocked(t, []string{
+		`node -e "fetch('http://127.0.0.1:5000\\api\\run',{method:'POST'})"`,
+		`curl -X POST 'http://127.0.0.1:5000\api\secrets\set'`,
+	}, nil)
+}

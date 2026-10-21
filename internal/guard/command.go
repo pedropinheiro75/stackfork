@@ -550,5 +550,5 @@ func normalizeURLWord(w string) string {
 	if d, err := url.PathUnescape(w); err == nil {
 		w = d
 	}
-	return path.Clean(w)
+	return path.Clean(strings.ReplaceAll(w, `\`, "/"))
 }
