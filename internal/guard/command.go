@@ -497,21 +497,46 @@ func bypassesConfirmation(command string) bool {
 	// mentions them (sed, grep, an editor) must stay allowed.
 	httpClients := map[string]bool{"curl": true, "wget": true, "http": true, "https": true, "xh": true,
 		"python": true, "python3": true, "node": true, "bun": true, "deno": true, "ruby": true, "perl": true}
-	for _, seg := range guardSegments(command, "") {
-		if !httpClients[progBase(seg.Words[0])] {
-			continue
+	segs := guardSegments(command, "")
+	client := false
+	for _, seg := range segs {
+		client = client || httpClients[progBase(seg.Words[0])]
+	}
+	if client {
+		// The URL may sit in another segment (`echo URL | xargs curl`), and the
+		// raw text catches what the splitter joined or unquoted differently.
+		words := strings.Fields(unquote(command))
+		for _, seg := range segs {
+			words = append(words, seg.Words...)
 		}
-		for _, w := range seg.Words[1:] {
-			norm := normalizeURLWord(w)
-			for _, ep := range []string{"/api/run", "/api/actions", "/api/learn", "/api/secrets"} {
-				if strings.Contains(w, ep) || strings.Contains(norm, ep) {
-					return true
-				}
+		for _, w := range words {
+			if hitsEndpoint(w) || hitsEndpoint(unquote(w)) {
+				return true
 			}
 		}
 	}
 	return strings.Contains(command, "osascript") && strings.Contains(command, "System Events") &&
 		(strings.Contains(command, "click") || strings.Contains(command, "keystroke") || strings.Contains(command, "key code"))
+}
+
+func unquote(s string) string {
+	return strings.NewReplacer(`"`, "", `'`, "", `\`, "").Replace(s)
+}
+
+// hitsEndpoint reports whether a word names one of the confirmation-gated
+// endpoints, or an /api/ path with shell brace or curl glob characters that
+// could expand to one.
+func hitsEndpoint(w string) bool {
+	if strings.Contains(w, "/api/") && strings.ContainsAny(w, "{}[]") {
+		return true
+	}
+	norm := normalizeURLWord(w)
+	for _, ep := range []string{"/api/run", "/api/actions", "/api/learn", "/api/secrets"} {
+		if strings.Contains(w, ep) || strings.Contains(norm, ep) {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeURLWord is the path the server would route a URL word to: cut at

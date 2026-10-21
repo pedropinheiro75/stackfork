@@ -359,3 +359,36 @@ func TestUnixDoesNotUnwrapWindowsEscapes(t *testing.T) {
 		t.Error("^ and backtick are not escapes in the Unix split")
 	}
 }
+
+func checkBlocked(t *testing.T, blocked, allowed []string) {
+	t.Helper()
+	for _, c := range blocked {
+		if !Destructive(c, "/tmp") {
+			t.Errorf("%s must be blocked", c)
+		}
+	}
+	for _, c := range allowed {
+		if Destructive(c, "/tmp") {
+			t.Errorf("%s must stay allowed", c)
+		}
+	}
+}
+
+// Shell brace expansion and curl globbing cannot hide the endpoints (N2).
+func TestConfirmationBypassGlobbing(t *testing.T) {
+	checkBlocked(t, []string{
+		`curl -X POST http://127.0.0.1:5000/api/{secrets,x}/set`,
+		`curl -X POST 'http://127.0.0.1:5000/api/{secrets}/set'`,
+		`curl -X POST 'http://127.0.0.1:5000/api/[s-s]ecrets/set'`,
+		`curl -X POST 'http://127.0.0.1:5000/api/r[u-u]n'`,
+		`curl -X POST http://127.0.0.1:5000/api/\{secrets,x\}/set`,
+	}, []string{`curl http://127.0.0.1:5000/health/{a,b}`, `echo '/api/{run}' | grep api`})
+}
+
+// The URL may sit in another segment than the HTTP client (N3).
+func TestConfirmationBypassOtherSegment(t *testing.T) {
+	checkBlocked(t, []string{
+		`echo http://127.0.0.1:5000/api/run | xargs curl -X POST`,
+		`echo http://127.0.0.1:5000/api/run | xargs -n1 curl -X POST`,
+	}, []string{`echo /api/run | grep api`, `curl http://127.0.0.1:5000/api/instances | grep x`})
+}
