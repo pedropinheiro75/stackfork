@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/cleanup"
 	"github.com/pedropinheiro75/stackfork/internal/config"
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
@@ -47,7 +49,10 @@ type Loop struct {
 	CleanupDown  func(t Target) func(io.Writer) error                   // removes an instance with its volumes; nil: the step fails
 	CleanupExec  func(ctx context.Context, j CleanupJob) CleanupOutcome // nil: RunCleanup
 
-	Config  func() (*config.Config, error) // nil: config.Load, reread when config.json changes
+	Config func() (*config.Config, error) // nil: config.Load, reread when config.json changes
+	// Admit says why a `live` key of config.json is not acted on ("" admits
+	// it); nil: the key must be a main checkout under a configured folder.
+	Admit   func(cfg *config.Config, main string) string
 	Targets func(main string) ([]Target, error)
 	Sync    func(checkout string, timeout time.Duration) repos.SyncResult // nil: repos.Sync
 	Now     func() time.Time                                              // nil: time.Now
@@ -265,6 +270,14 @@ func (l *Loop) Tick(ctx context.Context) {
 		if ctx.Err() != nil {
 			break
 		}
+		admit := l.Admit
+		if admit == nil {
+			admit = admitRepo
+		}
+		if why := admit(cfg, main); why != "" { // config.json is hand-editable
+			st.Repos = append(st.Repos, RepoStatus{Main: main, State: StateOK, Error: "ignored: " + why, Targets: []TargetStatus{}})
+			continue
+		}
 		st.Repos = append(st.Repos, l.tickRepo(ctx, main, cfg.CleanupFor(main)))
 	}
 	for m := range l.repos {
@@ -273,6 +286,18 @@ func (l *Loop) Tick(ctx context.Context) {
 		}
 	}
 	l.set(st)
+}
+
+// admitRepo: a live key is acted on only when it is the main checkout of a
+// repository under a configured folder, as `live on` and the page ensure.
+func admitRepo(cfg *config.Config, main string) string {
+	if !slices.ContainsFunc(cfg.ResolvedRoots(), func(root string) bool { return config.Inside(root, main) }) {
+		return main + " is not under a configured folder"
+	}
+	if identity.MainRepoOf(main) != main {
+		return main + " is not the main checkout of a repository"
+	}
+	return ""
 }
 
 func (l *Loop) set(s Status) {
@@ -339,7 +364,13 @@ func (l *Loop) tickTarget(ctx context.Context, rs *repoState, t Target, paused b
 	}
 	ts.note = ""
 
-	if ft := ts.fetcher.Tick(now, paused); ft.Ran {
+	// The sync fast-forwards the checkout to the upstream of the instance's
+	// branch: not when the person switched the checkout to another branch.
+	switched := false
+	if b, detached, err := ReadBranch(t.Root); err == nil && (detached || b != t.Branch) {
+		switched = true
+	}
+	if ft := ts.fetcher.Tick(now, paused || switched); ft.Ran {
 		ts.lastFetch, ts.fetchNote = now, ft.Note
 		if ft.Result.Updated {
 			from := ""
@@ -359,7 +390,7 @@ func (l *Loop) tickTarget(ctx context.Context, rs *repoState, t Target, paused b
 	if ts.warn != "" {
 		st.Warnings = append(st.Warnings, ts.warn)
 	}
-	if b, detached, err := ReadBranch(t.Root); err == nil && (detached || b != t.Branch) {
+	if switched {
 		st.Warnings = append(st.Warnings, "branch switched")
 	}
 	if paused {

@@ -37,9 +37,10 @@ func newCleanupLoop(t *testing.T, cl config.Cleanup) *cleanupLoopFx {
 		Exec: func(context.Context, Target, Job) (RunResult, error) {
 			return RunResult{}, errors.New("no live run expected")
 		},
-		Now:  func() time.Time { return f.now },
-		Rand: func() float64 { return 0.5 },
-		GH:   &cleanup.GH{Paths: []string{}}, // never the gh of this machine
+		Now:   func() time.Time { return f.now },
+		Rand:  func() float64 { return 0.5 },
+		Admit: func(*config.Config, string) string { return "" },
+		GH:    &cleanup.GH{Paths: []string{}}, // never the gh of this machine
 		CleanupFetch: func(string, string, time.Duration) error {
 			f.fetches++
 			return f.fetchErr

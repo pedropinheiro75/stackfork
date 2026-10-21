@@ -30,6 +30,7 @@ func newLoop(t *testing.T, f *fx, nb string) *loopFx {
 		Sync:    func(string, time.Duration) repos.SyncResult { return repos.SyncResult{} },
 		Now:     func() time.Time { return f.now },
 		Rand:    func() float64 { return 0.5 },
+		Admit:   func(*config.Config, string) string { return "" }, // the fixtures sit outside a configured root
 	}
 	return lf
 }
@@ -161,5 +162,60 @@ func TestLoopRunStopsAtCancelAndReleasesTheLock(t *testing.T) {
 	}
 	if lf.l.lock != nil {
 		t.Fatal("lock must be released")
+	}
+}
+
+// A checkout the person switched to another branch is not fast-forwarded: the
+// upstream of the instance's branch is not that branch's.
+func TestLoopDoesNotSyncACheckoutOnAnotherBranch(t *testing.T) {
+	f := newFx(t, baseSteps)
+	lf := newLoop(t, f, f.nb)
+	syncs := 0
+	lf.l.Sync = func(string, time.Duration) repos.SyncResult { syncs++; return repos.SyncResult{} }
+	write(t, f.root, ".git/HEAD", "ref: refs/heads/other\n")
+	lf.tick(0)
+	lf.tick(10 * time.Minute)
+	if syncs != 0 {
+		t.Fatalf("synced %d times on another branch", syncs)
+	}
+	if w := lf.l.Status().Repos[0].Targets[0].Warnings; len(w) == 0 || w[0] != "branch switched" {
+		t.Fatalf("warnings: %v", w)
+	}
+	write(t, f.root, ".git/HEAD", "ref: refs/heads/feature-login\n")
+	lf.tick(10 * time.Minute)
+	if syncs == 0 {
+		t.Fatal("back on the branch, the sync resumes")
+	}
+}
+
+// config.json is hand-editable: a live key outside the configured folders, or
+// one that is not a main checkout, is ignored with an error in the status.
+func TestLoopIgnoresLiveKeysThatAreNotMainCheckoutsUnderAConfiguredRoot(t *testing.T) {
+	f := newFx(t, baseSteps)
+	lf := newLoop(t, f, f.nb)
+	lf.l.Admit = nil // the real check
+	execs := 0
+	lf.l.Targets = func(string) ([]Target, error) { execs++; return []Target{f.target()}, nil }
+
+	lf.cfg = &config.Config{Live: map[string]bool{f.root: true}} // no configured folder
+	lf.tick(0)
+	rs := lf.l.Status().Repos[0]
+	if execs != 0 || rs.Error == "" || len(rs.Targets) != 0 {
+		t.Fatalf("outside every root: execs=%d %+v", execs, rs)
+	}
+
+	lf.cfg = &config.Config{Roots: []string{filepath.Dir(f.root)}, Live: map[string]bool{f.root: true}}
+	lf.tick(0)
+	if rs = lf.l.Status().Repos[0]; execs == 0 || rs.Error != "" || len(rs.Targets) != 1 {
+		t.Fatalf("a main checkout under a root is watched: execs=%d %+v", execs, rs)
+	}
+
+	wt := filepath.Join(filepath.Dir(f.root), "wt")
+	write(t, wt, ".git", "gitdir: "+f.root+"/.git/worktrees/wt\n") // a linked worktree is not a main checkout
+	execs = 0
+	lf.cfg = &config.Config{Roots: []string{filepath.Dir(f.root)}, Live: map[string]bool{wt: true}}
+	lf.tick(0)
+	if rs = lf.l.Status().Repos[0]; execs != 0 || rs.Error == "" {
+		t.Fatalf("a linked worktree key: execs=%d %+v", execs, rs)
 	}
 }
