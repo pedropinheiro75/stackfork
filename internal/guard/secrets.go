@@ -65,21 +65,11 @@ func secretForbidden(command, cwd string) bool {
 
 // secretWrite matches `stackfork [global flags] secret set|map|unmap ...`.
 func secretWrite(w []string) bool {
-	action := -1
-	for i := 1; i < len(w); i++ {
-		if strings.HasPrefix(w[i], "-") {
-			if globalValueFlags[w[i]] {
-				i++
-			}
-			continue
-		}
-		action = i
-		break
-	}
-	if action < 0 || w[action] != "secret" {
+	action, args := stackforkCall(w)
+	if action != "secret" {
 		return false
 	}
-	for _, a := range w[action+1:] {
+	for _, a := range args {
 		if strings.HasPrefix(a, "-") {
 			continue
 		}

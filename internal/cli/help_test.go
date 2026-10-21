@@ -3,8 +3,11 @@ package cli
 import (
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/argv"
 )
 
 // TestBareInvocationPrintsOverviewAndExitsZero covers the real Copilot CLI
@@ -177,5 +180,17 @@ func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The guard classifies commands with argv.Split; its action table must be the
+// CLI's own, in order.
+func TestArgvActionsMatchTheCommandTable(t *testing.T) {
+	var names []string
+	for _, c := range commandSummaries {
+		names = append(names, c.name)
+	}
+	if !slices.Equal(names, argv.Actions) {
+		t.Fatalf("commandSummaries %v\nargv.Actions     %v", names, argv.Actions)
 	}
 }

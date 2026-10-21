@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/pedropinheiro75/stackfork/internal/argv"
 )
 
 // windowsSplit selects Windows command syntax (backslash is a path
@@ -466,9 +468,12 @@ func composeStarts(words []string) bool {
 // DestructiveMessage is shown when an agent tries a prune that deletes.
 const DestructiveMessage = "stackfork: destructive; ask the user to run it (a dry run, `stackfork prune`, is fine)"
 
-var globalValueFlags = map[string]bool{
-	"--root": true, "--state-dir": true, "--legacy-state-dir": true, "--npmrc": true,
-	"--secret": true, "--profile-dir": true, "--instance": true,
+// stackforkCall is the action and the action's arguments of a stackfork
+// command line, split the way the CLI splits it (internal/argv): single-dash
+// global flags, flags glued with =, and an action word that is not first.
+func stackforkCall(w []string) (action string, args []string) {
+	_, action, args, _ = argv.Split(w[1:])
+	return action, args
 }
 
 // Destructive reports whether command runs `stackfork prune` with --yes/-y or
@@ -483,17 +488,7 @@ func Destructive(command, cwd string) bool {
 		if progBase(w[0]) != "stackfork" {
 			continue
 		}
-		action, args := "", []string(nil)
-		for i := 1; i < len(w); i++ {
-			if strings.HasPrefix(w[i], "-") {
-				if globalValueFlags[w[i]] {
-					i++ // its value
-				}
-				continue
-			}
-			action, args = w[i], w[i+1:]
-			break
-		}
+		action, args := stackforkCall(w)
 		for _, a := range args {
 			a = strings.TrimLeft(a, "-")
 			name, _, _ := strings.Cut(a, "=")

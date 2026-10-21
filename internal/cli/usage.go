@@ -13,8 +13,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"strings"
 	"text/tabwriter"
+
+	"github.com/pedropinheiro75/stackfork/internal/argv"
 )
 
 // commandSummaries is the one source of truth for the top-level overview
@@ -60,58 +61,13 @@ var commandSummaries = []struct{ name, summary string }{
 	{"version", "print the version"},
 }
 
-// knownGlobalFlags names every flag `run`'s own top-level FlagSet
-// registers - splitArgs recognizes one of these wherever it appears in
-// args, not just before the action word.
-var knownGlobalFlags = map[string]bool{
-	"root": true, "npmrc": true, "state-dir": true, "legacy-state-dir": true,
-	"profile-dir": true, "secret": true, "instance": true,
-}
-
-// isKnownAction reports whether tok is a real command or one of the three
-// help spellings - the set splitArgs treats as "this is the action word",
-// wherever it appears.
-func isKnownAction(tok string) bool {
-	if tok == "help" || tok == "--help" || tok == "-h" {
-		return true
-	}
-	return commandSummary(tok) != ""
-}
-
-// splitArgs separates stackfork's global flags from the action word and
-// its own arguments. A global flag is recognized anywhere in args, not
-// just before the action (flag.FlagSet's own Parse stops looking the
-// moment it hits the first non-flag token) - so `stackfork prepare --npmrc
-// X -f file`, `stackfork --npmrc X -f file prepare` and `stackfork --npmrc
-// X prepare -f file` all resolve to the same global/action/subArgs split.
-// firstUnrecognized is the first token that was neither a recognized
-// global flag nor the (at most one) action word - used only to name what
-// the user actually typed in an "unknown action" error; it plays no part
-// in dispatch.
+// splitArgs separates stackfork's global flags from the action word and its
+// own arguments: a global flag is recognized anywhere in args (flag.FlagSet's
+// own Parse stops at the first non-flag token), so `stackfork prepare --npmrc
+// X -f file` and `stackfork --npmrc X prepare -f file` resolve the same way.
+// The guard parses with the same function (internal/argv).
 func splitArgs(args []string) (globalArgs []string, action string, subArgs []string, firstUnrecognized string) {
-	for i := 0; i < len(args); i++ {
-		tok := args[i]
-		if strings.HasPrefix(tok, "-") {
-			name, _, hasEq := strings.Cut(strings.TrimLeft(tok, "-"), "=")
-			if knownGlobalFlags[name] {
-				globalArgs = append(globalArgs, tok)
-				if !hasEq && i+1 < len(args) {
-					i++
-					globalArgs = append(globalArgs, args[i])
-				}
-				continue
-			}
-		}
-		if action == "" && isKnownAction(tok) {
-			action = tok
-			continue
-		}
-		if firstUnrecognized == "" {
-			firstUnrecognized = tok
-		}
-		subArgs = append(subArgs, tok)
-	}
-	return globalArgs, action, subArgs, firstUnrecognized
+	return argv.Split(args)
 }
 
 func commandSummary(name string) string {

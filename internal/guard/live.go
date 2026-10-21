@@ -20,28 +20,27 @@ func liveForbidden(command, cwd string) bool {
 		if progBase(w[0]) != "stackfork" {
 			continue
 		}
+		action, args := stackforkCall(w)
+		if action != "live" {
+			continue
+		}
 		var pos, flags []string
-		for i := 1; i < len(w); i++ {
-			a := w[i]
+		for _, a := range args {
 			if strings.HasPrefix(a, "-") {
-				name, _, hasEq := strings.Cut(a, "=")
-				if globalValueFlags[name] && !hasEq {
-					i++ // its value
-					continue
-				}
+				name, _, _ := strings.Cut(a, "=")
 				flags = append(flags, strings.TrimLeft(name, "-"))
 				continue
 			}
 			pos = append(pos, a)
 		}
-		if len(pos) < 2 || pos[0] != "live" {
+		if len(pos) < 1 {
 			continue
 		}
-		switch pos[1] {
+		switch pos[0] {
 		case "on":
 			return true
 		case "cleanup":
-			if slices.Contains(flags, "delete-branch") || slices.Contains(pos[2:], "auto") {
+			if slices.Contains(flags, "delete-branch") || slices.Contains(pos[1:], "auto") {
 				return true
 			}
 		case "clean": // the preview stays allowed; --yes deletes a worktree and its database
