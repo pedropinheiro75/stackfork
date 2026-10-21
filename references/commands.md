@@ -206,7 +206,8 @@ stackfork route add app 5173
 
 ### dashboard
 A local web page (127.0.0.1-only) listing every instance, plus a Repos tab (find a repo under your configured folders, see its branches and worktrees, Start one) and a Settings panel for those folders.
-Flags: `--port`, `--open`
+Flags: `--port`, `--open`, `--supervised`
+`--supervised` is for a parent process such as the macOS app: it listens on a port of its own (`<state>/dashboard/app-port`, never `port`), prints one JSON ready line (`url`, `port`, `token`, `pid`, `version`) as its first output instead of the `listening on` line, registers no `stackfork.localhost` route, and shuts down when standard input closes. It refuses `--port` and `--open` (exit 2).
 ```sh
 stackfork dashboard --open
 ```
