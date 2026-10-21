@@ -5,11 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/cleanup"
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 // CleanupJob is one branch cleanup (design D19): the candidate, how it was
@@ -37,6 +41,26 @@ type CleanupJob struct {
 	Down func(w io.Writer) error
 	Out  io.Writer        // step output, may be nil
 	Now  func() time.Time // nil: time.Now
+}
+
+// ErrCleanupRunning is the refusal of a cleanup that finds another one running.
+var ErrCleanupRunning = errors.New("a cleanup is already running for this repository")
+
+// CleanupLockFile is <stateBase>/live/<hash of the main checkout>.cleanup.lock.
+func CleanupLockFile(stateBase, main string) string {
+	return strings.TrimSuffix(PauseFile(stateBase, main), ".json") + ".cleanup.lock"
+}
+
+func tryCleanupLock(stateBase, main string) (*state.Lock, error) {
+	path := CleanupLockFile(stateBase, main)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	lock, err := state.TryLock(path)
+	if errors.Is(err, state.ErrLocked) {
+		return nil, ErrCleanupRunning
+	}
+	return lock, err
 }
 
 // ErrNotEligible wraps the warning of a refused re-check. Nothing ran.
@@ -92,6 +116,14 @@ func (j CleanupJob) CheckFor() cleanup.Check {
 // pauses live mode for the repository (design D9, D19).
 func RunCleanup(ctx context.Context, j CleanupJob) CleanupOutcome {
 	var out CleanupOutcome
+	// The CLI, the page and the loop all come through here: one cleanup at a
+	// time per repository, so two cannot race on the same worktree or branch.
+	lock, lerr := tryCleanupLock(j.NewBase, j.Main)
+	if lerr != nil {
+		out.Err = lerr
+		return out
+	}
+	defer lock.Release()
 	out.Verdict = cleanup.Evaluate(j.CheckFor())
 	if !out.Verdict.Eligible {
 		out.Err = fmt.Errorf("%w: %s", ErrNotEligible, out.Verdict.Warning)

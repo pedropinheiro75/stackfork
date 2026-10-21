@@ -11,6 +11,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 func TestRunCleanupFullCleanupRecordsThreeSucceededSteps(t *testing.T) {
@@ -187,5 +188,27 @@ func TestCleanupHistoryKeepsTheLast20(t *testing.T) {
 	st, _ := LoadCleanupState(dir, "/r")
 	if len(st.History) != 20 || st.History[0].Run != 5 {
 		t.Fatalf("%d events, first run %d", len(st.History), st.History[0].Run)
+	}
+}
+
+// One cleanup at a time per repository, whichever entry point started it.
+func TestRunCleanupRefusesWhileAnotherCleanupOfTheRepositoryRuns(t *testing.T) {
+	f := newCleanupFx(t)
+	j := f.job(t)
+	os.MkdirAll(filepath.Dir(CleanupLockFile(f.State, f.Main)), 0o700)
+	lock, err := state.TryLock(CleanupLockFile(f.State, f.Main))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := RunCleanup(context.Background(), j)
+	if out.Err == nil || !strings.Contains(out.Err.Error(), "a cleanup is already running") || out.Run.ID != 0 {
+		t.Fatalf("%+v", out)
+	}
+	if _, err := os.Stat(f.WT); err != nil {
+		t.Fatal("the worktree was removed under another cleanup")
+	}
+	lock.Release()
+	if out := RunCleanup(context.Background(), j); out.Err != nil {
+		t.Fatalf("after release: %+v", out)
 	}
 }
