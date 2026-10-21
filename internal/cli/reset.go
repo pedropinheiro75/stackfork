@@ -39,11 +39,17 @@ type ResetPreview struct {
 	// Gap is the recipe-gap warning of a linked worktree whose recorded
 	// Compose files lack one the main checkout uses; empty when none.
 	Gap string `json:"gap,omitempty"`
+	// FromMain: the reset rebuilds the worktree from the main checkout's
+	// recipe (Recipe, as prepare args); Aside lists the untracked files it
+	// moves to .stackfork-aside first.
+	FromMain bool     `json:"from_main,omitempty"`
+	Recipe   string   `json:"recipe,omitempty"`
+	Aside    []string `json:"aside,omitempty"`
 }
 
 // PreviewReset fetches the upstream (changing no branch) and lists the Docker
 // volumes of the checkout's instance, which `down --volumes` deletes.
-func PreviewReset(checkout, newBase, legacyBase string) (ResetPreview, error) {
+func PreviewReset(checkout, newBase, legacyBase string, fromMain bool) (ResetPreview, error) {
 	toplevel, err := gitToplevel(checkout)
 	if err != nil {
 		return ResetPreview{}, fmt.Errorf("%s is not a git checkout", checkout)
@@ -61,9 +67,18 @@ func PreviewReset(checkout, newBase, legacyBase string) (ResetPreview, error) {
 		return ResetPreview{}, err
 	}
 	p := ResetPreview{Project: project, Branch: branch, Root: root, Volumes: []string{}}
-	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
+	if fromMain { // every check runs before Docker is called or a file moves
+		r, err := mainRecipe(root, newBase, legacyBase)
+		if err != nil {
+			return p, err
+		}
+		if p.Aside, err = repos.AsideFiles(root, r); err != nil {
+			return p, err
+		}
+		p.FromMain, p.Recipe = true, strings.Join(recipeArgs(r), " ")
+	} else if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
 		if main := repos.MainRepoOf(root); main != "" {
-			p.Gap = repos.RecipeGap(main, root, m.Files, collectInstances(newBase, legacyBase)).Message(root)
+			p.Gap = repos.RecipeGap(main, root, m.Files, manifestInstances(newBase, legacyBase)).Message(root)
 		}
 	}
 	if res := syncRepo(root, 15*time.Second, false); res.Blocked {
@@ -79,6 +94,34 @@ func PreviewReset(checkout, newBase, legacyBase string) (ResetPreview, error) {
 	return p, nil
 }
 
+// recipeArgs are the prepare args of a borrowed recipe.
+func recipeArgs(r *repos.SiblingRecipe) []string {
+	args := fileArgs(r.Files)
+	if r.EnvFile != "" {
+		args = append(args, "--env-file", r.EnvFile)
+	}
+	return args
+}
+
+// mainRecipe is the recipe of `reset --from-main` (improve-worktree-recipes
+// D5): the main checkout's last prepare, usable in the linked worktree at
+// root. It refuses the main checkout, a main checkout with no prepared
+// instance and a recipe that cannot be reused, and calls no Docker.
+func mainRecipe(root, newBase, legacyBase string) (*repos.SiblingRecipe, error) {
+	main := repos.MainRepoOf(root)
+	if resolved, err := identity.ResolvePath(main); main == "" || err != nil || resolved == root {
+		return nil, errors.New("this is the main checkout; reset without --from-main")
+	}
+	r, err := repos.FindMainRecipe(main, root, manifestInstances(newBase, legacyBase))
+	if err != nil {
+		return nil, fmt.Errorf("the main checkout's recipe cannot be reused here: %w", err)
+	}
+	if r == nil {
+		return nil, errors.New("the main checkout has no prepared instance; start it first")
+	}
+	return r, nil
+}
+
 // Describe is the text both confirmations show.
 func (p ResetPreview) Describe() string {
 	var b strings.Builder
@@ -87,6 +130,14 @@ func (p ResetPreview) Describe() string {
 		b.WriteString("No Docker volumes exist for it; containers and images are rebuilt.")
 	} else {
 		b.WriteString("These Docker volumes and their data will be deleted:\n  " + strings.Join(p.Volumes, "\n  "))
+	}
+	if p.FromMain {
+		fmt.Fprintf(&b, "\nUses the main checkout's recipe: %s", p.Recipe)
+		if len(p.Aside) == 0 {
+			b.WriteString("\nNo untracked adapter files need to move aside.")
+		} else {
+			b.WriteString("\nMoves these untracked files aside to .stackfork-aside/<UTC time>/ (nothing is deleted):\n  " + strings.Join(p.Aside, "\n  "))
+		}
 	}
 	b.WriteString("\nYour code is not touched.")
 	if p.Gap != "" {
@@ -161,17 +212,18 @@ func askYN(out io.Writer, in *bufio.Reader, question string) bool {
 	return strings.EqualFold(line, "y") || strings.EqualFold(line, "yes")
 }
 
-// cmdReset is `stackfork reset [--yes]` for the checkout in checkout.
+// cmdReset is `stackfork reset [--yes] [--from-main]` for the checkout in checkout.
 func cmdReset(stdout, stderr io.Writer, subArgs []string, checkout, newBase, legacyBase string, global []string) (int, error) {
 	fs := newFlagSet(stdout, "reset")
 	yes := fs.Bool("yes", false, "delete without asking, and go on with the current code when it cannot be updated")
+	fromMain := fs.Bool("from-main", false, "rebuild this worktree from the main checkout's recipe: its untracked adapter files move to .stackfork-aside first")
 	if err := fs.Parse(subArgs); err != nil {
 		return parseFailure(fs, err)
 	}
 	if fs.NArg() > 0 {
 		return 2, fmt.Errorf("unexpected argument %q (see `stackfork reset --help`)", fs.Arg(0))
 	}
-	pv, err := PreviewReset(checkout, newBase, legacyBase)
+	pv, err := PreviewReset(checkout, newBase, legacyBase, *fromMain)
 	if err != nil {
 		return 0, err
 	}
@@ -203,6 +255,6 @@ func cmdReset(stdout, stderr io.Writer, subArgs []string, checkout, newBase, leg
 	}
 	return 0, StartEnv(stdout, stderr, StartOptions{
 		Checkout: pv.Root, NewStateBase: newBase, LegacyStateBase: legacyBase,
-		Global: global, ProfileDirs: profiles, Reset: true, Current: current,
+		Global: global, ProfileDirs: profiles, Reset: true, Current: current, FromMain: *fromMain,
 	})
 }

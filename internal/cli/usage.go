@@ -53,7 +53,7 @@ var commandSummaries = []struct{ name, summary string }{
 	{"repos", "list git repos under the configured roots with branches, worktrees and readiness"},
 	{"worktree", "worktree add REPO BRANCH: create <repo>/.worktrees/<branch>"},
 	{"start-env", "prepare (if needed) and start a checkout's isolated environment"},
-	{"reset", "throw this environment away (volumes too) and start it from zero, from the code in the worktree [--yes]"},
+	{"reset", "throw this environment away (volumes too) and start it from zero, from the code in the worktree [--yes] [--from-main]"},
 	{"secret", "named secrets: ls/check statuses, set a keychain value (stdin), map a name to a reference per repository"},
 	{"live", "live mode: on/off/status per repository (the dashboard follows upstream and rebuilds); cleanup: branch cleanup settings; clean: preview or run the cleanup of one merged worktree"},
 	{"config", "show or edit the folders the repo browser scans"},

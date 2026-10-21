@@ -102,7 +102,7 @@ func TestResetPreviewDescribesTheGap(t *testing.T) {
 	if _, e, code := runCLI(t, append(append([]string{}, base...), "--root", wt, "prepare", "-f", ".stackfork/dev.compose.yaml")...); code != 0 {
 		t.Fatal(e)
 	}
-	pv, err := PreviewReset(wt, base[1], base[3])
+	pv, err := PreviewReset(wt, base[1], base[3], false)
 	if err != nil {
 		t.Fatal(err)
 	}

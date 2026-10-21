@@ -42,6 +42,7 @@ type StartOptions struct {
 	Mode            string           // container or hybrid; empty = the machine's configured mode
 	Trigger         string           // who started it: cli (default) or dashboard; recorded in the run
 	Reset           bool             // throw the environment away and start it from zero (command reset)
+	FromMain        bool             // Reset: prepare with the main checkout's recipe, the worktree's own adapter files moved aside
 	Current         bool             // Reset: go on with the current code when it is behind and cannot be updated
 	Live            *live.Job        // a live reconcile: run only the steps of this job (command live, trigger live)
 	Observer        func(runs.Event) // receives the run's state changes, may be nil
@@ -92,6 +93,15 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	if main == "" {
 		main = root
 	}
+	var mainR *repos.SiblingRecipe // reset --from-main: checked before anything runs or moves
+	if o.FromMain {
+		if !o.Reset {
+			return errors.New("--from-main belongs to reset")
+		}
+		if mainR, err = mainRecipe(root, o.NewStateBase, o.LegacyStateBase); err != nil {
+			return err
+		}
+	}
 	plan, mode, err := startPlan(out, o, root, main)
 	if err != nil {
 		return err
@@ -113,9 +123,11 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	base := append(slices.Clone(head), o.Global...)
 	// The references a sibling worktree contributes, computed once: the
 	// preflight and prepare both use this set (review I1).
-	sibling, err := siblingRefs(out, o, root, main, instanceDir, insts)
-	if err != nil {
-		return err
+	var sibling map[string]string // reset --from-main keeps only the instance's own references
+	if !o.FromMain {
+		if sibling, err = siblingRefs(out, o, root, main, instanceDir, insts); err != nil {
+			return err
+		}
 	}
 
 	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err != nil {
@@ -140,6 +152,9 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	command, retry := "start-env", " start-env"
 	if o.Reset {
 		command, retry = "reset", " reset --yes"
+		if o.FromMain {
+			retry += " --from-main"
+		}
 	}
 	meta := runs.Meta{Trigger: trigger, Mode: mode, Project: project, Branch: branch, Observer: o.Observer}
 	if o.Live != nil { // a failed live run is retried by turning live mode on again (design D10)
@@ -233,11 +248,16 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		if fromSibling {
 			args, seedCmd, seedSvc, err = seedFromSibling(out, root, main, insts, err)
 		}
+		if mainR != nil { // inside prepare, so a failed sync, preflight or down moved nothing
+			args, err = reuseMainRecipe(out, root, mainR)
+		}
 		if err != nil {
 			return err
 		}
-		if err := copyAdapterFromMain(out, root, main, args); err != nil {
-			return err
+		if mainR == nil {
+			if err := copyAdapterFromMain(out, root, main, args); err != nil {
+				return err
+			}
 		}
 		// Sibling references go BEFORE the person's flags: the last --secret
 		// of a name wins, and an explicit flag must beat a sibling (D7).
@@ -321,6 +341,33 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	}
 	fmt.Fprintf(out, "%s %s; see `stackfork --root %s urls`\n", verb, project, root)
 	return nil
+}
+
+// reuseMainRecipe is the prepare step of reset --from-main (D5, D6): it
+// moves the worktree's untracked adapter files aside, copies the main
+// checkout's, and returns the main recipe's prepare args.
+func reuseMainRecipe(out io.Writer, root string, r *repos.SiblingRecipe) ([]string, error) {
+	args := recipeArgs(r)
+	if err := knowledge.CheckPrepareArgs(args); err != nil {
+		return nil, fmt.Errorf("reusing the recipe of %s: %w", r.Project, err)
+	}
+	moved, err := repos.MoveAside(root, r)
+	for _, x := range moved.Moved {
+		fmt.Fprintf(out, "moved %s aside to %s/%s\n", x, moved.Dir, x)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w; moved so far: %s", err, strings.Join(moved.Moved, ", "))
+	}
+	if len(moved.Moved) > 0 {
+		fmt.Fprintf(out, "nothing was deleted; delete %s when you no longer need it\n", moved.Dir)
+	}
+	rep, err := r.Apply(root)
+	if err != nil {
+		return nil, fmt.Errorf("reusing the recipe of %s: %w", r.Project, err)
+	}
+	fmt.Fprintf(out, "reusing the recipe of %s (%s): %s\n", r.Project, r.Source, strings.Join(args, " "))
+	printApplied(out, rep, r.EnvFile, root, "")
+	return args, nil
 }
 
 // globalFlagValues are the values of the global flag name (--name V,
@@ -460,6 +507,35 @@ func planPrepareArgs(k *knowledge.Knowledge) ([]string, error) {
 }
 
 var errNoRecipe = errors.New("no recorded prepare recipe or adapter compose file for this project; run `stackfork prepare -f FILE` once")
+
+// manifestInstances reads the instances' manifests only: no Docker call and
+// no git check, for the decisions that must not touch either (a recipe gap,
+// the checks of reset --from-main).
+func manifestInstances(newBase, legacyBase string) []inventory.Instance {
+	var out []inventory.Instance
+	for _, b := range []struct {
+		base, prefix string
+		legacy       bool
+	}{{newBase, identity.Prefix, false}, {legacyBase, identity.LegacyPrefix, true}} {
+		paths, _ := state.Manifests(b.base, b.prefix)
+		for _, p := range paths {
+			m, err := state.ReadManifest(p)
+			if err != nil || m == nil {
+				continue
+			}
+			in := inventory.Instance{Project: m.Project, Root: m.Root, Branch: m.Branch, Legacy: b.legacy, Files: m.Files,
+				Secrets: m.ResolvedSecrets(), SeedOnce: m.SeedOnce, SeedService: m.SeedService}
+			if m.EnvFile != nil {
+				in.EnvFile = *m.EnvFile
+			}
+			if fi, err := os.Stat(p); err == nil {
+				in.Used = fi.ModTime()
+			}
+			out = append(out, in)
+		}
+	}
+	return out
+}
 
 func collectInstances(newBase, legacyBase string) []inventory.Instance {
 	inv, err := inventory.Collect(inventory.Options{NewStateBase: newBase, LegacyStateBase: legacyBase, Version: Version})

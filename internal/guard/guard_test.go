@@ -265,20 +265,23 @@ func TestSeedForceIsDestructiveButSeedIsNot(t *testing.T) {
 // reset deletes an environment's data: blocked for agents however it is spelled.
 func TestResetIsDestructive(t *testing.T) {
 	for cmd, want := range map[string]bool{
-		"stackfork reset":                                 true,
-		"stackfork reset --yes":                           true,
-		"stackfork --root . reset --yes":                  true,
-		"stackfork --instance sf-x-1 reset":               true,
-		"stackfork --state-dir /s --secret A=env:B reset": true,
-		"env FOO=1 stackfork reset --yes":                 true,
-		"cd repo && stackfork reset -yes":                 true,
-		"sudo -u me stackfork reset":                      true,
-		"/opt/bin/stackfork.exe reset":                    true,
-		"stackfork reset --help":                          true, // no exception: asking the user is cheap
-		"stackfork seed":                                  false,
-		"stackfork runs show":                             false,
-		"echo stackfork reset":                            false,
-		"git reset --hard":                                false,
+		"stackfork reset":                                            true,
+		"stackfork reset --yes":                                      true,
+		"stackfork reset --from-main":                                true,
+		"stackfork --root . reset --from-main --yes":                 true,
+		"stackfork --state-dir /s --root /r reset --yes --from-main": true,
+		"stackfork --root . reset --yes":                             true,
+		"stackfork --instance sf-x-1 reset":                          true,
+		"stackfork --state-dir /s --secret A=env:B reset":            true,
+		"env FOO=1 stackfork reset --yes":                            true,
+		"cd repo && stackfork reset -yes":                            true,
+		"sudo -u me stackfork reset":                                 true,
+		"/opt/bin/stackfork.exe reset":                               true,
+		"stackfork reset --help":                                     true, // no exception: asking the user is cheap
+		"stackfork seed":                                             false,
+		"stackfork runs show":                                        false,
+		"echo stackfork reset":                                       false,
+		"git reset --hard":                                           false,
 	} {
 		if got := Destructive(cmd, "/repo"); got != want {
 			t.Errorf("Destructive(%q) = %v, want %v", cmd, got, want)

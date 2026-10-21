@@ -100,7 +100,7 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 		})
 	}
 	srv.ResetPreview = func(checkout string) (string, bool, error) {
-		p, err := PreviewReset(checkout, newStateBase, legacyStateBase)
+		p, err := PreviewReset(checkout, newStateBase, legacyStateBase, false)
 		return p.Describe(), p.Blocked, err
 	}
 	srv.LiveCleanup = dashboardCleanup(newStateBase, legacyStateBase)
