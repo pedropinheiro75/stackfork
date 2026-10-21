@@ -100,3 +100,29 @@ func TestImplicitPrepareIsSkippedWhenNotNeeded(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 }
+
+func TestHostExecNeedsTrust(t *testing.T) {
+	p := knowledge.Plan{Steps: []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "migrate", Kind: knowledge.KindExec, On: knowledge.OnHost, Cmd: "bun run db:migrate", Once: knowledge.OnceSchema},
+	}}
+	if !NeedsTrust(p, knowledge.ModeContainer) {
+		t.Fatal("a host exec step needs trust in container mode")
+	}
+	base, root := t.TempDir(), t.TempDir()
+	if ok, diff := HashTrusted(base, root, p); ok || len(diff) == 0 {
+		t.Fatalf("untrusted: %v %v", ok, diff)
+	}
+	if _, err := TrustHere(base, root, p); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := HashTrusted(base, root, p); !ok {
+		t.Fatal("trusted after approval")
+	}
+	if b := StepBlock(p.Steps[1]); !strings.Contains(strings.Join(b, "\n"), "on: host") {
+		t.Fatalf("StepBlock %v", b)
+	}
+	if NeedsTrust(knowledge.Plan{Steps: p.Steps[:1]}, knowledge.ModeContainer) {
+		t.Fatal("no host-run step, no trust")
+	}
+}

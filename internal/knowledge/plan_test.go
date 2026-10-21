@@ -1,6 +1,7 @@
 package knowledge
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -174,5 +175,43 @@ func TestValidatePlanRefusesTheRunnersSecretsStep(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "added by the runner") {
 			t.Errorf("%+v: %v", s, err)
 		}
+	}
+}
+
+func TestValidatePlanHostExec(t *testing.T) {
+	ok := Step{ID: "migrate", Kind: KindExec, On: OnHost, Cmd: "bun run db:migrate", Once: OnceSchema, Dir: "apps/api"}
+	if err := ValidatePlan(Plan{Steps: []Step{ok}}); err != nil {
+		t.Fatalf("valid host exec step: %v", err)
+	}
+	cases := []struct {
+		name string
+		mut  func(*Step)
+		want string
+	}{
+		{"unknown on", func(s *Step) { s.On = "cloud" }, `on "cloud"`},
+		{"on on a note", func(s *Step) { s.Kind, s.Cmd, s.Once = KindNote, "", "" }, "only exec"},
+		{"service", func(s *Step) { s.Service = "web" }, "remove --service"},
+		{"name", func(s *Step) { s.Name = "x" }, "name"},
+		{"port", func(s *Step) { s.Port = 3000 }, "port"},
+		{"port_env", func(s *Step) { s.PortEnv = []string{"PORT"} }, "port_env"},
+		{"shell syntax", func(s *Step) { s.Cmd = "bun run a && bun run b" }, "exec step on host"},
+		{"empty cmd", func(s *Step) { s.Cmd = "  " }, "empty"},
+		{"control in cmd", func(s *Step) { s.Cmd = "bun\x1b run" }, "control character"},
+		{"control in dir", func(s *Step) { s.Dir = "a\tb" }, "control character"},
+	}
+	for _, c := range cases {
+		s := ok
+		c.mut(&s)
+		err := ValidatePlan(Plan{Steps: []Step{s}})
+		if err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), `"migrate"`) {
+			t.Errorf("%s: err %v, want %q", c.name, err, c.want)
+		}
+	}
+	if err := ValidatePlan(Plan{Steps: []Step{{ID: "a", Kind: KindExec, Cmd: "x", Service: "web"}}}); err != nil {
+		t.Fatalf("container exec unchanged: %v", err)
+	}
+	b, _ := json.Marshal(Step{ID: "a", Kind: KindExec, Cmd: "x"})
+	if strings.Contains(string(b), `"on"`) {
+		t.Fatalf("on must be omitempty: %s", b)
 	}
 }

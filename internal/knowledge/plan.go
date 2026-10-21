@@ -1,6 +1,7 @@
 package knowledge
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -31,6 +32,9 @@ const (
 	OnceSchema = "schema"
 )
 
+// OnHost is the value of Step.On that runs an exec step on the host.
+const OnHost = "host"
+
 // Plan status values.
 const (
 	PlanProposed = "proposed"
@@ -49,6 +53,7 @@ type Step struct {
 	Service string `json:"service,omitempty"` // exec
 	Cmd     string `json:"cmd,omitempty"`     // exec, host
 	Once    string `json:"once,omitempty"`    // exec
+	On      string `json:"on,omitempty"`      // exec: "host" runs it on the host, absent in a service
 
 	Name    string   `json:"name,omitempty"` // host
 	Dir     string   `json:"dir,omitempty"`
@@ -98,6 +103,21 @@ func (p Plan) HostSteps() []Step {
 	var out []Step
 	for _, s := range p.Steps {
 		if s.Kind == KindHost {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// IsHostExec reports whether the step is an exec step that runs on the host.
+func (s Step) IsHostExec() bool { return s.Kind == KindExec && s.On == OnHost }
+
+// HostRunSteps returns the steps that run a command on the host, in order:
+// the host steps and the exec steps with on: host. Trust covers them.
+func (p Plan) HostRunSteps() []Step {
+	var out []Step
+	for _, s := range p.Steps {
+		if s.Kind == KindHost || s.IsHostExec() {
 			out = append(out, s)
 		}
 	}
@@ -239,7 +259,7 @@ func ValidatePlan(p Plan) error {
 		// steps (and every id). Exec, note and compose-up values are not
 		// hashed and are quoted for display, so old files keep loading.
 		vals := []string{s.ID}
-		if s.Kind == KindHost || s.Kind == KindPrepare {
+		if s.Kind == KindHost || s.Kind == KindPrepare || s.IsHostExec() {
 			vals = append(append(append(vals, s.Cmd, s.Name, s.Dir, s.Service), s.Args...), s.PortEnv...)
 		}
 		for _, v := range vals {
@@ -267,17 +287,43 @@ func ValidatePlan(p Plan) error {
 		if s.Port != 0 && (s.Kind != KindHost || s.Port < 1 || s.Port > 65535) {
 			return fmt.Errorf("step %q: port %d is not valid here (host steps take 1..65535)", s.ID, s.Port)
 		}
-		if s.Kind == KindHost {
+		if s.On != "" {
+			if s.Kind != KindExec {
+				return fmt.Errorf("step %q: on %q is not valid here (only exec steps take on)", s.ID, s.On)
+			}
+			if s.On != OnHost {
+				return fmt.Errorf("step %q: on %q is not valid (expected host, or leave it out to run in a service)", s.ID, s.On)
+			}
+			if s.Service != "" {
+				return fmt.Errorf("step %q: a host exec step runs on the host; remove --service", s.ID)
+			}
+			if s.Name != "" || s.Port != 0 || len(s.PortEnv) > 0 {
+				return fmt.Errorf("step %q: a host exec step takes no name, port or port_env (those belong to host steps)", s.ID)
+			}
+		}
+		if s.Kind == KindHost || s.IsHostExec() {
+			what := "host step"
+			if s.Kind == KindExec {
+				what = "exec step on host"
+			}
 			argv, err := SplitArgv(s.Cmd)
 			if err == nil && len(argv) == 0 {
 				err = fmt.Errorf("host step cmd is empty")
 			}
 			if err != nil {
-				return fmt.Errorf("step %q: %w", s.ID, err)
+				return fmt.Errorf("step %q: %w", s.ID, withWhat(err, what))
 			}
 		}
 	}
 	return nil
+}
+
+// withWhat rewords SplitArgv's "host step" for an exec step on the host.
+func withWhat(err error, what string) error {
+	if what == "host step" {
+		return err
+	}
+	return errors.New(strings.ReplaceAll(err.Error(), "host step", what))
 }
 
 // CheckPrepareArgs allows in a prepare step only what recipePrepareArgs

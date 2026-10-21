@@ -34,12 +34,13 @@ func TrustPath(stateBase, mainRoot string) string {
 	return filepath.Join(stateBase, "trust", hex.EncodeToString(sum[:])+".json")
 }
 
-// TrustSteps are the steps the trust covers: host and prepare, with list
+// TrustSteps are the steps the trust covers: host, prepare and exec steps
+// that run on the host, with list
 // fields sorted so their order does not matter.
 func TrustSteps(steps []Step) []Step {
 	var out []Step
 	for _, s := range steps {
-		if s.Kind != KindHost && s.Kind != KindPrepare {
+		if s.Kind != KindHost && s.Kind != KindPrepare && !s.IsHostExec() {
 			continue
 		}
 		s.Modes = sortedCopy(s.Modes)

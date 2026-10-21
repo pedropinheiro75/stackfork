@@ -6,13 +6,13 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
-// NeedsTrust reports whether mode runs at least one host step. Only then is
+// NeedsTrust reports whether mode runs at least one host or host exec step. Only then is
 // this machine's trust required; the hash still covers every host and
 // prepare step, so one approval covers both modes.
 func NeedsTrust(p knowledge.Plan, mode string) bool {
 	run, _ := p.ForMode(mode)
 	for _, s := range run {
-		if s.Kind == knowledge.KindHost {
+		if s.Kind == knowledge.KindHost || s.IsHostExec() {
 			return true
 		}
 	}
@@ -30,9 +30,9 @@ func TrustedHere(stateBase, mainRoot string, p knowledge.Plan, mode string) (tru
 }
 
 // HashTrusted ignores the mode: the trust file matches every host and
-// prepare step of the plan. A plan without a host step needs no trust.
+// prepare step of the plan. A plan without a host-run step needs no trust.
 func HashTrusted(stateBase, mainRoot string, p knowledge.Plan) (trusted bool, diff []string) {
-	if len(p.HostSteps()) == 0 {
+	if len(p.HostRunSteps()) == 0 {
 		return true, nil
 	}
 	path := knowledge.TrustPath(stateBase, mainRoot)

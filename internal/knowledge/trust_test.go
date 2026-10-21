@@ -47,3 +47,32 @@ func TestTrustFileRoundTrip(t *testing.T) {
 		t.Fatalf("steps %+v", got)
 	}
 }
+
+// A plan without on: host steps keeps the hash it had before add-host-exec,
+// so existing trust files stay valid.
+func TestPlanHashGoldenWithoutHostExec(t *testing.T) {
+	steps := []Step{
+		{ID: "prep", Kind: KindPrepare, Args: []string{"-f", "a.yaml"}},
+		{ID: "up", Kind: KindComposeUp, Exclude: []string{"app"}},
+		{ID: "mig", Kind: KindExec, Service: "app", Cmd: "migrate", Once: OnceSchema},
+		{ID: "app", Kind: KindHost, Cmd: "npm run dev", Modes: []string{"hybrid", "container"}, Port: 3000},
+	}
+	if got := PlanHash(steps); got != "eb157c0aa288b508e15842f8df4bed5f51e7f4fc5e36ec0a92e79620009a4a35" {
+		t.Fatalf("hash changed: %s", got)
+	}
+}
+
+func TestPlanHashCoversHostExec(t *testing.T) {
+	steps := []Step{{ID: "mig", Kind: KindExec, On: OnHost, Cmd: "bun run db:migrate", Once: OnceSchema}}
+	if got := TrustSteps(steps); len(got) != 1 || got[0].On != OnHost {
+		t.Fatalf("host exec step must be trusted: %+v", got)
+	}
+	h := PlanHash(steps)
+	steps[0].Cmd = "other"
+	if PlanHash(steps) == h {
+		t.Error("host exec cmd must change the hash")
+	}
+	if got := (Plan{Steps: []Step{{ID: "c", Kind: KindExec, Cmd: "x"}, steps[0]}}).HostRunSteps(); len(got) != 1 || got[0].ID != "mig" {
+		t.Fatalf("HostRunSteps %+v", got)
+	}
+}

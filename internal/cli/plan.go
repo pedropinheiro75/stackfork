@@ -37,7 +37,7 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase string)
 	}
 
 	if *trustFlag {
-		if len(k.Plan.HostSteps()) == 0 {
+		if len(k.Plan.HostRunSteps()) == 0 {
 			fmt.Fprintln(stderr, "stackfork: nothing to trust: this plan runs only in containers")
 			return 2, nil
 		}
