@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -407,4 +408,25 @@ var IsTerminal = func(w io.Writer) bool {
 	}
 	fi, err := f.Stat()
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// SnapshotServices lists the services of the instance's rendered stack,
+// sorted; nil when it cannot be read.
+func SnapshotServices(instanceDir string) []string {
+	data, err := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
+	if err != nil {
+		return nil
+	}
+	parsed, err := compose.DecodeJSON(data)
+	if err != nil {
+		return nil
+	}
+	m, _ := parsed.(map[string]interface{})
+	svc, _ := m["services"].(map[string]interface{})
+	names := make([]string, 0, len(svc))
+	for n := range svc {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }

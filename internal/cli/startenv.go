@@ -279,6 +279,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		return lifecycle.HostStart(w, w, base, root, instanceDir, step)
 	}
 	runner.Run, runner.Prepared = rec, func() bool { return !o.Reset && !needsPrepare(instanceDir, root, branch, project) }
+	runner.FreshData = o.Reset
 	if err := runner.Execute(); err != nil {
 		return err
 	}

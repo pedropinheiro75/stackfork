@@ -35,6 +35,7 @@ type PlanRunner struct {
 	Prepare                                                             func(w io.Writer, args []string) error     // the CLI's prepare path; decides itself whether it is needed
 	Up                                                                  func(w io.Writer, services []string) error // the CLI's `up --in-run` path
 	Host                                                                func(w io.Writer, step knowledge.Step) error
+	FreshData                                                           bool // a reset deleted the data: the seed runs whatever the volume check says
 }
 
 // Check refuses an untrusted host step and an unsupported mode; it touches nothing.
@@ -192,7 +193,7 @@ func (r PlanRunner) composeUp(s knowledge.Step) (seeded bool, err error) {
 	res := UpAndSeed(r.Out, r.Err, UpSeed{
 		Run: r.Run, Root: r.Root, Main: r.Main, Branch: r.Branch, Project: r.Project, InstanceDir: r.InstanceDir,
 		NewBase: r.NewBase, LegacyBase: r.LegacyBase, Mode: r.Mode, Plan: r.Plan,
-		UpID: s.ID, UpText: StepText(s), Seed: true, Lock: true,
+		UpID: s.ID, UpText: StepText(s), Seed: true, Lock: true, FreshData: r.FreshData,
 		Compose: func(stdout, stderr io.Writer) (int, error) {
 			services, err := r.upServices(stdout, s)
 			if err != nil {
@@ -284,6 +285,14 @@ func (r PlanRunner) upServices(w io.Writer, s knowledge.Step) ([]string, error) 
 // exec runs an exec step in its service and returns the command's exit status.
 func (r PlanRunner) exec(w io.Writer, s knowledge.Step) (int, error) {
 	svc := ResolveExecService(r.InstanceDir, s, r.Plan)
+	if have := SnapshotServices(r.InstanceDir); svc == "" || !contains(have, svc) {
+		which := "it names no service"
+		if svc != "" {
+			which = "its service " + svc + " is not in this stack"
+		}
+		return 0, fmt.Errorf("step %s cannot run: %s (this stack has: %s). Record the service that can run `%s` with: stackfork learn record step --id %s --kind exec --service SERVICE --cmd %q",
+			s.ID, which, strings.Join(have, ", "), s.Cmd, s.ID, s.Cmd)
+	}
 	fmt.Fprintf(w, "running %s: %s\n", s.ID, s.Cmd)
 	code, err := Execute(w, w, "exec", r.Root, r.Branch, r.Project, r.InstanceDir, r.NewBase, r.LegacyBase,
 		Options{Service: svc, Command: []string{"sh", "-c", s.Cmd}})

@@ -21,6 +21,9 @@ type UpSeed struct {
 	Compose func(stdout, stderr io.Writer) (code int, err error)
 	Seed    bool // false: Compose only (the `up` a Start runs inside its own run)
 	Lock    bool // take the instance lock around the seed decision and the seed (the caller does not hold it)
+	// FreshData: the data was just deleted (a reset), so the seed runs whenever
+	// there is a seed command, even when the volume check cannot tell.
+	FreshData bool
 }
 
 // UpOutcome is the result of UpAndSeed. A failed seed is SeedErr: Code and Err
@@ -92,7 +95,16 @@ func UpAndSeed(out, errOut io.Writer, a UpSeed) UpOutcome {
 	var hasSeed, seedNow bool
 	if a.Seed {
 		seedStep, hasSeed = SeedEntry(a.Root, a.Main, a.InstanceDir, a.Plan, a.Mode)
-		withLock(a.Lock, a.InstanceDir, func() { seedNow = PlanSeedIn(a.Root, a.Main, a.InstanceDir, a.Mode) })
+		withLock(a.Lock, a.InstanceDir, func() {
+			if a.FreshData {
+				cmd, _ := SeedRecipeIn(a.Root, a.Main, a.InstanceDir, a.Mode)
+				if seedNow = cmd != ""; seedNow {
+					setSeed(a.InstanceDir, boolPtr(false), true)
+				}
+				return
+			}
+			seedNow = PlanSeedIn(a.Root, a.Main, a.InstanceDir, a.Mode)
+		})
 	}
 	var upS, seedS *runs.Step
 	if a.Run != nil {

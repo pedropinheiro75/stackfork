@@ -237,3 +237,18 @@ func TestResetPreparesWithTheManifestRecipe(t *testing.T) {
 		t.Fatalf("got %v %v, want %s", args, err, want)
 	}
 }
+
+// After a reset deleted the data, the seed runs even when the volume check
+// says the data exists (a stack with no named volume reads that way).
+func TestResetSeedsEvenWhenTheVolumeCheckSaysDataExists(t *testing.T) {
+	repo, state, base, _ := resetFixture(t)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "0") // the check now reports existing data
+	out, e, code := runCLI(t, append(base, "--root", repo, "reset", "--yes")...)
+	if code != 0 {
+		t.Fatalf("%d %s %s", code, out, e)
+	}
+	r, err := runs.Get(onlyRunDir(t, state), 2)
+	if err != nil || !strings.Contains(stepStates(r), "seed=succeeded:") {
+		t.Fatalf("%v %s", err, stepStates(r))
+	}
+}
