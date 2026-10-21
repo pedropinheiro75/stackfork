@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pedropinheiro75/stackfork/internal/cleanup"
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
@@ -146,6 +147,17 @@ func personScan(main, newBase, legacyBase string, allowPaused bool) (live.ScanIn
 	return in, cs, cl, err
 }
 
+// notIn lists the entries of got that are not in confirmed.
+func notIn(got, confirmed []string) []string {
+	var extra []string
+	for _, g := range got {
+		if !slices.Contains(confirmed, g) {
+			extra = append(extra, g)
+		}
+	}
+	return extra
+}
+
 // eligibleAt finds the candidate whose worktree is path (or whose branch is
 // name, when byBranch) and says why it cannot be cleaned.
 func eligibleAt(cs []live.CandidateStatus, key string, byBranch bool) (live.CandidateStatus, error) {
@@ -202,19 +214,19 @@ func liveClean(stdout io.Writer, main, branch string, yes bool, newBase, legacyB
 // dashboardCleanup is what POST /api/live's cleanup ops run.
 func dashboardCleanup(newBase, legacyBase string) *dashboard.LiveCleanup {
 	return &dashboard.LiveCleanup{
-		CleanText: func(main, path string) (string, error) {
+		CleanText: func(main, path string) (string, dashboard.CleanConfirmed, error) {
 			_, cs, cl, err := personScan(main, newBase, legacyBase, false)
 			if err != nil {
-				return "", err
+				return "", dashboard.CleanConfirmed{}, err
 			}
 			c, err := eligibleAt(cs, path, false)
 			if err != nil {
-				return "", err
+				return "", dashboard.CleanConfirmed{}, err
 			}
 			pv, err := previewOf(main, c, cl)
-			return pv.Describe(), err
+			return pv.Describe(), dashboard.CleanConfirmed{Ignored: pv.Ignored, Volumes: pv.Volumes}, err
 		},
-		Clean: func(out io.Writer, main, path string, locked func(string) bool) error {
+		Clean: func(out io.Writer, main, path string, confirmed dashboard.CleanConfirmed, locked func(string) bool) error {
 			in, cs, cl, err := personScan(main, newBase, legacyBase, false)
 			if err != nil {
 				return err
@@ -225,6 +237,22 @@ func dashboardCleanup(newBase, legacyBase string) *dashboard.LiveCleanup {
 			}
 			job := in.Job(c, false)
 			job.Settings, job.ActionLocked, job.Out = cl, locked, out
+			job.Confirm = func(v cleanup.Verdict) error {
+				if extra := notIn(v.Ignored, confirmed.Ignored); len(extra) > 0 {
+					return fmt.Errorf("more ignored files than you confirmed (%s)", strings.Join(extra, ", "))
+				}
+				if job.Instance == nil {
+					return nil
+				}
+				vols, err := projectVolumes(job.Instance.Project)
+				if err != nil {
+					return err
+				}
+				if extra := notIn(vols, confirmed.Volumes); len(extra) > 0 {
+					return fmt.Errorf("more Docker volumes than you confirmed (%s)", strings.Join(extra, ", "))
+				}
+				return nil
+			}
 			if job.Instance != nil {
 				job.Down = cleanupDown(newBase, legacyBase)(*job.Instance)
 			}

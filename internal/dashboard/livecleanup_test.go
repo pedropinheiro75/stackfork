@@ -32,10 +32,10 @@ func (e *browserEnv) withLiveCleanup(t *testing.T, answer bool, dialogErr error)
 	}
 	f = &liveFake{}
 	e.srv.LiveCleanup = &dashboard.LiveCleanup{
-		CleanText: func(main, path string) (string, error) {
-			return "Clean up feature-login?\nThe instance acme-web-feature-login is removed with these volumes:\n  acme-web-feature-login_db-data", f.textErr
+		CleanText: func(main, path string) (string, dashboard.CleanConfirmed, error) {
+			return "Clean up feature-login?\nThe instance acme-web-feature-login is removed with these volumes:\n  acme-web-feature-login_db-data", dashboard.CleanConfirmed{}, f.textErr
 		},
-		Clean: func(out io.Writer, main, path string, locked func(string) bool) error {
+		Clean: func(out io.Writer, main, path string, _ dashboard.CleanConfirmed, locked func(string) bool) error {
 			f.cleaned = append(f.cleaned, path)
 			return f.cleanErr
 		},

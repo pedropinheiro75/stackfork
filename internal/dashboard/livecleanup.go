@@ -22,16 +22,24 @@ type LiveCleanup struct {
 	// confirmation: the worktree, the instance and each volume, the branch
 	// and the ignored files. It errors with the warning when the worktree is
 	// not eligible.
-	CleanText func(main, path string) (string, error)
-	// Clean runs the cleanup after the person confirmed. actionLocked is the
-	// dashboard's per-project action lock, for the D18 re-check.
-	Clean func(out io.Writer, main, path string, actionLocked func(project string) bool) error
+	// It also returns the ignored files and volumes the text named.
+	CleanText func(main, path string) (string, CleanConfirmed, error)
+	// Clean runs the cleanup after the person confirmed what CleanText named.
+	// It refuses when the ignored files or the volumes grew since. actionLocked
+	// is the dashboard's per-project action lock, for the D18 re-check.
+	Clean func(out io.Writer, main, path string, confirmed CleanConfirmed, actionLocked func(project string) bool) error
 	// Keep stores the branch and head commit of the worktree at path.
 	Keep func(main, path string) error
 	// SettingText is the confirmation for choosing `auto` or branch deletion:
 	// what is deleted without asking, and the worktrees and volumes that
 	// would be deleted today.
 	SettingText func(main string, cl config.Cleanup) (string, error)
+}
+
+// CleanConfirmed is the sets of ignored files and Docker volumes that a
+// confirmation dialog named: the cleanup deletes no more than these.
+type CleanConfirmed struct {
+	Ignored, Volumes []string
 }
 
 // liveRequest is POST /api/live's body.
@@ -118,7 +126,7 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.unlockProject(cleanLockKey)
 	defer s.rescanAsync(false)
-	text, err := s.LiveCleanup.CleanText(repo.Path, req.Path)
+	text, confirmed, err := s.LiveCleanup.CleanText(repo.Path, req.Path)
 	if err != nil {
 		writeActionResult(w, http.StatusOK, actionResponse{Message: err.Error() + "; nothing was deleted"})
 		return
@@ -133,7 +141,7 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var out bytes.Buffer
-	if err := s.LiveCleanup.Clean(&out, repo.Path, req.Path, s.ActionLocked); err != nil {
+	if err := s.LiveCleanup.Clean(&out, repo.Path, req.Path, confirmed, s.ActionLocked); err != nil {
 		writeActionResult(w, http.StatusOK, actionResponse{Message: "cleanup of " + branch + " failed: " + err.Error()})
 		return
 	}

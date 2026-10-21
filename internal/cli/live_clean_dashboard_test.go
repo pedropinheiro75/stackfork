@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
+	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 	"github.com/pedropinheiro75/stackfork/internal/live"
 )
 
@@ -15,7 +16,7 @@ func TestDashboardCleanupTextNamesWhatIsDeleted(t *testing.T) {
 	liveOnFor(t, f.Main, &config.Cleanup{Mode: config.CleanupSuggest, GraceHours: 24, DeleteBranch: true})
 	t.Setenv("DOCKER_FAKE_VOLUMES", "acme-web-feature-login_db-data\n")
 	ops := dashboardCleanup(f.State, f.Legacy)
-	text, err := ops.CleanText(f.Main, f.WT)
+	text, _, err := ops.CleanText(f.Main, f.WT)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,14 +33,14 @@ func TestDashboardCleanupTextNamesWhatIsDeleted(t *testing.T) {
 	os.MkdirAll(ignorePath[:strings.LastIndex(ignorePath, "/")], 0o755)
 	os.WriteFile(ignorePath, []byte("/.env.local\n"), 0o644)
 	os.WriteFile(f.WT+"/.env.local", []byte("x"), 0o644)
-	if text, _ = ops.CleanText(f.Main, f.WT); !strings.Contains(text, ".env.local") {
+	if text, _, _ = ops.CleanText(f.Main, f.WT); !strings.Contains(text, ".env.local") {
 		t.Errorf("the ignored file is not named:\n%s", text)
 	}
 	os.WriteFile(f.WT+"/login.txt", []byte("edited\n"), 0o644)
-	if _, err := ops.CleanText(f.Main, f.WT); err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
+	if _, _, err := ops.CleanText(f.Main, f.WT); err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
 		t.Fatalf("an edited worktree gets no dialog: %v", err)
 	}
-	if _, err := ops.CleanText(f.Main, "/tmp"); err == nil {
+	if _, _, err := ops.CleanText(f.Main, "/tmp"); err == nil {
 		t.Fatal("a path that is not a candidate gets no dialog")
 	}
 }
@@ -73,16 +74,47 @@ func TestDashboardKeepThenSettingTextAndClean(t *testing.T) {
 
 	// a person asked for it explicitly: Keep does not stop a cleanup they confirm,
 	// and a held dashboard action lock does
-	if err := ops.Clean(io.Discard, f.Main, f.WT, func(string) bool { return true }); err == nil || !strings.Contains(err.Error(), "action is running") {
+	if err := ops.Clean(io.Discard, f.Main, f.WT, dashboard.CleanConfirmed{Volumes: []string{"acme-web-feature-login_db-data"}}, func(string) bool { return true }); err == nil || !strings.Contains(err.Error(), "action is running") {
 		t.Fatalf("held lock: %v", err)
 	}
 	if _, err := os.Stat(f.WT); err != nil {
 		t.Fatal("the worktree went away under a held action lock")
 	}
-	if err := ops.Clean(io.Discard, f.Main, f.WT, func(string) bool { return false }); err != nil {
+	if err := ops.Clean(io.Discard, f.Main, f.WT, dashboard.CleanConfirmed{Volumes: []string{"acme-web-feature-login_db-data"}}, func(string) bool { return false }); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(f.WT); err == nil {
 		t.Fatal("the worktree is still there")
+	}
+}
+
+// The cleanup deletes no more than the dialog named: ignored files or volumes
+// that appeared between the confirmation and the click stop it.
+func TestDashboardCleanRefusesWhatGrewSinceTheConfirmation(t *testing.T) {
+	f := newCleanupCLIFx(t)
+	liveOnFor(t, f.Main, &config.Cleanup{Mode: config.CleanupSuggest, GraceHours: 24})
+	t.Setenv("DOCKER_FAKE_VOLUMES", "acme-web-feature-login_db-data\n")
+	ops := dashboardCleanup(f.State, f.Legacy)
+	_, confirmed, err := ops.CleanText(f.Main, f.WT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_FAKE_VOLUMES", "acme-web-feature-login_db-data\nacme-web-feature-login_new\n")
+	if err := ops.Clean(io.Discard, f.Main, f.WT, confirmed, func(string) bool { return false }); err == nil || !strings.Contains(err.Error(), "more Docker volumes") {
+		t.Fatalf("volumes grew: %v", err)
+	}
+	t.Setenv("DOCKER_FAKE_VOLUMES", "acme-web-feature-login_db-data\n")
+	ignorePath := strings.TrimSpace(gitT(t, f.WT, "rev-parse", "--git-path", "info/exclude"))
+	if !strings.HasPrefix(ignorePath, "/") {
+		ignorePath = f.WT + "/" + ignorePath
+	}
+	os.MkdirAll(ignorePath[:strings.LastIndex(ignorePath, "/")], 0o755)
+	os.WriteFile(ignorePath, []byte("/.env.local\n"), 0o644)
+	os.WriteFile(f.WT+"/.env.local", []byte("x"), 0o644)
+	if err := ops.Clean(io.Discard, f.Main, f.WT, confirmed, func(string) bool { return false }); err == nil || !strings.Contains(err.Error(), "more ignored files") {
+		t.Fatalf("ignored files grew: %v", err)
+	}
+	if _, err := os.Stat(f.WT); err != nil {
+		t.Fatal("the worktree was removed")
 	}
 }

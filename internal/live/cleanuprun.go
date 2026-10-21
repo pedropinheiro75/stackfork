@@ -39,8 +39,13 @@ type CleanupJob struct {
 	// --instance P down --volumes`). The CLI provides it; nil with an Instance
 	// fails the step.
 	Down func(w io.Writer) error
-	Out  io.Writer        // step output, may be nil
-	Now  func() time.Time // nil: time.Now
+	// Confirm, when set, sees the fresh verdict after the eligibility
+	// re-check and before any step; an error refuses the cleanup. A page uses
+	// it to refuse when the ignored files or the volumes grew since the person
+	// confirmed.
+	Confirm func(cleanup.Verdict) error
+	Out     io.Writer        // step output, may be nil
+	Now     func() time.Time // nil: time.Now
 }
 
 // ErrCleanupRunning is the refusal of a cleanup that finds another one running.
@@ -132,6 +137,12 @@ func RunCleanup(ctx context.Context, j CleanupJob) CleanupOutcome {
 	// Keep is read from disk now: the candidate may come from a scan that is
 	// older than the person's click. It stops an automatic cleanup; a person
 	// who asks for this branch explicitly is not stopped by their own Keep.
+	if j.Confirm != nil {
+		if err := j.Confirm(out.Verdict); err != nil {
+			out.Err = fmt.Errorf("%w: %v", ErrNotEligible, err)
+			return out
+		}
+	}
 	if st, _ := LoadCleanupState(j.NewBase, j.Main); j.Auto && st.Kept(j.Candidate.Branch, j.Candidate.Head) {
 		out.Err = fmt.Errorf("%w: %s is kept", ErrNotEligible, j.Candidate.Branch)
 		return out
