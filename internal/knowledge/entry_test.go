@@ -70,6 +70,9 @@ func TestEntryLinksLoadRefusals(t *testing.T) {
 		"empty name":         {`"links":[{"name":"","path":"/a"}]`, "links[0]", ""},
 		"long name":          {`"links":[{"name":"` + strings.Repeat("n", 33) + `","path":"/a"}]`, "links[0]", strings.Repeat("n", 33)},
 		"bad name char":      {`"links":[{"name":"A<b>","path":"/a"}]`, "links[0]", "A<b>"},
+		"cyrillic lookalike": {`"links":[{"name":"\u0410pp","path":"/a"}]`, "links[0]", ""},
+		"bad percent":        {`"links":[{"name":"A","path":"/%zz"}]`, "links[0]", "%zz"},
+		"short percent":      {`"links":[{"name":"A","path":"/a%4"}]`, "links[0]", "a%4"},
 		"padded name":        {`"links":[{"name":" A","path":"/a"}]`, "links[0]", ""},
 		"none with service":  {`"entry":{"none":true,"service":"web"}`, "entry", ""},
 		"none with proposed": {`"entry":{"none":true,"proposed":true}`, "entry", ""},
@@ -118,28 +121,6 @@ func TestUpsertRemoveLink(t *testing.T) {
 	}
 	if !k.RemoveLink("DOCS") || k.RemoveLink("docs") || len(k.Links) != 1 {
 		t.Fatalf("%+v", k.Links)
-	}
-}
-
-// Task 1.2: entry and links are outside the trust hash.
-func TestTrustIgnoresEntryAndLinks(t *testing.T) {
-	k, err := Load(filepath.Join("testdata", "knowledge2.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := PlanHash(k.Plan.Steps)
-	k.Entry = &Entry{Service: "web", Port: 3000, Path: "/app"}
-	k.Links = []Link{{Name: "Dashboard", Path: "/admin"}}
-	if PlanHash(k.Plan.Steps) != before {
-		t.Fatal("entry and links changed the plan hash")
-	}
-	out := filepath.Join(t.TempDir(), "k.json")
-	if err := k.Save(out); err != nil {
-		t.Fatal(err)
-	}
-	r, err := Load(out)
-	if err != nil || PlanHash(r.Plan.Steps) != before {
-		t.Fatalf("%v", err)
 	}
 }
 

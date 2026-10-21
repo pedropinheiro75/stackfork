@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode"
 )
 
 // Entry is the optional `entry` object of knowledge.json: where the app is
@@ -60,6 +59,11 @@ func validEntryPath(p string) error {
 			return fmt.Errorf("path has a space, control, backslash or non-ASCII character")
 		}
 	}
+	for i := 0; i < len(p); i++ {
+		if p[i] == '%' && (i+2 >= len(p) || !isHex(p[i+1]) || !isHex(p[i+2])) {
+			return fmt.Errorf("path has a %% not followed by two hex digits")
+		}
+	}
 	before, _, _ := strings.Cut(strings.SplitN(p, "#", 2)[0], "?")
 	for _, seg := range strings.Split(before, "/") {
 		switch strings.ToLower(seg) {
@@ -68,6 +72,10 @@ func validEntryPath(p string) error {
 		}
 	}
 	return nil
+}
+
+func isHex(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
 }
 
 func validLinkName(n string) error {
@@ -82,8 +90,8 @@ func validLinkName(n string) error {
 		return fmt.Errorf("name %q is reserved for the entry", ReservedLinkName)
 	}
 	for _, r := range n {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune(" -_.()/", r) {
-			return fmt.Errorf("name may hold letters, digits, space and - _ . ( ) / only")
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') && !strings.ContainsRune(" -_.()/", r) {
+			return fmt.Errorf("name may hold ASCII letters, digits, space and - _ . ( ) / only")
 		}
 	}
 	return nil
