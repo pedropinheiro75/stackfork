@@ -70,6 +70,37 @@ not trust the caller:
 |---|---|---|
 | An agent, or a forged dashboard request, deletes an environment's volumes with `reset` | The guard blocks `stackfork reset` (any flags, global flags first, wrappers) and its forged-call check covers the dashboard's actions endpoint. The dashboard asks in a native dialog that names the volumes. The CLI asks `y/N` on a terminal and refuses without one unless `--yes` is given | `--yes` is the person's choice, and the guard is not a sandbox: an agent can run other tools as the person. Reset never touches the code, but a person may lose data they kept only in the volumes. |
 
+## Live mode
+
+Live mode (`stackfork live on`) changes who starts a run. After you turn it on for a repository, a commit pushed to a worktree's upstream is fetched, fast-forwarded and built on this machine while the dashboard runs, without a command from you. Turning it on is your consent to that. The dashboard asks in a native dialog, and the CLI prints the same text.
+
+What runs without new trust, as it does on a Start after a `git pull`:
+
+- `exec` steps in containers, such as a changed migrate command.
+- Docker builds of a changed Dockerfile.
+- A changed Compose file. `prepare` applies its usual refusals to it (host namespaces, Docker socket, writable binds outside the checkout, fixed container names, fixed subnets).
+
+What needs trust, in every mode: before the first step of each live run, stackfork compares the plan's `host` and `prepare` steps with the trust file. If either changed, no run starts. The repository pauses with `plan needs trust` and the step diff, until you run `stackfork plan --trust` or click **Trust on this machine**, and then choose **Resume**.
+
+| Threat | Control | Residual risk |
+|---|---|---|
+| An agent turns on automatic execution of its own pushed commits | The guard blocks `live on` (global flags first, wrappers) and treats a direct call to `/api/live` as a forged dashboard call. `live off` and `live status` stay allowed. The dashboard asks in a native dialog | The guard matches command text. A script file, a renamed binary or a new tool gets past it. An agent with file access can edit `config.json` and set `live` or `cleanup` directly, as it can write the trust file. The guard does not watch files. |
+| A hostile commit on a trusted upstream | Trust for `host` and `prepare` steps, `prepare`'s refusals, the fast-forward rule (never with uncommitted changes to tracked files or local commits, never a merge, rebase or reset), a pause on the first failed or interrupted run, and rate limits | The commit can still run code in a container or a Docker build, as it can on a Start after a `git pull`. |
+| A live run deletes data | A live run never runs `down`, `--volumes`, `--renew-anon-volumes`, `--remove-orphans` or `--force-recreate`. Branch cleanup is the one path that deletes data (below) | A rebuilt image does not refresh a named volume that already holds data. |
+| A 1Password prompt appears during a run that nobody expects | `live on` prints the warning. An unanswered prompt times out after 30 seconds, the run fails at `secrets`, and live mode pauses. `live on` refuses `env:` references, which the dashboard cannot resolve | You may approve a prompt without knowing which run opened it. |
+
+### Branch cleanup
+
+Branch cleanup removes a merged worktree, the instance's Docker volumes (its database included) and, if you set `--delete-branch`, the local branch. It is the only live action that deletes data.
+
+- **Merged proof.** A branch is `merged` only when its upstream is gone after `git fetch --prune` and its work is in the default branch, by ancestry, by `git cherry`, or by the patch identity of the whole branch (at most 500 commits). The forge adds a label only: `gh` can turn `merged` into `closed`, never the reverse. `gh` is found at fixed paths, never through `PATH`.
+- **Never cleaned.** The main checkout, the default branch, a detached or locked worktree, a branch that is also checked out in the main checkout, a branch that never had an upstream, a branch closed without merge, a worktree with uncommitted or untracked files, and a branch with a commit that is not in the default branch.
+- **Re-check.** Eligibility is read again from disk right before the first step. The worktree is removed first, without `--force`, so git's own refusal protects uncommitted work; a refusal deletes nothing. The volumes go only after that. Git deletes the branch with `-d`, and with `-D` only after the patch check passed again.
+- **People only.** The default `suggest` mode needs a click and a native dialog that names the worktree, the volumes, the branch and the ignored files that go with the worktree. The guard blocks `live cleanup auto`, `live cleanup --delete-branch` and `live clean --yes` for agents, and `/api/live` is a forged-call endpoint. Where no native dialog exists, the page shows the command and deletes nothing.
+- **Grace period.** In `auto` mode, a cleanup waits `grace_hours` (1 to 720, default 24) after the branch first became eligible, re-checks, and then runs. **Keep** holds a branch until its head commit changes. Ignored files outside known cache folders block `auto`.
+
+Residual risks: the data in the instance's database is deleted by design, so choose **Keep** or `suggest` if you need it. A squash merge whose resolution changed the diff is not detected, so nothing is offered.
+
 ## Host steps in knowledge.json
 
 A committed `.stackfork/knowledge.json` can name a host command in a `host` step. That command runs only after a person ran `stackfork plan --trust` (or clicked **Trust** in the dashboard) on that machine. Trust applies when the active mode runs a host step. Its hash covers all `host` and `prepare` steps, so any change to them, including a new field, needs a new trust. The `host` command is an argument vector and never goes through a shell. The guard blocks `plan --trust` for agents, and the dashboard asks in a native dialog that lists every field.
