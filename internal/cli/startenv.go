@@ -891,9 +891,14 @@ func startPreflight(rec *runs.Run, o StartOptions, root, main, instanceDir, trig
 	if !willPrepare {
 		flags = nil // nothing records them: the manifest's references are the ones `up` runs with
 	}
+	folder, _, err := lifecycle.FolderSecrets(root, manifest)
+	if err != nil {
+		return nil, err
+	}
 	refs, _ := lifecycle.Effective(
 		lifecycle.Layer{Source: lifecycle.SourceSibling, Refs: sibling},
 		lifecycle.Layer{Source: lifecycle.SourceManifest, Refs: manifest},
+		lifecycle.Layer{Source: lifecycle.SourceFolder, Refs: folder},
 		lifecycle.Layer{Source: lifecycle.SourceMap, Refs: mapped},
 		lifecycle.Layer{Source: lifecycle.SourceFlag, Refs: flags})
 	return lifecycle.Preflight{Run: rec, InstanceDir: instanceDir, Main: main, Refs: refs, Declared: lifecycle.DeclaredSecrets(root, main),

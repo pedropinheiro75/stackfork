@@ -647,6 +647,13 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	}
 	// The machine map beats the recorded references (D7), and a mapped name
 	// the manifest lacks is recorded now: Render must know every name.
+	folder, _, err := lifecycle.FolderSecrets(root, secretRefs)
+	if err != nil {
+		return err
+	}
+	for name, ref := range folder { // only names the repo declares or recorded (R3)
+		secretRefs[name] = ref
+	}
 	mapped, err := lifecycle.MappedSecrets(root)
 	if err != nil {
 		return err

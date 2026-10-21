@@ -20,6 +20,7 @@ type SecretRow struct {
 	Name      string `json:"name"`
 	Reference string `json:"reference"`
 	Source    string `json:"source"`
+	From      string `json:"from,omitempty"` // the folder, for source folder
 	Hint      string `json:"hint,omitempty"`
 	Status    string `json:"status"`
 	Detail    string `json:"detail,omitempty"`
@@ -32,7 +33,8 @@ type RefStatus struct {
 }
 
 // SecretRows builds one row per secret name of a repository: the machine
-// map's references (and the flags' of this command), then the recorded
+// map's references (and the flags' of this command), then the folders'
+// (only for names it uses), the recorded
 // references of the repository's own instance, then those of its newest
 // prepared instance in another worktree (source sibling), then declared names
 // with no reference at all. check reads every
@@ -44,9 +46,14 @@ func SecretRows(repo string, check bool, known map[string]RefStatus, flags map[s
 		return nil, err
 	}
 	own, sibling := manifestRefsFor(repo, newBase, legacyBase)
+	folder, folderFrom, err := FolderSecrets(repo, own)
+	if err != nil {
+		return nil, err
+	}
 	refs, source := Effective(
 		Layer{Source: SourceSibling, Refs: sibling},
 		Layer{Source: SourceManifest, Refs: own},
+		Layer{Source: SourceFolder, Refs: folder},
 		Layer{Source: SourceMap, Refs: cfg.SecretsFor(repo)},
 		Layer{Source: SourceFlag, Refs: flags})
 	hints := map[string]string{}
@@ -64,6 +71,9 @@ func SecretRows(repo string, check bool, known map[string]RefStatus, flags map[s
 	rows := make([]SecretRow, 0, len(names))
 	for _, n := range names {
 		row := SecretRow{Name: n, Reference: refs[n], Source: source[n], Hint: hints[n]}
+		if row.Source == SourceFolder {
+			row.From = folderFrom[n]
+		}
 		var st secretstore.Status
 		var serr error
 		switch k, isKnown := known[row.Reference]; {
