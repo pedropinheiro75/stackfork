@@ -1,0 +1,8 @@
+plan (recorded, mode container)
+  up [compose-up] - recorded
+  migrate [exec] - recorded, trusted-here
+      cmd: bun run db:migrate
+      once: schema
+      on: host
+      dir: apps/api
+  cmigrate [exec] m (service web) - recorded

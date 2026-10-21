@@ -95,7 +95,7 @@ func planLine(s lifecycle.PlanStep) string {
 	if s.Trust != "" {
 		suffix += ", " + s.Trust
 	}
-	if s.Kind != knowledge.KindHost && s.Kind != knowledge.KindPrepare {
+	if s.Kind != knowledge.KindHost && s.Kind != knowledge.KindPrepare && !s.Step.IsHostExec() {
 		l := s.ID + " [" + s.Kind + "]"
 		if s.Cmd != "" {
 			l += " " + s.Cmd

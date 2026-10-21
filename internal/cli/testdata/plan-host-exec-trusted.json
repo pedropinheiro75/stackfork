@@ -1,0 +1,34 @@
+{
+  "mode": "container",
+  "status": "recorded",
+  "verified": false,
+  "trusted": true,
+  "trust_needed": true,
+  "steps": [
+    {
+      "id": "up",
+      "kind": "compose-up",
+      "state": "recorded",
+      "trust": ""
+    },
+    {
+      "id": "migrate",
+      "kind": "exec",
+      "cmd": "bun run db:migrate",
+      "dir": "apps/api",
+      "once": "schema",
+      "on": "host",
+      "state": "recorded",
+      "trust": "trusted-here"
+    },
+    {
+      "id": "cmigrate",
+      "kind": "exec",
+      "cmd": "m",
+      "service": "web",
+      "state": "recorded",
+      "trust": ""
+    }
+  ],
+  "skipped": []
+}

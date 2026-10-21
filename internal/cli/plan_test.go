@@ -130,3 +130,33 @@ func TestStepBlockPrintsEveryStepField(t *testing.T) {
 		t.Fatalf("stepBlock printed %d lines, want %d:\n%s", got, want, strings.Join(lifecycle.StepBlock(s), "\n"))
 	}
 }
+
+// A host exec step prints with all its fields (StepBlock) and its trust
+// state in text and JSON, before and after this machine trusts the plan.
+func TestPlanShowsHostExecStepsWithTrust(t *testing.T) {
+	root := initRepo(t)
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusDraft}
+	k.Plan = knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "migrate", Kind: knowledge.KindExec, On: knowledge.OnHost, Cmd: "bun run db:migrate", Once: knowledge.OnceSchema, Dir: "apps/api"},
+		{ID: "cmigrate", Kind: knowledge.KindExec, Service: "web", Cmd: "m"},
+	}}
+	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	for _, phase := range []string{"untrusted", "trusted"} {
+		if phase == "trusted" {
+			if _, e, code := runCLI(t, "--root", root, "--state-dir", state, "plan", "--trust"); code != 0 {
+				t.Fatal(e)
+			}
+		}
+		txt, e, code := runCLI(t, "--root", root, "--state-dir", state, "plan", "--mode", "container")
+		if code != 0 {
+			t.Fatal(e)
+		}
+		assertGolden(t, "plan-host-exec-"+phase+".txt", txt)
+		js, _, _ := runCLI(t, "--root", root, "--state-dir", state, "plan", "--mode", "container", "--json")
+		assertGolden(t, "plan-host-exec-"+phase+".json", js)
+	}
+}

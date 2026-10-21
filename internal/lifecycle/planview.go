@@ -24,6 +24,7 @@ type PlanStep struct {
 	PortEnv []string       `json:"port_env,omitempty"`
 	Port    int            `json:"port,omitempty"`
 	Once    string         `json:"once,omitempty"`
+	On      string         `json:"on,omitempty"`
 	Text    string         `json:"text,omitempty"`
 	Modes   []string       `json:"modes,omitempty"`
 	State   string         `json:"state"`
@@ -61,8 +62,8 @@ func PlanView(stateBase, main string, k *knowledge.Knowledge, mode string) PlanO
 		out := []PlanStep{}
 		for _, s := range in {
 			o := PlanStep{ID: s.ID, Kind: s.Kind, Cmd: s.Cmd, Service: s.Service, Args: s.Args, Exclude: s.Exclude,
-				Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, Text: s.Text, Modes: s.Modes, State: state, Step: s}
-			if s.Kind == knowledge.KindHost || s.Kind == knowledge.KindPrepare {
+				Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, On: s.On, Text: s.Text, Modes: s.Modes, State: state, Step: s}
+			if s.Kind == knowledge.KindHost || s.Kind == knowledge.KindPrepare || s.IsHostExec() {
 				o.Trust = "untrusted"
 				if rawTrusted {
 					o.Trust = "trusted-here"
