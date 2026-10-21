@@ -84,3 +84,16 @@ func TestPlanHashCoversHostExec(t *testing.T) {
 		t.Fatalf("HostRunSteps %+v", got)
 	}
 }
+
+// An empty main checkout would key the trust on the working directory: no path, nothing trusted, nothing written.
+func TestTrustPathRefusesAnEmptyMain(t *testing.T) {
+	if p := TrustPath(t.TempDir(), ""); p != "" {
+		t.Fatalf("path %q", p)
+	}
+	if err := WriteTrust(TrustPath(t.TempDir(), ""), "h", nil); err == nil {
+		t.Fatal("wrote a trust file with no path")
+	}
+	if _, _, ok := ReadTrust(TrustPath(t.TempDir(), "")); ok {
+		t.Fatal("trusted")
+	}
+}

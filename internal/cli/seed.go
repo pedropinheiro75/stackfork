@@ -20,7 +20,7 @@ func setSeeded(instanceDir string, v *bool) { lifecycle.SetSeeded(instanceDir, v
 func boolPtr(b bool) *bool { return &b }
 
 func seedRecipe(root, instanceDir string) (cmd, service string) {
-	return lifecycle.SeedRecipe(root, repos.MainRepoOf(root), instanceDir)
+	return lifecycle.SeedRecipe(root, repos.MainOrSelf(root), instanceDir)
 }
 
 func runSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir, newBase, legacyBase, mode string, plan knowledge.Plan, step *runs.Step) error {
@@ -65,7 +65,7 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	if err := os.MkdirAll(instanceDir, 0o700); err != nil {
 		return 0, err
 	}
-	main := repos.MainRepoOf(root)
+	main := repos.MainOrSelf(root)
 	mode := lifecycle.PlanMode(root, main)
 	plan := lifecycle.LoadPlan(root, main) // one load: the plan that is checked is the plan that runs
 	if err := lifecycle.CheckSeedTrust(root, main, instanceDir, newBase, plan, mode); err != nil {

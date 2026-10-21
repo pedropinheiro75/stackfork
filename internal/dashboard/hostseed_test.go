@@ -18,12 +18,14 @@ import (
 // A card's Start that does not go through StartEnv (planRunsHost and PlanMode
 // disagree, as in a checkout whose main repo cannot be told) still never runs
 // an untrusted host seed: the run itself checks trust.
-func TestDirectStartRefusesAnUntrustedHostSeed(t *testing.T) {
+func directStart(t *testing.T, trust bool) (calls []string) {
+	t.Helper()
 	installFakeDocker(t)
 	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
 	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1") // no data yet: the up creates it and seeds
 	root := t.TempDir()
-	if out, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+	// .git is a file that is no worktree link: the checkout has no main repo (MainRepoOf is "")
+	if out, err := exec.Command("git", "init", "-q", "--separate-git-dir", filepath.Join(t.TempDir(), "gitdir"), root).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
 	compose := filepath.Join(root, "compose.yaml")
@@ -49,7 +51,6 @@ func TestDirectStartRefusesAnUntrustedHostSeed(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &prepared); err != nil {
 		t.Fatal(err)
 	}
-	var calls []string
 	old := lifecycle.HostExec
 	lifecycle.HostExec = func(w io.Writer, _, _, _, _, _ string, s knowledge.Step) (int, error) {
 		calls = append(calls, s.Cmd)
@@ -57,13 +58,30 @@ func TestDirectStartRefusesAnUntrustedHostSeed(t *testing.T) {
 	}
 	t.Cleanup(func() { lifecycle.HostExec = old })
 
+	if trust { // the way `stackfork plan --trust` and the dashboard's Trust key it: by the checkout itself when it has no main repo
+		if _, err := lifecycle.TrustHere(newBase, root, k.Plan); err != nil {
+			t.Fatal(err)
+		}
+	}
 	srv, err := dashboard.New(newBase, legacyBase, "test", 55341)
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv.StartEnv = nil // the direct path
 	postAction(t, srv, "127.0.0.1:55341", actionRequestFixture{Action: "up", Project: prepared.Project})
-	if len(calls) != 0 {
+	return calls
+}
+
+func TestDirectStartRefusesAnUntrustedHostSeed(t *testing.T) {
+	if calls := directStart(t, false); len(calls) != 0 {
 		t.Fatalf("an untrusted host seed ran: %v", calls)
+	}
+}
+
+// A checkout with no main repo is trusted under its own path, so the direct
+// Start finds that trust.
+func TestDirectStartRunsATrustedHostSeedWithoutAMainRepo(t *testing.T) {
+	if calls := directStart(t, true); len(calls) != 1 {
+		t.Fatalf("host calls: %v", calls)
 	}
 }

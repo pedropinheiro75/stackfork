@@ -22,7 +22,12 @@ type trustFile struct {
 }
 
 // TrustPath is <stateBase>/trust/<sha256 of the resolved main checkout>.json.
+// It is "" for an empty mainRoot (which would mean the working directory), and
+// then nothing is trusted and nothing can be written.
 func TrustPath(stateBase, mainRoot string) string {
+	if mainRoot == "" {
+		return ""
+	}
 	p := mainRoot
 	if r, err := filepath.EvalSymlinks(p); err == nil {
 		p = r

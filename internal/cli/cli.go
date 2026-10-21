@@ -1010,16 +1010,16 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 	var runErr error
 	var upPlan knowledge.Plan // loaded once: the plan that is checked is the plan that runs
 	if action == "up" {
-		upPlan = lifecycle.LoadPlan(root, repos.MainRepoOf(root))
+		upPlan = lifecycle.LoadPlan(root, repos.MainOrSelf(root))
 	}
 	if action == "up" && !inRun {
 		if planMode == "" {
-			planMode = lifecycle.PlanMode(root, repos.MainRepoOf(root))
+			planMode = lifecycle.PlanMode(root, repos.MainOrSelf(root))
 		}
 		if _, err := lifecycle.LoadAndValidateManifest(instanceDir, root, branch, project, action); err != nil {
 			return 0, err // a refusal before the first step is not a run
 		}
-		main := repos.MainRepoOf(root)
+		main := repos.MainOrSelf(root)
 		if err := lifecycle.CheckSeedTrust(root, main, instanceDir, newStateBase, upPlan, planMode); err != nil {
 			return 0, err // an untrusted host seed: before any Docker call
 		}
@@ -1055,7 +1055,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 	}
 
 	if action == "up" {
-		main := repos.MainRepoOf(root)
+		main := repos.MainOrSelf(root)
 		if planMode == "" {
 			planMode = lifecycle.PlanMode(root, main)
 		}

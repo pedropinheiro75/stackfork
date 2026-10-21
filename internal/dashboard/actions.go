@@ -146,7 +146,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 			}
 			return actionResponse{OK: true, Message: "up complete"}
 		}
-		main := repos.MainRepoOf(root)
+		main := repos.MainOrSelf(root)
 		compose := func(so, se io.Writer) (int, error) {
 			return lifecycle.Execute(so, se, lifecycleAction, root, branch, req.Project, instanceDir,
 				s.NewStateBase, s.LegacyStateBase, opts)
@@ -206,7 +206,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 // planRunsHost reports whether the checkout's plan, in this machine's mode
 // for the repo, runs a host command: a host step or an exec step on the host.
 func planRunsHost(root string) bool {
-	main := repos.MainRepoOf(root)
+	main := repos.MainOrSelf(root)
 	k, err := knowledge.LoadFirst(root, main)
 	if err != nil || k == nil {
 		return false

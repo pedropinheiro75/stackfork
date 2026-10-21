@@ -106,3 +106,13 @@ func excludedPath(roots []string, skip map[string]bool, p string) bool {
 // MainRepoOf returns the main checkout for a repo root or a linked
 // worktree, or "" when dir is neither.
 func MainRepoOf(dir string) string { return identity.MainRepoOf(dir) }
+
+// MainOrSelf is MainRepoOf, or dir itself when it has no main repo: the key of
+// the checkout's trust and machine settings, as `plan --trust` and start-env
+// use. An empty key would be the process's working directory.
+func MainOrSelf(dir string) string {
+	if m := identity.MainRepoOf(dir); m != "" {
+		return m
+	}
+	return dir
+}
