@@ -424,7 +424,7 @@ Toolbar left: search input (`placeholder="Search repos and branches"`), `Ready o
 
 ```
   ~/code/acme-web · default main · verified 3 d ago · Fetch · 2 h ago
-  Starts with   migrate: npm run db:migrate   seed once: npm run db:seed (auto-detected)   [Change…]
+  derived — not recorded; run learn to record it   [Learn with your agent]          Mode [container ▾]
   App →         nginx:80/app                                                              recorded
 
   LANE  BRANCH                 PATH                     AHEAD / BEHIND upstream STATE        
@@ -454,7 +454,7 @@ Toolbar left: search input (`placeholder="Search repos and branches"`), `Ready o
 - **Cleanup callout** (a worktree whose branch is merged, in Repos and on the instance's card): an `attention` Callout `PR merged — clean up?` (with `#42` and a link when `gh` gave one) with **Clean up** (secondary) and **Keep** (ghost). **Clean up** opens a native confirmation that names the worktree, the volumes, the branch and the ignored files. In `auto` mode with a grace period the title reads `Cleanup in N h` (`Cleanup in under 1 h` in the last hour) with **Clean up now** and **Keep**. Warnings replace it when the worktree is not ready: `PR merged, but this worktree has uncommitted changes`, `PR closed without merge`. The callout is shown on collapsed cards too, because a person who collapsed the card still needs to see that data will be deleted.
 - **Cleanup selector** (expanded repo, next to the LiveSwitch, shown while live mode is on): a `Branch cleanup` select with `off`, `suggest` and `auto`. Choosing `auto` opens a native confirmation that lists the worktrees and volumes that a cleanup would delete today.
 - **Entry line** (under the setup line, from the main checkout's knowledge): `App → nginx:80/app` with an `ok` chip `recorded`; `App → web:3000` with an `attention` chip `entry guessed` for a proposed or missing entry, and the `stackfork learn record entry --service S --port N` command as a copy-only `CommandRow` in its overflow; `No web entry` in `fg-muted` when the entry is `none`.
-- **Setup line** ("Starts with"): migrate and seed commands as mono chips; `(auto-detected)` / `never` / `no seed script found` in `small fg-muted`; `Change…` ghost opens a popover with the `stackfork learn record recipe --seed-once …` command row to copy. "Startup recipe" and "change with" vanish as labels.
+- **Derived plan list** (replaces the setup line, for a repo whose knowledge has no plan steps): the plan list shows the steps a Start would run, under `derived — not recorded; run learn to record it` in `small fg-muted` with **Learn with your agent** (ghost) on a ready repo. Each State cell is an `off` chip `derived`, and the step's source is a `small fg-subtle` line under its command and the chip's `title`. When a Start would be refused, an `attention` Callout `A Start would be refused` with the reason replaces the list, and a worktree with fewer Compose files than the main checkout adds the recipe-gap Callout. The list is built by the same code as a Start and cached until a scan or an action.
 - **Set up**: when the repo is not set up, the expanded panel starts with a `Callout` (`off` tint): "stackfork has not verified how this project starts. Set it up once with your agent." + **Set up with your agent** (the view's one primary) + overflow "Copy prompt".
 - **Error on a row** (failed start / worktree add): `Callout failed` under the worktree row: title "Start failed", stderr in `mono-log` (6 lines, scroll), a `CommandRow` with the retry command and `Run`, `Dismiss` ghost. Stays until dismissed or the next success.
 - **Empty / loading**: no folders → one centred card "Pick the folder that holds your repos" with `Add folder` (primary) and the `stackfork config add-root PATH` command row; scanning → table header + 5 skeleton rows + `Scanning folders…` with the `busy` ring in the toolbar; no repos found → "No git repositories under ~/code" + `Rescan` + `Change folders`.
@@ -578,7 +578,7 @@ Proposed label changes:
 | `default branch main` + `Fetch` | `default main · Fetch · 2 h ago` |
 | `never learned: no knowledge, adapter, instance or profile reference` | `stackfork has not verified how this project starts.` (tooltip keeps the technical reason) |
 | `Learn with your agent` | `Set up with your agent` |
-| `Startup recipe … change with stackfork learn record recipe --seed-once … (or none)` | `Starts with  migrate: … · seed once: … (auto-detected)` + `Change…` |
+| `Startup recipe … change with stackfork learn record recipe --seed-once … (or none)` | the derived plan list (`derived` chip, source under each step) |
 | `main checkout` after the path | `main checkout` chip in PATH |
 | `detached-07c0f1a…` | `detached @ 07c0f1a` |
 | `modified` | `● changes` (tooltip "Uncommitted changes") |

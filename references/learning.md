@@ -10,7 +10,7 @@ The CLI only scans; you drive the rest, because it needs judgment the CLI can't 
 
 1. **Scan.** Run `stackfork learn` and read `.stackfork/knowledge.md`.
 2. **Write the adapter.** Follow `references/adapting-compose.md` (and `references/nuxt-template.md` if applicable), informed by what the scan found.
-3. **Try it.** Run the plan: `stackfork plan` lists the steps, then `prepare` → `up` → the project's real migrate/seed-once command.
+3. **Try it.** Run the plan: `stackfork plan` lists the steps, then `prepare` → `up` → the project's real migrate/seed-once command. Before you record any step, `plan` prints a derived plan: what Start does today, with the source of each step. Record it with `learn record step` to make it the plan of the project.
 4. **Verify.** Database identity and app readiness at minimum; a representative flow when this is the project's first adoption.
 5. **On failure,** fix the adapter (or ask the user when the fix isn't safe to pick alone), retry, and record what broke and how it was fixed.
 5b. **Confirm the seed command.** When the scan found a seed or migrate script it pre-fills `recipe.migrate` and a proposed `recipe.seed_once`, marked pending. Confirm the command with the user and record it with `learn record recipe --seed-once "<cmd>"` (add `--seed-service SVC` when it is not the primary app service), or `--seed-once none` if this project must never be seeded. Without a decision the default is automatic: `up` seeds a new database (one whose data volume `up` just created) with the detected script, once, after migrations and health; a database that already existed is never seeded. `learn verify` only warns when no decision was recorded. `stackfork seed` retries a failed seed; `--force` reruns it (ask first).
