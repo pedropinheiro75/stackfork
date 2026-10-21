@@ -269,7 +269,7 @@ func stripPrefixes(words []string) []string {
 			words = words[1:]
 			continue
 		}
-		if _, ok := wrappers[w]; ok {
+		if _, ok := wrappers[progBase(w)]; ok {
 			words = skipWrapper(words)
 			continue
 		}
@@ -284,25 +284,50 @@ func stripPrefixes(words []string) []string {
 // ...` is seen as the command it runs.
 var wrappers = map[string]map[string]bool{
 	"time": nil, "nohup": nil, "command": nil, "setsid": nil, "builtin": nil,
-	"env":     {"-u": true, "-C": true, "-S": true, "--unset": true, "--chdir": true},
-	"sudo":    {"-u": true, "-g": true, "-C": true, "-D": true, "-h": true, "-p": true, "-r": true, "-t": true, "-T": true, "-U": true, "--user": true, "--group": true},
-	"exec":    {"-a": true},
-	"nice":    {"-n": true, "--adjustment": true},
-	"ionice":  {"-c": true, "-n": true, "-p": true},
-	"timeout": {"-s": true, "-k": true, "--signal": true, "--kill-after": true},
-	"xargs":   {"-n": true, "-I": true, "-P": true, "-d": true, "-s": true, "-L": true, "-E": true, "-a": true, "-i": true},
+	"env":        {"-u": true, "-C": true, "-S": true, "--unset": true, "--chdir": true},
+	"sudo":       {"-u": true, "-g": true, "-C": true, "-D": true, "-h": true, "-p": true, "-r": true, "-t": true, "-T": true, "-U": true, "--user": true, "--group": true},
+	"exec":       {"-a": true},
+	"nice":       {"-n": true, "--adjustment": true},
+	"ionice":     {"-c": true, "-n": true, "-p": true},
+	"arch":       {"-arch": true, "-e": true},
+	"stdbuf":     {"-i": true, "-o": true, "-e": true, "--input": true, "--output": true, "--error": true},
+	"caffeinate": {"-t": true, "-w": true},
+	"timeout":    {"-s": true, "-k": true, "--signal": true, "--kill-after": true},
+	"xargs":      {"-n": true, "-I": true, "-P": true, "-d": true, "-s": true, "-L": true, "-E": true, "-a": true, "-i": true},
 }
 
 // skipWrapper drops a wrapper word, its options and, for timeout, the
 // duration.
 func skipWrapper(words []string) []string {
-	w, vf := words[0], wrappers[words[0]]
+	w := progBase(words[0])
+	vf := wrappers[w]
 	words = words[1:]
 	for len(words) > 0 && strings.HasPrefix(words[0], "-") {
 		f := words[0]
 		words = words[1:]
 		if f == "--" {
 			break
+		}
+		if w == "env" {
+			// -S / --split-string: the value is a command line to split again.
+			val, ok := "", false
+			switch {
+			case f == "-S" || f == "--split-string":
+				if len(words) > 0 {
+					val, ok, words = words[0], true, words[1:]
+				}
+			case strings.HasPrefix(f, "--split-string="):
+				val, ok = strings.TrimPrefix(f, "--split-string="), true
+			case strings.HasPrefix(f, "-S"):
+				val, ok = f[2:], true
+			}
+			if ok {
+				var split []string
+				for _, c := range splitCommandsFor(val, windowsSplit) {
+					split = append(split, c...)
+				}
+				return append(split, words...)
+			}
 		}
 		if vf[f] && len(words) > 0 {
 			words = words[1:]
