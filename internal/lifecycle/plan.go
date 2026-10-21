@@ -20,6 +20,13 @@ var HostStart = func(out, errOut io.Writer, base []string, root, instanceDir str
 	return errors.New("host steps are not implemented yet")
 }
 
+// HostExec runs one exec step with on: host to completion and returns the
+// command's exit status. The cli package sets the real one; tests stub it.
+// Its output goes to w, the step writer (redacted); stdin is closed.
+var HostExec = func(w io.Writer, project, root, instanceDir, newBase, legacyBase string, step knowledge.Step) (int, error) {
+	return 0, errors.New("host exec steps are not implemented yet")
+}
+
 // ErrAlreadyPrepared is what a Prepare function may return to say it had
 // nothing to do; the runner then records the step as skipped.
 var ErrAlreadyPrepared = errors.New("already prepared")
