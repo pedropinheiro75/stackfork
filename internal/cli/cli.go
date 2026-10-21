@@ -1015,6 +1015,10 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		if _, err := lifecycle.LoadAndValidateManifest(instanceDir, root, branch, project, action); err != nil {
 			return 0, err // a refusal before the first step is not a run
 		}
+		main := repos.MainRepoOf(root)
+		if err := lifecycle.CheckSeedTrust(root, main, instanceDir, newStateBase, lifecycle.LoadPlan(root, main), planMode); err != nil {
+			return 0, err // an untrusted host seed: before any Docker call
+		}
 		var err error
 		rec, err = runs.Begin(instanceDir, runs.Meta{Command: "up", Trigger: envTrigger(), Mode: planMode, Project: project, Branch: branch,
 			Out: stdout, Secrets: func() []redact.Secret { return opts.Secrets.Redactions() }})

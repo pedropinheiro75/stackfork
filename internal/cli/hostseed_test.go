@@ -141,3 +141,42 @@ func TestHostSeedWithAContainerMigrate(t *testing.T) {
 		t.Fatal(states)
 	}
 }
+
+// up and seed run a host seed only on a trusted plan, and refuse before any
+// Docker call, a run file or a host command, with start-env's message.
+func TestUpAndSeedRefuseAnUntrustedHostSeed(t *testing.T) {
+	for _, cmd := range []string{"up", "seed"} {
+		t.Run(cmd, func(t *testing.T) {
+			root, state := reposEnv(t)
+			repo := planRepo(t, root, hostSeedPlan(hostStep("seed", knowledge.OnceData, "bun run db:seed", "")))
+			log := installFakeDocker(t)
+			calls := stubHostExecCodes(t, nil)
+			base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+			if _, e, code := runCLI(t, append(base, "--root", repo, "prepare", "-f", ".agent-dev/app.compose.yaml")...); code != 0 {
+				t.Fatal(e)
+			}
+			os.Remove(log) // only what the refused command does counts
+			_, e, code := runCLI(t, append(base, "--root", repo, cmd)...)
+			if code == 0 || !strings.Contains(e, "not trusted on this machine") || !strings.Contains(e, "stackfork plan --trust") || !strings.Contains(e, "on: host") {
+				t.Fatalf("%d %s", code, e)
+			}
+			if b, _ := os.ReadFile(log); len(b) != 0 || len(*calls) != 0 || len(runFiles(state)) != 0 {
+				t.Fatalf("docker, the host or a run file was touched: %q %v %v", b, *calls, runFiles(state))
+			}
+		})
+	}
+}
+
+func TestSeedRunsAHostSeedOnATrustedPlan(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, hostSeedPlan(hostStep("seed", knowledge.OnceData, "bun run db:seed", "")))
+	calls := stubHostExecCodes(t, nil)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+	if _, e, code := runCLI(t, append(base, "--root", repo, "prepare", "-f", ".agent-dev/app.compose.yaml")...); code != 0 {
+		t.Fatal(e)
+	}
+	if out, e, code := runCLI(t, append(base, "--root", repo, "seed")...); code != 0 || strings.Join(*calls, "|") != "seed: bun run db:seed" {
+		t.Fatalf("%d %s %s %v", code, out, e, *calls)
+	}
+}

@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
@@ -40,6 +41,24 @@ func HashTrusted(stateBase, mainRoot string, p knowledge.Plan) (trusted bool, di
 		return true, nil
 	}
 	return false, knowledge.DiffSteps(knowledge.ReadTrustSteps(path), knowledge.TrustSteps(p.Steps))
+}
+
+func errUntrusted(stateBase, mainRoot string, p knowledge.Plan) error {
+	diff := ReadableDiff(stateBase, mainRoot, p)
+	return fmt.Errorf("not trusted on this machine: the plan has host steps nobody approved here\n%s\nrun: stackfork plan --trust", strings.Join(diff, "\n"))
+}
+
+// CheckSeedTrust refuses, with start-env's message, a seed that runs on the
+// host when this machine does not trust the plan. `up` and `seed` call it
+// before any Docker call, so an untrusted command never runs.
+func CheckSeedTrust(root, main, instanceDir, stateBase string, plan knowledge.Plan, mode string) error {
+	if e, ok := SeedEntry(root, main, instanceDir, plan, mode); !ok || !e.IsHostExec() {
+		return nil
+	}
+	if ok, _ := HashTrusted(stateBase, main, plan); !ok {
+		return errUntrusted(stateBase, main, plan)
+	}
+	return nil
 }
 
 // ReadableDiff is HashTrusted's diff as lines a person can read: each added

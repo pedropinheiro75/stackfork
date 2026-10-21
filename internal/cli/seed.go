@@ -68,6 +68,9 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	main := repos.MainRepoOf(root)
 	mode := lifecycle.PlanMode(root, main)
+	if err := lifecycle.CheckSeedTrust(root, main, instanceDir, newBase, lifecycle.LoadPlan(root, main), mode); err != nil {
+		return 0, err // an untrusted host seed: before the preflight and any Docker call
+	}
 	var vals lifecycle.SecretValues
 	rec, err := runs.Begin(instanceDir, runs.Meta{Command: "seed", Trigger: envTrigger(), Mode: mode, Project: project, Branch: branch,
 		Out: stdout, Secrets: func() []redact.Secret { return vals.Redactions() }})
