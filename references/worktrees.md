@@ -15,3 +15,11 @@ Keep the adapter's generated files in the checkout's `.agent-dev/`, excluded usi
 Never open another project's real env files, registry credentials, certificates or private keys, and never copy another project's credentials into this one — obtain registry access through the approved credential source for this project (`references/adapting-compose.md`).
 
 Create the worktree with `stackfork worktree add REPO BRANCH` (`<repo>/.worktrees/<branch>`, excluded locally from git; it copies only the adapter files the project's knowledge lists, never `.env` or credentials). `stackfork repos` lists every repo, branch and worktree under the configured folders; `stackfork start-env CHECKOUT` prepares and starts a known project's checkout.
+
+## A worktree prepared with fewer files than the main checkout
+
+A worktree can run without a Compose file the main checkout uses. The plan's `prepare` step may name only the override, or the worktree may have been prepared by hand with one `-f`. Once the worktree's manifest records the short list, every later `up` and `reset` keeps it, and the worktree behaves differently from the main checkout (for example, the base file that publishes the app port is missing).
+
+stackfork says so when it happens: `prepare`, `start-env`, `reset` and the dashboard show `warning: this worktree prepares with N Compose file(s) (...); the main checkout's last prepare used M (...). Missing: FILE. To reuse the main checkout's recipe: stackfork --root WORKTREE reset --from-main`. It compares only the set of Compose files with the main checkout's last prepare. It never blocks anything, because a lighter recipe can be on purpose.
+
+To fix it, run `stackfork --root WORKTREE reset --from-main` (a person runs it; the guard blocks `reset` for agents). It deletes the worktree's volumes, moves its untracked adapter files to `.stackfork-aside/<UTC time>/` inside the worktree, copies the main checkout's recipe and prepares with it. Nothing is deleted; remove `.stackfork-aside/<time>` when you no longer need it. To keep the next worktree from having the gap, run `stackfork learn verify` in a checkout whose instance has the full recipe: it writes that recipe to the plan's `prepare` step.

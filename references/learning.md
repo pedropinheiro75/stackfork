@@ -116,7 +116,7 @@ stackfork learn record link --remove Email
 - `--port` is the container port of the Compose service, never a published host port. A link with `--path` only is a path on the entry; a link with `--service` and `--port` is another service of the stack. A name is unique without regard to case, and `App` is the entry's own name.
 - `learn` writes a proposed entry (`"proposed": true`) from its own guess. It counts as a guess until you record the entry; a re-scan keeps a recorded entry, `none` and the links.
 - Targets are checked against the prepared instance's Compose model (else the scanned services). Links stay inside the instance: a path starts with one `/`, and stackfork builds every URL from the instance's own hostname and port. Absolute URLs, `//host` and `..` are refused.
-- `learn verify` refuses until the entry is recorded (or `none`), needs the instance running, and sends one GET to the entry (`Host` is the instance hostname; no redirect is followed). Any status below 500 counts as answering, so a login redirect or a `401` passes; a refused connection or a `5xx` fails verify. Each link is probed too and a link that does not answer is a warning in the output, not a failure. The probe result is stored in `verification.entry` and `verification.links`.
+- `learn verify` refuses until the entry is recorded (or `none`), needs the instance running (and, always, a prepared instance: see "The recipe that verify records"), and sends one GET to the entry (`Host` is the instance hostname; no redirect is followed). Any status below 500 counts as answering, so a login redirect or a `401` passes; a refused connection or a `5xx` fails verify. Each link is probed too and a link that does not answer is a warning in the output, not a failure. The probe result is stored in `verification.entry` and `verification.links`.
 - `entry` and `links` are not part of the trust hash: a change needs no `plan --trust`.
 
 ## Verifying
@@ -126,6 +126,17 @@ Step 7 only, never on your own initiative — `learn verify` refuses if the reci
 ```sh
 stackfork learn verify --check "database identity" --check "app readiness" --confirm "<the user's own words>"
 ```
+
+### The recipe that verify records
+
+`learn verify` needs a prepared instance for the checkout and its branch (`no prepared instance for this checkout; prepare and start it, then verify`). It writes the plan's `prepare` step from that instance, so a worktree prepared from knowledge later gets the full recipe, not the short list written early in the session:
+
+- the `args` are one `-f PATH` for each Compose file of the instance, in order, then `--env-file PATH` when it has one, all relative to the checkout; the step's `--hostname`, `--reassign-ports` and `--random-ports` stay after them;
+- a plan with no `prepare` step gets one (id `prepare`) before the first `compose-up` step;
+- when the instance uses a file outside the checkout, verify prints a warning and leaves the step as it was (a committed plan cannot name such a file);
+- the JSON output lists the recorded args as `prepare`.
+
+The `prepare` step is part of the trust hash. When verify changes it and the plan has host steps, the output has a `note` (`the prepare step changed; a person must trust the plan again: stackfork plan --trust`) and verify still succeeds. Knowledge verified before this change keeps its `prepare` step until the next `learn verify`.
 
 `--confirm` must be the user's actual confirmation, quoted — never a paraphrase, never written by the agent itself. This is what moves `status` from `draft` to `verified`.
 
