@@ -15,7 +15,9 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/cli"
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
+	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 )
 
@@ -30,6 +32,13 @@ type browserEnv struct {
 	home   string
 	mu     sync.Mutex
 	starts []string
+	derive map[string]int // DerivePlan calls per checkout
+}
+
+func (e *browserEnv) derived(checkout string) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.derive[checkout]
 }
 
 func (e *browserEnv) started() []string {
@@ -78,7 +87,8 @@ func newBrowserEnv(t *testing.T) *browserEnv {
 	if code := cli.Run([]string{"config", "add-root", e.root}, &out, &errBuf); code != 0 {
 		t.Fatalf("add-root: %s", errBuf.String())
 	}
-	srv, err := dashboard.New(e.newDir, t.TempDir(), "test", reposPort)
+	legacy := t.TempDir()
+	srv, err := dashboard.New(e.newDir, legacy, "test", reposPort)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,6 +98,13 @@ func newBrowserEnv(t *testing.T) *browserEnv {
 		e.mu.Unlock()
 		io.WriteString(out, "preparing it\nstarting it\n")
 		return nil
+	}
+	e.derive = map[string]int{}
+	srv.DerivePlan = func(checkout string, insts []inventory.Instance) (lifecycle.DerivedPlan, error) {
+		e.mu.Lock()
+		e.derive[checkout]++
+		e.mu.Unlock()
+		return cli.DerivePlan(cli.DeriveOptions{Checkout: checkout, NewStateBase: e.newDir, LegacyStateBase: legacy, Instances: insts})
 	}
 	e.srv = srv
 	t.Cleanup(srv.Wait)
@@ -306,8 +323,8 @@ func TestRepoFragmentEscapesHostileNamesAndOffersNoDestructiveButton(t *testing.
 			t.Errorf("missing %q", want)
 		}
 	}
-	// one learn button per repo that is not ready (hostile + adapted), not per row
-	if n := strings.Count(body, ">Learn with your agent<"); n != 2 {
+	// one learn button per repo that is not ready (hostile + adapted), not per row, plus the one in the ready repo's derived plan
+	if n := strings.Count(body, ">Learn with your agent<"); n != 3 {
 		t.Errorf("want one learn button per non-ready repo, got %d", n)
 	}
 	// unknown and needs-learn repos get no Start button; ready ones do

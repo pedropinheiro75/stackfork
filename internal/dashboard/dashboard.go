@@ -101,6 +101,10 @@ type Server struct {
 	// checkout cannot be updated; the CLI supplies both.
 	ResetEnv     ResetFunc
 	ResetPreview ResetPreviewFunc
+	// DerivePlan backs the plan list of a repo with no recorded plan steps: the
+	// steps a Start would run, with their sources. The CLI supplies it
+	// (cli.DerivePlan); nil shows no list for such a repo.
+	DerivePlan DeriveFunc
 	// LiveCleanup backs the cleanup ops of POST /api/live; nil answers 503.
 	LiveCleanup *LiveCleanup
 	// Live backs the Live switch and the live state on the page; nil hides it.

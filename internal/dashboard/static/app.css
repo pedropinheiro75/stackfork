@@ -487,8 +487,8 @@ code.setting-value { display: inline-block; }
 .repo-errors:empty { display: none; }
 .repo-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); margin: 0; color: var(--fg-muted); overflow-wrap: anywhere; }
 .repo-meta code { color: var(--fg); }
-.recipe { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.recipe-label { color: var(--fg-muted); }
+.plan-derived { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--fg-muted); }
+.plan-source { display: block; margin-top: 2px; color: var(--fg-subtle); font-family: var(--font-sans); }
 .plan { display: flex; flex-direction: column; gap: var(--space-2); }
 .plan-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .plan-mode { display: inline-flex; align-items: center; gap: var(--space-2); }

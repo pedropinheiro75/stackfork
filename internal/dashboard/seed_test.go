@@ -14,7 +14,6 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/cli"
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
-	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -166,48 +165,6 @@ func TestDashboardUpSeedsANewVolumeOnce(t *testing.T) {
 	}
 	if m := manifestOf(t, newBase, project); m.Seeded == nil || !*m.Seeded {
 		t.Fatalf("manifest %+v", m)
-	}
-}
-
-func TestReposTabShowsReadOnlyRecipe(t *testing.T) {
-	e := newBrowserEnv(t)
-	repo := e.readyRepo("svc")
-	os.WriteFile(filepath.Join(repo, "package.json"), []byte(`{"scripts":{"db:migrate":"m","db:seed\"><img src=x onerror=alert(1)>":"s"}}`), 0o644)
-	e.get("/api/repos")
-	frag := e.get("/fragments/repos").Body.String()
-	if strings.Contains(frag, "<img src=x") || !strings.Contains(frag, "&lt;img src=x") {
-		t.Fatalf("hostile script name not escaped:\n%s", frag)
-	}
-	for _, want := range []string{"Starts with", "npm run db:migrate", "auto-detected", "stackfork learn record recipe --seed-once"} {
-		if !strings.Contains(frag, want) {
-			t.Errorf("missing %q", want)
-		}
-	}
-	for _, bad := range []string{"recipe-choice", "data-recipe-set", "<select"} {
-		if strings.Contains(frag, bad) {
-			t.Errorf("recipe is read-only, found %q", bad)
-		}
-	}
-	// a recorded decision is shown, never changed from the page
-	os.MkdirAll(filepath.Join(repo, ".stackfork"), 0o755)
-	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Plan: knowledge.Plan{Status: knowledge.PlanRecorded, NoSeed: true}}
-	k.Save(filepath.Join(repo, ".stackfork", "knowledge.json"))
-	if frag := e.get("/fragments/repos").Body.String(); !strings.Contains(frag, "never") {
-		t.Errorf("never not shown:\n%s", frag)
-	}
-	// recorded without a data step and without no_seed: still auto-detected
-	k.Plan.NoSeed = false
-	k.Save(filepath.Join(repo, ".stackfork", "knowledge.json"))
-	if frag := e.get("/fragments/repos").Body.String(); strings.Contains(frag, "seed: never") || !strings.Contains(frag, "auto-detected") {
-		t.Errorf("undecided plan must stay auto:\n%s", frag)
-	}
-	k.Plan.Steps = []knowledge.Step{{ID: "seed", Kind: knowledge.KindExec, Cmd: "make seed-it", Once: knowledge.OnceData}}
-	k.Save(filepath.Join(repo, ".stackfork", "knowledge.json"))
-	if frag := e.get("/fragments/repos").Body.String(); !strings.Contains(frag, "make seed-it") || strings.Contains(frag, "auto-detected") {
-		t.Errorf("recorded seed command not shown:\n%s", frag)
-	}
-	if rec := e.post("/api/actions", map[string]string{"action": "recipe-seed", "repo": repo}, reqOpts{}); rec.Code != 400 {
-		t.Errorf("recipe-seed action still exists: %d", rec.Code)
 	}
 }
 

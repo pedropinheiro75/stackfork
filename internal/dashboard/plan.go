@@ -1,7 +1,6 @@
 package dashboard
 
 import (
-	"path/filepath"
 	"strconv"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
@@ -10,46 +9,6 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 )
-
-// recipeView is a repo's read-only startup-recipe summary for the Repos tab.
-// State is "seed" (a recorded command), "never" (recorded `none`), "auto"
-// (nothing recorded: a new database is seeded with the detected script) or
-// "none" (nothing recorded, nothing detected).
-type recipeView struct {
-	Migrate  string
-	Detected string
-	Seed     string
-	State    string
-}
-
-func (s *Server) repoRecipe(repo repos.Repo) recipeView {
-	migrate, detected := learn.DetectSeed(repo.Path)
-	v := recipeView{Migrate: migrate, Detected: detected, State: "none"}
-	if detected != "" {
-		v.State = "auto"
-	}
-	if k, err := knowledge.Load(filepath.Join(repo.Path, ".stackfork", "knowledge.json")); err == nil {
-		if m := k.Plan.MigrateStep(); m != nil {
-			v.Migrate = m.Cmd
-		}
-	}
-	decided, cmd, _ := learn.SeedDecision([]string{repo.Path}, nil)
-	for _, wt := range repo.Worktrees {
-		if decided || wt.Instance == nil {
-			continue
-		}
-		if _, _, _, info, err := s.resolveInstance(wt.Instance.Project); err == nil {
-			decided, cmd, _ = learn.SeedDecision(nil, info)
-		}
-	}
-	switch {
-	case decided && learn.SeedActive(cmd):
-		v.State, v.Seed = "seed", cmd
-	case decided:
-		v.State = "never"
-	}
-	return v
-}
 
 // entryView is the Repos entry line (entry-links D12): State is recorded,
 // guessed or none; Target is "service:port[path]", empty when unknown.
@@ -95,6 +54,7 @@ func repoEntry(repo repos.Repo) *entryView {
 // stepView is one row of a repo's plan list.
 type stepView struct {
 	ID, Kind, Text, Port string
+	Source               string // a derived step: where it comes from
 	Skipped              bool
 	Chip                 chipView
 }
@@ -111,17 +71,23 @@ type planView struct {
 	Trusted, NeedsTrust bool
 	Diff                []string
 	Steps, Skipped      []stepView
+	// Derived: nobody recorded these steps; they are what a Start would run
+	// (add-derived-plan-view). Refusal replaces the list when it would not.
+	Derived bool
+	Refusal string
+	Gap     string
 }
 
-// repoPlan returns nil for a repo with no recorded steps; the page then
-// falls back to the read-only recipe line.
+// repoPlan returns the plan list of the main checkout: the recorded one, or,
+// for a repo whose knowledge has no plan steps, the derived one. nil when
+// there is nothing to show.
 func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
 	k, err := knowledge.LoadFirst(repo.Path)
 	if err != nil { // shown as a failed callout, not hidden
 		return &planView{LoadError: err.Error()}
 	}
 	if k == nil || len(k.Plan.Steps) == 0 {
-		return nil
+		return s.derivedPlan(repo, cfg)
 	}
 	mode := knowledge.ModeContainer
 	if cfg != nil {
@@ -150,10 +116,51 @@ func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
 	// A Start resolves secrets before anything else (preflight, group 4): the
 	// live list needs a row for it so a failure there has somewhere to show.
 	if hasSecretNames(repo.Path, cfg) {
-		v.Steps = append([]stepView{{ID: knowledge.KindSecrets, Kind: knowledge.KindSecrets, Text: lifecycle.PreflightText,
-			Chip: chipView{Class: "off", Glyph: glyphOff, Label: "at start", Title: "stackfork resolves the secrets before anything else runs"}}}, v.Steps...)
+		v.Steps = append([]stepView{secretsRow("")}, v.Steps...)
 	}
 	return v
+}
+
+// derivedPlan is the plan list of a repo with no recorded steps. The hook's
+// result is cached per repo until a scan or an action drops it.
+func (s *Server) derivedPlan(repo repos.Repo, cfg *config.Config) *planView {
+	if s.DerivePlan == nil {
+		return nil
+	}
+	s.repos.mu.Lock()
+	e, ok := s.repos.derived[repo.Path]
+	insts := s.repos.insts
+	s.repos.mu.Unlock()
+	if !ok {
+		e.plan, e.err = s.DerivePlan(repo.Path, insts)
+		s.repos.mu.Lock()
+		if s.repos.derived == nil {
+			s.repos.derived = map[string]derivedEntry{}
+		}
+		s.repos.derived[repo.Path] = e
+		s.repos.mu.Unlock()
+	}
+	if e.err != nil {
+		return &planView{LoadError: e.err.Error()}
+	}
+	d := e.plan
+	v := &planView{Derived: true, Mode: d.Mode, Modes: []string{d.Mode}, Status: lifecycle.StateDerived, Trusted: true,
+		Refusal: d.Refusal, Gap: d.Gap}
+	for _, st := range d.Steps {
+		v.Steps = append(v.Steps, stepView{ID: st.ID, Kind: st.Kind, Text: lifecycle.StepText(st.Step), Source: st.Source,
+			Chip: chipView{Class: "off", Glyph: glyphOff, Label: lifecycle.StateDerived, Title: st.Source}})
+	}
+	if len(v.Steps) > 0 && hasSecretNames(repo.Path, cfg) {
+		v.Steps = append([]stepView{secretsRow("secrets preflight")}, v.Steps...)
+	}
+	return v
+}
+
+// secretsRow is the first row of a plan list: a Start resolves secrets before
+// anything else (preflight), so a failure there needs a row to show in.
+func secretsRow(source string) stepView {
+	return stepView{ID: knowledge.KindSecrets, Kind: knowledge.KindSecrets, Text: lifecycle.PreflightText, Source: source,
+		Chip: chipView{Class: "off", Glyph: glyphOff, Label: "at start", Title: "stackfork resolves the secrets before anything else runs"}}
 }
 
 func stepChip(st lifecycle.PlanStep, skipped bool) chipView {

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
+	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/live"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
@@ -92,6 +93,9 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 		return StartEnv(out, errOut, StartOptions{
 			Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles, Trigger: trigger, Observer: obs,
 		})
+	}
+	srv.DerivePlan = func(checkout string, insts []inventory.Instance) (lifecycle.DerivedPlan, error) {
+		return DerivePlan(DeriveOptions{Checkout: checkout, NewStateBase: newStateBase, LegacyStateBase: legacyStateBase, ProfileDirs: profiles, Instances: insts})
 	}
 	srv.ResetEnv = func(out, errOut io.Writer, checkout string, current, fromMain bool, fingerprint string, obs func(runs.Event)) error {
 		return StartEnv(out, errOut, StartOptions{

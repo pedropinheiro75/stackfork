@@ -293,6 +293,16 @@ type ResetPreviewFunc func(checkout string, fromMain bool) (text string, blocked
 // or through the commands of /api/run (STACKFORK_TRIGGER).
 const TriggerDashboard = "dashboard"
 
+// DeriveFunc is the plan a Start of one checkout would run (cli.DerivePlan).
+// insts is the scan's inventory, so the call reads no Docker state of its own.
+type DeriveFunc func(checkout string, insts []inventory.Instance) (lifecycle.DerivedPlan, error)
+
+// derivedEntry is one cached DeriveFunc result.
+type derivedEntry struct {
+	plan lifecycle.DerivedPlan
+	err  error
+}
+
 // reposState is the in-memory scan the page and the actions work from.
 type reposState struct {
 	mu       sync.Mutex
@@ -300,6 +310,12 @@ type reposState struct {
 	at       time.Time
 	scanning bool
 	bg       sync.WaitGroup // background scans in flight
+	insts    []inventory.Instance
+	// derived caches DerivePlan per repo path. It is dropped when a scan
+	// replaces res and when an action asks for one (rescanAsync).
+	// ponytail: a cache cleared by events, not file watching; add a mtime key on
+	// knowledge.json and the manifest if a stale list shows up.
+	derived map[string]derivedEntry
 }
 
 // Wait blocks until background scans have finished (tests use it so a scan
@@ -335,6 +351,7 @@ func (s *Server) scanNow(full bool) repos.Result {
 	})
 	s.repos.mu.Lock()
 	s.repos.res, s.repos.at, s.repos.scanning = &res, time.Now(), false
+	s.repos.insts, s.repos.derived = insts, nil
 	s.repos.mu.Unlock()
 	return res
 }
@@ -359,6 +376,7 @@ func (s *Server) currentRepos() (res repos.Result, scanning bool) {
 // rescanAsync forces a refresh now (after a config change or an action).
 func (s *Server) rescanAsync(full bool) {
 	s.repos.mu.Lock()
+	s.repos.derived = nil // an action or a config change may have changed what a Start runs
 	if s.repos.scanning {
 		s.repos.mu.Unlock()
 		return
@@ -379,7 +397,6 @@ func (s *Server) handleRepos(w http.ResponseWriter, r *http.Request) {
 type repoView struct {
 	repos.Repo
 	Search  string
-	Recipe  recipeView
 	Plan    *planView
 	Entry   *entryView
 	Secrets []secretView
@@ -409,7 +426,7 @@ func (s *Server) handleReposFragment(w http.ResponseWriter, r *http.Request) {
 		for _, w := range repo.Worktrees {
 			b.WriteString(" " + w.Branch)
 		}
-		page.Rows = append(page.Rows, repoView{Repo: repo, Search: strings.ToLower(b.String()), Recipe: s.repoRecipe(repo), Plan: s.repoPlan(repo, cfg), Entry: repoEntry(repo), Secrets: s.repoSecrets(repo, cfg), Live: lives[repo.Path]})
+		page.Rows = append(page.Rows, repoView{Repo: repo, Search: strings.ToLower(b.String()), Plan: s.repoPlan(repo, cfg), Entry: repoEntry(repo), Secrets: s.repoSecrets(repo, cfg), Live: lives[repo.Path]})
 	}
 	page.FirstSetup = firstSetup(page.Rows)
 	s.renderFragment(w, "repos", page)
