@@ -10,6 +10,15 @@ type Cause struct {
 	Changed     []CauseChange  `json:"changed,omitempty"`
 	More        int            `json:"more,omitempty"` // changed paths beyond MaxCauseChanged
 	PlanChanged []string       `json:"plan_changed,omitempty"`
+	Cleanup     *CauseCleanup  `json:"cleanup,omitempty"` // a branch cleanup run (live-mode D19)
+}
+
+// CauseCleanup names the merged branch a cleanup run removes.
+type CauseCleanup struct {
+	Branch string `json:"branch"`
+	Result string `json:"result"`        // merged
+	PR     int    `json:"pr,omitempty"`  // when gh knew it
+	Via    string `json:"via,omitempty"` // git, or git+gh
 }
 
 // CauseUpstream is the fast-forward that brought the change.
