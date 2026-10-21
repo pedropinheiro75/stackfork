@@ -132,6 +132,11 @@
     <div id="logs-steps" role="group" aria-label="Steps of this run"></div>
     <label id="logs-follow-label"><input type="checkbox" id="logs-follow" checked> Follow</label>
   </div>
+  <div id="logs-gate" class="callout callout-attention" hidden>
+    <span class="callout-glyph" aria-hidden="true">&#9650;</span>
+    <div class="callout-body"><p class="callout-title">Logs stay hidden until stackfork can mask your secrets in them.</p><p class="callout-detail">Checking reads each secret once; 1Password may ask you to unlock it. Values are never shown.</p><p class="callout-detail" id="logs-gate-note" role="status"></p></div>
+    <div class="callout-actions"><button type="button" class="btn" id="logs-gate-check" data-key="logs/gate/check">Check secrets to view logs</button></div>
+  </div>
   <pre id="logs-body" class="mono-log" tabindex="0" aria-label="Log output"></pre>
 </aside>
 

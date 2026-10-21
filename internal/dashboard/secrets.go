@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
+	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/secretstore"
@@ -37,7 +38,8 @@ var AskSecretValue func(repo, name, item string) (string, error)
 type secretsState struct {
 	mu     sync.Mutex
 	known  map[string]knownRef
-	dialog sync.Mutex // one value dialog at a time
+	exists map[string]knownRef // keychain existence checks, kept for existsTTL: a page poll must not run a tool every 3 s
+	dialog sync.Mutex          // one value dialog at a time
 }
 
 type knownRef struct {
@@ -58,6 +60,18 @@ func (s *secretsState) forget(ref string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.known, ref)
+	delete(s.exists, ref)
+}
+
+const existsTTL = 30 * time.Second
+
+func (s *secretsState) rememberExists(ref string, st lifecycle.RefStatus) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.exists == nil {
+		s.exists = map[string]knownRef{}
+	}
+	s.exists[ref] = knownRef{st, time.Now()}
 }
 
 func (s *secretsState) snapshot() map[string]lifecycle.RefStatus {
@@ -67,6 +81,16 @@ func (s *secretsState) snapshot() map[string]lifecycle.RefStatus {
 	for ref, k := range s.known {
 		if time.Since(k.at) > lifecycle.SecretCacheTTL {
 			delete(s.known, ref)
+			continue
+		}
+		out[ref] = k.RefStatus
+	}
+	for ref, k := range s.exists {
+		if _, checked := out[ref]; checked {
+			continue
+		}
+		if time.Since(k.at) > existsTTL {
+			delete(s.exists, ref)
 			continue
 		}
 		out[ref] = k.RefStatus
@@ -90,12 +114,16 @@ type secretsResponse struct {
 // prompt. An env: reference is never evaluated: the dashboard's own
 // environment is not the person's shell.
 func (s *Server) secretRows(repo string) ([]secretJSON, error) {
-	rows, err := lifecycle.SecretRows(repo, false, s.secrets.snapshot(), s.NewStateBase, s.LegacyStateBase)
+	known := s.secrets.snapshot()
+	rows, err := lifecycle.SecretRows(repo, false, known, s.NewStateBase, s.LegacyStateBase)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]secretJSON, 0, len(rows))
 	for _, r := range rows {
+		if _, had := known[r.Reference]; !had && strings.HasPrefix(r.Reference, "keychain:") {
+			s.secrets.rememberExists(r.Reference, lifecycle.RefStatus{Status: secretstore.Status(r.Status), Detail: r.Detail})
+		}
 		if strings.HasPrefix(r.Reference, "env:") {
 			r.Status, r.Detail = StatusShellOnly, shellOnlyNote
 		}
@@ -290,4 +318,66 @@ func scrub(msg, value string) string {
 	}
 	line, _, _ := strings.Cut(msg, "\n")
 	return line
+}
+
+// secretView is a row of the Repos panel's Secrets table.
+type secretView struct {
+	secretJSON
+	Chip   chipView
+	Item   string // the keychain item, "" for any other reference
+	Repo   string
+	SetCmd string // copy-only: printenv VAR | stackfork secret set ITEM
+	MapCmd string // copy-only: stackfork secret map REPO NAME=REF
+	Unmap  string // copy-only, only for a name the machine map holds
+}
+
+// secretChip is the StatusChip of a row: glyph and word, never colour alone.
+func secretChip(r secretJSON) chipView {
+	detail := r.Detail
+	switch {
+	case r.Status == StatusShellOnly:
+		return chipView{Class: "off", Glyph: glyphOff, Label: "Shell only", Title: shellOnlyNote}
+	case r.Reference == "":
+		return chipView{Class: "failed", Glyph: glyphFailed, Label: "Missing", Title: "no reference on this machine; map it with stackfork secret map"}
+	}
+	switch secretstore.Status(r.Status) {
+	case secretstore.Resolves:
+		return chipView{Class: "ok", Glyph: glyphOK, Label: "Resolves"}
+	case secretstore.Missing:
+		return chipView{Class: "failed", Glyph: glyphFailed, Label: "Missing", Title: detail}
+	case secretstore.Locked:
+		return chipView{Class: "attention", Glyph: glyphAttention, Label: "Locked", Title: detail}
+	case secretstore.NotChecked:
+		return chipView{Class: "off", Glyph: glyphOff, Label: "Not checked", Title: "Check reads it; 1Password may ask you to unlock it"}
+	case secretstore.Unavailable:
+		return chipView{Class: "attention", Glyph: glyphAttention, Label: "Unavailable", Title: detail}
+	}
+	return chipView{Class: "failed", Glyph: glyphFailed, Label: "Error", Title: detail}
+}
+
+// repoSecrets are the rows of the Secrets table, or nil when the repository
+// has no declared or mapped name (the section is then not shown). It starts
+// no store prompt.
+func (s *Server) repoSecrets(repo repos.Repo, cfg *config.Config) []secretView {
+	if cfg == nil || len(cfg.SecretsFor(repo.Path)) == 0 && len(lifecycle.DeclaredSecrets(repo.Path, repo.Path)) == 0 {
+		return nil
+	}
+	rows, err := s.secretRows(repo.Path)
+	if err != nil {
+		return nil
+	}
+	out := make([]secretView, 0, len(rows))
+	for _, r := range rows {
+		v := secretView{secretJSON: r, Chip: secretChip(r), Repo: repo.Path}
+		v.MapCmd = "stackfork secret map " + shq(repo.Path) + " " + r.Name + "=REF"
+		if strings.HasPrefix(r.Reference, "keychain:") {
+			v.Item = strings.TrimPrefix(r.Reference, "keychain:")
+			v.SetCmd = "printenv VAR | stackfork secret set " + v.Item
+		}
+		if r.Source == lifecycle.SourceMap {
+			v.Unmap = "stackfork secret unmap " + shq(repo.Path) + " " + r.Name
+		}
+		out = append(out, v)
+	}
+	return out
 }

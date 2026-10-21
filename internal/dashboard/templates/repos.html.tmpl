@@ -111,6 +111,32 @@
 
       {{end}}
 
+      {{with $row.Secrets}}
+      <section class="secrets" aria-labelledby="secrets-h-{{$i}}">
+        <div class="secrets-bar">
+          <h3 class="micro" id="secrets-h-{{$i}}">Secrets</h3>
+          <span class="small muted">Names and status only. A value never reaches this page.</span>
+          <button type="button" class="btn secrets-check" data-secrets-check data-repo="{{$r.Path}}" data-key="{{$r.Path}}/secrets/check" title="Read every reference once; 1Password may ask you to unlock it">Check</button>
+        </div>
+        <div class="secret-list" role="table" aria-label="Secrets of {{$r.Name}}">
+          <div class="secret-head micro" role="row"><span role="columnheader">Name</span><span role="columnheader">Reference</span><span role="columnheader">Status</span><span role="columnheader"><span class="sr-only">Actions</span></span></div>
+          {{range .}}
+          <div class="secret-row" role="row" data-key="{{.Repo}}/secret/{{.Name}}">
+            <span class="secret-name" role="cell"><span class="mono secret-id">{{.Name}}</span>{{if .Hint}}<span class="small muted secret-hint">{{.Hint}}</span>{{end}}</span>
+            <span class="secret-ref" role="cell">{{if .Reference}}<code class="mono">{{.Reference}}</code>{{else}}<span class="small muted">not mapped on this machine</span>{{end}}</span>
+            <span class="secret-state" role="cell"><span class="chip chip-{{.Chip.Class}}"{{if .Chip.Title}} title="{{.Chip.Title}}"{{end}}><span class="chip-glyph" aria-hidden="true">{{.Chip.Glyph}}</span>{{.Chip.Label}}</span></span>
+            <span class="secret-actions" role="cell"><div class="menu-anchor"><button type="button" class="btn btn-ghost btn-icon" data-key="{{.Repo}}/secret/{{.Name}}/menu" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for {{.Name}}" title="More actions"><span aria-hidden="true">&#8943;</span></button><div class="menu" role="menu" hidden>
+{{if .CanSet}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Repo}}/secret/{{.Name}}/menu/set" data-secret-set data-repo="{{.Repo}}" data-name="{{.Name}}" title="Opens a hidden-answer dialog on this Mac; the value does not pass through this page"><span class="menu-label">Set value&hellip;</span><span class="menu-cmd mono">keychain:{{.Item}}</span></button>{{end}}
+{{if .SetCmd}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Repo}}/secret/{{.Name}}/menu/setcmd" data-copy="{{.SetCmd}}"><span class="menu-label">Copy set command</span><span class="menu-cmd mono">{{.SetCmd}}</span></button>{{end}}
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Repo}}/secret/{{.Name}}/menu/map" data-copy="{{.MapCmd}}"><span class="menu-label">Copy map command</span><span class="menu-cmd mono">{{.MapCmd}}</span></button>
+{{if .Unmap}}<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{.Repo}}/secret/{{.Name}}/menu/unmap" data-copy="{{.Unmap}}"><span class="menu-label">Copy unmap command</span><span class="menu-cmd mono">{{.Unmap}}</span></button>{{end}}
+</div></div></span>
+          </div>
+          {{end}}
+        </div>
+      </section>
+      {{end}}
+
       <div class="wt-table">
         <div class="wt-head micro" aria-hidden="true"><span>Lane</span><span>Branch</span><span>Path</span><span>Ahead / behind upstream</span><span>State</span><span></span></div>
         {{$nwt := len $r.Worktrees}}

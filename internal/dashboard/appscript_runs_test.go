@@ -45,3 +45,9 @@ func TestRunCalloutIsNotAClickTarget(t *testing.T) {
 func TestStartsKeepOwnProgressAndDisabledRetry(t *testing.T) {
 	runAppJS(t, "starts.case.js")
 }
+
+// A Check or Set value in flight keeps its busy state across a render, and
+// the log gate is recognised by its header only (design D14, D11).
+func TestSecretsButtonsStayBusyAcrossARender(t *testing.T) {
+	runAppJS(t, "secrets.case.js")
+}

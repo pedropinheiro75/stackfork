@@ -510,6 +510,27 @@ code.setting-value { display: inline-block; }
   .plan-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "id state" "text text"; padding: var(--space-2); gap: var(--space-1) var(--space-2); }
   .plan-id { grid-area: id; } .plan-state { grid-area: state; } .plan-text { grid-area: text; } .plan-kind { display: none; }
 }
+/* Secrets table (Repos panel): names, references and status chips, never values. */
+.secrets { display: flex; flex-direction: column; gap: var(--space-2); }
+.secrets-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.secrets .btn[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
+.secrets-bar h3 { margin: 0; color: var(--fg-muted); }
+.secrets-bar .secrets-check { margin-left: auto; }
+.secret-head, .secret-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 1.4fr) 140px 40px; align-items: center; gap: var(--space-3); padding: 0 var(--space-2); }
+.secret-head { min-height: 24px; color: var(--fg-subtle); border-bottom: 1px solid var(--line); }
+.secret-row { min-height: 40px; padding-top: var(--space-1); padding-bottom: var(--space-1); border-bottom: 1px solid var(--line); }
+.secret-name { display: flex; flex-direction: column; min-width: 0; }
+.secret-id { font-weight: 600; overflow-wrap: anywhere; }
+.secret-hint { overflow-wrap: anywhere; }
+.secret-ref { min-width: 0; overflow-wrap: anywhere; }
+.secret-state { display: flex; align-items: center; }
+.secret-actions { display: flex; justify-content: flex-end; }
+@media (max-width: 719px) {
+  .secret-head { display: none; }
+  .secret-row { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name state actions" "ref ref ref"; padding: var(--space-2); gap: var(--space-1) var(--space-2); }
+  .secret-name { grid-area: name; } .secret-state { grid-area: state; } .secret-actions { grid-area: actions; } .secret-ref { grid-area: ref; }
+  .secrets-bar .secrets-check { margin-left: 0; }
+}
 .plan-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .chip-code { max-width: 100%; padding: 1px var(--space-2); border: 1px solid var(--line-control); border-radius: var(--radius-xs); background: var(--surface-1); overflow-wrap: anywhere; }
 .menu.menu-left { right: auto; left: 0; transform-origin: top left; width: 320px; }
@@ -708,6 +729,8 @@ code.setting-value { display: inline-block; }
 .logs-step[aria-pressed="true"] { background: var(--surface-2); border-color: var(--line-strong); font-weight: 600; }
 #logs-follow-label { flex: none; display: inline-flex; align-items: center; gap: var(--space-1); color: var(--fg-muted); }
 #logs-follow-label[hidden] { display: none; }
+#logs-gate { margin: var(--space-3) var(--space-4) 0; }
+#logs-gate[hidden] { display: none; } /* .callout sets display:flex, which would beat the hidden attribute */
 #logs-body { flex: 1 1 auto; max-height: none; border-radius: 0; background: transparent; padding: var(--space-4); }
 @media (max-width: 719px) {
   #logs-panel { width: 100%; border-left: 0; border-top: 3px solid var(--lane, var(--line-strong)); }

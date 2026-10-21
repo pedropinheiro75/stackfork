@@ -365,9 +365,10 @@ func (s *Server) handleRepos(w http.ResponseWriter, r *http.Request) {
 
 type repoView struct {
 	repos.Repo
-	Search string
-	Recipe recipeView
-	Plan   *planView
+	Search  string
+	Recipe  recipeView
+	Plan    *planView
+	Secrets []secretView
 }
 
 type reposPage struct {
@@ -390,7 +391,7 @@ func (s *Server) handleReposFragment(w http.ResponseWriter, r *http.Request) {
 		for _, w := range repo.Worktrees {
 			b.WriteString(" " + w.Branch)
 		}
-		page.Rows = append(page.Rows, repoView{Repo: repo, Search: strings.ToLower(b.String()), Recipe: s.repoRecipe(repo), Plan: s.repoPlan(repo, cfg)})
+		page.Rows = append(page.Rows, repoView{Repo: repo, Search: strings.ToLower(b.String()), Recipe: s.repoRecipe(repo), Plan: s.repoPlan(repo, cfg), Secrets: s.repoSecrets(repo, cfg)})
 	}
 	page.FirstSetup = firstSetup(page.Rows)
 	s.renderFragment(w, "repos", page)

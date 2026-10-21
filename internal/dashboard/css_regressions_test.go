@@ -163,3 +163,13 @@ func TestToastRegionsAndLightStateTokens(t *testing.T) {
 		}
 	}
 }
+
+// The log gate is a .callout (display:flex); without its own [hidden] rule
+// it would show on every log, not only when a check is needed.
+func TestLogGateHiddenOverridesCalloutDisplay(t *testing.T) {
+	srv := newTestServer(t)
+	rec := doRequest(srv, "GET", "/static/app.css", "127.0.0.1:55123", nil)
+	if !strings.Contains(rec.Body.String(), "#logs-gate[hidden]") {
+		t.Fatal("expected a #logs-gate[hidden] override so .callout's display rule can't win")
+	}
+}

@@ -788,6 +788,7 @@
     document.getElementById("logs-title").textContent = title;
     document.getElementById("logs-body").textContent = bodyText;
     document.getElementById("logs-run").hidden = true;
+    setLogGate(null);
     stopRunFollow();
     panel.hidden = false;
     // after the click finishes: a closing menu would otherwise take focus back
@@ -803,15 +804,63 @@
     drawerOpener = null;
   }
 
-  function showLogs(project, service, opener) {
+  // The log view refuses to show a log it cannot redact without a prompt
+  // (design D11): the server answers 409 with this header, and the drawer
+  // offers Check secrets to view logs, which runs the check on the click.
+  function needsSecretCheck(r) {
+    return r.status === 409 && r.headers.get("X-Stackfork-Needs") === "secret-check";
+  }
+
+  function setLogGate(gate) {
+    var el = document.getElementById("logs-gate");
+    el.hidden = !gate;
+    document.getElementById("logs-body").hidden = !!gate;
+    if (gate) {
+      document.getElementById("logs-gate-note").textContent = gate.note || "";
+      var b = document.getElementById("logs-gate-check");
+      b.disabled = false;
+      b.textContent = "Check secrets to view logs";
+    }
+    logGate = gate || null;
+  }
+  var logGate = null;
+
+  function showLogs(project, service, opener, afterCheck) {
     openDrawer(project + (service ? " / " + service : ""), project, "loading...", opener);
     var body = document.getElementById("logs-body");
     var url = "/api/logs?project=" + encodeURIComponent(project) + "&tail=200";
     if (service) url += "&service=" + encodeURIComponent(service);
     fetch(url, { credentials: "same-origin" })
-      .then(function (r) { return r.text(); })
-      .then(function (text) { body.textContent = text || "(no output)"; })
+      .then(function (r) {
+        if (needsSecretCheck(r)) {
+          // still gated after a check: a 1Password reference did not resolve, so its value cannot be masked
+          setLogGate({ project: project, service: service, opener: opener, note: afterCheck ? "The check ran, but a 1Password reference did not resolve (locked or missing). Unlock 1Password, then check again." : "" });
+          return null;
+        }
+        setLogGate(null);
+        return r.text().then(function (text) { body.textContent = text || "(no output)"; });
+      })
       .catch(function (err) { body.textContent = "error: " + err.message; });
+  }
+
+  function checkForLogs() {
+    var g = logGate;
+    if (!g) return;
+    var inst = ((state.inventory || {}).instances || []).filter(function (i) { return i.project === g.project; })[0];
+    var b = document.getElementById("logs-gate-check");
+    b.disabled = true;
+    b.textContent = "Checking\u2026";
+    log("secrets: checking for the logs of " + g.project);
+    postSecretCheck(inst ? repoRoot(inst.root) : "").then(function (res) {
+      if (logGate !== g) return; // the drawer moved on
+      if (!res.ok) {
+        g.note = "The check did not run: " + res.message + " Run stackfork secret check in a terminal instead.";
+        setLogGate(g);
+        return;
+      }
+      setLogGate(null);
+      showLogs(g.project, g.service, g.opener, true);
+    });
   }
 
   // Run log source of the LogDrawer (design.md D14): the title reads
@@ -1129,6 +1178,7 @@
 
   function wireLogsPanel() {
     document.getElementById("logs-close").addEventListener("click", closeDrawer);
+    document.getElementById("logs-gate-check").addEventListener("click", checkForLogs);
     document.getElementById("logs-steps").addEventListener("click", function (e) {
       var b = e.target.closest(".logs-step");
       if (!b || !runLog) return;
@@ -1149,7 +1199,7 @@
   // the actions. Branch and path values travel in data-* attributes.
 
   var reposState = { tab: "instances", filter: "", readyOnly: false, autoShownSettings: false, errors: {}, open: {}, sort: "activity", group: false,
-    runs: {}, starts: {} };
+    runs: {}, starts: {}, secrets: {} };
 
   // copyText writes to the clipboard and says so on the clicked element
   // itself (a button shows "Copied", anything else flashes), since the
@@ -1318,6 +1368,7 @@
           applyRepoFilters();
           paintRuns(); // the live run and the Starts in flight survive every render
           paintStarts();
+          paintSecrets();
           if (menuKey) { var tr = keyedIn("#repos-list", menuKey); if (tr) openMenu(tr, false); }
           if (focusKey) {
             var again = keyedIn("#repos-list", focusKey);
@@ -1363,6 +1414,75 @@
         setTimeout(loadRepos, 600);
       })
       .catch(function (e) { err.textContent = e.message; });
+  }
+
+  // --- Secrets table (design D14) ---------------------------------------------
+  // Names, references and statuses only: the server never sends a value and
+  // the page has no field for one. Set value... opens a native dialog on this
+  // Mac; the page only learns whether it stored. reposState.secrets holds the
+  // Check and Set value calls in flight by the button's data-key, and
+  // paintSecrets puts their busy state back on the new button after a render.
+
+  function postSecretCheck(repo) {
+    return post("/api/secrets/check", { repo: repo })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }, function () { return { ok: r.ok, body: {} }; }); })
+      .then(function (res) {
+        if (!res.ok) return { ok: false, message: (res.body && res.body.message) || "refused" };
+        return { ok: true, rows: res.body.secrets || [] };
+      })
+      .catch(function (e) { return { ok: false, message: e.message }; });
+  }
+
+  function paintSecrets() {
+    Object.keys(reposState.secrets).forEach(function (key) {
+      var b = keyedIn("#repos-list", key);
+      if (!b) return;
+      b.setAttribute("aria-disabled", "true"); // not disabled: a disabled button loses the focus a render would restore
+      var want = reposState.secrets[key];
+      if (!b.classList.contains("menu-item") && b.textContent !== want) b.textContent = want;
+    });
+  }
+
+  function finishSecretCall(key, label) {
+    delete reposState.secrets[key];
+    var b = keyedIn("#repos-list", key);
+    if (b) { b.removeAttribute("aria-disabled"); if (!b.classList.contains("menu-item")) b.textContent = label; }
+    lastRepos = null;
+    loadRepos();
+  }
+
+  function checkSecrets(btn) {
+    var key = btn.dataset.key, repo = btn.dataset.repo, name = repo.split("/").pop();
+    if (reposState.secrets[key]) return;
+    reposState.secrets[key] = "Checking\u2026";
+    paintSecrets();
+    log("secrets: checking " + name);
+    postSecretCheck(repo).then(function (res) {
+      if (!res.ok) { log("secrets: " + name + ": " + res.message); toast("failed", name + ": " + res.message); }
+      else {
+        var bad = res.rows.filter(function (r) { return r.status !== "resolves" && r.status !== "shell only"; }).length;
+        var msg = bad ? name + ": " + bad + " of " + plural(res.rows.length, "secret") + " need attention" : name + ": " + (res.rows.length === 1 ? "the secret resolves" : "all " + res.rows.length + " secrets resolve");
+        log("secrets: " + msg);
+        toast(bad ? "attention" : "ok", msg);
+      }
+      finishSecretCall(key, "Check");
+    });
+  }
+
+  function setSecretValue(btn) {
+    var key = btn.dataset.key, name = btn.dataset.name, repo = btn.dataset.repo;
+    if (reposState.secrets[key]) return;
+    reposState.secrets[key] = "Set value\u2026";
+    paintSecrets();
+    log("secrets: waiting for the dialog for " + name + " on this Mac");
+    post("/api/secrets/set", { repo: repo, name: name })
+      .then(function (r) { return r.json().then(function (b) { return b; }, function () { return { message: "status " + r.status }; }); })
+      .then(function (b) {
+        log("secrets: " + name + ": " + b.message);
+        toast(b.ok ? "ok" : "failed", name + ": " + b.message);
+      })
+      .catch(function (e) { log("secrets: " + name + ": " + e.message); toast("failed", name + ": " + e.message); })
+      .then(function () { finishSecretCall(key, "Set value\u2026"); });
   }
 
   function shq(v) { return "'" + String(v).replace(/'/g, "'\\''") + "'"; }
@@ -1744,6 +1864,10 @@
       if (rl) { openRunLog(rl.dataset.project, Number(rl.dataset.runId), rl.dataset.step, rl); return; }
       var dis = e.target.closest("[data-dismiss-repo]");
       if (dis) { delete reposState.errors[dis.dataset.dismissRepo]; renderRepoErrors(); return; }
+      var chk = e.target.closest("[data-secrets-check]");
+      if (chk) { checkSecrets(chk); return; }
+      var setv = e.target.closest("[data-secret-set]");
+      if (setv) { setSecretValue(setv); return; }
       var act = e.target.closest("[data-repo-action]");
       if (act) { runRepoAction(act); return; }
       var copy = e.target.closest(".copyable, .menu-item[data-copy]");
@@ -1943,7 +2067,7 @@
   // The script tests (appscript_runs_test.go) load this file in Node and ask
   // for the functions they exercise; a browser never defines __sfExport.
   if (typeof window.__sfExport === "function") {
-    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, finishStart: finishStart });
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck });
   }
 
   if (document.readyState === "loading") {
