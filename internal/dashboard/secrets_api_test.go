@@ -2,6 +2,8 @@ package dashboard_test
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -9,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/cli"
+	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 )
 
 const (
@@ -198,5 +201,101 @@ func TestSecretsCheckOpensTheLogGate(t *testing.T) {
 	}
 	if n := countLines(t, opCalls); n == 0 {
 		t.Fatal("Check never read the op:// reference")
+	}
+}
+
+const typedValue = "typed-canary-7-2"
+
+// stubDialog answers the value dialog; it records what the dialog was asked.
+func stubDialog(t *testing.T, available bool, answer string, err error) *[]string {
+	t.Helper()
+	var asked []string
+	oldAvail, oldAsk := dashboard.SecretDialogAvailable, dashboard.AskSecretValue
+	dashboard.SecretDialogAvailable = func() bool { return available }
+	dashboard.AskSecretValue = func(repo, name, item string) (string, error) {
+		asked = append(asked, repo+"|"+name+"|"+item)
+		return answer, err
+	}
+	t.Cleanup(func() { dashboard.SecretDialogAvailable, dashboard.AskSecretValue = oldAvail, oldAsk })
+	return &asked
+}
+
+// Set value: the dialog's answer reaches the store through its stdin and
+// nowhere else - not the HTTP response, not argv, not the process log.
+func TestSecretsSetNeverShowsTheValue(t *testing.T) {
+	e := newBrowserEnv(t)
+	kc := fakeKeychain(t, nil)
+	repo := e.readyRepo("acme-web")
+	var out, errBuf strings.Builder
+	if code := cli.Run([]string{"secret", "map", repo, "NPM_TOKEN=keychain:acme-npm-token"}, &out, &errBuf); code != 0 {
+		t.Fatal(errBuf.String())
+	}
+	asked := stubDialog(t, true, typedValue, nil)
+	var logged strings.Builder
+	log.SetOutput(&logged)
+	defer log.SetOutput(os.Stderr)
+
+	before := decodeSecrets(t, e.get("/api/secrets?repo="+repo))
+	if before["NPM_TOKEN"].Status != "missing" || !before["NPM_TOKEN"].CanSet {
+		t.Fatalf("before: %+v", before["NPM_TOKEN"])
+	}
+	rec := e.post("/api/secrets/set", map[string]string{"repo": repo, "name": "NPM_TOKEN"}, reqOpts{})
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"ok":true`) {
+		t.Fatalf("set: %d %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), typedValue) || strings.Contains(logged.String(), typedValue) {
+		t.Fatalf("the value leaked: %s / %s", rec.Body.String(), logged.String())
+	}
+	if len(*asked) != 1 || (*asked)[0] != "acme-web|NPM_TOKEN|acme-npm-token" {
+		t.Fatalf("dialog asked: %v", *asked)
+	}
+	stdin, _ := os.ReadFile(filepath.Join(kc, "stdin.rec"))
+	args, _ := os.ReadFile(filepath.Join(kc, "args.rec"))
+	if !strings.Contains(string(stdin), typedValue) || strings.Contains(string(args), typedValue) {
+		t.Fatalf("value must go through stdin only; stdin=%q args=%q", stdin, args)
+	}
+	rows := e.get("/api/secrets?repo=" + repo)
+	if decodeSecrets(t, rows)["NPM_TOKEN"].Status != "resolves" || strings.Contains(rows.Body.String(), typedValue) {
+		t.Fatalf("after: %s", rows.Body.String())
+	}
+}
+
+func TestSecretsSetCancelledStoresNothing(t *testing.T) {
+	e, repo, _ := secretsEnv(t)
+	stubDialog(t, true, "", errors.New("cancelled"))
+	rec := e.post("/api/secrets/set", map[string]string{"repo": repo, "name": "NEW_TOKEN"}, reqOpts{})
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"ok":false`) || !strings.Contains(rec.Body.String(), "nothing stored") {
+		t.Fatalf("cancel: %d %s", rec.Code, rec.Body.String())
+	}
+	if decodeSecrets(t, e.get("/api/secrets?repo="+repo))["NEW_TOKEN"].Status != "missing" {
+		t.Fatal("a cancelled dialog stored something")
+	}
+}
+
+// Without a native dialog nothing opens: the row offers the command.
+func TestSecretsSetWithoutADialogOpensNothing(t *testing.T) {
+	e, repo, _ := secretsEnv(t)
+	asked := stubDialog(t, false, typedValue, nil)
+	rec := e.post("/api/secrets/set", map[string]string{"repo": repo, "name": "NPM_TOKEN"}, reqOpts{})
+	if rec.Code != 501 || len(*asked) != 0 || !strings.Contains(rec.Body.String(), "stackfork secret set acme-npm-token") {
+		t.Fatalf("%d %s asked=%v", rec.Code, rec.Body.String(), *asked)
+	}
+	rows := decodeSecrets(t, e.get("/api/secrets?repo="+repo))
+	if rows["NPM_TOKEN"].CanSet {
+		t.Error("can_set is true without a dialog")
+	}
+}
+
+// A forged request (no token) never reaches the dialog.
+func TestSecretsSetForgedRequestOpensNoDialog(t *testing.T) {
+	e, repo, _ := secretsEnv(t)
+	asked := stubDialog(t, true, typedValue, nil)
+	for _, o := range []reqOpts{{noToken: true}, {origin: "http://evil.example"}} {
+		if rec := e.post("/api/secrets/set", map[string]string{"repo": repo, "name": "NPM_TOKEN"}, o); rec.Code != 403 {
+			t.Errorf("%+v: %d", o, rec.Code)
+		}
+	}
+	if len(*asked) != 0 {
+		t.Fatalf("dialog opened: %v", *asked)
 	}
 }

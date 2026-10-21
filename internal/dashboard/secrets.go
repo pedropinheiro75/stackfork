@@ -2,7 +2,6 @@ package dashboard
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"runtime"
@@ -30,9 +29,7 @@ var SecretDialogAvailable = func() bool { return runtime.GOOS == "darwin" }
 // AskSecretValue opens the dialog that asks a person for a value and returns
 // what they typed. It names the repository, the secret and the item so a
 // forged request cannot pass for anything else. A var so tests can answer it.
-var AskSecretValue = func(repo, name, item string) (string, error) { return "", errNoSecretDialog }
-
-var errNoSecretDialog = errors.New("no value dialog on this system")
+var AskSecretValue func(repo, name, item string) (string, error)
 
 // secretsState holds the statuses a Check found, by reference, in memory only
 // and for as long as the value cache (design D11, D14). A page load reads
