@@ -90,26 +90,33 @@ func probeWhy(status int, err error) string {
 	return fmt.Sprintf("status %d", status)
 }
 
-// verifyInstance finds the checkout's instance and requires it to run.
-func verifyInstance(root, newStateBase, legacyStateBase string) (info *state.Manifest, model interface{}, rows []compose.StatusRow, hostname string, err error) {
-	noStack := errors.New("no prepared stack for this checkout; run stackfork prepare and stackfork up, then verify")
+// checkoutManifest is the instance lookup of `learn verify`: the resolved
+// checkout, its project and state directory, and the manifest of its
+// prepared instance (nil when there is none).
+func checkoutManifest(root, newStateBase, legacyStateBase string) (top, project, instanceDir string, info *state.Manifest, err error) {
 	toplevel, err := gitToplevel(root)
 	if err != nil {
-		return nil, nil, nil, "", noStack
+		return "", "", "", nil, err
 	}
-	top, err := identity.ResolvePath(toplevel)
-	if err != nil {
-		return nil, nil, nil, "", err
+	if top, err = identity.ResolvePath(toplevel); err != nil {
+		return "", "", "", nil, err
 	}
 	branch, err := currentBranch(top)
 	if err != nil {
-		return nil, nil, nil, "", err
+		return "", "", "", nil, err
 	}
-	project, instanceDir, err := checkoutInstance(top, branch, newStateBase, legacyStateBase)
-	if err != nil {
-		return nil, nil, nil, "", err
+	if project, instanceDir, err = checkoutInstance(top, branch, newStateBase, legacyStateBase); err != nil {
+		return "", "", "", nil, err
 	}
-	if info, err = state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); err != nil || info == nil {
+	info, err = state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+	return top, project, instanceDir, info, err
+}
+
+// verifyInstance finds the checkout's instance and requires it to run.
+func verifyInstance(root, newStateBase, legacyStateBase string) (info *state.Manifest, model interface{}, rows []compose.StatusRow, hostname string, err error) {
+	noStack := errors.New("no prepared stack for this checkout; run stackfork prepare and stackfork up, then verify")
+	top, project, instanceDir, info, err := checkoutManifest(root, newStateBase, legacyStateBase)
+	if err != nil || info == nil {
 		return nil, nil, nil, "", noStack
 	}
 	data, err := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
@@ -179,4 +186,76 @@ func probe(rawURL string, timeout time.Duration) (int, error) {
 	}
 	resp.Body.Close()
 	return resp.StatusCode, nil
+}
+
+// verifiedPrepareArgs are the prepare args of the verified instance
+// (improve-worktree-recipes D4): one -f per manifest file in order, the env
+// file, then the flags of the plan's current prepare step that are not
+// files. A path outside the checkout, or one a plan cannot hold, is an
+// error saying so.
+func verifiedPrepareArgs(top string, m *state.Manifest, current []string) ([]string, error) {
+	rel := func(p string) (string, error) {
+		x, err := filepath.Rel(top, p)
+		if err != nil || x == ".." || strings.HasPrefix(x, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("the instance uses %s outside the checkout", p)
+		}
+		return filepath.ToSlash(x), nil
+	}
+	var args []string
+	for _, f := range m.Files {
+		x, err := rel(f)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, "-f", x)
+	}
+	if m.EnvFile != nil {
+		x, err := rel(*m.EnvFile)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, "--env-file", x)
+	}
+	for i := 0; i < len(current); i++ {
+		switch current[i] {
+		case "-f", "--file", "--env-file":
+			i++ // replaced by the instance's own
+		default:
+			args = append(args, current[i])
+		}
+	}
+	if err := knowledge.CheckPrepareArgs(args); err != nil {
+		return nil, fmt.Errorf("the instance's prepare files cannot be written to a plan: %v", err)
+	}
+	return args, nil
+}
+
+// recordPrepareRecipe writes the verified instance's recipe into the plan's
+// prepare step, inserting one before the first compose-up when there is
+// none. It returns the args, or a warning (never an error) when the step
+// was left as it was.
+func recordPrepareRecipe(p *knowledge.Plan, top string, m *state.Manifest) (args []string, warning string) {
+	idx, upID := -1, ""
+	for i, st := range p.Steps {
+		if st.Kind == knowledge.KindPrepare && idx < 0 {
+			idx = i
+		}
+		if st.Kind == knowledge.KindComposeUp && upID == "" {
+			upID = st.ID
+		}
+	}
+	var current []string
+	if idx >= 0 {
+		current = p.Steps[idx].Args
+	}
+	args, err := verifiedPrepareArgs(top, m, current)
+	if err != nil {
+		return nil, "warning: " + err.Error() + "; the prepare step was not changed"
+	}
+	if idx >= 0 {
+		p.Steps[idx].Args = args
+	} else {
+		p.Upsert(knowledge.Step{ID: "prepare", Kind: knowledge.KindPrepare, Args: args}, upID)
+	}
+	return args, ""
 }

@@ -258,9 +258,18 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 		return errors.New("plan has no compose-up step; record one with `learn record step --id up --kind compose-up` before verifying")
 	}
 
+	top, _, _, manifest, err := checkoutManifest(root, newStateBase, legacyStateBase)
+	if err != nil || manifest == nil {
+		return errors.New("no prepared instance for this checkout; prepare and start it, then verify")
+	}
 	entry, linkChecks, warnings, err := probeEntryAndLinks(root, newStateBase, legacyStateBase, k)
 	if err != nil {
 		return err
+	}
+	hash := knowledge.PlanHash(k.Plan.Steps)
+	prepare, warn := recordPrepareRecipe(&k.Plan, top, manifest)
+	if warn != "" {
+		warnings = append(warnings, warn)
 	}
 
 	k.Status = knowledge.StatusVerified
@@ -274,6 +283,12 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 	out := map[string]interface{}{"status": k.Status, "verification": k.Verification}
 	if len(warnings) > 0 {
 		out["warnings"] = warnings
+	}
+	if prepare != nil {
+		out["prepare"] = prepare
+		if len(k.Plan.HostRunSteps()) > 0 && knowledge.PlanHash(k.Plan.Steps) != hash {
+			out["note"] = "the prepare step changed; a person must trust the plan again: stackfork plan --trust"
+		}
 	}
 	return printJSON(stdout, out)
 }

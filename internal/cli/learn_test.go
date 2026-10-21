@@ -239,6 +239,7 @@ func TestLearnVerifyRequiresRecordedPlan(t *testing.T) {
 	}
 	runCLI(t, "--root", root, "learn", "record", "step", "--id", "n", "--kind", "note", "--text", "x")
 	runCLI(t, "--root", root, "learn", "record", "entry", "--none")
+	prepareForVerify(t, root)
 	if _, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "y"); code != 0 {
 		t.Fatalf("recorded plan with compose-up must verify: %s", stderr)
 	}
@@ -256,6 +257,7 @@ func TestLearnVerifySetsStatus(t *testing.T) {
 	runCLI(t, "--root", root, "learn")
 	runCLI(t, "--root", root, "learn", "record", "recipe", "--prepare", "stackfork prepare -f compose.yaml", "--up", "stackfork up")
 	runCLI(t, "--root", root, "learn", "record", "entry", "--none")
+	prepareForVerify(t, root)
 
 	_, stderr, code := runCLI(t, "--root", root, "learn", "verify",
 		"--check", "database identity", "--check", "app readiness",
@@ -287,6 +289,7 @@ func TestWhereReportsStaleKnowledge(t *testing.T) {
 	runCLI(t, "--root", root, "learn")
 	runCLI(t, "--root", root, "learn", "record", "recipe", "--prepare", "p", "--up", "u")
 	runCLI(t, "--root", root, "learn", "record", "entry", "--none")
+	prepareForVerify(t, root)
 	runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "yes")
 
 	// Change the scanned input after verifying.
@@ -346,6 +349,7 @@ func TestLearnKeepsConvertedSchema1PlanWithSeedPending(t *testing.T) {
 		t.Fatalf("seeding must stay undecided: %+v", k.Plan)
 	}
 	runCLI(t, "--root", root, "learn", "record", "entry", "--none")
+	prepareForVerify(t, root)
 	if _, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "y"); code != 0 {
 		t.Fatalf("verify: %s", stderr)
 	}
