@@ -133,3 +133,19 @@ func TestProposePlanDevWithoutAppService(t *testing.T) {
 		}
 	}
 }
+
+// entry-links task 3.1: the scan proposes the heuristic's service and target port.
+func TestProposeEntry(t *testing.T) {
+	k := &knowledge.Knowledge{}
+	if ProposeEntry(k) != nil {
+		t.Fatal("no services, no proposal")
+	}
+	k.Facts.Services = []knowledge.Service{
+		{Name: "db", Ports: []string{"5432:5432"}},
+		{Name: "web", Ports: []string{"127.0.0.1:8000:3000/tcp"}},
+	}
+	want := &knowledge.Entry{Service: "web", Port: 3000, Proposed: true}
+	if got := ProposeEntry(k); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%+v", got)
+	}
+}

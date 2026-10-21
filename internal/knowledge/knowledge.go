@@ -200,6 +200,17 @@ type Verification struct {
 	Date         string   `json:"date"`
 	Checks       []string `json:"checks"`
 	Confirmation string   `json:"confirmation"` // the user's own quoted words
+	// Entry is the target `learn verify` probed ("web:3000/app", "host-route
+	// web:3000", or "none"); Links is how each recorded link answered.
+	Entry string      `json:"entry,omitempty"`
+	Links []LinkCheck `json:"links,omitempty"`
+}
+
+// LinkCheck is the probe result of one link at verify time.
+type LinkCheck struct {
+	Name     string `json:"name"`
+	Answered bool   `json:"answered"`
+	Status   int    `json:"status"`
 }
 
 // Load reads and decodes knowledge.json. Schema 1 converts its recipe to a

@@ -216,3 +216,14 @@ func TestWriteKnowledgeGitignoreExcludesRuntimeEnv(t *testing.T) {
 		}
 	}
 }
+
+func TestScanProposesEntry(t *testing.T) {
+	testsupport.RequireCompose(t)
+	k, err := Scan(fixture("nuxt-bun"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := k.Entry; e == nil || e.Service != "app" || e.Port != 3000 || !e.Proposed || len(k.Links) != 0 {
+		t.Fatalf("%+v %+v", k.Entry, k.Links)
+	}
+}

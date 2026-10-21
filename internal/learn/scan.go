@@ -195,6 +195,7 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 	}
 
 	k.Plan = ProposePlan(root, k)
+	k.Entry = ProposeEntry(k)
 
 	k.Risks = detectRisks(root)
 	for _, rel := range findByPredicate(root, isEntrypointName) {

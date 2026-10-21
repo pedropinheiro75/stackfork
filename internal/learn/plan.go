@@ -50,10 +50,10 @@ func detectDevPort(root, devScript string) int {
 	return 0
 }
 
-// appService runs compose.PrimaryHTTPService over the scanned services'
+// appTarget runs compose.PrimaryHTTPService over the scanned services'
 // ports. Facts carries no labels, so io.stackfork.primary cannot win here;
 // the port guess decides.
-func appService(k *knowledge.Knowledge) string {
+func appTarget(k *knowledge.Knowledge) (name string, target int) {
 	services := map[string]interface{}{}
 	for _, s := range k.Facts.Services {
 		var ports []interface{}
@@ -63,11 +63,27 @@ func appService(k *knowledge.Knowledge) string {
 		}
 		services[s.Name] = map[string]interface{}{"ports": ports}
 	}
-	name, _, _, ok := compose.PrimaryHTTPService(map[string]interface{}{"services": services})
+	name, target, _, ok := compose.PrimaryHTTPService(map[string]interface{}{"services": services})
 	if !ok {
-		return ""
+		return "", 0
 	}
+	return name, target
+}
+
+func appService(k *knowledge.Knowledge) string {
+	name, _ := appTarget(k)
 	return name
+}
+
+// ProposeEntry is the scan's guess at the app's entry (entry-links D5): the
+// heuristic's service and target port, marked proposed. nil when nothing
+// qualifies.
+func ProposeEntry(k *knowledge.Knowledge) *knowledge.Entry {
+	name, target := appTarget(k)
+	if name == "" {
+		return nil
+	}
+	return &knowledge.Entry{Service: name, Port: target, Proposed: true}
 }
 
 // ProposePlan builds the proposed startup plan from the scan facts. The

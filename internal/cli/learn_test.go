@@ -238,6 +238,7 @@ func TestLearnVerifyRequiresRecordedPlan(t *testing.T) {
 		t.Fatalf("expected a refusal for a proposed plan: code=%d stderr=%s", code, stderr)
 	}
 	runCLI(t, "--root", root, "learn", "record", "step", "--id", "n", "--kind", "note", "--text", "x")
+	runCLI(t, "--root", root, "learn", "record", "entry", "--none")
 	if _, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "y"); code != 0 {
 		t.Fatalf("recorded plan with compose-up must verify: %s", stderr)
 	}
@@ -254,6 +255,7 @@ func TestLearnVerifySetsStatus(t *testing.T) {
 	root := learnFixtureRoot(t)
 	runCLI(t, "--root", root, "learn")
 	runCLI(t, "--root", root, "learn", "record", "recipe", "--prepare", "stackfork prepare -f compose.yaml", "--up", "stackfork up")
+	runCLI(t, "--root", root, "learn", "record", "entry", "--none")
 
 	_, stderr, code := runCLI(t, "--root", root, "learn", "verify",
 		"--check", "database identity", "--check", "app readiness",
@@ -284,6 +286,7 @@ func TestWhereReportsStaleKnowledge(t *testing.T) {
 	root := learnFixtureRoot(t)
 	runCLI(t, "--root", root, "learn")
 	runCLI(t, "--root", root, "learn", "record", "recipe", "--prepare", "p", "--up", "u")
+	runCLI(t, "--root", root, "learn", "record", "entry", "--none")
 	runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "yes")
 
 	// Change the scanned input after verifying.
@@ -342,6 +345,7 @@ func TestLearnKeepsConvertedSchema1PlanWithSeedPending(t *testing.T) {
 	if k.Plan.NoSeed || k.Plan.SeedStep() != nil {
 		t.Fatalf("seeding must stay undecided: %+v", k.Plan)
 	}
+	runCLI(t, "--root", root, "learn", "record", "entry", "--none")
 	if _, stderr, code := runCLI(t, "--root", root, "learn", "verify", "--check", "c", "--confirm", "y"); code != 0 {
 		t.Fatalf("verify: %s", stderr)
 	}
@@ -375,5 +379,52 @@ func TestLearnRecordStepPortAndArgs(t *testing.T) {
 		if _, _, code := runCLI(t, append([]string{"--root", root, "learn", "record", "step"}, bad...)...); code == 0 {
 			t.Errorf("%v must be refused", bad)
 		}
+	}
+}
+
+// entry-links task 3.1: a re-scan keeps a recorded entry, `none` and the
+// links, and replaces a proposed entry with the fresh proposal.
+func TestLearnScanEntryMerge(t *testing.T) {
+	testsupport.RequireCompose(t)
+	root := initRepo(t)
+	web := "services:\n  web:\n    image: nginx\n    ports:\n      - \"3000:3000\"\n  db:\n    image: postgres:17\n"
+	if err := os.WriteFile(filepath.Join(root, "compose.yaml"), []byte(web), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, ".stackfork", "knowledge.json")
+	scan := func() *knowledge.Knowledge {
+		t.Helper()
+		if _, stderr, code := runCLI(t, "--root", root, "learn"); code != 0 {
+			t.Fatal(stderr)
+		}
+		k, err := knowledge.Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	if k := scan(); k.Entry == nil || k.Entry.Service != "web" || k.Entry.Port != 3000 || !k.Entry.Proposed {
+		t.Fatalf("%+v", k.Entry)
+	}
+	// A proposed entry that no longer matches is replaced.
+	k, _ := knowledge.Load(path)
+	k.Entry = &knowledge.Entry{Service: "old", Port: 1, Proposed: true}
+	k.Save(path)
+	if k := scan(); k.Entry.Service != "web" {
+		t.Fatalf("%+v", k.Entry)
+	}
+	// Recorded entry and links survive.
+	k, _ = knowledge.Load(path)
+	k.Entry = &knowledge.Entry{Service: "web", Port: 3000, Path: "/app"}
+	k.Links = []knowledge.Link{{Name: "Dashboard", Path: "/admin"}, {Name: "Email", Service: "db", Port: 5432}}
+	k.Save(path)
+	k2 := scan()
+	if k2.Entry == nil || *k2.Entry != *k.Entry || !reflect.DeepEqual(k2.Links, k.Links) {
+		t.Fatalf("%+v %+v", k2.Entry, k2.Links)
+	}
+	k.Entry = &knowledge.Entry{None: true}
+	k.Save(path)
+	if k3 := scan(); k3.Entry == nil || !k3.Entry.None {
+		t.Fatalf("%+v", k3.Entry)
 	}
 }

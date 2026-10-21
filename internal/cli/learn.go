@@ -32,9 +32,9 @@ type learnOutput struct {
 
 // cmdLearn dispatches the bare scan and the record/verify subcommands
 // (task 13.5/13.6) added on top of it.
-func cmdLearn(stdout io.Writer, subArgs []string, root string) error {
+func cmdLearn(stdout io.Writer, subArgs []string, root, newStateBase, legacyStateBase string) error {
 	if isHelpRequest(subArgs) {
-		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe|step|secret|live-watch|live-ignore|fact ... | learn verify --check ... --confirm ...")
+		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe|step|secret|entry|link|live-watch|live-ignore|fact ... | learn verify --check ... --confirm ...")
 		return nil
 	}
 	if len(subArgs) == 0 {
@@ -42,9 +42,9 @@ func cmdLearn(stdout io.Writer, subArgs []string, root string) error {
 	}
 	switch subArgs[0] {
 	case "record":
-		return cmdLearnRecord(stdout, subArgs[1:], root)
+		return cmdLearnRecord(stdout, subArgs[1:], root, newStateBase, legacyStateBase)
 	case "verify":
-		return cmdLearnVerify(stdout, subArgs[1:], root)
+		return cmdLearnVerify(stdout, subArgs[1:], root, newStateBase, legacyStateBase)
 	default:
 		return fmt.Errorf("unknown learn subcommand %q (expected record or verify)", subArgs[0])
 	}
@@ -100,6 +100,12 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 		fresh.Plan = existing.Plan
 	}
 	fresh.Secrets = existing.Secrets
+	// A recorded entry (or none) and the links are decisions; a proposed
+	// entry is replaced by the fresh proposal.
+	if existing.Entry != nil && !existing.Entry.Proposed {
+		fresh.Entry = existing.Entry
+	}
+	fresh.Links = existing.Links
 	fresh.Live = existing.Live
 	// A migration directory recorded by hand survives a re-scan.
 	fresh.Facts.MigrationDirs = unionSorted(fresh.Facts.MigrationDirs, existing.Facts.MigrationDirs)
@@ -112,9 +118,9 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 // cmdLearnRecord appends one answer/gotcha, or sets recipe fields, into an
 // existing draft (task 13.5). There is nothing to resume into without a
 // prior `stackfork learn`.
-func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
+func cmdLearnRecord(stdout io.Writer, subArgs []string, root, newStateBase, legacyStateBase string) error {
 	if len(subArgs) == 0 {
-		return errors.New("learn record requires a kind (answer, gotcha, recipe, step, secret, live-watch, live-ignore, fact)")
+		return errors.New("learn record requires a kind (answer, gotcha, recipe, step, secret, entry, link, live-watch, live-ignore, fact)")
 	}
 	path := knowledgePath(root)
 	k, err := knowledge.Load(path)
@@ -169,6 +175,29 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 			return err
 		}
 		return printJSON(stdout, map[string]interface{}{"recorded": "secret", "secrets": k.Secrets})
+	case "entry", "link":
+		usage := map[string]string{"entry": entryUsage, "link": linkUsage}[kind]
+		if isHelpRequest(rest) {
+			printFlaglessUsage(stdout, "learn record "+kind, usage)
+			return nil
+		}
+		stack := func() stackView { return learnStack(root, newStateBase, legacyStateBase, k) }
+		record := recordEntry
+		if kind == "link" {
+			record = recordLink
+		}
+		note, err := record(k, rest, stack)
+		if err != nil {
+			return err
+		}
+		if err := learn.WriteKnowledge(root, k); err != nil {
+			return err
+		}
+		out := map[string]interface{}{"recorded": kind, "entry": k.Entry, "links": k.Links}
+		if note != "" {
+			out["note"] = note
+		}
+		return printJSON(stdout, out)
 	case "live-watch", "live-ignore", "fact":
 		if isHelpRequest(rest) {
 			printFlaglessUsage(stdout, "learn record "+kind, liveRecordUsage[kind])
@@ -182,7 +211,7 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 		}
 		return printJSON(stdout, map[string]interface{}{"recorded": kind, "live": k.Live, "migration_dirs": k.Facts.MigrationDirs})
 	default:
-		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha, recipe, step, secret, live-watch, live-ignore or fact)", kind)
+		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha, recipe, step, secret, entry, link, live-watch, live-ignore or fact)", kind)
 	}
 
 	if err := learn.WriteKnowledge(root, k); err != nil {
@@ -198,7 +227,7 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 // quoted verbatim - never self-verified, this is only ever a record of
 // what the user said. Refuses unless the plan is recorded and has a
 // compose-up step: verifying a plan nobody decided defeats the point.
-func cmdLearnVerify(stdout io.Writer, subArgs []string, root string) error {
+func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, legacyStateBase string) error {
 	fs := newFlagSet(stdout, "learn verify")
 	var checks stringList
 	fs.Var(&checks, "check", "")
@@ -229,14 +258,23 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root string) error {
 		return errors.New("plan has no compose-up step; record one with `learn record step --id up --kind compose-up` before verifying")
 	}
 
+	entry, linkChecks, warnings, err := probeEntryAndLinks(root, newStateBase, legacyStateBase, k)
+	if err != nil {
+		return err
+	}
+
 	k.Status = knowledge.StatusVerified
 	k.Verification = &knowledge.Verification{
 		Date: time.Now().UTC().Format("2006-01-02"), Checks: checks, Confirmation: *confirm,
+		Entry: entry, Links: linkChecks,
 	}
 	if err := learn.WriteKnowledge(root, k); err != nil {
 		return err
 	}
 	out := map[string]interface{}{"status": k.Status, "verification": k.Verification}
+	if len(warnings) > 0 {
+		out["warnings"] = warnings
+	}
 	return printJSON(stdout, out)
 }
 
