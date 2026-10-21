@@ -67,7 +67,7 @@ func (s *Schedule) Done(now time.Time, ok bool) {
 type Fetcher struct {
 	Checkout string
 	Sched    *Schedule
-	Sync     func(checkout string, timeout time.Duration) repos.SyncResult // nil uses repos.Sync
+	Sync     func(checkout string, timeout time.Duration) repos.SyncResult // nil uses repos.SyncUnattended
 	warned   string
 }
 
@@ -88,7 +88,7 @@ func (f *Fetcher) Tick(now time.Time, paused bool) FetchTick {
 	}
 	sync := f.Sync
 	if sync == nil {
-		sync = func(c string, t time.Duration) repos.SyncResult { return repos.Sync(c, t, true) }
+		sync = repos.SyncUnattended
 	}
 	res := sync(f.Checkout, FetchTimeout)
 	f.Sched.Done(now, !res.FetchFailed)

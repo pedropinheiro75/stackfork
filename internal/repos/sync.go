@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,19 @@ func SyncUpstream(checkout string, timeout time.Duration) string {
 // Sync is SyncUpstream with a structured result. With apply false it only
 // fetches and reports: it never merges, so it is a check.
 func Sync(checkout string, timeout time.Duration, apply bool) SyncResult {
+	return syncUpstream(checkout, timeout, apply, false)
+}
+
+// SyncUnattended is Sync(apply) for a loop nobody watches (live mode). A
+// person starting an environment sees what changed; here, `merge --ff-only`
+// would silently overwrite an ignored file that the incoming commits start
+// tracking (it refuses only for untracked ones), so any path they add that
+// already exists in the checkout blocks the fast-forward with a warning.
+func SyncUnattended(checkout string, timeout time.Duration) SyncResult {
+	return syncUpstream(checkout, timeout, true, true)
+}
+
+func syncUpstream(checkout string, timeout time.Duration, apply, unattended bool) SyncResult {
 	var res SyncResult
 	upstream, err := gitIn(context.Background(), checkout, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
 	if err != nil || upstream == "" {
@@ -75,6 +89,14 @@ func Sync(checkout string, timeout time.Duration, apply bool) SyncResult {
 		if !apply {
 			return res
 		}
+		if unattended {
+			if clash := incomingOverwrites(checkout); len(clash) > 0 {
+				res.Blocked = true
+				res.Line = fmt.Sprintf("warning: %s is %s behind %s; stackfork did not update it because ignored or untracked files would be overwritten (%s). Move or remove them, then: git -C %s pull --rebase",
+					branch, plural(behind, "commit"), upstream, strings.Join(clash, ", "), shellArg(checkout))
+				return res
+			}
+		}
 		if _, err := gitIn(context.Background(), checkout, "merge", "--ff-only", "--quiet", "@{u}"); err == nil {
 			res.Updated = true
 			res.Line = fmt.Sprintf("updated %s to %s (%s)", branch, upstream, plural(behind, "new commit"))
@@ -97,6 +119,30 @@ func Sync(checkout string, timeout time.Duration, apply bool) SyncResult {
 	res.Line = fmt.Sprintf("warning: %s is %s behind %s; stackfork did not update it because it has %s. Update it soon: %s",
 		branch, plural(behind, "commit"), upstream, why, how)
 	return res
+}
+
+// incomingOverwrites lists (at most five) paths that the commits between HEAD
+// and the upstream add and that already exist in the checkout: HEAD does not
+// track them, so they are untracked or ignored files. On a git failure it
+// reports the failure as a clash: nothing is overwritten on a guess.
+func incomingOverwrites(checkout string) []string {
+	out, err := gitIn(context.Background(), checkout, "diff", "--name-only", "--diff-filter=A", "--no-renames", "-z", "HEAD", "@{u}")
+	if err != nil {
+		return []string{"(git diff failed)"}
+	}
+	var clash []string
+	for _, p := range strings.Split(out, "\x00") {
+		if p == "" {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(checkout, filepath.FromSlash(p))); err == nil {
+			if len(clash) == 5 {
+				return append(clash, "...")
+			}
+			clash = append(clash, p)
+		}
+	}
+	return clash
 }
 
 func plural(n int, word string) string {

@@ -54,7 +54,7 @@ type Loop struct {
 	// it); nil: the key must be a main checkout under a configured folder.
 	Admit   func(cfg *config.Config, main string) string
 	Targets func(main string) ([]Target, error)
-	Sync    func(checkout string, timeout time.Duration) repos.SyncResult // nil: repos.Sync
+	Sync    func(checkout string, timeout time.Duration) repos.SyncResult // nil: repos.SyncUnattended
 	Now     func() time.Time                                              // nil: time.Now
 	Rand    func() float64                                                // fetch jitter; nil: math/rand
 	Every   time.Duration                                                 // Run's tick; 0: PollEvery

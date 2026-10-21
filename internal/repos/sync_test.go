@@ -177,3 +177,33 @@ func TestSyncBlocked(t *testing.T) {
 		}
 	})
 }
+
+// `merge --ff-only` refuses to overwrite an untracked file but silently
+// overwrites an ignored one. Unattended (live mode) must not.
+func TestSyncUnattendedBlocksWhenIncomingFilesWouldOverwriteLocalOnes(t *testing.T) {
+	setup := func(t *testing.T) (repo string) {
+		repo, origin := mkWithOrigin(t)
+		pushAhead(t, origin, 1) // origin/main adds "upa"
+		os.WriteFile(filepath.Join(repo, ".git", "info", "exclude"), []byte("/upa\n"), 0o644)
+		os.WriteFile(filepath.Join(repo, "upa"), []byte("my local secret"), 0o644)
+		return repo
+	}
+	repo := setup(t)
+	head := git(t, repo, "rev-parse", "HEAD")
+	res := SyncUnattended(repo, 10*time.Second)
+	if res.Updated || !res.Blocked || res.Behind != 1 || !strings.Contains(res.Line, "upa") || !strings.Contains(res.Line, "overwritten") {
+		t.Fatalf("%+v", res)
+	}
+	if git(t, repo, "rev-parse", "HEAD") != head {
+		t.Error("HEAD moved")
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "upa")); string(b) != "my local secret" {
+		t.Errorf("the ignored file was overwritten: %q", b)
+	}
+	// without a collision the unattended sync fast-forwards as before
+	repo2, origin2 := mkWithOrigin(t)
+	pushAhead(t, origin2, 1)
+	if res := SyncUnattended(repo2, 10*time.Second); !res.Updated || res.Blocked {
+		t.Fatalf("no collision: %+v", res)
+	}
+}
