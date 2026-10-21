@@ -88,6 +88,11 @@ type Knowledge struct {
 	// the trust hash.
 	Live Live `json:"live,omitzero"`
 
+	// Entry and Links record where the app and its other useful pages are
+	// (entry-links D1); not part of the trust hash (D3).
+	Entry *Entry `json:"entry,omitempty"`
+	Links []Link `json:"links,omitempty"`
+
 	// Verification is set only once the user confirms the app works (task
 	// 13.6); nil while Status is draft.
 	Verification *Verification `json:"verification,omitempty"`
@@ -213,6 +218,9 @@ func Load(path string) (*Knowledge, error) {
 		RawSecrets json.RawMessage `json:"secrets"`
 		// RawLive shadows Knowledge.Live for the same reason.
 		RawLive json.RawMessage `json:"live"`
+		// RawEntry and RawLinks shadow Entry and Links likewise.
+		RawEntry json.RawMessage `json:"entry"`
+		RawLinks json.RawMessage `json:"links"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
@@ -224,6 +232,15 @@ func Load(path string) (*Knowledge, error) {
 	}
 	k.Secrets = secrets
 	if k.Live, err = parseLive(raw.RawLive); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if k.Entry, err = parseEntry(raw.RawEntry); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if k.Links, err = parseLinks(raw.RawLinks); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if err := ValidateEntryLinks(k.Entry, k.Links); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	switch k.Schema {
@@ -275,6 +292,9 @@ func (k *Knowledge) Save(path string) error {
 		return err
 	}
 	if err := ValidateLive(k.Live); err != nil {
+		return err
+	}
+	if err := ValidateEntryLinks(k.Entry, k.Links); err != nil {
 		return err
 	}
 	b, err := json.MarshalIndent(k, "", "  ")
@@ -418,6 +438,8 @@ func (k *Knowledge) Markdown() string {
 		}
 		b.WriteString("\n")
 	}
+
+	k.entrySection(&b)
 
 	if len(k.Secrets) > 0 {
 		fmt.Fprintf(&b, "## Secrets (names only)\n\n")
