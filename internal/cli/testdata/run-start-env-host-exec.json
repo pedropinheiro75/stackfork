@@ -1,0 +1,69 @@
+{
+  "branch": "BRANCH",
+  "command": "start-env",
+  "ended_at": "TIME",
+  "id": 1,
+  "mode": "container",
+  "outcome": "succeeded",
+  "pid": 0,
+  "project": "PROJECT",
+  "schema": 1,
+  "started_at": "TIME",
+  "steps": [
+    {
+      "ended_at": "TIME",
+      "id": "sync",
+      "kind": "sync",
+      "log": "1/sync.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "fetch the upstream; fast-forward when clean"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "secrets",
+      "kind": "secrets",
+      "reason": "no secrets",
+      "started_at": "TIME",
+      "state": "skipped",
+      "text": "resolve secrets"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "prepare",
+      "kind": "prepare",
+      "log": "1/prepare.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "prepare -f .agent-dev/app.compose.yaml"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "up",
+      "kind": "compose-up",
+      "log": "1/up.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "compose up"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "migrate",
+      "kind": "exec",
+      "log": "1/migrate.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "bun run db:migrate  on host"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "after",
+      "kind": "note",
+      "log": "1/after.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "open the app"
+    }
+  ],
+  "trigger": "cli"
+}

@@ -32,8 +32,12 @@ func setSeed(instanceDir string, v *bool, pending bool) {
 
 // ResolveExecService picks the service an exec step runs in: the step's own,
 // else the plan's app service, else the instance's primary HTTP service, else
-// the only service. "" when none applies (or compose.json is not there yet).
+// the only service. "" for a host exec step, and when none applies (or
+// compose.json is not there yet).
 func ResolveExecService(instanceDir string, step knowledge.Step, plan knowledge.Plan) string {
+	if step.IsHostExec() { // it runs on the host: no service, never a default one
+		return ""
+	}
 	if step.Service != "" {
 		return step.Service
 	}

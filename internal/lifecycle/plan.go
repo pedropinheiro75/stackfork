@@ -67,7 +67,7 @@ func (r PlanRunner) Check() error {
 	run, _ := r.Plan.ForMode(r.Mode)
 	excluded := excludedServices(run)
 	for _, st := range run {
-		if st.Kind != knowledge.KindExec {
+		if st.Kind != knowledge.KindExec || st.IsHostExec() { // a host step has no service to exclude
 			continue
 		}
 		svc := ResolveExecService(r.InstanceDir, st, r.Plan)
@@ -295,8 +295,17 @@ func (r PlanRunner) upServices(w io.Writer, s knowledge.Step) ([]string, error) 
 	return services, nil
 }
 
-// exec runs an exec step in its service and returns the command's exit status.
+// exec runs an exec step in its service, or on the host for on: host, and
+// returns the command's exit status.
 func (r PlanRunner) exec(w io.Writer, s knowledge.Step) (int, error) {
+	if s.IsHostExec() {
+		fmt.Fprintf(w, "running %s on the host: %s\n", s.ID, s.Cmd)
+		code, err := HostExec(w, r.Project, r.Root, r.InstanceDir, r.NewBase, r.LegacyBase, s)
+		if err == nil && code != 0 {
+			err = fmt.Errorf("exited with status %d", code)
+		}
+		return code, err
+	}
 	svc := ResolveExecService(r.InstanceDir, s, r.Plan)
 	if have := SnapshotServices(r.InstanceDir); svc == "" || !contains(have, svc) {
 		which := "it names no service"

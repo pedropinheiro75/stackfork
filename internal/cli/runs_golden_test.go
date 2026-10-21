@@ -129,3 +129,87 @@ func TestStartEnvRunGoldenFailedSeed(t *testing.T) {
 	_ = e
 	assertGolden(t, "run-start-env-failed-seed.json", normalizedRun(t, state, 1, repo))
 }
+
+// hostExecSteps is a database-only flow: the migrate runs on the host after the up.
+var hostExecSteps = []knowledge.Step{
+	{ID: "prepare", Kind: knowledge.KindPrepare, Args: []string{"-f", ".agent-dev/app.compose.yaml"}},
+	{ID: "up", Kind: knowledge.KindComposeUp},
+	{ID: "migrate", Kind: knowledge.KindExec, On: knowledge.OnHost, Once: knowledge.OnceSchema, Cmd: "bun run db:migrate", Dir: "apps/api"},
+	{ID: "after", Kind: knowledge.KindNote, Text: "open the app"},
+}
+
+// stubHostExec replaces the host runner; it records the steps it was given.
+func stubHostExec(t *testing.T, code int) *[]string {
+	t.Helper()
+	var got []string
+	old := lifecycle.HostExec
+	lifecycle.HostExec = func(w io.Writer, _, _, _, _, _ string, s knowledge.Step) (int, error) {
+		got = append(got, s.ID+": "+s.Cmd)
+		fmt.Fprintf(w, "ran %s\n", s.Cmd)
+		return code, nil
+	}
+	t.Cleanup(func() { lifecycle.HostExec = old })
+	return &got
+}
+
+func TestStartEnvHostExecRunsOnTheHostInBothModes(t *testing.T) {
+	for _, mode := range []string{"container", "hybrid"} {
+		t.Run(mode, func(t *testing.T) {
+			root, state := reposEnv(t)
+			steps := append([]knowledge.Step{}, hostExecSteps...)
+			if mode == "hybrid" { // hybrid needs a host step; it is the plan's own
+				steps = append(steps, knowledge.Step{ID: "app", Kind: knowledge.KindHost, Modes: []string{"hybrid"}, Name: "app", Cmd: "npm run dev", Port: 3000})
+				old := lifecycle.HostStart
+				lifecycle.HostStart = func(out, _ io.Writer, _ []string, _, _ string, s knowledge.Step) error { return nil }
+				t.Cleanup(func() { lifecycle.HostStart = old })
+			}
+			repo := planRepo(t, root, steps)
+			log := installFakeDocker(t)
+			calls := stubHostExec(t, 0)
+			base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+			runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+			runCLI(t, "config", "set-mode", repo, mode)
+			if out, e, code := runCLI(t, append(base, "start-env", repo)...); code != 0 {
+				t.Fatalf("%d %s %s", code, out, e)
+			}
+			if strings.Join(*calls, "|") != "migrate: bun run db:migrate" {
+				t.Fatalf("host calls %v", *calls)
+			}
+			if b, _ := os.ReadFile(log); strings.Contains(string(b), " exec ") {
+				t.Fatalf("a host step must not call docker compose exec:\n%s", b)
+			}
+			if mode == "container" {
+				assertGolden(t, "run-start-env-host-exec.json", normalizedRun(t, state, 1, repo))
+			}
+		})
+	}
+}
+
+// A failing host step stops the run; later steps stay pending.
+func TestStartEnvHostExecFailureStopsTheRun(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, hostExecSteps)
+	stubHostExec(t, 3)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+	_, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if code == 0 || !strings.Contains(e, "migrate") {
+		t.Fatalf("%d %s", code, e)
+	}
+	assertGolden(t, "run-start-env-host-exec-failed.json", normalizedRun(t, state, 1, repo))
+}
+
+func TestStartEnvHostExecUntrustedRefusesBeforeDocker(t *testing.T) {
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, hostExecSteps)
+	log := installFakeDocker(t)
+	calls := stubHostExec(t, 0)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	_, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if code == 0 || !strings.Contains(e, "not trusted on this machine") || !strings.Contains(e, "stackfork plan --trust") || !strings.Contains(e, "on: host") {
+		t.Fatalf("%d %s", code, e)
+	}
+	if b, _ := os.ReadFile(log); strings.Contains(string(b), "compose") || len(*calls) != 0 {
+		t.Fatalf("docker or the host ran:\n%s %v", b, *calls)
+	}
+}

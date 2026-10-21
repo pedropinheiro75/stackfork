@@ -28,6 +28,9 @@ func StepText(st knowledge.Step) string {
 		if st.Service != "" {
 			parts = append(parts, "in "+st.Service)
 		}
+		if st.IsHostExec() {
+			parts = append(parts, "on host")
+		}
 	}
 	if st.Kind == knowledge.KindHost {
 		if st.Port > 0 {
