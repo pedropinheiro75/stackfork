@@ -31,6 +31,12 @@ const (
 // root or the current user, when it is not an executable regular file, or
 // when it sits inside one of the scanned roots. The returned path is the
 // resolved one: that is the file to run.
+//
+// ponytail: only the file and its parent directory are checked. A directory
+// higher up that group or others can write (a foreign /opt/homebrew/bin's
+// parent) could swap the whole tree; the upgrade is to walk every ancestor up
+// to the root and apply the same mode and owner test to each, when a store
+// tool is installed somewhere less standard than Homebrew or /usr/bin.
 func resolveTool(candidates, scannedRoots []string) (string, error) {
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err != nil {
