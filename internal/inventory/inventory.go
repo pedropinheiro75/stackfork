@@ -405,6 +405,8 @@ func checkoutExists(root string) bool {
 
 // checkedOut reports whether branch is what root has checked out now (a
 // detached identity matches a detached HEAD).
+// ponytail: one git process per linked-worktree instance per poll; cache by
+// the worktree's HEAD file mtime if the poll gets slow with many worktrees.
 func checkedOut(root, branch string) bool {
 	out, err := exec.Command("git", "-C", root, "symbolic-ref", "--short", "-q", "HEAD").Output()
 	if err != nil {

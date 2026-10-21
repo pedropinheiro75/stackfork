@@ -253,3 +253,27 @@ func TestMainRecipeApplyLeavesKnowledgeInMain(t *testing.T) {
 		t.Fatal("the recipe files were not copied")
 	}
 }
+
+// A tracked env file outside the adapter folders is fine: tracked files never move.
+func TestAsideFilesIgnoresATrackedRootEnvFile(t *testing.T) {
+	_, wt, _ := mainRecipeFixture(t)
+	r := &SiblingRecipe{untracked: []string{".stackfork/dev.compose.yaml"}, EnvFile: "dev.env"}
+	files, err := AsideFiles(wt, r)
+	if err != nil {
+		t.Fatalf("a tracked root env file must not refuse: %v", err)
+	}
+	for _, f := range files {
+		if f == "dev.env" {
+			t.Fatal("dev.env must not move")
+		}
+	}
+}
+
+func TestAsideFilesRefusesAnAsideThatIsAFile(t *testing.T) {
+	main, wt, insts := mainRecipeFixture(t)
+	r, _ := FindMainRecipe(main, wt, insts)
+	write(t, filepath.Join(wt, ".stackfork-aside"), "x", 0o644)
+	if _, err := AsideFiles(wt, r); err == nil || !strings.Contains(err.Error(), ".stackfork-aside") {
+		t.Fatalf("want a refusal: %v", err)
+	}
+}

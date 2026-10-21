@@ -402,3 +402,51 @@ func TestResetFromMainDoesNotCopyKnowledge(t *testing.T) {
 		t.Fatal("main's knowledge.json was copied")
 	}
 }
+
+// A tracked env file at the root is a valid main recipe; nothing at the root moves.
+func TestResetFromMainWithATrackedRootEnvFile(t *testing.T) {
+	e := newFromMainEnv(t)
+	installFakeDocker(t)
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	os.WriteFile(filepath.Join(e.repo, "dev.env"), []byte("A=1\n"), 0o644)
+	for _, args := range [][]string{{"add", "dev.env"}, {"-c", "user.email=t@e.x", "-c", "user.name=t", "commit", "-q", "-m", "env"}} {
+		if out, err := exec.Command("git", append([]string{"-C", e.repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("%s", out)
+		}
+	}
+	if out, err := exec.Command("git", "-C", e.wt, "-c", "user.email=t@e.x", "-c", "user.name=t", "merge", "-q", "main").CombinedOutput(); err != nil {
+		t.Fatalf("%s", out)
+	}
+	if _, se, code := runCLI(t, append(append([]string{}, e.base...), "--root", e.repo, "prepare", "-f", "compose.yaml", "-f", ".stackfork/dev.compose.yaml", "--env-file", "dev.env")...); code != 0 {
+		t.Fatal(se)
+	}
+	os.WriteFile(filepath.Join(e.wt, "notes.md"), []byte("n\n"), 0o644)
+	if out, se, code := e.reset(t, "--from-main", "--yes"); code != 0 {
+		t.Fatalf("%s %s", out, se)
+	}
+	for _, f := range []string{"notes.md", "dev.env", "compose.yaml"} {
+		if _, err := os.Stat(filepath.Join(e.wt, f)); err != nil {
+			t.Fatalf("%s moved: %v", f, err)
+		}
+	}
+}
+
+// The check inside prepare (after sync and down) refuses a changed recipe,
+// says the volumes are gone, and moves nothing.
+func TestReuseMainRecipeRefusesWhenTheRecipeChangedDuringTheReset(t *testing.T) {
+	e := newFromMainEnv(t)
+	installFakeDocker(t)
+	pv, err := PreviewReset(e.wt, e.base[1], e.base[3], true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(e.wt, ".stackfork", "late.yml"), []byte("x\n"), 0o644)
+	_, err = reuseMainRecipe(io.Discard, e.wt, StartOptions{NewStateBase: e.base[1], LegacyStateBase: e.base[3], Fingerprint: pv.Fingerprint})
+	want := "main's recipe changed during the reset (after the volumes were removed); run `stackfork reset --from-main` again to review the new recipe"
+	if err == nil || err.Error() != want {
+		t.Fatalf("%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(e.wt, ".stackfork-aside")); err == nil {
+		t.Fatal("files moved")
+	}
+}

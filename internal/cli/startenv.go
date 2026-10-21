@@ -358,14 +358,14 @@ func reuseMainRecipe(out io.Writer, root string, o StartOptions) ([]string, erro
 		return nil, err
 	}
 	if o.Fingerprint != "" && o.Fingerprint != p.fp {
-		return nil, errors.New(errRecipeChanged)
+		return nil, errors.New("main's recipe changed during the reset (after the volumes were removed); run `stackfork reset --from-main` again to review the new recipe")
 	}
 	r := p.r
 	args := recipeArgs(r)
 	if err := knowledge.CheckPrepareArgs(args); err != nil {
 		return nil, fmt.Errorf("reusing the recipe of %s: %w", r.Project, err)
 	}
-	moved, err := repos.MoveAside(root, r)
+	moved, err := repos.MoveListed(root, p.aside) // the checked list, not a new read
 	for _, x := range moved.Moved {
 		fmt.Fprintf(out, "moved %s aside to %s/%s\n", x, moved.Dir, x)
 	}

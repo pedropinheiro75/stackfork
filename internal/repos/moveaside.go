@@ -73,6 +73,9 @@ func insideRoot(root, rel string) error {
 	if fi.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("%s is a symbolic link; nothing was moved", rel)
 	}
+	if !fi.IsDir() {
+		return fmt.Errorf("%s exists and is not a folder; nothing was moved", rel)
+	}
 	rp, e1 := filepath.EvalSymlinks(p)
 	rr, e2 := filepath.EvalSymlinks(root)
 	if e1 != nil || e2 != nil {
@@ -139,7 +142,7 @@ func AsideFiles(root string, r *SiblingRecipe) ([]string, error) {
 			}
 		}
 	}
-	if r.EnvFile != "" {
+	if r.EnvFile != "" && r.isUntracked(r.EnvFile) { // a tracked env file never moves
 		if !adapterDir(filepath.ToSlash(filepath.Dir(r.EnvFile))) {
 			return nil, fmt.Errorf("the env file %s is outside .stackfork and .agent-dev; it cannot be reused here", r.EnvFile)
 		}
@@ -165,6 +168,15 @@ func AsideFiles(root string, r *SiblingRecipe) ([]string, error) {
 func MoveAside(root string, r *SiblingRecipe) (MoveReport, error) {
 	files, err := AsideFiles(root, r)
 	if err != nil {
+		return MoveReport{}, err
+	}
+	return MoveListed(root, files)
+}
+
+// MoveListed moves exactly files (the list AsideFiles returned and the
+// caller checked) aside, so what moves is what was confirmed.
+func MoveListed(root string, files []string) (MoveReport, error) {
+	if err := insideRoot(root, ".stackfork-aside"); err != nil {
 		return MoveReport{}, err
 	}
 	rep := MoveReport{Dir: ".stackfork-aside/" + now().UTC().Format("20060102T150405Z")}
