@@ -12,7 +12,7 @@ const SecretMessage = "stackfork: secrets are set, mapped and read by a person; 
 // MappedRefs returns the references of the machine map. The CLI sets it from
 // config.json; the guard stays free of that package and does no IO until a
 // 1Password command matched.
-var MappedRefs = func() []string { return nil }
+var MappedRefs = func() ([]string, error) { return nil, nil }
 
 // DenyMessage is the message for a command Destructive blocked.
 func DenyMessage(command, cwd string) string {
@@ -206,12 +206,13 @@ func powershellReadsStackfork(command string) bool {
 // mapped item.
 func opReadsMapped(command string, seg Segment) bool {
 	var refs []string
-	for _, r := range MappedRefs() {
+	mapped, merr := MappedRefs()
+	for _, r := range mapped {
 		if strings.HasPrefix(strings.ToLower(r), "op://") {
 			refs = append(refs, strings.ToLower(r)) // 1Password matches names without case
 		}
 	}
-	if len(refs) == 0 {
+	if len(refs) == 0 && merr == nil {
 		return false
 	}
 	sub, rest := "", seg.Words[1:]
@@ -220,6 +221,10 @@ func opReadsMapped(command string, seg Segment) bool {
 			sub, rest = a, seg.Words[1+i:]
 			break
 		}
+	}
+	if merr != nil {
+		// The map cannot be read, so no reference is known to be safe: fail closed.
+		return sub == "read" || sub == "inject" || sub == "run" || (sub == "item" && len(rest) > 1 && rest[1] == "get")
 	}
 	switch sub {
 	case "read", "inject", "run":

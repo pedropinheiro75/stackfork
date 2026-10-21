@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +11,7 @@ import (
 func withMappedRefs(t *testing.T, refs ...string) {
 	t.Helper()
 	old := MappedRefs
-	MappedRefs = func() []string { return refs }
+	MappedRefs = func() ([]string, error) { return refs, nil }
 	t.Cleanup(func() { MappedRefs = old })
 }
 
@@ -211,6 +212,30 @@ func TestSecretGuardOnWindowsSyntax(t *testing.T) {
 		`C:\Users\x\stackfork.exe secret ls`:               false,
 	} {
 		if got := Destructive(cmd, `C:\repo`); got != want {
+			t.Errorf("Destructive(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}
+
+// Round 2: when the machine map cannot be read the guard does not know which
+// references are mapped, so it blocks every 1Password read for agents.
+func TestUnreadableMapBlocksOPReads(t *testing.T) {
+	old := MappedRefs
+	MappedRefs = func() ([]string, error) { return nil, errors.New("config.json: invalid") }
+	t.Cleanup(func() { MappedRefs = old })
+	for cmd, want := range map[string]bool{
+		"op read op://Dev/unrelated/field": true,
+		"op inject -i tpl.env":             true,
+		"op run -- printenv":               true,
+		"op item get anything":             true,
+		"env -i op read op://Dev/x/y":      true,
+		"op whoami":                        false,
+		"op item list":                     false,
+		"op signin":                        false,
+		"stackfork secret ls":              false,
+		"echo op read":                     false,
+	} {
+		if got := Destructive(cmd, "/repo"); got != want {
 			t.Errorf("Destructive(%q) = %v, want %v", cmd, got, want)
 		}
 	}

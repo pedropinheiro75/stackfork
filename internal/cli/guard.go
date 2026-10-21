@@ -17,10 +17,10 @@ import (
 func init() {
 	// The guard learns the machine map's references from config.json, only
 	// when a 1Password command matched (design D12).
-	guard.MappedRefs = func() []string {
+	guard.MappedRefs = func() ([]string, error) {
 		cfg, err := config.Load()
 		if err != nil {
-			return nil
+			return nil, err // the guard then blocks 1Password reads
 		}
 		var refs []string
 		for _, names := range cfg.Secrets {
@@ -28,7 +28,7 @@ func init() {
 				refs = append(refs, r)
 			}
 		}
-		return refs
+		return refs, nil
 	}
 }
 

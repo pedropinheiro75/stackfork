@@ -105,3 +105,23 @@ func TestExecRedactionSkipsATerminal(t *testing.T) {
 		t.Errorf("terminal: %d %q", code, out)
 	}
 }
+
+// Round 2: a config.json the guard cannot read fails closed for 1Password.
+func TestGuardBlocksOPReadsWhenTheConfigIsUnreadable(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("STACKFORK_CONFIG_DIR", dir)
+	os.WriteFile(filepath.Join(dir, "config.json"), []byte("{not json"), 0o600)
+	cwd := t.TempDir()
+	run := func(cmd string) int {
+		var out, errBuf strings.Builder
+		code, _ := cmdGuard(strings.NewReader(`{"cwd":"`+cwd+`","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"`+cmd+`"}}`),
+			&out, &errBuf, nil, t.TempDir(), t.TempDir())
+		return code
+	}
+	if code := run("op read op://Dev/x/y"); code != 2 {
+		t.Errorf("op read: %d", code)
+	}
+	if code := run("op whoami"); code != 0 {
+		t.Errorf("op whoami: %d", code)
+	}
+}
