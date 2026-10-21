@@ -12,6 +12,7 @@ func TestLiveFormsAreForPeopleOnly(t *testing.T) {
 		"stackfork --instance sf-1 live on":                    true,
 		"/usr/local/bin/stackfork live on":                     true,
 		"/usr/local/bin/stackfork.exe live on":                 true,
+		"STACKFORK live on":                                    true,
 		"bash -c 'stackfork live on'":                          true,
 		"sh -lc \"cd /x && stackfork --root=/x live on\"":      true,
 		"env FOO=1 stackfork live on":                          true,

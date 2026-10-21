@@ -21,7 +21,8 @@ import (
 var windowsSplit = runtime.GOOS == "windows"
 
 // progBase is the program name of a command word: the last path element
-// (either separator on Windows) without a trailing .exe, any case. The .exe
+// (either separator on Windows) without a trailing .exe, lower-cased on every
+// OS (a case-insensitive filesystem runs STACKFORK too). The .exe
 // strip only adds matches, which for a deny guard only adds blocks.
 func progBase(w string) string {
 	if windowsSplit {
@@ -31,10 +32,7 @@ func progBase(w string) string {
 	if len(b) > 4 && strings.EqualFold(b[len(b)-4:], ".exe") {
 		b = b[:len(b)-4]
 	}
-	if windowsSplit {
-		b = strings.ToLower(b)
-	}
-	return b
+	return strings.ToLower(b)
 }
 
 // HostRunEnv is set by `stackfork host` for its child; a command that

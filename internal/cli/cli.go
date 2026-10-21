@@ -51,18 +51,24 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	return code
 }
 
+// registerTopFlags registers the top-level flags; argv.GlobalFlags must name
+// exactly these (a test pins it).
+func registerTopFlags(top *flag.FlagSet) (root, npmrc, stateDir, legacyStateDir *string, profileDir, secret *stringList, instance *string) {
+	top.SetOutput(io.Discard)
+	root = top.String("root", "", "")
+	npmrc = top.String("npmrc", "", "")
+	stateDir = top.String("state-dir", "", "")
+	legacyStateDir = top.String("legacy-state-dir", "", "")
+	profileDir, secret = new(stringList), new(stringList)
+	top.Var(profileDir, "profile-dir", "")
+	top.Var(secret, "secret", "")
+	instance = top.String("instance", "", "")
+	return
+}
+
 func run(args []string, stdout, stderr io.Writer) (int, error) {
 	top := flag.NewFlagSet("stackfork", flag.ContinueOnError)
-	top.SetOutput(io.Discard)
-	rootFlag := top.String("root", "", "")
-	npmrcFlag := top.String("npmrc", "", "")
-	stateDirFlag := top.String("state-dir", "", "")
-	legacyStateDirFlag := top.String("legacy-state-dir", "", "")
-	var profileDirFlag stringList
-	top.Var(&profileDirFlag, "profile-dir", "")
-	var secretFlag stringList
-	top.Var(&secretFlag, "secret", "")
-	instanceFlag := top.String("instance", "", "")
+	rootFlag, npmrcFlag, stateDirFlag, legacyStateDirFlag, profileDirFlag, secretFlag, instanceFlag := registerTopFlags(top)
 
 	// splitArgs recognizes a global flag wherever it appears - before or
 	// after the action word - since flag.FlagSet's own Parse only ever
@@ -147,7 +153,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		if *npmrcFlag != "" {
 			global = append(global, "--npmrc", *npmrcFlag)
 		}
-		for _, sec := range secretFlag {
+		for _, sec := range *secretFlag {
 			global = append(global, "--secret", sec)
 		}
 		if action == "reset" {
@@ -217,7 +223,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		return dispatch(stdout, stderr, action, subArgs, root, branch, *instanceFlag, instanceDir, newStateBase, legacyStateBase, *npmrcFlag, secretFlag, profileDirFlag)
+		return dispatch(stdout, stderr, action, subArgs, root, branch, *instanceFlag, instanceDir, newStateBase, legacyStateBase, *npmrcFlag, *secretFlag, *profileDirFlag)
 	}
 
 	toplevel, err := gitToplevel(rootArg)
@@ -245,7 +251,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 			return 0, noStackError(root, newStateBase, legacyStateBase)
 		}
 	}
-	return dispatch(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase, *npmrcFlag, secretFlag, profileDirFlag)
+	return dispatch(stdout, stderr, action, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase, *npmrcFlag, *secretFlag, *profileDirFlag)
 }
 
 // checkoutInstance names the instance (project and state dir) for a

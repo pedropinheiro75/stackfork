@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"flag"
+	"maps"
 	"os"
 	"os/exec"
 	"slices"
@@ -192,5 +194,17 @@ func TestArgvActionsMatchTheCommandTable(t *testing.T) {
 	}
 	if !slices.Equal(names, argv.Actions) {
 		t.Fatalf("commandSummaries %v\nargv.Actions     %v", names, argv.Actions)
+	}
+}
+
+// argv.Split recognizes a global flag by this table; it must be the top
+// FlagSet's own flags.
+func TestArgvGlobalFlagsMatchTheTopFlagSet(t *testing.T) {
+	top := flag.NewFlagSet("stackfork", flag.ContinueOnError)
+	registerTopFlags(top)
+	got := map[string]bool{}
+	top.VisitAll(func(f *flag.Flag) { got[f.Name] = true })
+	if !maps.Equal(got, argv.GlobalFlags) {
+		t.Fatalf("top FlagSet %v\nargv.GlobalFlags %v", got, argv.GlobalFlags)
 	}
 }
