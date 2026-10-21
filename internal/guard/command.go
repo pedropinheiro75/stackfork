@@ -239,8 +239,8 @@ func splitCommandsFor(command string, windows bool) [][]string {
 			inWord = true
 		case r == ' ' || r == '\t':
 			flushWord()
-		case r == '\n' || r == ';' || r == '&' || r == '|':
-			flushCmd()
+		case r == '\n' || r == ';' || r == '&' || r == '|' || (!windows && r == '`'):
+			flushCmd() // a backtick opens or closes a command substitution
 		case r == '(' || r == ')' || r == '{' || r == '}':
 			// Grouping: treat as a separator; the commands inside are
 			// still analysed (their cd's leak out, which only ever errs
@@ -269,12 +269,47 @@ func stripPrefixes(words []string) []string {
 			words = words[1:]
 			continue
 		}
-		switch w {
-		case "env", "time", "nohup", "sudo", "command", "exec", "setsid", "builtin":
-			words = words[1:]
+		if _, ok := wrappers[w]; ok {
+			words = skipWrapper(words)
 			continue
 		}
 		break
+	}
+	return words
+}
+
+// wrappers are the words that run the rest of the line as a command, with
+// the options that take a separate value (the glued --opt=value form needs no
+// help). Their options are skipped so that `env -i op read ...` or `sudo -u U
+// ...` is seen as the command it runs.
+var wrappers = map[string]map[string]bool{
+	"time": nil, "nohup": nil, "command": nil, "setsid": nil, "builtin": nil,
+	"env":     {"-u": true, "-C": true, "-S": true, "--unset": true, "--chdir": true},
+	"sudo":    {"-u": true, "-g": true, "-C": true, "-D": true, "-h": true, "-p": true, "-r": true, "-t": true, "-T": true, "-U": true, "--user": true, "--group": true},
+	"exec":    {"-a": true},
+	"nice":    {"-n": true, "--adjustment": true},
+	"ionice":  {"-c": true, "-n": true, "-p": true},
+	"timeout": {"-s": true, "-k": true, "--signal": true, "--kill-after": true},
+	"xargs":   {"-n": true, "-I": true, "-P": true, "-d": true, "-s": true, "-L": true, "-E": true, "-a": true, "-i": true},
+}
+
+// skipWrapper drops a wrapper word, its options and, for timeout, the
+// duration.
+func skipWrapper(words []string) []string {
+	w, vf := words[0], wrappers[words[0]]
+	words = words[1:]
+	for len(words) > 0 && strings.HasPrefix(words[0], "-") {
+		f := words[0]
+		words = words[1:]
+		if f == "--" {
+			break
+		}
+		if vf[f] && len(words) > 0 {
+			words = words[1:]
+		}
+	}
+	if w == "timeout" && len(words) > 0 {
+		words = words[1:]
 	}
 	return words
 }

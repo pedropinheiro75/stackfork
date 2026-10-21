@@ -160,12 +160,16 @@ func secretToolReadsStackfork(args []string) bool {
 	for len(rest) > 0 && strings.HasPrefix(rest[0], "-") { // --all, --unlock
 		rest = rest[1:]
 	}
+	named := false
 	for i := 0; i+1 < len(rest); i += 2 { // attribute value pairs
 		if rest[i] == "service" {
-			return strings.EqualFold(rest[i+1], "stackfork")
+			if strings.EqualFold(rest[i+1], "stackfork") {
+				return true // any of several service attributes
+			}
+			named = true
 		}
 	}
-	return true
+	return !named
 }
 
 // cmdkeyListsStackfork matches `cmdkey /list:TARGET` for a stackfork target
@@ -220,8 +224,9 @@ func opReadsMapped(command string, seg Segment) bool {
 	switch sub {
 	case "read", "inject", "run":
 		lower := strings.ToLower(command)
+		words := strings.ToLower(strings.Join(seg.Words, " ")) // quotes removed
 		for _, r := range refs {
-			if strings.Contains(lower, r) {
+			if strings.Contains(lower, r) || strings.Contains(words, r) {
 				return true
 			}
 		}
