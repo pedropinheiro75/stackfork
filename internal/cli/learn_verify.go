@@ -25,6 +25,9 @@ import (
 // probeTimeout is how long `learn verify` waits for the entry to answer.
 var probeTimeout = 10 * time.Second
 
+// linkTimeout bounds each link probe, so the worst case of verify stays small.
+var linkTimeout = 3 * time.Second
+
 // probeEntryAndLinks is the entry-links D8 gate of `learn verify`: it
 // returns what verification records (the probed target, one result per
 // link) and the link warnings. An absent or proposed entry, a stopped
@@ -56,7 +59,7 @@ func probeEntryAndLinks(root, newStateBase, legacyStateBase string, k *knowledge
 	if appURL == "" {
 		return "", nil, nil, fmt.Errorf("the entry %s has no published port yet; start the instance with stackfork up", label)
 	}
-	status, perr := probe(appURL)
+	status, perr := probe(appURL, probeTimeout)
 	if perr != nil || status >= 500 {
 		return "", nil, nil, fmt.Errorf("the entry %s did not answer (%s); check the service, or record the right entry", label, probeWhy(status, perr))
 	}
@@ -69,7 +72,7 @@ func probeEntryAndLinks(root, newStateBase, legacyStateBase string, k *knowledge
 		case linkURL == "":
 			warnings = append(warnings, fmt.Sprintf("link %q has no published port yet", l.Name))
 		default:
-			st, lerr := probe(linkURL)
+			st, lerr := probe(linkURL, linkTimeout)
 			check.Status = st
 			if check.Answered = lerr == nil && st < 500; !check.Answered {
 				warnings = append(warnings, fmt.Sprintf("link %q did not answer (%s)", l.Name, probeWhy(st, lerr)))
@@ -153,14 +156,14 @@ func composePs(root, project, configPath string) ([]compose.StatusRow, error) {
 // on how the system resolves *.localhost. Redirects are not followed and
 // certificates are not checked: the target is a loopback port of the
 // instance (entry-links D8).
-func probe(rawURL string) (int, error) {
+func probe(rawURL string, timeout time.Duration) (int, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return 0, err
 	}
 	loopback := net.JoinHostPort("127.0.0.1", u.Port())
 	client := &http.Client{
-		Timeout: probeTimeout,
+		Timeout: timeout,
 		Transport: &http.Transport{
 			DisableKeepAlives: true,
 			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {

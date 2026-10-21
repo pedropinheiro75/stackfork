@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
@@ -287,5 +288,25 @@ func TestLearnVerifyStoppedEntryIgnoresStablePort(t *testing.T) {
 				t.Fatalf("probed the stable port: %v", stranger.paths)
 			}
 		})
+	}
+}
+
+// A slow link is cut off after linkTimeout; the entry keeps probeTimeout.
+func TestLearnVerifyLinkTimeout(t *testing.T) {
+	old, oldLink := probeTimeout, linkTimeout
+	probeTimeout, linkTimeout = 5*time.Second, 100*time.Millisecond
+	defer func() { probeTimeout, linkTimeout = old, oldLink }()
+	web := newProbeServer(func(p string) int {
+		if p == "/slow" {
+			time.Sleep(time.Second)
+		}
+		return 200
+	})
+	defer web.Close()
+	v := newVerifyEnv(t, serverPort(t, web), closedPort(t), &knowledge.Entry{Service: "web", Port: 8080}, []knowledge.Link{{Name: "Slow", Path: "/slow"}})
+	start := time.Now()
+	out, stderr, code := v.verify(t)
+	if code != 0 || !strings.Contains(out, "Slow") || time.Since(start) > 900*time.Millisecond {
+		t.Fatalf("%d %s %s %v", code, out, stderr, time.Since(start))
 	}
 }
