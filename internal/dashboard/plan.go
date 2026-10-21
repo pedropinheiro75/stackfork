@@ -121,10 +121,25 @@ func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
 	return v
 }
 
+// startable: a repo that is not ready and has no prepared instance in its main
+// checkout only shows its setup callout; a Start would be refused and deriving
+// costs git calls for every such repo on every cold render.
+func startable(repo repos.Repo) bool {
+	if repo.Readiness == repos.Ready {
+		return true
+	}
+	for _, w := range repo.Worktrees {
+		if w.Path == repo.Path && w.Instance != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // derivedPlan is the plan list of a repo with no recorded steps. The hook's
 // result is cached per repo until a scan or an action drops it.
 func (s *Server) derivedPlan(repo repos.Repo, cfg *config.Config) *planView {
-	if s.DerivePlan == nil {
+	if s.DerivePlan == nil || !startable(repo) {
 		return nil
 	}
 	s.repos.mu.Lock()
@@ -144,7 +159,7 @@ func (s *Server) derivedPlan(repo repos.Repo, cfg *config.Config) *planView {
 		return &planView{LoadError: e.err.Error()}
 	}
 	d := e.plan
-	v := &planView{Derived: true, Mode: d.Mode, Modes: []string{d.Mode}, Status: lifecycle.StateDerived, Trusted: true,
+	v := &planView{Derived: true, Mode: d.Mode, Modes: []string{knowledge.ModeContainer}, Unsupported: d.Mode != knowledge.ModeContainer, Status: lifecycle.StateDerived, Trusted: true,
 		Refusal: d.Refusal, Gap: d.Gap}
 	for _, st := range d.Steps {
 		v.Steps = append(v.Steps, stepView{ID: st.ID, Kind: st.Kind, Text: lifecycle.StepText(st.Step), Source: st.Source,

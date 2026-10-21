@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
 // planDerivedRepo is a ready repo with an adapter, an auto-detected seed and
@@ -78,5 +80,18 @@ func TestPlanBrokenKnowledgeStillFails(t *testing.T) {
 	_, e, code := runCLI(t, append(args, "plan")...)
 	if code != 1 || !strings.Contains(e, "no startup plan; run `stackfork learn` first") {
 		t.Errorf("%d %s", code, e)
+	}
+}
+
+// plan run from a subdirectory finds the checkout's recorded plan, as start-env does.
+func TestPlanFromASubdirectoryShowsTheRecordedPlan(t *testing.T) {
+	f := newDeriveFix(t)
+	f.know(t, f.repo, knowledge.Knowledge{Status: knowledge.StatusVerified, Plan: knowledge.Plan{Status: knowledge.PlanRecorded,
+		Steps: []knowledge.Step{{ID: "go", Kind: knowledge.KindComposeUp}}}})
+	sub := filepath.Join(f.repo, "pkg", "deep")
+	os.MkdirAll(sub, 0o755)
+	txt, e, code := runCLI(t, append([]string{"--root", sub}, append(f.base(), "plan")...)...)
+	if code != 0 || strings.Contains(txt, "derived") || !strings.Contains(txt, "go [compose-up]") {
+		t.Fatalf("%d\n%s\n%s", code, txt, e)
 	}
 }

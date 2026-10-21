@@ -330,6 +330,13 @@ func (s *Server) goScan(full bool) {
 	}()
 }
 
+func (s *Server) rescanAfter() time.Duration {
+	if s.RescanAfter > 0 {
+		return s.RescanAfter
+	}
+	return rescanAfter
+}
+
 // rescanAfter is how old the in-memory scan may get before a request kicks
 // off a background refresh (git data is cached, so a refresh is cheap).
 const rescanAfter = 5 * time.Second
@@ -361,7 +368,7 @@ func (s *Server) scanNow(full bool) repos.Result {
 func (s *Server) currentRepos() (res repos.Result, scanning bool) {
 	s.repos.mu.Lock()
 	cur := s.repos.res
-	if cur != nil && !s.repos.scanning && time.Since(s.repos.at) > rescanAfter {
+	if cur != nil && !s.repos.scanning && time.Since(s.repos.at) > s.rescanAfter() {
 		s.repos.scanning = true
 		s.goScan(false)
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
@@ -14,13 +15,18 @@ import (
 // cmdPlan prints the startup plan for a mode, or (--trust) records this
 // machine's trust in its host and prepare steps. --trust never prompts: the
 // dashboard runs it after its own native confirmation.
-func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase, legacyStateBase string) (int, error) {
+func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase, legacyStateBase string, profileFlag []string) (int, error) {
 	fs := newFlagSet(stdout, "plan")
 	modeFlag := fs.String("mode", "", "")
 	jsonFlag := fs.Bool("json", false, "")
 	trustFlag := fs.Bool("trust", false, "")
 	if err := fs.Parse(subArgs); err != nil {
 		return parseFailure(fs, err)
+	}
+	if top, err := gitToplevel(root); err == nil { // a subdirectory finds its checkout, as start-env does
+		if r, err := identity.ResolvePath(top); err == nil {
+			root = r
+		}
 	}
 	main := repos.MainRepoOf(root)
 	if main == "" {
@@ -32,7 +38,7 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase, legacy
 		return 2, fmt.Errorf("no startup plan; run `stackfork learn` first: %w", err)
 	}
 	if k == nil || len(k.Plan.Steps) == 0 { // nothing recorded: show what a Start would run
-		return planDerived(stdout, stderr, root, stateBase, legacyStateBase, *modeFlag, *jsonFlag, *trustFlag)
+		return planDerived(stdout, stderr, root, stateBase, legacyStateBase, profileFlag, *modeFlag, *jsonFlag, *trustFlag)
 	}
 
 	if *trustFlag {
@@ -85,7 +91,7 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase, legacy
 // planDerived prints the plan a Start would run for a checkout with no
 // recorded plan steps (add-derived-plan-view D5). It exits 0 whether the
 // start would run or be refused.
-func planDerived(stdout, stderr io.Writer, root, stateBase, legacyStateBase, mode string, asJSON, trust bool) (int, error) {
+func planDerived(stdout, stderr io.Writer, root, stateBase, legacyStateBase string, profileFlag []string, mode string, asJSON, trust bool) (int, error) {
 	if trust {
 		fmt.Fprintln(stderr, "stackfork: nothing to trust: this plan runs only in containers")
 		return 2, nil
@@ -93,7 +99,7 @@ func planDerived(stdout, stderr io.Writer, root, stateBase, legacyStateBase, mod
 	if mode != "" && mode != knowledge.ModeContainer && mode != knowledge.ModeHybrid {
 		return 1, fmt.Errorf("unknown mode %q (%s or %s)", mode, knowledge.ModeContainer, knowledge.ModeHybrid)
 	}
-	profiles, err := resolveProfileDirs(nil)
+	profiles, err := resolveProfileDirs(profileFlag)
 	if err != nil {
 		return 1, err
 	}

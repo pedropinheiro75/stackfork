@@ -105,6 +105,9 @@ type Server struct {
 	// steps a Start would run, with their sources. The CLI supplies it
 	// (cli.DerivePlan); nil shows no list for such a repo.
 	DerivePlan DeriveFunc
+	// RescanAfter is how old the repo scan may get before a request refreshes
+	// it; 0 means 5 seconds. Tests raise it so the clock cannot drop caches.
+	RescanAfter time.Duration
 	// LiveCleanup backs the cleanup ops of POST /api/live; nil answers 503.
 	LiveCleanup *LiveCleanup
 	// Live backs the Live switch and the live state on the page; nil hides it.

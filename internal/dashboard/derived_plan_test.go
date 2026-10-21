@@ -5,6 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/pedropinheiro75/stackfork/internal/config"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
 const derivedLabel = "derived — not recorded; run learn to record it"
@@ -30,7 +34,7 @@ func TestReposShowsTheDerivedPlan(t *testing.T) {
 	frag := e.get("/fragments/repos").Body.String()
 	plan := planBlock(t, frag)
 	for _, want := range []string{derivedLabel, `data-plan="derived"`, `data-step="prepare"`, `data-step="up"`, "Learn with your agent",
-		"adapter .agent-dev/app.compose.yaml", "implicit: starts every service", `chip chip-off`, ">derived<", `data-mode-for="` + repo + `"`} {
+		"adapter .agent-dev/app.compose.yaml", "implicit: starts every service", `chip chip-off`, ">derived<", `data-mode-label`} {
 		if !strings.Contains(plan, want) {
 			t.Errorf("missing %q in:\n%s", want, plan)
 		}
@@ -64,11 +68,15 @@ func TestReposDerivedPlanEscapesHostileSources(t *testing.T) {
 
 func TestReposDerivedPlanShowsARefusal(t *testing.T) {
 	e := newBrowserEnv(t)
-	e.needsLearnRepo("svc")
+	// ready (verified knowledge) but no recipe anywhere
+	repo := scratchRepoAt(t, filepath.Join(e.root, "norecipe"))
+	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
 	e.get("/api/repos")
 	frag := e.get("/fragments/repos").Body.String()
 	plan := planBlock(t, frag)
-	if !strings.Contains(plan, "data-plan-refusal") || !strings.Contains(plan, "callout-attention") || !strings.Contains(plan, "stackfork only starts projects whose startup was learned") {
+	if !strings.Contains(plan, "data-plan-refusal") || !strings.Contains(plan, "callout-attention") || !strings.Contains(plan, "no recorded prepare recipe") {
 		t.Errorf("refusal callout missing:\n%s", plan)
 	}
 	if strings.Contains(plan, "plan-row") {
@@ -76,8 +84,52 @@ func TestReposDerivedPlanShowsARefusal(t *testing.T) {
 	}
 }
 
+// A repo that is not set up shows only the setup callout, and nothing is derived for it.
+func TestReposNeedsLearnRepoIsNotDerived(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := e.needsLearnRepo("svc")
+	e.get("/api/repos")
+	frag := e.get("/fragments/repos").Body.String()
+	if !strings.Contains(frag, "data-setup-callout") || strings.Contains(frag, `data-plan=`) || strings.Contains(frag, "A Start would be refused") {
+		t.Errorf("only the setup callout expected:\n%s", frag)
+	}
+	if n := e.derived(repo); n != 0 {
+		t.Errorf("derived %d times for a repo that is not set up", n)
+	}
+}
+
+func TestReposDerivedPlanHasNoModeSelect(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := e.readyRepo("svc")
+	cfg, _ := config.Load()
+	cfg.SetRepoMode(repo, "hybrid")
+	cfg.Save()
+	e.get("/api/repos")
+	plan := planBlock(t, e.get("/fragments/repos").Body.String())
+	if strings.Contains(plan, `<option value="hybrid"`) {
+		t.Errorf("a select offers hybrid:\n%s", plan)
+	}
+	if strings.Contains(plan, "<select") && !strings.Contains(plan, "not supported by this plan") {
+		t.Errorf("one mode: no select:\n%s", plan)
+	}
+	if !strings.Contains(plan, "<select") && !strings.Contains(plan, "data-mode-label") {
+		t.Errorf("mode label missing:\n%s", plan)
+	}
+}
+
+func TestReposDerivedStepsShowTheirSourceOnHover(t *testing.T) {
+	e := newBrowserEnv(t)
+	e.readyRepo("svc")
+	e.get("/api/repos")
+	plan := planBlock(t, e.get("/fragments/repos").Body.String())
+	if !strings.Contains(plan, `title="adapter .agent-dev/app.compose.yaml"`) || !strings.Contains(plan, `title="implicit: starts every service"`) {
+		t.Errorf("source titles missing:\n%s", plan)
+	}
+}
+
 func TestReposDerivedPlanIsCachedUntilAnEvent(t *testing.T) {
 	e := newBrowserEnv(t)
+	e.srv.RescanAfter = time.Hour // only an event may drop the cache, never the clock
 	repo := e.readyRepo("svc")
 	e.get("/api/repos")
 	for i := 0; i < 3; i++ {
