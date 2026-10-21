@@ -58,7 +58,8 @@ func allowedPath(rel string) bool {
 // copies), which are not part of this checkout. .superpowers/ is local,
 // git-excluded agent scratch (plans, reports).
 func skippedDir(rel string) bool {
-	return rel == ".git" || rel == "dist" || rel == ".worktrees" || rel == ".superpowers"
+	// desktop/macos/.build is SwiftPM's gitignored build output (absolute paths of the machine).
+	return rel == ".git" || rel == "dist" || rel == ".worktrees" || rel == ".superpowers" || rel == "desktop/macos/.build"
 }
 
 func repoRoot(t *testing.T) string {
