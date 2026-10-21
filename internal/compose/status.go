@@ -362,7 +362,21 @@ func guessHTTP(services map[string]interface{}, names []string, utilities bool) 
 var utilityImages = []string{"smtp4dev", "mailhog", "mailpit", "maildev", "mailcatcher", "inbucket",
 	"adminer", "pgadmin", "pgadmin4", "phpmyadmin", "mongo-express", "redis-commander", "redisinsight", "rabbitmq", "minio", "kafka-ui", "portainer"}
 
-func utilityService(raw interface{}) bool {
+func utilityService(raw interface{}) bool { return imageIn(raw, utilityImages) }
+
+// databaseImages are the engines whose container is data, not an app: no
+// place to run a project's own command.
+var databaseImages = []string{"postgres", "mysql", "mariadb", "mongo", "redis"}
+
+// UtilityService reports whether the service's image is a utility tool.
+func UtilityService(raw interface{}) bool { return utilityService(raw) }
+
+// DatabaseService reports whether the service's image is a database engine.
+func DatabaseService(raw interface{}) bool { return imageIn(raw, databaseImages) }
+
+// imageIn reports whether the service's image, without registry, tag and
+// digest, is one of names.
+func imageIn(raw interface{}, names []string) bool {
 	svc, ok := asMap(raw)
 	if !ok {
 		return false
@@ -378,7 +392,7 @@ func utilityService(raw interface{}) bool {
 	if i := strings.IndexAny(base, ":@"); i >= 0 {
 		base = base[:i]
 	}
-	for _, u := range utilityImages {
+	for _, u := range names {
 		if base == u {
 			return true
 		}

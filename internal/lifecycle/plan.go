@@ -311,6 +311,9 @@ func (r PlanRunner) exec(w io.Writer, s knowledge.Step) (int, error) {
 		if svc != "" {
 			which = "its service " + svc + " is not in this stack"
 		}
+		if h := hostHint(r.InstanceDir, r.Plan, s.ID, s.Cmd, s.Once); h != "" {
+			return 0, fmt.Errorf("step %s cannot run: %s (this stack has: %s); %s", s.ID, which, strings.Join(have, ", "), h)
+		}
 		return 0, fmt.Errorf("step %s cannot run: %s (this stack has: %s). Record the service that can run `%s` with: stackfork learn record step --id %s --kind exec --service SERVICE --cmd %q",
 			s.ID, which, strings.Join(have, ", "), s.Cmd, s.ID, s.Cmd)
 	}

@@ -47,19 +47,52 @@ func ResolveExecService(instanceDir string, step knowledge.Step, plan knowledge.
 	if instanceDir == "" {
 		return ""
 	}
-	data, _ := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
-	model, _ := compose.DecodeJSON(data)
-	if service, _, _, _ := compose.PrimaryHTTPService(model); service != "" {
+	model := snapshotModel(instanceDir)
+	top, _ := model.(map[string]interface{})
+	svcs, _ := top["services"].(map[string]interface{})
+	// a mail catcher or a console that got the HTTP route is no place to run the app's command
+	if service, _, _, _ := compose.PrimaryHTTPService(model); service != "" && !compose.UtilityService(svcs[service]) {
 		return service
 	}
-	if top, _ := model.(map[string]interface{}); top != nil {
-		if svcs, _ := top["services"].(map[string]interface{}); len(svcs) == 1 {
-			for name := range svcs { // a single-service stack has one place to run it
-				return name
-			}
+	if len(svcs) == 1 {
+		for name := range svcs { // a single-service stack has one place to run it
+			return name
 		}
 	}
 	return ""
+}
+
+func snapshotModel(instanceDir string) interface{} {
+	data, _ := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
+	model, _ := compose.DecodeJSON(data)
+	return model
+}
+
+// hostHint is the end of the error for a step that has no service to run in:
+// when no service of the instance's stack can run an app command (one built
+// from the checkout, the plan's app service, or the primary HTTP service when
+// it is no database or utility), the command that records the step on the
+// host; else today's --service advice, which the caller supplies. "" when the
+// stack cannot be read.
+func hostHint(instanceDir string, plan knowledge.Plan, id, cmd, once string) string {
+	top, _ := snapshotModel(instanceDir).(map[string]interface{})
+	svcs, _ := top["services"].(map[string]interface{})
+	if len(svcs) == 0 {
+		return ""
+	}
+	primary, _, _, _ := compose.PrimaryHTTPService(top)
+	for name, raw := range svcs {
+		sv, _ := raw.(map[string]interface{})
+		if _, built := sv["build"]; built || name == plan.AppService ||
+			(name == primary && !compose.DatabaseService(raw) && !compose.UtilityService(raw)) {
+			return ""
+		}
+	}
+	h := fmt.Sprintf("no service of this stack runs the app; to run it on the host with this instance's environment:\n  stackfork learn record step --id %s --kind exec --on host --cmd %q", id, cmd)
+	if once != "" {
+		h += " --once " + once
+	}
+	return h
 }
 
 // RunSeed execs cmd in service (default: the primary app service). On
@@ -98,12 +131,20 @@ func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBa
 		if step != nil {
 			step.End(err, 0)
 		}
+		if h := hostHint(instanceDir, plan, "seed", seedCmdOf(plan, cmd), knowledge.OnceData); h != "" {
+			err = errors.New("no service to run the seed in; " + h)
+			fmt.Fprintf(stderr, "not seeded: %v\nthen run `%s`\n", err, retry)
+			return err
+		}
 		fmt.Fprintf(stderr, "not seeded: no service to run %q in; record one with `stackfork learn record recipe --seed-service SVC`, then run `%s`\n", cmd, retry)
 		return err
 	}
 	if have := SnapshotServices(instanceDir); len(have) > 0 && !contains(have, service) {
 		err := fmt.Errorf("seed cannot run: its service %s is not in this stack (this stack has: %s). Record the right one with: stackfork learn record step --id seed --kind exec --once data --service SERVICE --cmd %q",
 			service, strings.Join(have, ", "), cmd)
+		if h := hostHint(instanceDir, plan, "seed", seedCmdOf(plan, cmd), knowledge.OnceData); h != "" {
+			err = fmt.Errorf("seed cannot run: its service %s is not in this stack (this stack has: %s); %s", service, strings.Join(have, ", "), h)
+		}
 		if step != nil {
 			step.End(err, 0)
 		}
@@ -164,6 +205,15 @@ func runHostSeed(w, stderr io.Writer, step *runs.Step, steps []knowledge.Step, r
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// seedCmdOf is the plan's own data step command, else cmd: the command the
+// host suggestion records is the seed alone, not the migrate prefix.
+func seedCmdOf(plan knowledge.Plan, cmd string) string {
+	if s := plan.SeedStep(); s != nil {
+		return s.Cmd
+	}
+	return cmd
+}
 
 // hostSeedSteps are the argument vectors a seed on the host runs, in order:
 // the plan's data step when it is on: host, preceded by the first schema step
