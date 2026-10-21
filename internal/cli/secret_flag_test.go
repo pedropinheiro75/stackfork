@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 )
 
 // Review I2: an agent cannot point a name at a store item with --secret.
@@ -78,5 +81,27 @@ func TestExecAndRunRedactKnownSecretValues(t *testing.T) {
 		if strings.Contains(out, v) {
 			t.Errorf("run output has %q: %q", v, out)
 		}
+	}
+}
+
+// Round 2: a terminal gets the container's output as it is (a redactor holds
+// bytes back and would break interactive use); anything else, which is how an
+// agent runs stackfork, stays redacted.
+func TestExecRedactionSkipsATerminal(t *testing.T) {
+	installFakeDocker(t)
+	const val = "tty-env-value-7788"
+	t.Setenv("SF_TEST_TTY_TOK", val)
+	root, stateDir, _ := secretRepo(t, "FROM_ENV=env:SF_TEST_TTY_TOK")
+	t.Setenv("DOCKER_FAKE_EXEC_OUT", "env="+val+"\n")
+	args := []string{"--root", root, "--state-dir", stateDir, "exec", "db", "printenv"}
+	old := lifecycle.IsTerminal
+	t.Cleanup(func() { lifecycle.IsTerminal = old })
+	lifecycle.IsTerminal = func(io.Writer) bool { return false }
+	if out, _, code := runCLI(t, args...); code != 0 || strings.Contains(out, val) || !strings.Contains(out, "[redacted:FROM_ENV]") {
+		t.Errorf("not a terminal: %d %q", code, out)
+	}
+	lifecycle.IsTerminal = func(io.Writer) bool { return true }
+	if out, _, code := runCLI(t, args...); code != 0 || !strings.Contains(out, val) {
+		t.Errorf("terminal: %d %q", code, out)
 	}
 }

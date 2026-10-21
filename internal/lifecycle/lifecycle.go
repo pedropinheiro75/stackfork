@@ -301,11 +301,20 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 	if action == "run" || action == "exec" {
 		// Both print what a container prints, to whoever called: redact with
 		// the values known for this instance (review I2).
+		// A terminal is left alone: the redactor holds bytes back, which breaks
+		// interactive use, and the person at it can read the store anyway. An
+		// agent runs without a terminal and stays covered.
 		if known := OutputSecrets(instanceDir, info, resolved); len(known) > 0 {
-			ow, ew := redact.NewWriter(stdout, known), redact.NewWriter(stderr, known)
-			defer ow.Close()
-			defer ew.Close()
-			cmd.Stdout, cmd.Stderr = ow, ew
+			if !IsTerminal(stdout) {
+				ow := redact.NewWriter(stdout, known)
+				defer ow.Close()
+				cmd.Stdout = ow
+			}
+			if !IsTerminal(stderr) {
+				ew := redact.NewWriter(stderr, known)
+				defer ew.Close()
+				cmd.Stderr = ew
+			}
 		}
 	}
 	if action == "run" || action == "exec" || action == "up" {
@@ -388,4 +397,14 @@ func portOwnedByProject(port int, project string) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// IsTerminal reports whether w is a terminal; tests replace it.
+var IsTerminal = func(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
