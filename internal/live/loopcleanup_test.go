@@ -201,3 +201,38 @@ func TestInspectCleanupReadsAndWritesNothing(t *testing.T) {
 		t.Fatal("a one-shot status wrote the cleanup state")
 	}
 }
+
+// Keep is read from disk right before the cleanup, not from the candidates
+// cached by the last successful fetch.
+func TestAKeepMadeWhileTheFetchFailsStopsTheAutoCleanup(t *testing.T) {
+	f := newCleanupLoop(t, config.Cleanup{Mode: config.CleanupAuto, GraceHours: 1})
+	st := f.tick(0)
+	c := st.Candidates[0]
+	f.fetchErr = errors.New("offline")
+	f.tick(58 * time.Minute)
+	if err := KeepBranch(f.State, f.Main, c.Branch, c.Head); err != nil {
+		t.Fatal(err)
+	}
+	f.tick(3 * time.Minute)
+	if !f.exists() || f.downs != 0 {
+		t.Fatalf("a kept branch was cleaned: exists=%v downs=%d", f.exists(), f.downs)
+	}
+}
+
+func TestRunCleanupRefusesAKeptBranchAndAMovedHead(t *testing.T) {
+	f := newCleanupFx(t)
+	j := f.job(t)
+	if err := KeepBranch(f.State, f.Main, j.Candidate.Branch, j.Candidate.Head); err != nil {
+		t.Fatal(err)
+	}
+	if out := RunCleanup(context.Background(), j); !errors.Is(out.Err, ErrNotEligible) {
+		t.Fatalf("kept: %+v", out)
+	}
+	if _, err := os.Stat(f.WT); err != nil {
+		t.Fatal("a kept worktree was removed")
+	}
+	j.Candidate.Head = "0000000000000000000000000000000000000000" // the tip moved since the scan
+	if out := RunCleanup(context.Background(), j); !errors.Is(out.Err, ErrNotEligible) {
+		t.Fatalf("moved head: %+v", out)
+	}
+}

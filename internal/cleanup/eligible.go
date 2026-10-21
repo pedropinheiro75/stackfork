@@ -77,6 +77,12 @@ func Evaluate(c Check) Verdict {
 		return v
 	}
 
+	if h := c.Candidate.Head; h != "" {
+		if cur, err := git(path, "rev-parse", "HEAD"); err != nil || cur != h {
+			v.Warning = branch + " has a new commit since it was checked"
+			return v
+		}
+	}
 	if len(c.Others) > 0 {
 		v.Warning = "PR merged, but this worktree also has an instance of " + strings.Join(c.Others, ", ") + "; clean it up yourself"
 		return v
