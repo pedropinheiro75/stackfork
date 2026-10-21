@@ -15,8 +15,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let presenter: any AlertPresenting = PanelAlertPresenter()
     private var quit: QuitCoordinator?
     private var logWindow: NSWindow?
+    /// The first ready opens the window, unless macOS started the app at login.
+    private var showOnReady = true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // ponytail: the legacy login-item flag; SMAppService launches may not set it, so the window can open at login too.
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        if event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem {
+            showOnReady = false
+        }
         buildMainMenu()
         poller = MenuPoller(scheduler: scheduler) { [weak self] in self?.refreshInventory() }
         statusMenu = StatusMenu(handlers: .init(
@@ -37,6 +44,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let result = await Task.detached { ChildEnvironment.resolve() }.value
             self?.startSupervisor(result)
         }
+    }
+
+    /// Opening the app again (Finder, Dock, Spotlight) shows the dashboard.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        window.show()
+        return false
     }
 
     private func startSupervisor(_ environment: ChildEnvironment.Result) {
@@ -63,6 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         inventory = nil
         pending = [:]
         window.load(url)
+        if showOnReady {
+            showOnReady = false
+            window.show()
+        }
         if statusMenu?.isOpen == true { refreshInventory() }
     }
 
