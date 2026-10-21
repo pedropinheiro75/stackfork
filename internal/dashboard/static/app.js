@@ -256,11 +256,12 @@
   }
 
   // Open App opens the entry; a link never stands in for it. Must match inventory.OpenApp (dot.go's openApp).
-  function pickOpenApp(apps) {
+  function pickOpenApp(apps, none) {
     var list = apps || [], i;
     for (i = 0; i < list.length; i++) {
       if (list[i].source === "entry") return isWebUrl(list[i].url) && list[i].running ? list[i] : null;
     }
+    if (none) return null;
     var labels = ["App", ""];
     for (var j = 0; j < labels.length; j++) {
       for (i = 0; i < list.length; i++) {
@@ -501,7 +502,7 @@
     var cmds = commandsOf(inst);
     var down = cmds[0];
     var openApp = null;
-    openApp = pickOpenApp(inst.apps);
+    openApp = pickOpenApp(inst.apps, inst.entry_none);
 
     var items = "";
     if (inst.state === "partial") items += menuItem(inst.project + "/menu/up", "Start stopped services", "", ' data-action="up" data-project="' + p + '"');

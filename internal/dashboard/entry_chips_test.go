@@ -78,16 +78,19 @@ func TestOpenAppPrefersEntry(t *testing.T) {
 	link := inventory.AppLink{Label: "Dashboard", Source: "link", Running: true, URL: "http://l"}
 	svc := inventory.AppLink{Label: "App", Source: "service", Running: true, URL: "http://s"}
 	ent := inventory.AppLink{Label: "App", Source: "entry", Running: true, URL: "http://e"}
-	if a := openApp([]inventory.AppLink{link, ent, svc}); a == nil || a.URL != "http://e" {
+	if a := openApp([]inventory.AppLink{link, ent, svc}, false); a == nil || a.URL != "http://e" {
 		t.Fatalf("entry first: %+v", a)
 	}
-	if a := openApp([]inventory.AppLink{{Label: "App", Source: "entry", Warning: "w"}, link, svc}); a != nil {
+	if a := openApp([]inventory.AppLink{{Label: "App", Source: "entry", Warning: "w"}, link, svc}, false); a != nil {
 		t.Fatalf("a missing entry must not fall back: %+v", a)
 	}
-	if a := openApp([]inventory.AppLink{link, svc}); a == nil || a.URL != "http://s" {
+	if a := openApp([]inventory.AppLink{link, svc}, false); a == nil || a.URL != "http://s" {
 		t.Fatalf("guessed strip: %+v", a)
 	}
-	if a := openApp([]inventory.AppLink{link}); a != nil {
+	if a := openApp([]inventory.AppLink{svc}, true); a != nil {
+		t.Errorf("entry none must not guess: %+v", a)
+	}
+	if a := openApp([]inventory.AppLink{link}, false); a != nil {
 		t.Fatalf("a link alone is not the app: %+v", a)
 	}
 }
@@ -105,10 +108,18 @@ func TestOpenAppScriptAgrees(t *testing.T) {
 	mail := inventory.AppLink{Label: "Mail inbox", Source: "service", Running: true, URL: "http://m"}
 	ent := inventory.AppLink{Label: "App", Source: "entry", Running: true, URL: "http://e"}
 	stoppedEnt := inventory.AppLink{Label: "App", Source: "entry", URL: "http://e"}
-	lists := [][]inventory.AppLink{
+	type pick struct {
+		Apps []inventory.AppLink `json:"apps"`
+		None bool                `json:"none"`
+	}
+	lists := []pick{}
+	for _, apps := range [][]inventory.AppLink{
 		{link, ent, svc}, {{Label: "App", Source: "entry", Warning: "w"}, link, svc}, {stoppedEnt, svc},
 		{link, svc}, {link}, {mail, app}, {mail, svc}, {}, nil,
+	} {
+		lists = append(lists, pick{Apps: apps})
 	}
+	lists = append(lists, pick{Apps: []inventory.AppLink{mail, svc}, None: true})
 	dir := t.TempDir()
 	in, out := filepath.Join(dir, "in.json"), filepath.Join(dir, "out.json")
 	b, _ := json.Marshal(lists)
@@ -123,9 +134,9 @@ func TestOpenAppScriptAgrees(t *testing.T) {
 	if err := json.Unmarshal(raw, &js); err != nil || len(js) != len(lists) {
 		t.Fatalf("%v %s", err, raw)
 	}
-	for i, apps := range lists {
+	for i, c := range lists {
 		want := ""
-		if a := openApp(apps); a != nil {
+		if a := openApp(c.Apps, c.None); a != nil {
 			want = a.URL
 		}
 		if js[i] != want {

@@ -183,6 +183,9 @@ type Instance struct {
 	// learned dev script's name as a hint. The goal of the page is to open
 	// and use the app, not inspect containers.
 	Apps []AppLink `json:"apps,omitempty"`
+	// EntryNone is knowledge's entry {none:true}: there is no web app, so
+	// nothing guesses one for Open App (entry-links D6).
+	EntryNone bool `json:"entry_none,omitempty"`
 	// EnvBlock is a copy-paste ".env" fragment for a host-run app to talk
 	// to this stack's services (task 3.10, design.md D3b §4): one
 	// DATABASE_URL/REDIS_URL/MONGODB_URL/SMTP_HOST/SMTP_PORT line per
@@ -354,6 +357,9 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		inst.Warnings = append(inst.Warnings, appWarnings...)
 		fillOneOffs(&inst, rows)
 		inst.Apps = appendRouteAndKnowledgeApps(apps, info)
+		if k, _ := knowledge.LoadForCheckout(info.Root); k != nil && k.Entry != nil && k.Entry.None {
+			inst.EntryNone = true
+		}
 		inst.EnvBlock = buildEnvBlock(services)
 	}
 

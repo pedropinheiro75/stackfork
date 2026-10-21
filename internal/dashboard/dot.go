@@ -128,8 +128,8 @@ func runnable(cmd string) bool { return runnableCmd.MatchString(cmd) && !placeho
 // openApp is the app the card's Open App button opens: inventory.OpenApp
 // restricted to running chips; nil when there is none. app.js's pickOpenApp
 // must match.
-func openApp(apps []inventory.AppLink) *inventory.AppLink {
-	a, _ := inventory.OpenApp(apps, false, true)
+func openApp(apps []inventory.AppLink, none bool) *inventory.AppLink {
+	a, _ := inventory.OpenApp(apps, none, true)
 	return a
 }
 

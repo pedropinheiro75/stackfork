@@ -23,7 +23,7 @@
 {{end}}
 
 {{define "version"}}
-{{$inst := .}}{{$p := .Project}}{{$appName := appName .Instance}}{{$name := print $appName " " .Branch}}{{$live := isLive .State}}{{$app := openApp .Apps}}{{$hint := hostHint .Apps}}
+{{$inst := .}}{{$p := .Project}}{{$appName := appName .Instance}}{{$name := print $appName " " .Branch}}{{$live := isLive .State}}{{$app := openApp .Apps .EntryNone}}{{$hint := hostHint .Apps}}
 <article class="stack version lane-{{lane .ColorIndex}}" id="ver-{{domID .Project}}" data-project="{{.Project}}" data-state="{{.State}}" data-collapsed="{{if $live}}0{{else}}1{{end}}">
 <header class="stack-header">
 <button type="button" class="btn btn-ghost btn-icon chevron" data-toggle-stack data-project="{{.Project}}" data-key="{{.Project}}/toggle" aria-expanded="{{if $live}}true{{else}}false{{end}}" aria-controls="body-{{domID .Project}}" aria-label="Details for {{$name}}"><span class="chevron-glyph" aria-hidden="true"></span></button>
