@@ -788,3 +788,6 @@ code.setting-value { display: inline-block; }
 }
 /* a merged branch's instance is usually stopped, so its card is collapsed: the callout still shows */
 .stack[data-collapsed="1"] .cleanup-note { display: flex; }
+
+/* Repos entry line (entry-links D12) */
+.entry-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; }

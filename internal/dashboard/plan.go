@@ -50,6 +50,26 @@ func (s *Server) repoRecipe(repo repos.Repo) recipeView {
 	return v
 }
 
+// entryView is the Repos entry line (entry-links D12): State is recorded,
+// guessed or none; Target is "service:port[path]", empty when unknown.
+type entryView struct {
+	State, Target string
+}
+
+// entryCommand is the copy-only command of a guessed entry; S and N stay
+// placeholders so the page never runs it.
+const entryCommand = "stackfork learn record entry --service S --port N"
+
+// repoEntry reads the main checkout's knowledge; nil when there is none.
+func repoEntry(repo repos.Repo) *entryView {
+	k, err := knowledge.LoadFirst(repo.Path)
+	if err != nil || k == nil {
+		return nil
+	}
+	st, target := k.EntryLine()
+	return &entryView{State: st, Target: target}
+}
+
 // stepView is one row of a repo's plan list.
 type stepView struct {
 	ID, Kind, Text, Port string

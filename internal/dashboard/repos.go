@@ -30,6 +30,7 @@ import (
 var reposTemplateSrc embed.FS
 
 var reposFuncs = template.FuncMap{
+	"entryCommand": func() string { return entryCommand },
 	"date": func(t time.Time) string {
 		if t.IsZero() {
 			return "-"
@@ -378,6 +379,7 @@ type repoView struct {
 	Search  string
 	Recipe  recipeView
 	Plan    *planView
+	Entry   *entryView
 	Secrets []secretView
 	Live    liveView
 }
@@ -405,7 +407,7 @@ func (s *Server) handleReposFragment(w http.ResponseWriter, r *http.Request) {
 		for _, w := range repo.Worktrees {
 			b.WriteString(" " + w.Branch)
 		}
-		page.Rows = append(page.Rows, repoView{Repo: repo, Search: strings.ToLower(b.String()), Recipe: s.repoRecipe(repo), Plan: s.repoPlan(repo, cfg), Secrets: s.repoSecrets(repo, cfg), Live: lives[repo.Path]})
+		page.Rows = append(page.Rows, repoView{Repo: repo, Search: strings.ToLower(b.String()), Recipe: s.repoRecipe(repo), Plan: s.repoPlan(repo, cfg), Entry: repoEntry(repo), Secrets: s.repoSecrets(repo, cfg), Live: lives[repo.Path]})
 	}
 	page.FirstSetup = firstSetup(page.Rows)
 	s.renderFragment(w, "repos", page)

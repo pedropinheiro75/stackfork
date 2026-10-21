@@ -86,6 +86,7 @@
           <span class="micro">Starts with</span>
           <label class="plan-mode"><span class="small muted">Mode</span> <select data-mode-for="{{$r.Path}}" data-key="{{$r.Path}}/mode" aria-label="Start mode for {{$r.Name}}">{{$m := .Mode}}{{range .Modes}}<option value="{{.}}"{{if eq . $m}} selected{{end}}>{{.}}</option>{{end}}</select>{{if .Unsupported}} <span class="chip chip-attention"><span class="chip-glyph" aria-hidden="true">&#9679;</span>{{.Mode}} not supported by this plan</span>{{end}}</label>
         </div>
+        {{template "entryline" $row}}
         <div class="plan-list" role="table" aria-label="Startup plan, {{.Mode}} mode">
           <div class="plan-head micro" role="row"><span role="columnheader">Step</span><span role="columnheader">Kind</span><span role="columnheader">Command</span><span role="columnheader">State</span></div>
           {{range .Steps}}{{template "planrow" .}}{{end}}
@@ -122,6 +123,7 @@
 <button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$r.Path}}/recipe/copy" data-copy="stackfork learn record recipe --seed-once CMD"><span class="menu-label">Copy command (CMD is your seed command, or none)</span><span class="menu-cmd mono">stackfork learn record recipe --seed-once CMD</span></button>
 </div></div>
       </div>
+      {{template "entryline" $row}}
 
       {{end}}
 
@@ -215,6 +217,9 @@
 {{end}}
 {{end}}
 
+{{define "entryline"}}{{with .Entry}}<div class="entry-line" data-entry="{{.State}}">{{if eq .State "none"}}<span class="small muted">No web entry</span>{{else}}<span class="micro">App</span><span aria-hidden="true">&rarr;</span>{{if .Target}}<code class="mono">{{.Target}}</code>{{else}}<span class="small muted">no entry recorded</span>{{end}}{{if eq .State "recorded"}}<span class="chip chip-ok"><span class="chip-glyph" aria-hidden="true">&#9679;</span>recorded</span>{{else}}<span class="chip chip-attention"><span class="chip-glyph" aria-hidden="true">&#9679;</span>entry guessed</span><div class="menu-anchor"><button type="button" class="btn btn-ghost btn-icon" data-key="{{$.Path}}/entry/menu" aria-haspopup="menu" aria-expanded="false" aria-label="Entry actions for {{$.Name}}" title="More actions"><span aria-hidden="true">&#8943;</span></button><div class="menu menu-left" role="menu" hidden>
+<button type="button" role="menuitem" class="menu-item" tabindex="-1" data-key="{{$.Path}}/entry/copy" data-copy="{{entryCommand}}"><span class="menu-label">Copy command</span><span class="menu-cmd mono">{{entryCommand}}</span></button>
+</div></div>{{end}}{{end}}</div>{{end}}{{end}}
 {{define "planrow"}}<div class="plan-row{{if .Skipped}} plan-skipped{{end}}" role="row" data-step="{{.ID}}"><span class="plan-id mono" role="cell">{{.ID}}</span><span class="plan-kind" role="cell">{{.Kind}}</span><span class="plan-text mono" role="cell">{{.Text}}</span><span class="plan-state" role="cell"><span class="chip chip-{{.Chip.Class}}"><span class="chip-glyph" aria-hidden="true">{{.Chip.Glyph}}</span>{{.Chip.Label}}</span><span class="plan-dur small" hidden></span></span></div><div class="plan-live mono" data-live-for="{{.ID}}" aria-live="polite"></div>{{end}}
 
 {{define "aheadbehind"}}{{$t := aheadBehindText .Ahead .Behind .Upstream}}{{if eq .Upstream ""}}<span class="ab-none" title="this branch tracks no upstream">no upstream</span>
