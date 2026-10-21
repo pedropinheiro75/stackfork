@@ -196,3 +196,13 @@ func TestPromptNamesEntryAndLinks(t *testing.T) {
 		}
 	}
 }
+
+// The copied prompt tells the agent how to ask for a credential.
+func TestPromptNamesSecrets(t *testing.T) {
+	p := Prompt("acme-web", t.TempDir(), "main")
+	for _, want := range []string{"stackfork learn record secret NAME", "never ask me to paste a value"} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("prompt lacks %q:\n%s", want, p)
+		}
+	}
+}

@@ -104,6 +104,6 @@ func Prompt(name, path, branch string) string {
 		where = fmt.Sprintf("in its existing checkout: the branch is already checked out at `%s`, so do not create a worktree; uncommitted changes there do not block stackfork", at)
 	}
 	return fmt.Sprintf("Using stackfork, run `stackfork learn` for `%s` (`%s`) on branch `%s` %s, then prepare and start it. "+
-		"Check migrations, seed data and login. Read the README, the docs and the Compose file for the local URLs that matter (the app, an admin or dashboard page, a mail UI, API docs, Storybook), check that each one answers, and record them with `stackfork learn record entry` and `learn record link`. Report `stackfork urls`, and once I confirm it works record it with `stackfork learn verify`. "+
+		"Check migrations, seed data and login. Read the README, the docs and the Compose file for the local URLs that matter (the app, an admin or dashboard page, a mail UI, API docs, Storybook), check that each one answers, and record them with `stackfork learn record entry` and `learn record link`. If the project needs a credential stackfork cannot find (a private registry token, an API key), record its name with `stackfork learn record secret NAME --hint TEXT` and ask me to set it; never ask me to paste a value. Report `stackfork urls`, and once I confirm it works record it with `stackfork learn verify`. "+
 		"Ask before building anything beyond the running instance.", name, path, branch, where)
 }
