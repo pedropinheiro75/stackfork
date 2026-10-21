@@ -187,11 +187,12 @@ func TestSeedRunsAHostSeedOnATrustedPlan(t *testing.T) {
 // swapSeedWhileLocked trusts the plan, then runs `up` or `seed` while the
 // instance lock is held; once the command has passed its trust check (its run
 // file exists) it rewrites the seed command in knowledge.json and lets go.
-func swapSeedWhileLocked(t *testing.T, cmd string) (calls *[]string, code int, stderr string) {
+func swapSeedWhileLocked(t *testing.T, cmd string) (calls *[]string, code int, stderr, dockerLog string) {
 	t.Helper()
 	root, state := reposEnv(t)
 	repo := planRepo(t, root, hostSeedPlan(hostStep("seed", knowledge.OnceData, "bun run db:seed", "")))
 	calls = stubHostExecCodes(t, nil)
+	log := installFakeDocker(t)
 	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
 	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
 	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
@@ -228,7 +229,8 @@ func swapSeedWhileLocked(t *testing.T, cmd string) (calls *[]string, code int, s
 	}
 	lock.Release()
 	<-done
-	return calls, code, stderr
+	b, _ := os.ReadFile(log)
+	return calls, code, stderr, string(b)
 }
 
 // The plan the check trusted is the plan that runs: a seed command rewritten
@@ -236,9 +238,15 @@ func swapSeedWhileLocked(t *testing.T, cmd string) (calls *[]string, code int, s
 func TestUpAndSeedRefuseAHostSeedSwappedAfterTheTrustCheck(t *testing.T) {
 	for _, cmd := range []string{"up", "seed"} {
 		t.Run(cmd, func(t *testing.T) {
-			calls, code, e := swapSeedWhileLocked(t, cmd)
+			calls, code, e, dlog := swapSeedWhileLocked(t, cmd)
 			if len(*calls) != 0 {
 				t.Fatalf("the host ran %v (exit %d): %s", *calls, code, e)
+			}
+			if !strings.Contains(e, "the plan changed since it was checked; review it and run `stackfork plan --trust`") {
+				t.Fatalf("refusal text missing:\n%s", e)
+			}
+			if strings.Contains(dlog, "evil-command") { // refused, not run in a container either
+				t.Fatalf("the swapped command reached Docker:\n%s", dlog)
 			}
 		})
 	}

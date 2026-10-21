@@ -145,7 +145,7 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 		}
 	} else if disk := hostSeedSteps(LoadPlan(root, main)); disk != nil && cmd == hostSeedCmd(disk) {
 		// cmd is a host seed but this plan has no such steps (it changed, or a live run cut them): never run it in a container
-		return failSeed(stderr, step, errors.New("the seed is a host command and the plan being run has no matching host step; run it again"))
+		return failSeed(stderr, step, errors.New("the plan changed since it was checked; review it and run `stackfork plan --trust`"))
 	}
 	if hostSteps == nil {
 		service = ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)

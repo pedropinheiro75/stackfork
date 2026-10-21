@@ -96,3 +96,23 @@ func TestMissingServiceStillSuggestsServiceWhenAnAppServiceExists(t *testing.T) 
 		}
 	}
 }
+
+// The host branch of exec checks trust itself, whatever ran before it.
+func TestPlanRunnerExecRefusesAnUntrustedHostStep(t *testing.T) {
+	step := knowledge.Step{ID: "migrate", Kind: knowledge.KindExec, On: knowledge.OnHost, Cmd: "bun run db:migrate", Once: knowledge.OnceSchema}
+	plan := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{step}}
+	var calls int
+	old := HostExec
+	HostExec = func(io.Writer, string, string, string, string, string, knowledge.Step) (int, error) { calls++; return 0, nil }
+	t.Cleanup(func() { HostExec = old })
+	r := PlanRunner{NewBase: t.TempDir(), Main: t.TempDir(), Plan: plan}
+	if _, err := r.exec(io.Discard, step); err == nil || !strings.Contains(err.Error(), "not trusted on this machine") || calls != 0 {
+		t.Fatalf("untrusted: err %v, host calls %d", err, calls)
+	}
+	if _, err := TrustHere(r.NewBase, r.Main, plan); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.exec(io.Discard, step); err != nil || calls != 1 {
+		t.Fatalf("trusted: err %v, host calls %d", err, calls)
+	}
+}
