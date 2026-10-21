@@ -21,6 +21,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
+	"github.com/pedropinheiro75/stackfork/internal/redact"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -167,6 +168,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 	}
 
 	var secretEnv map[string]string // for the one docker compose child (design D9)
+	var resolved SecretValues       // what this call resolved itself, for redacting run output
 	if action == "up" || action == "run" {
 		// Named secrets (task 6.1, design.md D6): resolve each reference
 		// into its value now, not at prepare, so a rotated env var or
@@ -187,6 +189,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 			return 0, UnpreparedError(unprepared[0])
 		}
 		secretEnv = map[string]string{}
+		resolved = SecretValues{}
 		for name, ref := range refs {
 			var value string
 			if opts.Secrets != nil {
@@ -203,6 +206,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 				return 0, err
 			}
 			secretEnv[name] = value
+			resolved[name] = SecretValue{Ref: ref, Value: value}
 		}
 		// D2: another branch stack from this checkout must be refused
 		// whether it was labelled under the current namespace or the
@@ -294,6 +298,16 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 	cmd.Env = compose.DockerEnv(secretEnv)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	if action == "run" || action == "exec" {
+		// Both print what a container prints, to whoever called: redact with
+		// the values known for this instance (review I2).
+		if known := OutputSecrets(instanceDir, info, resolved); len(known) > 0 {
+			ow, ew := redact.NewWriter(stdout, known), redact.NewWriter(stderr, known)
+			defer ow.Close()
+			defer ew.Close()
+			cmd.Stdout, cmd.Stderr = ow, ew
+		}
+	}
 	if action == "run" || action == "exec" || action == "up" {
 		cmd.Stdin = os.Stdin
 	}

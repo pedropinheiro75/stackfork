@@ -118,6 +118,31 @@ func LogSecrets(instanceDir string, info *state.Manifest) ([]redact.Secret, erro
 	return values.Redactions(), nil
 }
 
+// OutputSecrets are the values `run` and `exec` redact their output with,
+// best effort (review I2): what the caller resolved, else what the dashboard
+// remembered for the same reference, else what resolves without a prompt
+// (env:, npmrc:, keychain:). An op:// value nobody resolved is not known and
+// not redacted: SECURITY.md states it.
+func OutputSecrets(instanceDir string, info *state.Manifest, resolved SecretValues) []redact.Secret {
+	mapped, _ := MappedSecrets(info.Root)
+	refs, _, _ := InstanceSecrets(info, mapped)
+	cached, _ := CachedSecrets(instanceDir)
+	values := SecretValues{}
+	for name, ref := range refs {
+		switch {
+		case resolved[name].Ref == ref && resolved[name].Value != "":
+			values[name] = resolved[name]
+		case cached[name].Ref == ref && cached[name].Value != "":
+			values[name] = cached[name]
+		case !strings.HasPrefix(ref, "op://"):
+			if v, _, _ := compose.CheckSecret(ref); v != "" {
+				values[name] = SecretValue{Ref: ref, Value: v}
+			}
+		}
+	}
+	return values.Redactions()
+}
+
 // cacheKey names an instance directory however the state dir was spelled.
 func cacheKey(dir string) string {
 	if r, err := filepath.EvalSymlinks(dir); err == nil {

@@ -177,7 +177,8 @@ func TestSecretsCheckOpensTheLogGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errBuf strings.Builder
-	if code := cli.Run([]string{"--root", repo, "--state-dir", e.newDir, "--secret", "tok=op://Dev/acme-stripe/test-key",
+	mapTestSecret(t, repo, "tok", "op://Dev/acme-stripe/test-key") // a --secret flag takes only env: and npmrc:
+	if code := cli.Run([]string{"--root", repo, "--state-dir", e.newDir,
 		"prepare", "-f", composePath}, &out, &errBuf); code != 0 {
 		t.Fatalf("prepare: %s", errBuf.String())
 	}

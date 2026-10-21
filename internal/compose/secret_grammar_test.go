@@ -111,3 +111,28 @@ func TestResolveSecretDelegatesToSecretstore(t *testing.T) {
 		}
 	}
 }
+
+// Review I2: a command's --secret takes only env: and npmrc:. keychain: and
+// op:// come from the machine map, which only a person writes.
+func TestParseCommandSecretFlagRefusesStoreReferences(t *testing.T) {
+	for _, raw := range []string{"NPM_TOKEN=env:NPM_TOKEN", "NPM_TOKEN=npmrc:/home/u/.npmrc#npm.pkg.github.com"} {
+		if _, _, err := ParseCommandSecretFlag(raw); err != nil {
+			t.Errorf("%s: %v", raw, err)
+		}
+	}
+	for _, raw := range []string{"NPM_TOKEN=keychain:other-item", "NPM_TOKEN=op://Private/bank/password", "NPM_TOKEN=keychain:bad item"} {
+		_, _, err := ParseCommandSecretFlag(raw)
+		if err == nil {
+			t.Errorf("%s: accepted", raw)
+			continue
+		}
+		for _, bad := range []string{"other-item", "bank", "bad item"} {
+			if strings.Contains(err.Error(), bad) {
+				t.Errorf("%s: the error echoes the reference: %v", raw, err)
+			}
+		}
+		if !strings.Contains(err.Error(), "stackfork secret map") {
+			t.Errorf("%s: the error must point to secret map: %v", raw, err)
+		}
+	}
+}

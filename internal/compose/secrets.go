@@ -33,6 +33,29 @@ func ParseSecretFlag(raw string) (name, ref string, err error) {
 	return name, ref, nil
 }
 
+// ParseCommandSecretFlag is ParseSecretFlag for the --secret flag of a
+// command (prepare, start-env): only env: and npmrc: references. keychain:
+// and op:// come from the machine map, which only a person writes (design
+// D5, D12); a flag an agent can add would point a name at any store item.
+// The error never echoes the reference.
+func ParseCommandSecretFlag(raw string) (name, ref string, err error) {
+	name, ref, err = ParseSecretFlag(raw)
+	if err != nil {
+		if n, r, ok := strings.Cut(raw, "="); ok && ValidSecretName(n) && (strings.HasPrefix(r, "keychain:") || strings.HasPrefix(r, "op://")) {
+			return "", "", storeFlagError(n)
+		}
+		return "", "", err
+	}
+	if secretstore.IsStoreRef(ref) {
+		return "", "", storeFlagError(name)
+	}
+	return name, ref, nil
+}
+
+func storeFlagError(name string) error {
+	return fmt.Errorf("--secret %s: keychain: and op:// references are not accepted as a flag; they come only from the machine map, which a person writes: stackfork secret map REPO %s=REF", name, name)
+}
+
 // ValidateSecretRef is the one validator for references from flags, the
 // machine map and the manifest. Its errors never contain ref.
 func ValidateSecretRef(ref string) error {

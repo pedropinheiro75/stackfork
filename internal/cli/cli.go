@@ -623,7 +623,7 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 		secretRefs["npm_token"] = "npmrc:" + resolvedNpmrc + "#npm.pkg.github.com"
 	}
 	for _, raw := range secretFlags {
-		name, ref, err := compose.ParseSecretFlag(raw)
+		name, ref, err := compose.ParseCommandSecretFlag(raw)
 		if err != nil {
 			return err
 		}

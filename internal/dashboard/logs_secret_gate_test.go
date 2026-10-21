@@ -35,7 +35,9 @@ func TestLogViewWaitsForASecretCheckWhenOPValuesAreUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errBuf bytes.Buffer
-	if code := cli.Run([]string{"--root", m.Root, "--state-dir", newBase, "--secret", "tok=op://Dev/acme-stripe/test-key",
+	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
+	mapTestSecret(t, m.Root, "tok", "op://Dev/acme-stripe/test-key") // a --secret flag takes only env: and npmrc:
+	if code := cli.Run([]string{"--root", m.Root, "--state-dir", newBase,
 		"prepare", "-f", filepath.Join(m.Root, "compose.yaml")}, &out, &errBuf); code != 0 {
 		t.Fatal(errBuf.String())
 	}

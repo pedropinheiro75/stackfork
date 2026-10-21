@@ -19,6 +19,7 @@ import (
 //   - `docker ps ...`          -> $DOCKER_FAKE_PS (empty by default)
 //   - `docker compose ... ps --format json` -> $DOCKER_FAKE_STATUS (empty by default)
 //   - `docker compose ... logs ...`         -> $DOCKER_FAKE_LOGS (empty by default)
+//   - `docker compose ... exec|run ...`     -> $DOCKER_FAKE_EXEC_OUT (empty by default)
 //   - `docker inspect -f {{.State.Running}} ...` -> $DOCKER_FAKE_PROXY_RUNNING (false by default)
 //   - `docker inspect -f {{(index ...HostPort}} ...` -> $DOCKER_FAKE_PROXY_PORT (empty by default)
 //   - `docker inspect -f {{.HostConfig.NetworkMode}} ...` -> $DOCKER_FAKE_PROXY_NETMODE (bridge by default), exit 1 if $DOCKER_FAKE_PROXY_MISSING is set
@@ -41,7 +42,7 @@ if [ "$1" = "compose" ]; then
     fi
   done
   case " $* " in
-    *" exec "*) exit "${DOCKER_FAKE_EXEC_EXIT:-0}" ;;
+    *" exec "*|*" run "*) printf '%s' "$DOCKER_FAKE_EXEC_OUT"; exit "${DOCKER_FAKE_EXEC_EXIT:-0}" ;;
     *" ps "*) printf '%s' "$DOCKER_FAKE_STATUS" ;;
     *" logs "*) printf '%s' "$DOCKER_FAKE_LOGS" ;;
   esac

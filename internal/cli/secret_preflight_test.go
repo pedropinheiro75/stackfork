@@ -149,7 +149,8 @@ func TestPreflightResolvesAndKeepsValuesOutOfTheLog(t *testing.T) {
 }
 
 func TestPreflightBareUpAndSeedFailBeforeDocker(t *testing.T) {
-	root, stateDir, _ := secretRepo(t, "TOK=keychain:acme-missing")
+	root, stateDir, _ := secretRepo(t, "TOK=env:SF_TEST_PREFLIGHT_TOK")
+	mapSecret(t, root, "TOK", "keychain:acme-missing") // a store reference comes from the map, not a flag
 	dockerLog := installFakeDocker(t)
 	fakeKeychain(t, nil)
 	_, e, code := runCLI(t, "--root", root, "--state-dir", stateDir, "up", "--wait-timeout", "10")

@@ -46,6 +46,9 @@ type StartOptions struct {
 // checkout, writing progress lines to out. It refuses a project stackfork
 // does not know how to run (design.md D3/D6).
 func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
+	if err := checkSecretFlags(o.Global); err != nil {
+		return err
+	}
 	toplevel, err := gitToplevel(o.Checkout)
 	if err != nil {
 		return fmt.Errorf("%s is not a git checkout", o.Checkout)
@@ -231,13 +234,38 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	return nil
 }
 
-func hasSecretFlag(global []string) bool {
-	for _, g := range global {
-		if g == "--secret" || strings.HasPrefix(g, "--secret=") {
-			return true
+// globalFlagValues are the values of the global flag name (--name V,
+// --name=V, -name V or -name=V) in the forwarded global flags.
+func globalFlagValues(global []string, name string) []string {
+	var vals []string
+	for i := 0; i < len(global); i++ {
+		n, v, hasEq := strings.Cut(strings.TrimLeft(global[i], "-"), "=")
+		if !strings.HasPrefix(global[i], "-") || n != name {
+			continue
+		}
+		if !hasEq {
+			if i+1 >= len(global) {
+				break
+			}
+			i++
+			v = global[i]
+		}
+		vals = append(vals, v)
+	}
+	return vals
+}
+
+func hasSecretFlag(global []string) bool { return len(globalFlagValues(global, "secret")) > 0 }
+
+// checkSecretFlags refuses a --secret that is not env: or npmrc: (design
+// D12) before anything runs.
+func checkSecretFlags(global []string) error {
+	for _, raw := range globalFlagValues(global, "secret") {
+		if _, _, err := compose.ParseCommandSecretFlag(raw); err != nil {
+			return err
 		}
 	}
-	return false
+	return nil
 }
 
 // needsPrepare is true when the checkout has no usable prepared instance:
@@ -474,16 +502,14 @@ func init() { runPrepare = run }
 // left to prepare to report.
 func flagSecrets(global []string) map[string]string {
 	refs := map[string]string{}
-	for i := 0; i+1 < len(global); i++ {
-		switch global[i] {
-		case "--npmrc":
-			if p, err := identity.ResolvePath(global[i+1]); err == nil {
-				refs["npm_token"] = "npmrc:" + p + "#npm.pkg.github.com"
-			}
-		case "--secret":
-			if name, ref, err := compose.ParseSecretFlag(global[i+1]); err == nil {
-				refs[name] = ref
-			}
+	for _, p := range globalFlagValues(global, "npmrc") {
+		if p, err := identity.ResolvePath(p); err == nil {
+			refs["npm_token"] = "npmrc:" + p + "#npm.pkg.github.com"
+		}
+	}
+	for _, raw := range globalFlagValues(global, "secret") {
+		if name, ref, err := compose.ParseCommandSecretFlag(raw); err == nil {
+			refs[name] = ref
 		}
 	}
 	return refs

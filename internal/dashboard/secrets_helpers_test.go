@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/secretstore"
 )
 
@@ -90,4 +91,19 @@ func countLines(t *testing.T, path string) int {
 		return 0
 	}
 	return strings.Count(string(b), "\n")
+}
+
+// mapTestSecret writes a machine-map entry in the test's config directory.
+func mapTestSecret(t *testing.T, repo, name, ref string) {
+	t.Helper()
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Map(repo, name, ref); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
 }
