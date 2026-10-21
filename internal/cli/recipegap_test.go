@@ -171,3 +171,23 @@ func TestListWarnsOnlyForLinkedWorktreeWithAGap(t *testing.T) {
 		}
 	}
 }
+
+// M1: the reset-from-main offer belongs to the instance of the branch that
+// is checked out in the worktree now.
+func TestListOffersResetFromMainOnlyForTheCheckedOutBranch(t *testing.T) {
+	_, wt, base := gapRepo(t)
+	if _, e, code := runCLI(t, append(append([]string{}, base...), "--root", wt, "prepare", "-f", ".stackfork/dev.compose.yaml")...); code != 0 {
+		t.Fatal(e)
+	}
+	raw, _, _ := runCLI(t, append(append([]string{}, base...), "list", "--json")...)
+	if strings.Count(raw, `"from_main": true`) != 1 {
+		t.Fatalf("the checked-out branch's instance must offer it:\n%s", raw)
+	}
+	if out, err := exec.Command("git", "-C", wt, "checkout", "-q", "-b", "other").CombinedOutput(); err != nil {
+		t.Fatalf("%s", out)
+	}
+	raw, _, _ = runCLI(t, append(append([]string{}, base...), "list", "--json")...)
+	if strings.Contains(raw, `"from_main": true`) || strings.Contains(raw, `"recipe_gap": true`) {
+		t.Fatalf("the instance of another branch must not offer it:\n%s", raw)
+	}
+}

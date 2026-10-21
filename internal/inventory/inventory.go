@@ -311,9 +311,10 @@ func Collect(opts Options) (Inventory, error) {
 			continue
 		}
 		if main := identity.MainRepoOf(in.Root); main != "" && !sameDir(main, in.Root) {
-			in.FromMain = mainReference(main, inv.Instances) != nil
+			offer := checkedOut(in.Root, in.Branch) // the action belongs to the branch checked out now
+			in.FromMain = offer && mainReference(main, inv.Instances) != nil
 			if w := RecipeGap(main, in.Root, in.Files, inv.Instances).Message(in.Root); w != "" {
-				in.Warnings, in.RecipeGap = append(in.Warnings, w), true
+				in.Warnings, in.RecipeGap = append(in.Warnings, w), offer
 			}
 		}
 	}
@@ -400,6 +401,16 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 func checkoutExists(root string) bool {
 	fi, err := os.Stat(root)
 	return err == nil && fi.IsDir()
+}
+
+// checkedOut reports whether branch is what root has checked out now (a
+// detached identity matches a detached HEAD).
+func checkedOut(root, branch string) bool {
+	out, err := exec.Command("git", "-C", root, "symbolic-ref", "--short", "-q", "HEAD").Output()
+	if err != nil {
+		return strings.HasPrefix(branch, "detached-")
+	}
+	return strings.TrimSpace(string(out)) == branch
 }
 
 // branchExists mirrors `git show-ref --verify --quiet refs/heads/<branch>`,
