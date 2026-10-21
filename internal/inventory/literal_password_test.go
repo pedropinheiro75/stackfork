@@ -3,6 +3,7 @@ package inventory
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -217,5 +218,29 @@ services:
 	pw, ok := LiteralPassword([]string{base, override}, "db", "postgres", raw)
 	if !ok || pw != "override-value" {
 		t.Fatalf("expected the last file's literal value, got %q, %v", pw, ok)
+	}
+}
+
+// A literal password with a line break would add lines (variables) to the
+// environment block a host command gets: refused, naming the variable and
+// never the value.
+func TestEnvBlockWithPasswordsRefusesControlCharacters(t *testing.T) {
+	for name, pw := range map[string]string{"newline": "pw\nLD_PRELOAD=/tmp/x.so", "carriage return": "pw\rx", "nul": "pw\x00x", "escape": "pw\x1bx"} {
+		t.Run(name, func(t *testing.T) {
+			files := []string{writeComposeFile(t, t.TempDir(), "compose.yaml", "services:\n  db:\n    image: postgres:17\n")}
+			svcs := []Service{{Name: "db", Kind: "postgres", ConnectionURL: "postgres://postgres:<password>@127.0.0.1:20050/app"}}
+			raw := map[string]interface{}{"db": map[string]interface{}{"environment": map[string]interface{}{"POSTGRES_PASSWORD": pw}}}
+			got, err := EnvBlockWithPasswords(svcs, files, raw)
+			if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") || strings.Contains(err.Error(), "LD_PRELOAD") || got != "" {
+				t.Fatalf("got %q, %v", got, err)
+			}
+		})
+	}
+	// an ordinary literal password still goes in
+	files := []string{writeComposeFile(t, t.TempDir(), "compose.yaml", "services:\n  db:\n    image: postgres:17\n")}
+	svcs := []Service{{Name: "db", Kind: "postgres", ConnectionURL: "postgres://postgres:<password>@127.0.0.1:20050/app"}}
+	raw := map[string]interface{}{"db": map[string]interface{}{"environment": map[string]interface{}{"POSTGRES_PASSWORD": "dev"}}}
+	if got, err := EnvBlockWithPasswords(svcs, files, raw); err != nil || got != "DATABASE_URL=postgres://postgres:dev@127.0.0.1:20050/app" {
+		t.Fatalf("got %q, %v", got, err)
 	}
 }

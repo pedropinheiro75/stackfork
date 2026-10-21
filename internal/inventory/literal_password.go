@@ -1,9 +1,11 @@
 package inventory
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 )
@@ -86,7 +88,8 @@ func CopyValue(kind, service string, services []Service, files []string, svcRaw 
 		}
 		return withRealPassword(primaryUseCommand(svc.UseCommands), svc.Kind, svc.Name, files, svcRaw), true
 	case "env_block":
-		return envBlockWithRealPasswords(services, files, svcRaw), true
+		block, err := EnvBlockWithPasswords(services, files, svcRaw)
+		return block, err == nil
 	default:
 		return "", false
 	}
@@ -139,10 +142,14 @@ func withRealPassword(placeholder, kind, service string, files []string, svcRaw 
 // output (single source of truth for its line order/shape) and substitutes
 // each DATABASE_URL/REDIS_URL/MONGODB_URL line's password with the real
 // value from the specific service that line came from, when resolvable.
-func envBlockWithRealPasswords(services []Service, files []string, svcRaw map[string]interface{}) string {
+//
+// A literal password with a control character (a line break would add a line,
+// so a variable, to the block) is an error that names the variable, never the
+// value.
+func EnvBlockWithPasswords(services []Service, files []string, svcRaw map[string]interface{}) (string, error) {
 	placeholder := buildEnvBlock(services)
 	if placeholder == "" {
-		return ""
+		return "", nil
 	}
 	firstByKey := map[string]Service{}
 	for _, svc := range services {
@@ -171,9 +178,13 @@ func envBlockWithRealPasswords(services []Service, files []string, svcRaw map[st
 		if !ok {
 			continue
 		}
-		lines[i] = key + "=" + withRealPassword(value, svc.Kind, svc.Name, files, svcRaw)
+		real := withRealPassword(value, svc.Kind, svc.Name, files, svcRaw)
+		if strings.ContainsFunc(real, unicode.IsControl) {
+			return "", fmt.Errorf("%s: the password of service %s has a control character; stackfork will not put it in an environment block", key, svc.Name)
+		}
+		lines[i] = key + "=" + real
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), nil
 }
 
 // passwordKeysByKind is D3b's exact list of "known local-dev password

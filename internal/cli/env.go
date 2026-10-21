@@ -108,7 +108,11 @@ func envBlock(project, instanceDir, newStateBase, legacyStateBase string, withPa
 		if err != nil {
 			return "", err
 		}
-		if value, ok := inventory.CopyValue("env_block", "", inst.Services, inst.Files, svcRaw); ok {
+		value, err := inventory.EnvBlockWithPasswords(inst.Services, inst.Files, svcRaw)
+		if err != nil {
+			return "", err
+		}
+		if value != "" {
 			block = value
 		}
 	}
