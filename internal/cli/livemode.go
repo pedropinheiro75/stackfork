@@ -4,8 +4,10 @@ import (
 	"context"
 	"io"
 
+	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 	"github.com/pedropinheiro75/stackfork/internal/live"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 // LiveExec is the live.Exec of the dashboard's reconciler: it runs a Job as
@@ -46,3 +48,24 @@ func LiveExec(newBase, legacyBase string, profileDirs []string, out io.Writer) l
 		return res, err
 	}
 }
+
+// liveLoopSetup lets a test replace the loop's Exec, Targets and clock.
+var liveLoopSetup func(*live.Loop)
+
+// startLiveLoop starts the dashboard's reconciler (add-live-mode D2). The
+// loop is idle, and holds no lock, until a repository has live mode on. stop
+// ends it; done closes once it has, which is after a live run in progress.
+func startLiveLoop(newBase, legacyBase string, profiles []string, srv *dashboard.Server) (loop *live.Loop, stop context.CancelFunc, done chan struct{}) {
+	loop = &live.Loop{NewBase: newBase, LegacyBase: legacyBase, Version: Version,
+		Exec: LiveExec(newBase, legacyBase, profiles, nil), ActionLocked: srv.ActionLocked}
+	if liveLoopSetup != nil {
+		liveLoopSetup(loop)
+	}
+	ctx, stop := context.WithCancel(context.Background())
+	done = make(chan struct{})
+	go func() { defer close(done); loop.Run(ctx) }()
+	return loop, stop, done
+}
+
+// heldLock is state.Held under a name the live commands share.
+func heldLock(path string) bool { return state.Held(path) }

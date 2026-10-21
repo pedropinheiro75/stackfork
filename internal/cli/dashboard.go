@@ -160,6 +160,8 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	fmt.Fprintf(stdout, "stackfork dashboard listening on http://%s\n", addr)
 	go startRegistration()
 	go srv.Warm() // first collection and repo scan, off the request path
+	loop, stopLoop, loopDone := startLiveLoop(newStateBase, legacyStateBase, profiles, srv)
+	defer func() { stopLoop(); <-loopDone }()
 	if *openFlag {
 		openBrowser("http://" + addr)
 	}
@@ -181,7 +183,8 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	// half-started stack and a "network error" on the page. A second
 	// signal forces it.
 	wait := 5 * time.Second
-	if n := srv.Running(); n > 0 {
+	stopLoop() // a live run in progress finishes first
+	if n := srv.Running() + loop.Running(); n > 0 {
 		fmt.Fprintf(stdout, "waiting for %d running action(s) to finish (signal again to stop now)\n", n)
 		wait = 15 * time.Minute
 	}
@@ -196,6 +199,10 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	}()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
 		return 0, err
+	}
+	select { // the live run in progress, if any
+	case <-loopDone:
+	case <-shutdownCtx.Done():
 	}
 	return 0, nil
 }

@@ -306,6 +306,14 @@ func (s *Server) Running() int {
 	return len(s.actionsRun)
 }
 
+// ActionLocked reports whether an action runs for the instance now; the live
+// loop skips a reconcile then (add-live-mode D9).
+func (s *Server) ActionLocked(project string) bool {
+	s.actionMu.Lock()
+	defer s.actionMu.Unlock()
+	return s.actionsRun[project]
+}
+
 func (s *Server) unlockProject(key string) {
 	s.actionMu.Lock()
 	defer s.actionMu.Unlock()
