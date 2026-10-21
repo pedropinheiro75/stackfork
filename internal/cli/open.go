@@ -63,7 +63,7 @@ func cmdOpen(stdout io.Writer, subArgs []string, project, newStateBase, legacySt
 		k, _ := knowledge.LoadForCheckout(inst.Root)
 		app, err := inventory.OpenApp(inst.Apps, k != nil && k.Entry != nil && k.Entry.None, false)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w; see `stackfork urls`", err)
 		}
 		url = app.URL
 	}

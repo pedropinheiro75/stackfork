@@ -261,7 +261,12 @@
     for (i = 0; i < list.length; i++) {
       if (list[i].source === "entry") return isWebUrl(list[i].url) && list[i].running ? list[i] : null;
     }
-    if (none) return null;
+    if (none) {
+      for (i = 0; i < list.length; i++) {
+        if (list[i].source === "route" && isWebUrl(list[i].url) && list[i].running) return list[i];
+      }
+      return null;
+    }
     var labels = ["App", ""];
     for (var j = 0; j < labels.length; j++) {
       for (i = 0; i < list.length; i++) {

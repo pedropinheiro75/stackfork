@@ -90,6 +90,9 @@ func TestOpenAppPrefersEntry(t *testing.T) {
 	if a := openApp([]inventory.AppLink{svc}, true); a != nil {
 		t.Errorf("entry none must not guess: %+v", a)
 	}
+	if a := openApp([]inventory.AppLink{svc, {Label: "App", Source: "route", Running: true, URL: "http://r"}}, true); a == nil || a.URL != "http://r" {
+		t.Errorf("a host route wins over none: %+v", a)
+	}
 	if a := openApp([]inventory.AppLink{link}, false); a != nil {
 		t.Fatalf("a link alone is not the app: %+v", a)
 	}
@@ -119,7 +122,8 @@ func TestOpenAppScriptAgrees(t *testing.T) {
 	} {
 		lists = append(lists, pick{Apps: apps})
 	}
-	lists = append(lists, pick{Apps: []inventory.AppLink{mail, svc}, None: true})
+	route := inventory.AppLink{Label: "App", Source: "route", Running: true, URL: "http://r"}
+	lists = append(lists, pick{Apps: []inventory.AppLink{mail, svc}, None: true}, pick{Apps: []inventory.AppLink{svc, route}, None: true})
 	dir := t.TempDir()
 	in, out := filepath.Join(dir, "in.json"), filepath.Join(dir, "out.json")
 	b, _ := json.Marshal(lists)

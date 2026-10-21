@@ -348,6 +348,12 @@ func OpenApp(apps []AppLink, none, needRunning bool) (*AppLink, error) {
 		}
 	}
 	if none {
+		// A host route still wins over none, as in knowledge.ResolveEntry.
+		for i := range apps {
+			if apps[i].Source == "route" && ok(apps[i]) {
+				return &apps[i], nil
+			}
+		}
 		return nil, errors.New("no web entry recorded")
 	}
 	for _, label := range []string{knowledge.ReservedLinkName, ""} {
