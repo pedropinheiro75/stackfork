@@ -84,6 +84,10 @@ type Knowledge struct {
 	// values (add-secret-vault D6).
 	Secrets []SecretDecl `json:"secrets,omitempty"`
 
+	// Live holds the live-mode watch overrides (live-mode D5); not part of
+	// the trust hash.
+	Live Live `json:"live,omitzero"`
+
 	// Verification is set only once the user confirms the app works (task
 	// 13.6); nil while Status is draft.
 	Verification *Verification `json:"verification,omitempty"`
@@ -114,6 +118,10 @@ type Facts struct {
 	RuntimeVersions map[string]string `json:"runtime_versions,omitempty"`
 
 	Scripts []Script `json:"scripts,omitempty"`
+
+	// MigrationDirs are the existing migration directories, relative to the
+	// root, found by the scan or recorded by hand (live-mode D11).
+	MigrationDirs []string `json:"migration_dirs,omitempty"`
 }
 
 // Service is one rendered Compose service's shape.
@@ -203,6 +211,8 @@ func Load(path string) (*Knowledge, error) {
 		Legacy Recipe `json:"recipe"`
 		// RawSecrets shadows Knowledge.Secrets so the list is decoded strictly.
 		RawSecrets json.RawMessage `json:"secrets"`
+		// RawLive shadows Knowledge.Live for the same reason.
+		RawLive json.RawMessage `json:"live"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
@@ -213,6 +223,9 @@ func Load(path string) (*Knowledge, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	k.Secrets = secrets
+	if k.Live, err = parseLive(raw.RawLive); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	switch k.Schema {
 	case 1:
 		k.Plan = FromRecipe(raw.Legacy)
@@ -259,6 +272,9 @@ func (k *Knowledge) Save(path string) error {
 		return err
 	}
 	if err := ValidateAdapterFiles(k.AdapterFiles); err != nil {
+		return err
+	}
+	if err := ValidateLive(k.Live); err != nil {
 		return err
 	}
 	b, err := json.MarshalIndent(k, "", "  ")
@@ -492,4 +508,26 @@ func ValidateAdapterFiles(files []string) error {
 		}
 	}
 	return nil
+}
+
+// AddMigrationDir records a migration directory (no duplicates, sorted).
+func (k *Knowledge) AddMigrationDir(p string) {
+	for _, d := range k.Facts.MigrationDirs {
+		if d == p {
+			return
+		}
+	}
+	k.Facts.MigrationDirs = append(k.Facts.MigrationDirs, p)
+	sort.Strings(k.Facts.MigrationDirs)
+}
+
+// RemoveMigrationDir drops a recorded directory; it reports whether one was there.
+func (k *Knowledge) RemoveMigrationDir(p string) bool {
+	for i, d := range k.Facts.MigrationDirs {
+		if d == p {
+			k.Facts.MigrationDirs = append(k.Facts.MigrationDirs[:i:i], k.Facts.MigrationDirs[i+1:]...)
+			return true
+		}
+	}
+	return false
 }

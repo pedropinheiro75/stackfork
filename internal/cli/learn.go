@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -33,7 +34,7 @@ type learnOutput struct {
 // (task 13.5/13.6) added on top of it.
 func cmdLearn(stdout io.Writer, subArgs []string, root string) error {
 	if isHelpRequest(subArgs) {
-		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe|step|secret ... | learn verify --check ... --confirm ...")
+		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe|step|secret|live-watch|live-ignore|fact ... | learn verify --check ... --confirm ...")
 		return nil
 	}
 	if len(subArgs) == 0 {
@@ -99,6 +100,9 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 		fresh.Plan = existing.Plan
 	}
 	fresh.Secrets = existing.Secrets
+	fresh.Live = existing.Live
+	// A migration directory recorded by hand survives a re-scan.
+	fresh.Facts.MigrationDirs = unionSorted(fresh.Facts.MigrationDirs, existing.Facts.MigrationDirs)
 	fresh.Answers = existing.Answers
 	fresh.Gotchas = existing.Gotchas
 	fresh.Verification = existing.Verification
@@ -110,7 +114,7 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 // prior `stackfork learn`.
 func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 	if len(subArgs) == 0 {
-		return errors.New("learn record requires a kind (answer, gotcha, recipe, step, secret)")
+		return errors.New("learn record requires a kind (answer, gotcha, recipe, step, secret, live-watch, live-ignore, fact)")
 	}
 	path := knowledgePath(root)
 	k, err := knowledge.Load(path)
@@ -165,8 +169,20 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root string) error {
 			return err
 		}
 		return printJSON(stdout, map[string]interface{}{"recorded": "secret", "secrets": k.Secrets})
+	case "live-watch", "live-ignore", "fact":
+		if isHelpRequest(rest) {
+			printFlaglessUsage(stdout, "learn record "+kind, liveRecordUsage[kind])
+			return nil
+		}
+		if err := recordLive(k, kind, rest); err != nil {
+			return err
+		}
+		if err := learn.WriteKnowledge(root, k); err != nil {
+			return err
+		}
+		return printJSON(stdout, map[string]interface{}{"recorded": kind, "live": k.Live, "migration_dirs": k.Facts.MigrationDirs})
 	default:
-		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha, recipe, step or secret)", kind)
+		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha, recipe, step, secret, live-watch, live-ignore or fact)", kind)
 	}
 
 	if err := learn.WriteKnowledge(root, k); err != nil {
@@ -402,4 +418,89 @@ func recordSecret(k *knowledge.Knowledge, rest []string) error {
 	}
 	k.UpsertSecret(names[0], *hint)
 	return knowledge.ValidateSecrets(k.Secrets)
+}
+
+var liveRecordUsage = map[string]string{
+	"live-watch":  "learn record live-watch PATH --action rebuild|prepare|migrate [--service S] | learn record live-watch --remove PATH",
+	"live-ignore": "learn record live-ignore PATH | learn record live-ignore --remove PATH",
+	"fact":        "learn record fact migration-dir PATH | learn record fact migration-dir --remove PATH",
+}
+
+func unionSorted(a, b []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, l := range [][]string{a, b} {
+		for _, s := range l {
+			if !seen[s] {
+				seen[s] = true
+				out = append(out, s)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// recordLive handles live-watch, live-ignore and fact migration-dir. Flags
+// and the PATH may come in either order. Errors never echo the path.
+func recordLive(k *knowledge.Knowledge, kind string, rest []string) error {
+	usage := liveRecordUsage[kind]
+	if kind == "fact" {
+		if len(rest) == 0 || rest[0] != "migration-dir" {
+			return errors.New("usage: " + usage)
+		}
+		rest = rest[1:]
+	}
+	fs := newFlagSet(io.Discard, "learn record "+kind)
+	action := fs.String("action", "", "")
+	service := fs.String("service", "", "")
+	remove := fs.Bool("remove", false, "")
+	var paths []string
+	for {
+		if err := fs.Parse(rest); err != nil {
+			return parseFailureErr(fs, err)
+		}
+		if fs.NArg() == 0 {
+			break
+		}
+		paths = append(paths, fs.Arg(0))
+		rest = fs.Args()[1:]
+	}
+	if len(paths) != 1 {
+		return errors.New("usage: " + usage)
+	}
+	p := paths[0]
+	if kind != "live-watch" && (*action != "" || *service != "") {
+		return errors.New("usage: " + usage)
+	}
+	if err := knowledge.ValidateLivePath(p); err != nil {
+		return err
+	}
+	if *remove {
+		if kind == "live-watch" && (*action != "" || *service != "") {
+			return errors.New("usage: " + usage)
+		}
+		var found bool
+		switch kind {
+		case "live-watch":
+			found = k.RemoveLiveWatch(p)
+		case "live-ignore":
+			found = k.RemoveLiveIgnore(p)
+		default:
+			found = k.RemoveMigrationDir(p)
+		}
+		if !found {
+			return errors.New("nothing recorded for that path")
+		}
+		return nil
+	}
+	switch kind {
+	case "live-watch":
+		return k.UpsertLiveWatch(knowledge.LiveWatch{Path: p, Action: *action, Service: *service})
+	case "live-ignore":
+		return k.AddLiveIgnore(p)
+	default:
+		k.AddMigrationDir(p)
+		return nil
+	}
 }
