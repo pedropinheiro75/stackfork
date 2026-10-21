@@ -64,14 +64,14 @@ func TestSeedErrorReadsTheSeedStepLogThenSeedLog(t *testing.T) {
 	w.Write([]byte("seeding\nerror: duplicate key\n"))
 	s.End(errors.New("exited with status 1"), 1)
 	r.Finish(errors.New("failed"))
-	if i := collectOne(t, base); i.SeedError != "seeding\nerror: duplicate key" || strings.Contains(i.SeedError, "old log") || i.SeedRun != 1 || i.SeedStep != "seed" {
+	if i := collectOne(t, base); i.SeedError != "seeding\nerror: duplicate key\nerror: exited with status 1" || strings.Contains(i.SeedError, "old log") || i.SeedRun != 1 || i.SeedStep != "seed" {
 		t.Fatalf("run log: %q", i.SeedError)
 	}
 	// a newer run that did not reach the seed does not hide it
 	r2, _ := runs.Begin(dir, runs.Meta{Command: "up", Trigger: "cli"})
 	r2.Step("up", "compose-up", "up")
 	r2.Finish(errors.New("failed"))
-	if i := collectOne(t, base); i.SeedError != "seeding\nerror: duplicate key" {
+	if i := collectOne(t, base); i.SeedError != "seeding\nerror: duplicate key\nerror: exited with status 1" {
 		t.Fatalf("older seed run: %q", i.SeedError)
 	}
 }
@@ -101,7 +101,7 @@ func TestLastRunCarriesRetryTailAndRunningStep(t *testing.T) {
 	r.Finish(errors.New("step app failed"))
 	lr := collectOne(t, base).LastRun
 	if lr.Outcome != runs.Failed || lr.FailedStep != "app" || lr.Retry != "stackfork --root /x start-env" || lr.Step != "" ||
-		lr.Tail != "line 4\nline 5\nline 6\nline 7\nline 8\nline 9" {
+		lr.Tail != "line 5\nline 6\nline 7\nline 8\nline 9\nerror: exited with status 2" {
 		t.Fatalf("failed: %+v", lr)
 	}
 }
@@ -135,7 +135,7 @@ func TestSeedRunLogUsesTheMainCheckoutsPlan(t *testing.T) {
 	s.Start().Write([]byte("seed failed here\n"))
 	s.End(errors.New("exited with status 1"), 1)
 	r.Finish(errors.New("failed"))
-	if i := collectOne(t, base); i.SeedStep != "load-data" || i.SeedError != "seed failed here" {
+	if i := collectOne(t, base); i.SeedStep != "load-data" || i.SeedError != "seed failed here\nerror: exited with status 1" {
 		t.Fatalf("%q %q", i.SeedStep, i.SeedError)
 	}
 }
