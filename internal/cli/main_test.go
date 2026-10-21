@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/identity"
@@ -11,14 +12,23 @@ import (
 )
 
 // TestMain isolates the developer's real config dir and proxy from every test.
+// tempBinDirs are the stackfork-bin-* dirs the tests that need a real binary
+// built (about 15 MB each); TestMain removes them so runs do not pile up in $TMPDIR.
+var (
+	tempBinMu   sync.Mutex
+	tempBinDirs []string
+)
+
+func trackTempBin(dir string) {
+	tempBinMu.Lock()
+	defer tempBinMu.Unlock()
+	tempBinDirs = append(tempBinDirs, dir)
+}
+
 func TestMain(m *testing.M) {
 	code := testsupport.Main(m)
-	// The tests that need a real binary build it into a stackfork-bin-* temp
-	// dir (about 15 MB); remove it so runs do not pile up in $TMPDIR.
-	for _, bin := range []string{builtPath, liveBinaryPath} {
-		if dir := filepath.Dir(bin); strings.HasPrefix(filepath.Base(dir), "stackfork-bin-") {
-			os.RemoveAll(dir)
-		}
+	for _, dir := range tempBinDirs {
+		os.RemoveAll(dir)
 	}
 	os.Exit(code)
 }

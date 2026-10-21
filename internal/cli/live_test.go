@@ -36,6 +36,7 @@ func stackforkBinary(t *testing.T) string {
 			liveBinaryErr = err
 			return
 		}
+		trackTempBin(dir)
 		liveBinaryPath = filepath.Join(dir, "stackfork")
 		cmd := exec.Command("go", "build", "-o", liveBinaryPath, "./cmd/stackfork")
 		cmd.Dir = root
