@@ -125,3 +125,10 @@ func TestMarkdownListsSecretNamesOnly(t *testing.T) {
 		t.Fatalf("%s", md)
 	}
 }
+
+func TestReservedDeclaredNameSaysReserved(t *testing.T) {
+	_, err := Load(writeK(t, `[{"name":"DOCKER_HOST"}]`))
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("%v", err)
+	}
+}

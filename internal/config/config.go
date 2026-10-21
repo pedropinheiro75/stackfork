@@ -46,7 +46,14 @@ func Path() (string, error) {
 }
 
 // Load reads the config; a missing file is an empty config.
-func Load() (*Config, error) {
+func Load() (*Config, error) { return load(true) }
+
+// LoadForUnmap is Load without the check of the secrets map, so that
+// `secret unmap` can remove an entry that Load refuses (a reserved name from
+// before the rule, say). Everything else reads the strict Load.
+func LoadForUnmap() (*Config, error) { return load(false) }
+
+func load(validate bool) (*Config, error) {
 	p, err := Path()
 	if err != nil {
 		return nil, err
@@ -68,8 +75,10 @@ func Load() (*Config, error) {
 	for _, k := range []string{"roots", "exclude", "maxDepth", "mode", "modes", "secrets"} {
 		delete(c.extra, k)
 	}
-	if err := c.validateSecrets(); err != nil {
-		return nil, fmt.Errorf("%s: %w", p, err)
+	if validate {
+		if err := c.validateSecrets(); err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
 	}
 	return c, nil
 }

@@ -24,8 +24,8 @@ func (c *Config) validateSecrets() error {
 		}
 		sort.Strings(names)
 		for _, name := range names {
-			if !compose.ValidSecretName(name) {
-				return fmt.Errorf("secrets for %s: a secret name must match [A-Za-z_][A-Za-z0-9_]*", repo)
+			if why := compose.SecretNameProblem(name); why != "" {
+				return fmt.Errorf("secrets for %s: %s (run `stackfork secret unmap` to remove it)", repo, why)
 			}
 			if err := compose.ValidateSecretRef(c.Secrets[repo][name]); err != nil {
 				return fmt.Errorf("secrets for %s: %s: %w", repo, name, err)
@@ -51,8 +51,8 @@ func (c *Config) SecretsFor(repo string) map[string]string {
 // Map sets the reference of a secret name for a repository, keyed by its
 // resolved path. The name and reference are validated like a --secret flag.
 func (c *Config) Map(repo, name, ref string) error {
-	if !compose.ValidSecretName(name) {
-		return fmt.Errorf("secret name must match [A-Za-z_][A-Za-z0-9_]*")
+	if why := compose.SecretNameProblem(name); why != "" {
+		return fmt.Errorf("%s", why)
 	}
 	if err := compose.ValidateSecretRef(ref); err != nil {
 		return fmt.Errorf("secret %s: %w", name, err)

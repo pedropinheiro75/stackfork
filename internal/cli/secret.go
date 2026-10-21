@@ -340,7 +340,11 @@ func secretMap(stdout io.Writer, verb string, args []string, newBase, legacyBase
 		return 0, err
 	}
 	repo = mainRepo(repo)
-	cfg, err := config.Load()
+	load := config.Load
+	if verb == "unmap" {
+		load = config.LoadForUnmap
+	}
+	cfg, err := load()
 	if err != nil {
 		return 0, err
 	}

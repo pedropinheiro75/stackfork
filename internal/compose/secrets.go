@@ -17,6 +17,19 @@ func ValidSecretName(name string) bool {
 	return secretNamePattern.MatchString(name) && !ReservedSecretName(name)
 }
 
+// SecretNameProblem says why name is not a valid secret name, or "" when it
+// is. It never quotes the name: text that fails may be a value pasted by
+// mistake.
+func SecretNameProblem(name string) string {
+	switch {
+	case !secretNamePattern.MatchString(name):
+		return "a secret name must match [A-Za-z_][A-Za-z0-9_]*"
+	case ReservedSecretName(name):
+		return "that secret name is reserved (COMPOSE_*, DOCKER_*, LC_*, PATH, HOME, USER, SHELL, TMPDIR and LANG steer Docker or the shell)"
+	}
+	return ""
+}
+
 // ReservedSecretName is true for the names a secret value must never be
 // exported under to the Compose child: COMPOSE_* and DOCKER_* (they select
 // the project, the daemon and the config) and PATH, HOME, USER, SHELL, TMPDIR,
@@ -41,7 +54,7 @@ func ParseSecretFlag(raw string) (name, ref string, err error) {
 		return "", "", fmt.Errorf("--secret: expected NAME=REF where REF is env:VAR, npmrc:PATH#HOST, keychain:ITEM or op://VAULT/ITEM/FIELD")
 	}
 	if !ValidSecretName(name) {
-		return "", "", fmt.Errorf("--secret: secret name must match [A-Za-z_][A-Za-z0-9_]* and not be COMPOSE_*, DOCKER_*, LC_*, PATH, HOME, USER, SHELL, TMPDIR or LANG")
+		return "", "", fmt.Errorf("--secret: %s", SecretNameProblem(name))
 	}
 	if err := ValidateSecretRef(ref); err != nil {
 		return "", "", fmt.Errorf("--secret %s: %w", name, err)

@@ -24,8 +24,8 @@ type SecretDecl struct {
 func ValidateSecrets(list []SecretDecl) error {
 	seen := map[string]bool{}
 	for i, s := range list {
-		if !compose.ValidSecretName(s.Name) {
-			return fmt.Errorf("secrets[%d]: name must match [A-Za-z_][A-Za-z0-9_]*", i)
+		if why := compose.SecretNameProblem(s.Name); why != "" {
+			return fmt.Errorf("secrets[%d]: %s", i, why)
 		}
 		if strings.ContainsFunc(s.Hint, unicode.IsControl) {
 			return fmt.Errorf("secrets[%d] (%s): hint has a control character", i, s.Name)

@@ -146,3 +146,36 @@ func TestMapRefusesBadInputWithoutEcho(t *testing.T) {
 		t.Fatal("refused entry was kept")
 	}
 }
+
+// Round 2: a name that is reserved says so, and a config that holds one can
+// still be repaired with `secret unmap`.
+func TestReservedNameSaysReservedAndUnmapStillWorks(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("STACKFORK_CONFIG_DIR", dir)
+	repo := t.TempDir()
+	resolved, _ := identity.ResolvePath(repo)
+	body, _ := json.Marshal(map[string]any{"roots": []string{}, "exclude": []string{}, "secrets": map[string]any{resolved: map[string]string{"PATH": "env:X", "NPM_TOKEN": "env:Y"}}})
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := (&Config{}).Map(repo, "COMPOSE_FILE", "env:X"); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("Map: %v", err)
+	}
+	c, err := LoadForUnmap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Unmap(repo, "PATH"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	c2, err := Load()
+	if err != nil || c2.SecretsFor(repo)["NPM_TOKEN"] != "env:Y" || len(c2.SecretsFor(repo)) != 1 {
+		t.Fatalf("%v %v", c2, err)
+	}
+}

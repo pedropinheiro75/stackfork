@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 )
 
@@ -123,5 +125,26 @@ func TestGuardBlocksOPReadsWhenTheConfigIsUnreadable(t *testing.T) {
 	}
 	if code := run("op whoami"); code != 0 {
 		t.Errorf("op whoami: %d", code)
+	}
+}
+
+// Round 2: `secret unmap` repairs a config that holds a reserved name.
+func TestSecretUnmapRepairsAReservedName(t *testing.T) {
+	root, state := reposEnv(t)
+	dir := t.TempDir()
+	t.Setenv("STACKFORK_CONFIG_DIR", dir)
+	repo := adaptedRepo(t, root)
+	rr, _ := identity.ResolvePath(repo)
+	body, _ := json.Marshal(map[string]any{"roots": []string{}, "exclude": []string{}, "secrets": map[string]any{rr: map[string]string{"PATH": "env:X", "NPM_TOKEN": "env:Y"}}})
+	os.WriteFile(filepath.Join(dir, "config.json"), body, 0o600)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	if _, e, code := runCLI(t, append(base, "secret", "ls", repo)...); code == 0 || !strings.Contains(e, "reserved") || !strings.Contains(e, "unmap") {
+		t.Fatalf("ls: %d %s", code, e)
+	}
+	if out, e, code := runCLI(t, append(base, "secret", "unmap", repo, "PATH")...); code != 0 {
+		t.Fatalf("unmap: %d %s %s", code, out, e)
+	}
+	if out, e, code := runCLI(t, append(base, "secret", "ls", repo)...); code != 0 || !strings.Contains(out, "NPM_TOKEN") {
+		t.Fatalf("ls after: %d %s %s", code, out, e)
 	}
 }
