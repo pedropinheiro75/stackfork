@@ -155,6 +155,29 @@ func LastLiveRun(instanceDir string) *RunInfo {
 	return nil
 }
 
+// HostSkipWarning is the status warning of an instance whose live runs left a
+// host step undone (see HostStepsSkipped).
+const HostSkipWarning = "host steps skipped: run start-env"
+
+// HostStepsSkipped is true when a live run skipped a host step (HostSkipReason)
+// and no run of another trigger came after it. Live runs settle the baseline
+// for a change whose only work was a host step, so this keeps it visible until
+// a person's full run (start-env, reset, up) does that work.
+func HostStepsSkipped(instanceDir string) bool {
+	list, _ := runs.List(instanceDir)
+	for _, r := range list {
+		if r.Trigger != TriggerLive {
+			return false
+		}
+		for _, s := range r.Steps {
+			if s.State == runs.Skipped && s.Reason == HostSkipReason {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (l *Loop) now() time.Time {
 	if l.Now != nil {
 		return l.Now()
@@ -388,6 +411,9 @@ func (l *Loop) tickTarget(ctx context.Context, rs *repoState, t Target, paused b
 		}
 	}
 	ts.pending = ts.poller.Poll()
+	if HostStepsSkipped(t.InstanceDir) {
+		st.Warnings = append(st.Warnings, HostSkipWarning)
+	}
 	st.Pending, st.Fetch, st.LastFetch = append(st.Pending, ts.pending...), ts.fetchNote, ts.lastFetch
 	if ts.warn != "" {
 		st.Warnings = append(st.Warnings, ts.warn)
@@ -514,6 +540,9 @@ func Inspect(newBase, main string, ts []Target) RepoStatus {
 		}
 		if b, detached, err := ReadBranch(t.Root); err == nil && (detached || b != t.Branch) {
 			st.Warnings = append(st.Warnings, "branch switched")
+		}
+		if HostStepsSkipped(t.InstanceDir) {
+			st.Warnings = append(st.Warnings, HostSkipWarning)
 		}
 		out.Targets = append(out.Targets, st)
 	}
