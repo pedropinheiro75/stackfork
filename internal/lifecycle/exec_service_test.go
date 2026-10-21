@@ -72,6 +72,19 @@ func TestMissingServiceSuggestsTheHostWhenNoServiceRunsTheApp(t *testing.T) {
 	}
 }
 
+// A command with shell syntax cannot be recorded on the host (SplitArgv would
+// refuse it): the hint says it needs a shell-free form instead.
+func TestHostHintForAShellCommandSaysItNeedsAShellFreeForm(t *testing.T) {
+	stack := `{"postgres":{"image":"postgres:17"},"cache":{"image":"redis:7"}}`
+	for _, cmd := range []string{"bun run a && bun run b", "bun run a | tee x", "bun run a; bun run b", "bun run a > out.txt"} {
+		step := knowledge.Step{ID: "migrate", Kind: knowledge.KindExec, Cmd: cmd}
+		_, err := hostHintStack(t, stack).exec(io.Discard, step)
+		if err == nil || strings.Contains(err.Error(), "--on host") || !strings.Contains(err.Error(), "shell-free form") {
+			t.Errorf("%q: %v", cmd, err)
+		}
+	}
+}
+
 func TestMissingServiceStillSuggestsServiceWhenAnAppServiceExists(t *testing.T) {
 	step := knowledge.Step{ID: "migrate", Kind: knowledge.KindExec, Cmd: "bun run db:migrate", Service: "api"}
 	for name, r := range map[string]PlanRunner{

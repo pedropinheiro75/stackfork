@@ -90,6 +90,9 @@ func hostHint(instanceDir string, plan knowledge.Plan, id, cmd, once string) str
 			return ""
 		}
 	}
+	if _, err := knowledge.SplitArgv(cmd); err != nil { // a host step is one command, never a shell line
+		return "no service of this stack runs the app; to run it on the host, the command needs a shell-free form (no &&, |, ;, redirects or substitutions): one command per step"
+	}
 	h := fmt.Sprintf("no service of this stack runs the app; to run it on the host with this instance's environment:\n  stackfork learn record step --id %s --kind exec --on host --cmd %q", id, cmd)
 	if once != "" {
 		h += " --once " + once
