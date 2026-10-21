@@ -98,7 +98,12 @@ func profileMention(name string, profileDirs []string) string {
 
 // Prompt is the text "Learn with your agent" copies (design.md D7).
 func Prompt(name, path, branch string) string {
-	return fmt.Sprintf("Using stackfork, run `stackfork learn` for `%s` (`%s`) on branch `%s` in a worktree created with `stackfork worktree add`, then prepare and start it. "+
+	where := "in a worktree created with `stackfork worktree add`"
+	if at := checkedOutAt(path, branch); at != "" {
+		// git refuses a second checkout of the branch: use the one that has it.
+		where = fmt.Sprintf("in its existing checkout: the branch is already checked out at `%s`, so do not create a worktree; uncommitted changes there do not block stackfork", at)
+	}
+	return fmt.Sprintf("Using stackfork, run `stackfork learn` for `%s` (`%s`) on branch `%s` %s, then prepare and start it. "+
 		"Check migrations, seed data and login, report `stackfork urls`, and once I confirm it works record it with `stackfork learn verify`. "+
-		"Ask before building anything beyond the running instance.", name, path, branch)
+		"Ask before building anything beyond the running instance.", name, path, branch, where)
 }

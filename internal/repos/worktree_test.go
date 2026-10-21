@@ -172,3 +172,17 @@ func TestAddWorktreeBranchAlreadyCheckedOut(t *testing.T) {
 		t.Error("no folder may be created")
 	}
 }
+
+// The learn prompt sends an agent to the checkout that already has the branch
+// instead of asking it to create a worktree that git would refuse.
+func TestPromptUsesTheCheckoutThatHasTheBranch(t *testing.T) {
+	repo, _ := mkWithOrigin(t)
+	p := Prompt("proj", repo, "main")
+	if strings.Contains(p, "worktree add") || !strings.Contains(p, "already checked out at `"+repo+"`") {
+		t.Fatalf("main is checked out in the main checkout:\n%s", p)
+	}
+	git(t, repo, "branch", "feature")
+	if p := Prompt("proj", repo, "feature"); !strings.Contains(p, "stackfork worktree add") {
+		t.Fatalf("a branch checked out nowhere needs a worktree:\n%s", p)
+	}
+}
