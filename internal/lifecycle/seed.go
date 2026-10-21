@@ -55,8 +55,10 @@ func ResolveExecService(instanceDir string, step knowledge.Step, plan knowledge.
 		return service
 	}
 	if len(svcs) == 1 {
-		for name := range svcs { // a single-service stack has one place to run it
-			return name
+		for name, raw := range svcs { // a single-service stack has one place to run it, unless that is a database: the app command is not there
+			if !compose.DatabaseService(raw) && !compose.UtilityService(raw) {
+				return name
+			}
 		}
 	}
 	return ""

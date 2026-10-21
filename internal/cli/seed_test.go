@@ -13,7 +13,8 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
-const seedCompose = "services:\n  db:\n    image: postgres:17\n    volumes:\n      - pgdata:/var/lib/postgresql/data\nvolumes:\n  pgdata: {}\n"
+// the one service is an app image: a database-only stack has no place for an app command (it gets the host hint)
+const seedCompose = "services:\n  db:\n    image: acme/app:1\n    volumes:\n      - pgdata:/var/lib/postgresql/data\nvolumes:\n  pgdata: {}\n"
 
 func seedFixture(t *testing.T) (root, stateDir, log string) {
 	t.Helper()
@@ -263,7 +264,7 @@ func TestStatelessStackIsNeverSeeded(t *testing.T) {
 	log := installFakeDocker(t)
 	root := seedScriptRoot(t)
 	composePath := filepath.Join(root, "compose.yaml")
-	os.WriteFile(composePath, []byte("services:\n  db:\n    image: postgres:17\n"), 0o600)
+	os.WriteFile(composePath, []byte("services:\n  db:\n    image: acme/app:1\n"), 0o600)
 	stateDir := filepath.Join(t.TempDir(), "state")
 	runCLI(t, "--root", root, "--state-dir", stateDir, "prepare", "-f", composePath)
 	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")

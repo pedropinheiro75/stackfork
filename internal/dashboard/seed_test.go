@@ -49,7 +49,7 @@ func seedStack(t *testing.T) (srv *dashboard.Server, newBase, project, root stri
 		t.Fatalf("git init: %v %s", err, out)
 	}
 	composePath := filepath.Join(root, "compose.yaml")
-	os.WriteFile(composePath, []byte("services:\n  db:\n    image: postgres:17\n    volumes:\n      - pg:/data\nvolumes:\n  pg: {}\n"), 0o600)
+	os.WriteFile(composePath, []byte("services:\n  db:\n    image: acme/app:1\n    volumes:\n      - pg:/data\nvolumes:\n  pg: {}\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"scripts":{"db:migrate":"m","db:seed":"s"}}`), 0o644)
 	newBase = t.TempDir()
 	var out, errBuf bytes.Buffer
