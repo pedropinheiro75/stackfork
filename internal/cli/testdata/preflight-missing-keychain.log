@@ -1,1 +1,2 @@
 NPM_TOKEN (keychain:acme-npm-token): missing; run: stackfork secret set acme-npm-token
+error: step secrets failed: NPM_TOKEN (keychain:acme-npm-token) missing; the step log lists the fix for each

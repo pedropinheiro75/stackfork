@@ -59,7 +59,7 @@ func TestRunsAPIListGetAndLog(t *testing.T) {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 	rec = getRuns(srv, "GET", "/api/runs/log?project="+project+"&id=1&step=seed")
-	if rec.Code != 200 || rec.Body.String() != "seeding\nerror: duplicate key\n" ||
+	if rec.Code != 200 || rec.Body.String() != "seeding\nerror: duplicate key\nerror: exited with status 1\n" ||
 		rec.Header().Get("Cache-Control") != "no-store" || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain") {
 		t.Fatalf("%d %q %v", rec.Code, rec.Body.String(), rec.Header())
 	}

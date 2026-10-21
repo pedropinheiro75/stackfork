@@ -98,7 +98,7 @@ func TestRunsShow(t *testing.T) {
 	if out, _, _ := runsCmd(t, dir, "show", "1"); !strings.Contains(out, "run 1") || !strings.Contains(out, "succeeded") {
 		t.Errorf("show 1:\n%s", out)
 	}
-	if out, _, _ := runsCmd(t, dir, "show", "--step", "seed"); out != "boom: 42 rows\n" {
+	if out, _, _ := runsCmd(t, dir, "show", "--step", "seed"); out != "boom: 42 rows\nerror: exit 3\n" {
 		t.Errorf("step log: %q", out)
 	}
 	if out, _, _ := runsCmd(t, dir, "show", "1", "--step", "up"); out != "started\n" {

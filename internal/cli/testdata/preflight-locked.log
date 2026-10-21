@@ -1,1 +1,2 @@
 NPM_TOKEN (keychain:acme-npm-token): locked; unlock the keychain and start again
+error: step secrets failed: NPM_TOKEN (keychain:acme-npm-token) locked; the step log lists the fix for each
