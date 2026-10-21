@@ -238,7 +238,8 @@ func TestDestructiveTable(t *testing.T) {
 		"stackfork prune --stopped --keep-volumes --json": false,
 		"stackfork --instance x list --yes":               false,
 		"stackfork gc":                                    false,
-		"stackfork down --volumes":                        false,
+		"stackfork down --volumes":                        true,
+		"stackfork down":                                  false,
 		"stackfork down --volumes --forget":               true,
 		"stackfork --instance x down --volumes --forget":  true,
 		"stackfork down --forget":                         true,
@@ -335,7 +336,7 @@ func TestDestructiveOnWindowsSyntax(t *testing.T) {
 		`echo hi; stackfork prune --all`:             true,
 		`powershell -Command "stackfork gc --apply"`: true,
 		`C:\Users\x\stackfork.exe prune`:             false,
-		`C:\Users\x\stackfork.exe down --volumes`:    false,
+		`C:\Users\x\stackfork.exe down --volumes`:    true,
 		`echo C:\bin\stackfork.exe prune --all`:      false,
 	} {
 		if got := Destructive(cmd, `C:\repo`); got != want {
