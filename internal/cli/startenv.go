@@ -106,7 +106,8 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	if trigger == "" {
 		trigger = "cli"
 	}
-	secrets := func() []redact.Secret { return runSecrets(instanceDir, o.Global) }
+	var vals lifecycle.SecretValues // the preflight's values redact every step after it (D11)
+	secrets := func() []redact.Secret { return vals.Redactions() }
 	rec, err := runs.Begin(instanceDir, runs.Meta{Command: "start-env", Trigger: trigger, Mode: mode, Project: project, Branch: branch,
 		Out: out, Secrets: secrets, Observer: o.Observer})
 	if err != nil {
@@ -136,8 +137,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 
 	// secrets: resolve every effective reference before prepare, which already
 	// calls Docker, and fail naming every problem (design D8).
-	vals, err := startPreflight(rec, o, root, main, instanceDir, trigger, insts)
-	if err != nil {
+	if vals, err = startPreflight(rec, o, root, main, instanceDir, trigger, insts); err != nil {
 		return err
 	}
 	runValues.Store(inRunKey(instanceDir), vals)
@@ -199,11 +199,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 			return fmt.Errorf("prepare exited with status %d", code)
 		}
 		if w := strings.TrimSpace(pErr.String()); w != "" {
-			// The step writer only knows the secrets of the manifest and --secret
-			// flags; the references prepare received from a sibling are not in it.
-			rw := redact.NewWriter(out, refSecrets(sibRefs))
-			fmt.Fprintln(rw, w)
-			rw.Close()
+			fmt.Fprintln(out, w) // out is the step writer: it redacts with the preflight's values
 		}
 		if seedCmd != "" {
 			recordSeedRecipe(instanceDir, seedCmd, seedSvc)
@@ -472,36 +468,6 @@ func recordSeedRecipe(instanceDir, cmd, svc string) {
 	}
 }
 
-// runSecrets are the values a run must redact: the instance's secret
-// references, and the --secret references of the command (which prepare is
-// about to record in the manifest).
-func runSecrets(instanceDir string, global []string) []redact.Secret {
-	var secrets []redact.Secret
-	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
-		secrets = lifecycle.SecretsForRedaction(m)
-	}
-	var refs []string
-	for i := 0; i+1 < len(global); i++ {
-		if global[i] == "--secret" {
-			refs = append(refs, global[i+1])
-		}
-	}
-	return append(secrets, refSecrets(refs)...)
-}
-
-// refSecrets resolves NAME=ref pairs to the values to redact.
-func refSecrets(refs []string) []redact.Secret {
-	var secrets []redact.Secret
-	for _, r := range refs {
-		if name, ref, ok := strings.Cut(r, "="); ok {
-			if v, err := compose.ResolveSecret(name, ref); err == nil {
-				secrets = append(secrets, redact.Secret{Name: name, Value: v})
-			}
-		}
-	}
-	return secrets
-}
-
 // runPrepare runs the prepare command; a variable so tests can print from it.
 var runPrepare func([]string, io.Writer, io.Writer) (int, error)
 
@@ -547,6 +513,6 @@ func startPreflight(rec *runs.Run, o StartOptions, root, main, instanceDir, trig
 		lifecycle.Layer{Source: lifecycle.SourceManifest, Refs: manifest},
 		lifecycle.Layer{Source: lifecycle.SourceMap, Refs: mapped},
 		lifecycle.Layer{Source: lifecycle.SourceFlag, Refs: flagSecrets(o.Global)})
-	return lifecycle.Preflight{Run: rec, Main: main, Refs: refs, Declared: lifecycle.DeclaredSecrets(root, main),
+	return lifecycle.Preflight{Run: rec, InstanceDir: instanceDir, Main: main, Refs: refs, Declared: lifecycle.DeclaredSecrets(root, main),
 		Dashboard: trigger == "dashboard"}.Do()
 }

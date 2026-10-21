@@ -39,13 +39,14 @@ func (v SecretValues) Redactions() []redact.Secret {
 // every effective reference, checks that every declared name has one, and
 // fails before any Docker call, listing every problem with its fix.
 type Preflight struct {
-	Run        *runs.Run // nil: nothing is recorded, the lines go to Out
-	Out        io.Writer // used when Run is nil
-	Main       string    // the repository the fix commands name
-	Refs       map[string]string
-	Declared   []knowledge.SecretDecl
-	Unprepared []string // mapped names the manifest does not record (bare up)
-	Dashboard  bool     // the dashboard does not see the shell environment
+	Run         *runs.Run // nil: nothing is recorded, the lines go to Out
+	InstanceDir string    // the dashboard remembers a run's values for this instance (D11)
+	Out         io.Writer // used when Run is nil
+	Main        string    // the repository the fix commands name
+	Refs        map[string]string
+	Declared    []knowledge.SecretDecl
+	Unprepared  []string // mapped names the manifest does not record (bare up)
+	Dashboard   bool     // the dashboard does not see the shell environment
 }
 
 // preflightText is what the row says.
@@ -129,6 +130,9 @@ func (p Preflight) Do() (SecretValues, error) {
 	if len(failed) == 0 {
 		if step != nil {
 			step.End(nil, 0)
+		}
+		if p.Dashboard && p.InstanceDir != "" {
+			CacheSecrets(p.InstanceDir, values)
 		}
 		return values, nil
 	}
@@ -216,6 +220,6 @@ func InstancePreflight(rec *runs.Run, out io.Writer, root, instanceDir string, d
 		main = root
 	}
 	refs, _, unprepared := InstanceSecrets(info, mapped)
-	return Preflight{Run: rec, Out: out, Main: main, Refs: refs, Declared: DeclaredSecrets(root, main),
+	return Preflight{Run: rec, Out: out, InstanceDir: instanceDir, Main: main, Refs: refs, Declared: DeclaredSecrets(root, main),
 		Unprepared: unprepared, Dashboard: dashboard}.Do()
 }

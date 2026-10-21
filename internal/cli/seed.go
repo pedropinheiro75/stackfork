@@ -68,13 +68,14 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	main := repos.MainRepoOf(root)
 	mode := lifecycle.PlanMode(root, main)
+	var vals lifecycle.SecretValues
 	rec, err := runs.Begin(instanceDir, runs.Meta{Command: "seed", Trigger: envTrigger(), Mode: mode, Project: project, Branch: branch,
-		Out: stdout, Secrets: func() []redact.Secret { return runSecrets(instanceDir, nil) }})
+		Out: stdout, Secrets: func() []redact.Secret { return vals.Redactions() }})
 	if err != nil {
 		return 0, err
 	}
 	rec.SetRetry("stackfork --instance " + project + " seed")
-	if _, err := lifecycle.InstancePreflight(rec, stdout, root, instanceDir, envTrigger() == "dashboard"); err != nil {
+	if vals, err = lifecycle.InstancePreflight(rec, stdout, root, instanceDir, envTrigger() == "dashboard"); err != nil {
 		rec.Finish(err)
 		return 0, err
 	}

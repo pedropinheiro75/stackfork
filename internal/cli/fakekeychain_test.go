@@ -58,3 +58,23 @@ exit 0
 	t.Cleanup(func() { *secretstore.Default = old })
 	return dir
 }
+
+// fakeOp points the 1Password backend at a script that answers `op read`
+// with value (no newline) for every reference.
+func fakeOp(t *testing.T, value string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake op tool is a shell script")
+	}
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := filepath.Join(dir, "op")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\nprintf '%s' '"+value+"'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := *secretstore.Default
+	secretstore.Default.OpPaths = []string{tool}
+	t.Cleanup(func() { *secretstore.Default = old })
+}

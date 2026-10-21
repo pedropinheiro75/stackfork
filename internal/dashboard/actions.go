@@ -153,7 +153,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 		if lifecycleAction == "up" { // a failed up leaves seeded:false for the next up
 			mode := lifecycle.PlanMode(root, main)
 			rec, berr := runs.Begin(instanceDir, runs.Meta{Command: "up", Trigger: TriggerDashboard, Mode: mode, Project: req.Project,
-				Branch: branch, Out: &out, Secrets: func() []redact.Secret { return lifecycle.SecretsForRedaction(info) }})
+				Branch: branch, Out: &out, Secrets: func() []redact.Secret { return opts.Secrets.Redactions() }})
 			if berr != nil { // another run owns the instance: nothing runs
 				return actionResponse{Message: berr.Error()}
 			}
@@ -368,7 +368,12 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		// same snapshot plus a closing note instead of a live stream.
 		n, _ := strconv.Atoi(tail)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		redacted := lifecycle.NewRedactedWriter(w, info)
+		secrets, serr := lifecycle.LogSecrets(instanceDir, info)
+		if serr != nil {
+			needSecretCheck(w)
+			return
+		}
+		redacted := redact.NewWriter(w, secrets)
 		redacted.Write(lastLines(filepath.Join(instanceDir, "host-"+name+".log"), n)) //nolint:errcheck // client gone
 		if follow {
 			redacted.Write([]byte("(live follow is not available for host apps; reopen to refresh)\n")) //nolint:errcheck // client gone
@@ -396,16 +401,30 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		args = append(args, service)
 	}
 
+	secrets, serr := lifecycle.LogSecrets(instanceDir, info)
+	if serr != nil {
+		needSecretCheck(w)
+		return
+	}
 	cmd := exec.CommandContext(r.Context(), "docker", args...)
 	cmd.Env = compose.DockerEnv(nil)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	redacted := lifecycle.NewRedactedWriter(flushWriter{w}, info)
+	redacted := redact.NewWriter(flushWriter{w}, secrets)
 	cmd.Stdout = redacted
 	cmd.Stderr = redacted
 	cmd.Run() //nolint:errcheck // the client sees whatever reached the stream; a nonzero exit isn't reported separately
 	redacted.Close()
+}
+
+// needSecretCheck answers a log request that cannot be redacted without a
+// prompt (design D11): no log is shown until the person starts a check.
+func needSecretCheck(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Stackfork-Needs", "secret-check")
+	w.WriteHeader(http.StatusConflict)
+	fmt.Fprintln(w, lifecycle.ErrCheckSecrets.Error())
 }
 
 // flushWriter flushes the underlying ResponseWriter after every write, so

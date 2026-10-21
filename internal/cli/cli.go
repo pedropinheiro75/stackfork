@@ -961,7 +961,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 		var err error
 		rec, err = runs.Begin(instanceDir, runs.Meta{Command: "up", Trigger: envTrigger(), Mode: planMode, Project: project, Branch: branch,
-			Out: stdout, Secrets: func() []redact.Secret { return runSecrets(instanceDir, nil) }})
+			Out: stdout, Secrets: func() []redact.Secret { return opts.Secrets.Redactions() }})
 		if err != nil {
 			return 0, err
 		}
