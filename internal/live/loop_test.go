@@ -219,3 +219,15 @@ func TestLoopIgnoresLiveKeysThatAreNotMainCheckoutsUnderAConfiguredRoot(t *testi
 		t.Fatalf("a linked worktree key: execs=%d %+v", execs, rs)
 	}
 }
+
+// repos.Walk lists a root that is itself a repository, so it is admitted.
+func TestAdmitRepoAcceptsARootThatIsTheMainCheckout(t *testing.T) {
+	f := newFx(t, baseSteps)
+	cfg := &config.Config{Roots: []string{f.root}}
+	if why := AdmitRepo(cfg, f.root); why != "" {
+		t.Fatalf("refused: %s", why)
+	}
+	if why := AdmitRepo(&config.Config{}, f.root); why == "" {
+		t.Fatal("no configured folder must refuse")
+	}
+}

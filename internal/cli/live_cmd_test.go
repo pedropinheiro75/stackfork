@@ -27,6 +27,9 @@ func newLiveCmdFx(t *testing.T) *liveCmdFx {
 	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
 	repo, _ := identity.ResolvePath(initRepo(t))
 	f := &liveCmdFx{repo: repo, nb: t.TempDir(), lb: t.TempDir()}
+	if err := (&config.Config{Roots: []string{filepath.Dir(repo)}}).Save(); err != nil { // live on needs a configured folder
+		t.Fatal(err)
+	}
 	liveTargets = func(string, string, string) ([]live.Target, error) { return f.targets, nil }
 	t.Cleanup(func() {
 		liveTargets = func(nb, lb, main string) ([]live.Target, error) { return live.Targets(nb, lb, main, Version) }
@@ -258,5 +261,20 @@ func TestLiveRefusesInstanceAndUnknownVerbs(t *testing.T) {
 	}
 	if out, _, code := f.run(t, "--help"); code != 0 || !strings.Contains(out, "live status") {
 		t.Fatalf("%d %s", code, out)
+	}
+}
+
+func TestLiveOnRefusesARepoOutsideEveryConfiguredFolder(t *testing.T) {
+	f := newLiveCmdFx(t)
+	cfg := &config.Config{}
+	if err := cfg.Save(); err != nil { // no folder configured
+		t.Fatal(err)
+	}
+	_, errOut, code := f.run(t, "on")
+	if code == 0 || !strings.Contains(errOut, "not under a configured folder") {
+		t.Fatalf("%d %s", code, errOut)
+	}
+	if c, _ := config.Load(); c.LiveFor(f.repo) {
+		t.Error("live was turned on")
 	}
 }

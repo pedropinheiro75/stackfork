@@ -272,7 +272,7 @@ func (l *Loop) Tick(ctx context.Context) {
 		}
 		admit := l.Admit
 		if admit == nil {
-			admit = admitRepo
+			admit = AdmitRepo
 		}
 		if why := admit(cfg, main); why != "" { // config.json is hand-editable
 			st.Repos = append(st.Repos, RepoStatus{Main: main, State: StateOK, Error: "ignored: " + why, Targets: []TargetStatus{}})
@@ -288,10 +288,12 @@ func (l *Loop) Tick(ctx context.Context) {
 	l.set(st)
 }
 
-// admitRepo: a live key is acted on only when it is the main checkout of a
-// repository under a configured folder, as `live on` and the page ensure.
-func admitRepo(cfg *config.Config, main string) string {
-	if !slices.ContainsFunc(cfg.ResolvedRoots(), func(root string) bool { return config.Inside(root, main) }) {
+// AdmitRepo: a live key is acted on only when it is the main checkout of a
+// repository under a configured folder (or a configured folder itself, which
+// repos.Walk lists), as `live on` and the page ensure. It returns the reason
+// for a refusal.
+func AdmitRepo(cfg *config.Config, main string) string {
+	if !slices.ContainsFunc(cfg.ResolvedRoots(), func(root string) bool { return sameFile(root, main) || config.Inside(root, main) }) {
 		return main + " is not under a configured folder"
 	}
 	if identity.MainRepoOf(main) != main {

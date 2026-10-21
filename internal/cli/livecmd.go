@@ -174,6 +174,13 @@ func liveOn(stdout io.Writer, main, newBase, legacyBase string) (int, error) {
 // secret references, the trust of the plan, and the watch set. The dashboard
 // runs it before its dialog. code is the exit code of a refusal.
 func liveOnCheck(main, newBase, legacyBase string) (hasOP bool, code int, err error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return false, 0, err
+	}
+	if why := live.AdmitRepo(cfg, main); why != "" {
+		return false, 1, errors.New(why)
+	}
 	// Secrets: the dashboard has no shell environment (add-secret-vault D4).
 	rows, err := lifecycle.SecretRows(main, false, nil, nil, newBase, legacyBase)
 	if err != nil {
