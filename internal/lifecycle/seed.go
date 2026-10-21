@@ -76,13 +76,22 @@ func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBa
 		return nil
 	}
 	retry := "stackfork --instance " + project + " seed"
-	service = ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)
+	hostSteps := hostSeedSteps(plan)
+	if hostSteps != nil && cmd != hostSeedCmd(hostSteps) {
+		hostSteps = nil // the command is not the plan's data step (a manifest recipe, say)
+	}
+	if hostSteps == nil {
+		service = ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)
+	}
 	f := false
 	SetSeeded(instanceDir, &f) // it ran (or cannot): no longer pending, a failure is retried by hand
 	w, ew := stdout, stderr
 	if step != nil {
 		w = step.Start()
 		ew = w
+	}
+	if hostSteps != nil {
+		return runHostSeed(w, stderr, step, hostSteps, root, project, instanceDir, newBase, legacyBase, cmd, retry)
 	}
 	if service == "" {
 		err := errors.New("no service to run the seed in")
@@ -123,7 +132,66 @@ func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBa
 	return nil
 }
 
+// runHostSeed is RunSeed's tail for a seed on the host: the steps run in
+// order, each as its own argument vector, and the first failure stops it
+// (what && does in a container).
+func runHostSeed(w, stderr io.Writer, step *runs.Step, steps []knowledge.Step, root, project, instanceDir, newBase, legacyBase, cmd, retry string) error {
+	fmt.Fprintf(w, "seeding the new database on the host: %s\n", cmd)
+	var code int
+	var err error
+	for _, s := range steps {
+		if code, err = HostExec(w, project, root, instanceDir, newBase, legacyBase, s); err == nil && code != 0 {
+			err = fmt.Errorf("exited with status %d", code)
+		}
+		if err != nil {
+			break
+		}
+	}
+	if err != nil {
+		if step != nil {
+			step.End(err, code)
+		}
+		fmt.Fprintf(stderr, "not seeded: the seed command failed (%v, status %d); retry with `%s`, or, if the data is already there, `%s --mark-done`\n", err, code, retry, retry)
+		return err
+	}
+	t := true
+	SetSeeded(instanceDir, &t)
+	fmt.Fprintf(w, "seeded new database with %s\n", cmd)
+	if step != nil {
+		step.End(nil, 0)
+	}
+	return nil
+}
+
 func boolPtr(b bool) *bool { return &b }
+
+// hostSeedSteps are the argument vectors a seed on the host runs, in order:
+// the plan's data step when it is on: host, preceded by the first schema step
+// when that is also on the host with the same dir (the migrate prefix, as
+// migrate && seed in a container). nil when the seed is not on the host: an
+// unrecorded plan, no data step, or an auto-detected seed.
+func hostSeedSteps(plan knowledge.Plan) []knowledge.Step {
+	if plan.Status != knowledge.PlanRecorded {
+		return nil
+	}
+	seed := plan.SeedStep()
+	if seed == nil || !seed.IsHostExec() {
+		return nil
+	}
+	if m := plan.MigrateStep(); m != nil && m.IsHostExec() && m.Dir == seed.Dir && !strings.Contains(seed.Cmd, m.Cmd) {
+		return []knowledge.Step{*m, *seed}
+	}
+	return []knowledge.Step{*seed}
+}
+
+// hostSeedCmd is the text of a host seed entry: both commands when the
+// migrate prefixes the seed. It is shown, never run through a shell.
+func hostSeedCmd(steps []knowledge.Step) string {
+	if len(steps) == 2 {
+		return steps[0].Cmd + "; then " + steps[1].Cmd
+	}
+	return steps[0].Cmd
+}
 
 // SeedRecipe returns the seed_once command to run and its service. A
 // recorded decision wins ("none" disables seeding); with no decision the
@@ -155,8 +223,8 @@ func PlanMode(root, main string) string {
 // SeedRecipeIn is SeedRecipe for an explicit mode: a data step the mode does
 // not run gives no seed.
 func SeedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
-	cmd, service = seedRecipeIn(root, main, instanceDir, mode)
-	if cmd != "" { // a service this mode leaves out cannot run it: do not burn the one-time seed
+	cmd, service, host := seedRecipeIn(root, main, instanceDir, mode)
+	if cmd != "" && !host { // a host seed has no service to leave out // a service this mode leaves out cannot run it: do not burn the one-time seed
 		plan := LoadPlan(root, main)
 		if run, _ := plan.ForMode(mode); contains(excludedServices(run), ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)) {
 			return "", ""
@@ -165,7 +233,7 @@ func SeedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
 	return cmd, service
 }
 
-func seedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
+func seedRecipeIn(root, main, instanceDir, mode string) (cmd, service string, host bool) {
 	var m *state.Manifest
 	if instanceDir != "" { // the Repos plan list has no instance yet
 		m, _ = state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
@@ -173,15 +241,18 @@ func seedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
 	decided, c, svc := learn.SeedDecisionIn([]string{root, main}, m, mode)
 	if decided {
 		if !learn.SeedActive(c) {
-			return "", ""
+			return "", "", false
 		}
-		return withMigrate(root, main, instanceDir, c, svc), svc
+		if hs := hostSeedSteps(LoadPlan(root, main)); hs != nil && hs[len(hs)-1].Cmd == c {
+			return hostSeedCmd(hs), "", true
+		}
+		return withMigrate(root, main, instanceDir, c, svc), svc, false
 	}
 	_, detected := learn.DetectSeed(root)
 	if detected == "" {
-		return "", ""
+		return "", "", false
 	}
-	return withMigrate(root, main, instanceDir, detected, ""), ""
+	return withMigrate(root, main, instanceDir, detected, ""), "", false
 }
 
 // withMigrate puts the plan's first schema step before the seed, so a new
@@ -193,6 +264,9 @@ func withMigrate(root, main, instanceDir, seed, seedService string) string {
 	for _, d := range []string{root, main} {
 		if k, err := knowledge.Load(filepath.Join(d, ".stackfork", "knowledge.json")); err == nil {
 			if m := k.Plan.MigrateStep(); m != nil {
+				if m.IsHostExec() { // a container seed is not prefixed by a host command
+					return seed
+				}
 				if ResolveExecService(instanceDir, *m, k.Plan) != ResolveExecService(instanceDir, knowledge.Step{Service: seedService}, k.Plan) {
 					return seed
 				}
@@ -218,6 +292,9 @@ func SeedCoversSchema(root, main, instanceDir string, plan knowledge.Plan, mode 
 		return false
 	}
 	cmd, _ := SeedRecipeIn(root, main, instanceDir, mode)
+	if hs := hostSeedSteps(plan); hs != nil {
+		return len(hs) == 2 && hs[0].ID == s.ID && cmd == hostSeedCmd(hs)
+	}
 	return strings.HasPrefix(cmd, m.Cmd+" && ")
 }
 

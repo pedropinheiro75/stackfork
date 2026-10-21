@@ -126,3 +126,26 @@ func TestHostExecNeedsTrust(t *testing.T) {
 		t.Fatal("no host-run step, no trust")
 	}
 }
+
+func TestHostSeedEntryNamesBothCommands(t *testing.T) {
+	root := t.TempDir()
+	plan := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "migrate", Kind: knowledge.KindExec, On: knowledge.OnHost, Once: knowledge.OnceSchema, Cmd: "bun run db:migrate", Dir: "apps/api"},
+		{ID: "seed", Kind: knowledge.KindExec, On: knowledge.OnHost, Once: knowledge.OnceData, Cmd: "bun run db:seed", Dir: "apps/api"},
+	}}
+	if err := (&knowledge.Knowledge{Schema: knowledge.CurrentSchema, Plan: plan}).Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	e, ok := SeedEntry(root, root, "", plan, knowledge.ModeContainer)
+	if !ok || StepText(e) != "bun run db:migrate; then bun run db:seed  on host" {
+		t.Fatalf("%v %q", ok, StepText(e))
+	}
+	plan.Steps[1].Dir = "apps/web"
+	if err := (&knowledge.Knowledge{Schema: knowledge.CurrentSchema, Plan: plan}).Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := SeedEntry(root, root, "", plan, knowledge.ModeContainer); StepText(e) != "bun run db:seed  on host" {
+		t.Fatalf("%q", StepText(e))
+	}
+}
