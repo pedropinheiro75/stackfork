@@ -243,7 +243,11 @@ func (s *Step) Start() io.Writer {
 // End closes the step's writer and records the result.
 func (s *Step) End(err error, exitCode int) {
 	if s.w != nil {
-		s.w.Close()
+		line := ""
+		if err != nil { // the log, and the tail the card shows, end with why it failed
+			line = "error: " + err.Error()
+		}
+		s.w.closeWith(line)
 		s.w = nil
 	}
 	st := Succeeded

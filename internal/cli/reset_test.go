@@ -10,6 +10,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 var resetSteps = []knowledge.Step{
@@ -212,5 +213,27 @@ func TestResetRunStopsBeforeDownWhenSyncIsBlocked(t *testing.T) {
 	o.Current = true
 	if err := StartEnv(io.Discard, io.Discard, o); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A reset prepares with what the instance was last prepared with (its files
+// and env file), even when knowledge carries a different recipe.
+func TestResetPreparesWithTheManifestRecipe(t *testing.T) {
+	dir := t.TempDir()
+	env := "app.env"
+	m := &state.Manifest{Files: []string{"/r/compose.yaml", "/r/override.yaml"}, EnvFile: &env}
+	if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Plan: knowledge.Plan{Status: knowledge.PlanRecorded,
+		Steps: []knowledge.Step{{ID: "prepare", Kind: knowledge.KindPrepare, Args: []string{"-f", "other.yaml"}}, {ID: "up", Kind: knowledge.KindComposeUp}}}}
+	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	args, err := resetPrepareArgs(root, root, dir)
+	want := "-f /r/compose.yaml -f /r/override.yaml --env-file app.env"
+	if err != nil || strings.Join(args, " ") != want {
+		t.Fatalf("got %v %v, want %s", args, err, want)
 	}
 }

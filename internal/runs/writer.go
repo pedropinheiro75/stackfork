@@ -17,12 +17,13 @@ const (
 
 // stepWriter is the redactor in front of the caller's output and the log.
 type stepWriter struct {
-	red *redact.Writer
-	log *cappedLog
+	red     *redact.Writer
+	log     *cappedLog
+	secrets []redact.Secret
 }
 
 func newStepWriter(out io.Writer, logf *os.File, secrets []redact.Secret) *stepWriter {
-	w := &stepWriter{log: &cappedLog{f: logf}}
+	w := &stepWriter{log: &cappedLog{f: logf}, secrets: secrets}
 	dst := io.Writer(w.log)
 	if out != nil {
 		dst = io.MultiWriter(out, w.log)
@@ -34,8 +35,20 @@ func newStepWriter(out io.Writer, logf *os.File, secrets []redact.Secret) *stepW
 func (w *stepWriter) Write(p []byte) (int, error) { return w.red.Write(p) }
 
 // Close flushes the redactor, then the log with its marker and tail.
-func (w *stepWriter) Close() error {
+func (w *stepWriter) Close() error { return w.closeWith("") }
+
+// closeWith is Close that first appends line, redacted, to the log only (the
+// caller already shows the error the command returns).
+func (w *stepWriter) closeWith(line string) error {
 	w.red.Close()
+	if line != "" {
+		if w.log.lastByte != '\n' && w.log.head > 0 {
+			w.log.Write([]byte("\n"))
+		}
+		rw := redact.NewWriter(w.log, w.secrets)
+		rw.Write([]byte(line + "\n"))
+		rw.Close()
+	}
 	return w.log.Close()
 }
 

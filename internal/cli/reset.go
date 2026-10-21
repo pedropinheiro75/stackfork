@@ -114,11 +114,18 @@ func resetDown(rec *runs.Run, root, branch, project, instanceDir, newBase, legac
 	return err
 }
 
-// resetPrepareArgs are the prepare args of a reset: the knowledge or adapter
-// recipe like a first Start, else the files and env file the instance was
-// prepared with. Hostname, stable ports and secret references are kept by
-// prepare itself, as in any re-prepare.
+// resetPrepareArgs are the prepare args of a reset: the files and env file
+// the instance was last prepared with, since that recipe is known to work,
+// else the knowledge or adapter recipe like a first Start. Hostname, stable
+// ports and secret references are kept by prepare itself, as in any re-prepare.
 func resetPrepareArgs(root, main, instanceDir string) ([]string, error) {
+	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil && len(m.Files) > 0 {
+		args := fileArgs(m.Files)
+		if m.EnvFile != nil {
+			args = append(args, "--env-file", *m.EnvFile)
+		}
+		return args, knowledge.CheckPrepareArgs(args)
+	}
 	if k, err := knowledge.LoadFirst(root, main); err != nil {
 		return nil, err
 	} else if k != nil {
@@ -126,15 +133,7 @@ func resetPrepareArgs(root, main, instanceDir string) ([]string, error) {
 			return args, err
 		}
 	}
-	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
-	if m == nil || len(m.Files) == 0 {
-		return prepareArgs(root, main, instanceDir)
-	}
-	args := fileArgs(m.Files)
-	if m.EnvFile != nil {
-		args = append(args, "--env-file", *m.EnvFile)
-	}
-	return args, knowledge.CheckPrepareArgs(args)
+	return prepareArgs(root, main, instanceDir)
 }
 
 // resetStdin and resetIsTTY are the answers' source; tests replace them.

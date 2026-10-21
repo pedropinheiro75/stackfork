@@ -3,6 +3,7 @@ package runs
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,5 +58,25 @@ func TestStepLogCap(t *testing.T) {
 	}
 	if out.Len() < n*len(line) {
 		t.Errorf("caller output must stay complete, got %d", out.Len())
+	}
+}
+
+// A failed step's log ends with why it failed, redacted, so the card's tail
+// and View log show the error and not only the last progress line.
+func TestFailedStepLogEndsWithTheError(t *testing.T) {
+	dir := t.TempDir()
+	var out bytes.Buffer
+	secret := "s3cr3t-token-value"
+	r, _ := newRun(dir, Meta{Command: "reset", Out: &out,
+		Secrets: func() []redact.Secret { return []redact.Secret{{Name: "npm_token", Value: secret}} }}, 1)
+	s := r.Step("prepare", "prepare", "x")
+	s.Start().Write([]byte("preparing it"))
+	s.End(errors.New("env_file must reference only --env-file; token "+secret), 1)
+	log, _ := os.ReadFile(filepath.Join(dir, "runs", "1", "prepare.log"))
+	if !strings.HasSuffix(string(log), "preparing it\nerror: env_file must reference only --env-file; token [redacted:npm_token]\n") {
+		t.Fatalf("log = %q", log)
+	}
+	if strings.Contains(out.String(), "error:") {
+		t.Errorf("the caller already shows the returned error: %q", out.String())
 	}
 }
