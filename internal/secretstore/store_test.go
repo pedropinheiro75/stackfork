@@ -43,22 +43,6 @@ func TestInvalidRefIsAnErrorStatusWithoutEcho(t *testing.T) {
 	}
 }
 
-func TestUnsupportedOSIsUnavailable(t *testing.T) {
-	b := &Backend{GOOS: "windows"}
-	for _, ref := range []string{"keychain:acme-npm-token", "op://Dev/acme-stripe/test-key"} {
-		v, st, err := b.Resolve(ref)
-		if v != "" || st != Unavailable || err == nil || !strings.Contains(err.Error(), "not supported on Windows yet") {
-			t.Errorf("%q: %q %v %v", ref, v, st, err)
-		}
-		if got := b.Exists(ref); got != Unavailable {
-			t.Errorf("Exists(%q) = %v", ref, got)
-		}
-	}
-	if err := b.Store("acme-npm-token", "v"); err == nil || !strings.Contains(err.Error(), "not supported on Windows yet") {
-		t.Fatalf("Store on windows: %v", err)
-	}
-}
-
 func TestStoreRefusesBadItemAndValue(t *testing.T) {
 	b := &Backend{GOOS: "linux"}
 	big := strings.Repeat("x", MaxValueSize+1)

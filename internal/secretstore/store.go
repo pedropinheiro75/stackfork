@@ -76,17 +76,15 @@ func (b *Backend) goos() string {
 	return runtime.GOOS
 }
 
-var errWindows = errors.New("not supported on Windows yet")
-
 func (b *Backend) Resolve(ref string) (string, Status, error) {
 	kind, item, err := ParseRef(ref)
 	if err != nil {
 		return "", Error, err
 	}
-	if b.goos() == "windows" {
-		return "", Unavailable, errWindows
-	}
 	if kind == KindKeychain {
+		if b.goos() == "windows" {
+			return b.winRead(item, true)
+		}
 		return b.readKeychain(item, true)
 	}
 	return b.readOP(item)
@@ -97,10 +95,11 @@ func (b *Backend) Exists(ref string) Status {
 	switch {
 	case err != nil:
 		return Error
-	case b.goos() == "windows":
-		return Unavailable
 	case kind == KindOP:
 		return NotChecked
+	case b.goos() == "windows":
+		_, st, _ := b.winRead(item, false)
+		return st
 	}
 	_, st, _ := b.readKeychain(item, false)
 	return st
@@ -114,7 +113,7 @@ func (b *Backend) Store(item, value string) error {
 		return err
 	}
 	if b.goos() == "windows" {
-		return errWindows
+		return b.winStore(item, value)
 	}
 	return b.writeKeychain(item, value)
 }
