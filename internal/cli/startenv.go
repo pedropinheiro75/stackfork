@@ -71,6 +71,25 @@ func startPlan(out io.Writer, o StartOptions, root, main string) (plan knowledge
 	return plan, mode, nil
 }
 
+// startRefusal is the readiness check of a Start: a checkout without a
+// prepared instance is refused unless its project is ready (verified
+// knowledge). With force, a project that only needs learn starts and warn
+// says so. It touches nothing.
+func startRefusal(root, main, branch, instanceDir string, insts []inventory.Instance, profileDirs []string, force bool) (warn string, err error) {
+	if _, serr := os.Stat(filepath.Join(instanceDir, "manifest.json")); serr == nil {
+		return "", nil
+	}
+	level, reason := repos.ReadinessOf(filepath.Base(main), append(repos.Checkouts(main), root), repos.DefaultBranchOf(main), insts, profileDirs)
+	if level == repos.Ready {
+		return "", nil
+	}
+	if !force || level != repos.NeedsLearn {
+		return "", fmt.Errorf("%s is %s (%s); stackfork only starts projects whose startup was learned and verified. Ask your agent to learn it: `stackfork repos --prompt %s %s`",
+			filepath.Base(main), level, reason, filepath.Base(main), branch)
+	}
+	return fmt.Sprintf("warning: %s is not verified (%s); starting anyway because of --force", filepath.Base(main), reason), nil
+}
+
 // StartEnv prepares (only when needed) and starts the instance of one
 // checkout, writing progress lines to out. It refuses a project stackfork
 // does not know how to run (design.md D3/D6).
@@ -134,15 +153,12 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		}
 	}
 
-	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err != nil {
-		level, reason := repos.ReadinessOf(filepath.Base(main), append(repos.Checkouts(main), root), repos.DefaultBranchOf(main), insts, o.ProfileDirs)
-		if level != repos.Ready {
-			if !o.Force || level != repos.NeedsLearn {
-				return fmt.Errorf("%s is %s (%s); stackfork only starts projects whose startup was learned and verified. Ask your agent to learn it: `stackfork repos --prompt %s %s`",
-					filepath.Base(main), level, reason, filepath.Base(main), branch)
-			}
-			fmt.Fprintf(errOut, "warning: %s is not verified (%s); starting anyway because of --force\n", filepath.Base(main), reason)
-		}
+	warn, err := startRefusal(root, main, branch, instanceDir, insts, o.ProfileDirs, o.Force)
+	if err != nil {
+		return err
+	}
+	if warn != "" {
+		fmt.Fprintln(errOut, warn)
 	}
 
 	trigger := o.Trigger
@@ -250,12 +266,18 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		if mainP != nil { // inside prepare, so a failed sync, preflight or down moved nothing; no other recipe applies
 			args, err = reuseMainRecipe(out, root, o)
 		} else {
-			args, err = prepareArgs(root, main, instanceDir)
 			if o.Reset {
 				args, err = resetPrepareArgs(root, main, instanceDir)
-			}
-			if fromSibling = errors.Is(err, errNoRecipe); fromSibling {
-				args, seedCmd, seedSvc, err = seedFromSibling(out, root, main, insts, err)
+				if fromSibling = errors.Is(err, errNoRecipe); fromSibling {
+					args, seedCmd, seedSvc, err = seedFromSibling(out, root, main, insts, err)
+				}
+			} else {
+				var ch PrepareChoice
+				ch, err = resolvePrepare(root, main, instanceDir, insts)
+				args = ch.Args
+				if fromSibling = ch.Sibling != nil; fromSibling {
+					args, seedCmd, seedSvc, err = applySibling(out, root, ch)
+				}
 			}
 			if err == nil {
 				err = copyAdapterFromMain(out, root, main, args)
@@ -437,57 +459,98 @@ func needsPrepare(instanceDir, root, branch, project string) bool {
 	return len(unprepared) > 0
 }
 
+// Where the prepare arguments of a Start come from (PrepareChoice.From).
+const (
+	prepareFromManifest     = "manifest"      // the instance's manifest records its files
+	prepareFromPlan         = "plan"          // the plan's prepare step
+	prepareFromAdapterFiles = "adapter_files" // the knowledge file's adapter Compose files
+	prepareFromAdapter      = "adapter"       // an adapter Compose file found in the checkout
+	prepareFromSibling      = "sibling"       // the recipe of another prepared worktree
+)
+
+// PrepareChoice is what a Start prepares with, decided without writing
+// anything: the args, where they come from, the sibling recipe when one is
+// borrowed (the caller applies it) and Reuse when the instance's manifest
+// supplies the files.
+type PrepareChoice struct {
+	Args    []string
+	From    string
+	Sibling *repos.SiblingRecipe
+	Reuse   bool
+}
+
+// resolvePrepare is the prepare decision of a Start (not of reset): the
+// instance's recorded files, the plan, the adapter files, else a prepared
+// sibling's recipe. errNoRecipe when none helps. It reads files and runs
+// `git ls-files` for a sibling; it copies and writes nothing.
+func resolvePrepare(root, main, instanceDir string, insts []inventory.Instance) (PrepareChoice, error) {
+	ch, err := prepareChoice(root, main, instanceDir)
+	if errors.Is(err, errNoRecipe) {
+		return siblingChoice(root, main, insts, err)
+	}
+	return ch, err
+}
+
 // prepareArgs decides what to pass to `prepare`: nothing when an instance
 // manifest already records its files, else the recorded recipe's
 // -f/--env-file, else the project's adapter compose files.
 func prepareArgs(root, main, instanceDir string) ([]string, error) {
-	args, err := prepareArgsFrom(root, main, instanceDir)
-	if err == nil && args != nil {
-		// whatever the source (plan, adapter_files, a glob), these reach
-		// prepare, where splitArgs lifts --secret, --npmrc and the like
-		if cerr := knowledge.CheckPrepareArgs(args); cerr != nil {
-			return nil, cerr
-		}
-	}
-	return args, err
+	ch, err := prepareChoice(root, main, instanceDir)
+	return ch.Args, err
 }
 
-func prepareArgsFrom(root, main, instanceDir string) ([]string, error) {
+// prepareChoice is resolvePrepare without the sibling fallback.
+func prepareChoice(root, main, instanceDir string) (PrepareChoice, error) {
+	args, from, err := prepareArgsFrom(root, main, instanceDir)
+	if err == nil && args != nil {
+		if cerr := knowledge.CheckPrepareArgs(args); cerr != nil {
+			return PrepareChoice{}, cerr
+		}
+	}
+	return PrepareChoice{Args: args, From: from, Reuse: from == prepareFromManifest}, err
+}
+
+func prepareArgsFrom(root, main, instanceDir string) ([]string, string, error) {
 	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err == nil {
-		return nil, nil // prepare reuses the files, env file and secrets it recorded
+		return nil, prepareFromManifest, nil // prepare reuses the files, env file and secrets it recorded
 	}
 	k, err := knowledge.LoadFirst(root, main)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if k != nil {
-		if args, err := knowledgePrepareArgs(k); args != nil || err != nil {
-			return args, err
+		if args, from, err := knowledgePrepareArgsFrom(k); args != nil || err != nil {
+			return args, from, err
 		}
 	}
 	for _, dir := range []string{".stackfork", ".agent-dev"} {
 		if m, _ := filepath.Glob(filepath.Join(root, dir, "*.compose.yaml")); len(m) > 0 {
 			sort.Strings(m)
 			rel, _ := filepath.Rel(root, m[0])
-			return fileArgs([]string{rel}), nil
+			return fileArgs([]string{rel}), prepareFromAdapter, nil
 		}
 	}
 	if main != root {
 		for _, dir := range []string{".stackfork", ".agent-dev"} {
 			if m, _ := filepath.Glob(filepath.Join(main, dir, "*.compose.yaml")); len(m) > 0 {
-				return nil, fmt.Errorf("the adapter %s exists only in the main checkout, not in this worktree; list it under adapter_files in .stackfork/knowledge.json so `worktree add` copies it, or copy it here",
+				return nil, "", fmt.Errorf("the adapter %s exists only in the main checkout, not in this worktree; list it under adapter_files in .stackfork/knowledge.json so `worktree add` copies it, or copy it here",
 					filepath.Join(dir, filepath.Base(m[0])))
 			}
 		}
 	}
-	return nil, errNoRecipe
+	return nil, "", errNoRecipe
 }
 
 // knowledgePrepareArgs are the prepare args knowledge gives: the plan's
 // prepare step, else the adapter Compose files. Both are checked.
 func knowledgePrepareArgs(k *knowledge.Knowledge) ([]string, error) {
+	args, _, err := knowledgePrepareArgsFrom(k)
+	return args, err
+}
+
+func knowledgePrepareArgsFrom(k *knowledge.Knowledge) ([]string, string, error) {
 	if args, err := planPrepareArgs(k); args != nil || err != nil {
-		return args, err
+		return args, prepareFromPlan, err
 	}
 	var files []string
 	for _, f := range k.AdapterFiles {
@@ -496,13 +559,13 @@ func knowledgePrepareArgs(k *knowledge.Knowledge) ([]string, error) {
 		}
 	}
 	if len(files) == 0 {
-		return nil, nil
+		return nil, "", nil
 	}
 	args := fileArgs(files)
 	if err := knowledge.CheckPrepareArgs(args); err != nil {
-		return nil, fmt.Errorf("adapter_files: %w", err)
+		return nil, "", fmt.Errorf("adapter_files: %w", err)
 	}
-	return args, nil
+	return args, prepareFromAdapterFiles, nil
 }
 
 // planPrepareArgs is the plan's prepare step args. Load already validated
@@ -559,26 +622,44 @@ func collectInstances(newBase, legacyBase string) []inventory.Instance {
 	return inv.Instances
 }
 
+// siblingChoice finds the prepared sibling whose recipe a checkout nothing is
+// known about can borrow, read-only: it checks the args and writes nothing.
+// none is the error to return when no sibling can help.
+func siblingChoice(root, main string, insts []inventory.Instance, none error) (PrepareChoice, error) {
+	r, ferr := repos.FindSiblingRecipe(main, root, "", insts)
+	if r == nil {
+		if ferr != nil {
+			return PrepareChoice{}, fmt.Errorf("%w; the prepared instance of another worktree cannot be reused: %v", none, ferr)
+		}
+		return PrepareChoice{}, none
+	}
+	args := fileArgs(r.Files)
+	if r.EnvFile != "" {
+		args = append(args, "--env-file", r.EnvFile)
+	}
+	if cerr := knowledge.CheckPrepareArgs(args); cerr != nil {
+		return PrepareChoice{}, fmt.Errorf("reusing the recipe of %s: %w", r.Project, cerr)
+	}
+	return PrepareChoice{Args: args, From: prepareFromSibling, Sibling: r}, nil
+}
+
 // seedFromSibling builds the prepare recipe for a checkout nothing is known
 // about from another worktree of the same repo (design.md D6a): it copies
 // the sibling's untracked adapter files, writes the rewritten runtime env,
 // and returns the prepare flags and the secret references to reuse. none is
 // the error to return when no sibling can help.
 func seedFromSibling(out io.Writer, root, main string, insts []inventory.Instance, none error) (args []string, seedCmd, seedSvc string, err error) {
-	r, ferr := repos.FindSiblingRecipe(main, root, "", insts)
-	if r == nil {
-		if ferr != nil {
-			return nil, "", "", fmt.Errorf("%w; the prepared instance of another worktree cannot be reused: %v", none, ferr)
-		}
-		return nil, "", "", none
+	ch, err := siblingChoice(root, main, insts, none)
+	if err != nil {
+		return nil, "", "", err
 	}
-	args = fileArgs(r.Files)
-	if r.EnvFile != "" {
-		args = append(args, "--env-file", r.EnvFile)
-	}
-	if cerr := knowledge.CheckPrepareArgs(args); cerr != nil {
-		return nil, "", "", fmt.Errorf("reusing the recipe of %s: %w", r.Project, cerr)
-	}
+	return applySibling(out, root, ch)
+}
+
+// applySibling is the writing half of seedFromSibling: it applies the
+// borrowed recipe to root and returns the args and the sibling's seed recipe.
+func applySibling(out io.Writer, root string, ch PrepareChoice) (args []string, seedCmd, seedSvc string, err error) {
+	r, args := ch.Sibling, ch.Args
 	rep, aerr := r.Apply(root)
 	if aerr != nil {
 		return nil, "", "", fmt.Errorf("reusing the recipe of %s: %w", r.Project, aerr)
