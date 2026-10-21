@@ -1,6 +1,9 @@
 package compose
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestPublishedPortsListsEveryPortsEntry(t *testing.T) {
 	model, err := DecodeJSON([]byte(`{
@@ -76,5 +79,21 @@ func TestRefusePublishedReplicasAllowsTemplateShape(t *testing.T) {
 	refs := PublishedPorts(model)
 	if err := RefusePublishedReplicas(model, refs); err != nil {
 		t.Fatalf("expected no refusal, got %v", err)
+	}
+}
+
+func TestServiceTargets(t *testing.T) {
+	model, err := DecodeJSON([]byte(`{"services":{
+		"nginx":{"ports":[{"target":80,"published":"8000"}],"expose":["9000","9001/tcp"]},
+		"db":{"image":"postgres"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ServiceTargets(model)
+	if fmt.Sprint(got["nginx"]) != "[80 9000 9001]" || len(got["db"]) != 0 {
+		t.Fatalf("%v", got)
+	}
+	if _, ok := got["db"]; !ok || len(ServiceTargets(nil)) != 0 {
+		t.Fatalf("%v", got)
 	}
 }

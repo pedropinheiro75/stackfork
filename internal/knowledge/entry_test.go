@@ -76,7 +76,7 @@ func TestEntryLinksLoadRefusals(t *testing.T) {
 		"unknown entry key":  {`"entry":{"service":"web","port":80,"url":"http://x"}`, `"url"`, "http://x"},
 		"unknown link key":   {`"links":[{"name":"A","path":"/a","href":"http://x"}]`, `"href"`, "http://x"},
 		"port 0":             {`"entry":{"service":"web","port":0}`, "entry", ""},
-		"port too high":         {`"entry":{"service":"web","port":70001}`, "entry", "70001"},
+		"port too high":      {`"entry":{"service":"web","port":70001}`, "entry", "70001"},
 		"port string":        {`"entry":{"service":"web","port":"80"}`, "entry", ""},
 		"entry no service":   {`"entry":{"port":80}`, "entry", ""},
 		"entry no port":      {`"entry":{"service":"web"}`, "entry", ""},

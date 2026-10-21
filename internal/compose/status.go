@@ -467,3 +467,38 @@ func isTarget(v interface{}, n int64) bool {
 	i, err := num.Int64()
 	return err == nil && i == n
 }
+
+// ServiceTargets lists, per service of a rendered model, the container
+// ports it publishes (ports[].target) or exposes (expose), sorted. A service
+// with neither is still listed, with no ports. Entry and link targets are
+// checked against it (entry-links D4, D6).
+func ServiceTargets(model interface{}) map[string][]int {
+	m, _ := asMap(model)
+	services, _ := asMap(m["services"])
+	out := make(map[string][]int, len(services))
+	for name, raw := range services {
+		set := map[int]bool{}
+		if svc, ok := asMap(raw); ok {
+			ports, _ := asList(svc["ports"])
+			for _, p := range ports {
+				if pm, ok := asMap(p); ok {
+					if n, ok := TargetAsInt(pm["target"]); ok {
+						set[n] = true
+					}
+				}
+			}
+			exposed, _ := asList(svc["expose"])
+			for _, e := range exposed {
+				if n, ok := TargetAsInt(e); ok {
+					set[n] = true
+				} else if s, ok := e.(string); ok {
+					if n, err := strconv.Atoi(strings.SplitN(s, "/", 2)[0]); err == nil {
+						set[n] = true
+					}
+				}
+			}
+		}
+		out[name] = sortedPortSet(set)
+	}
+	return out
+}
