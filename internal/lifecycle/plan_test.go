@@ -149,3 +149,32 @@ func TestHostSeedEntryNamesBothCommands(t *testing.T) {
 		t.Fatalf("%q", StepText(e))
 	}
 }
+
+// Steps is the list a run declares: the implicit prepare before the first
+// compose-up, an implicit up when the plan has none, and the plan's data step
+// moved right after the first compose-up. Exact keeps the plan as it is.
+func TestStepsIsTheDeclaredList(t *testing.T) {
+	ids := func(l []knowledge.Step) string {
+		var s []string
+		for _, x := range l {
+			s = append(s, x.ID)
+		}
+		return strings.Join(s, ",")
+	}
+	r := PlanRunner{NewBase: t.TempDir(), Main: t.TempDir(), Root: t.TempDir(), InstanceDir: t.TempDir(), Mode: knowledge.ModeContainer}
+	if got := ids(r.Steps()); got != "prepare,up" {
+		t.Errorf("empty plan: %s", got)
+	}
+	r.Plan = knowledge.Plan{Steps: []knowledge.Step{
+		{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Cmd: "s", Service: "app"},
+		{ID: "go", Kind: knowledge.KindComposeUp},
+		{ID: "after", Kind: knowledge.KindNote, Text: "n"},
+	}}
+	if got := ids(r.Steps()); got != "prepare,go,seed,after" {
+		t.Errorf("plan: %s", got)
+	}
+	r.Exact = true
+	if got := ids(r.Steps()); got != "go,seed,after" {
+		t.Errorf("exact: %s", got)
+	}
+}

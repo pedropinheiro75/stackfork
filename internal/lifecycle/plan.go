@@ -82,13 +82,13 @@ func (r PlanRunner) Check() error {
 	return nil
 }
 
-// Execute checks, then runs the steps in list order, no retries.
-func (r PlanRunner) Execute() error {
+// Steps are the steps a run declares, in execution order: the mode's steps,
+// an implicit compose-up and prepare unless Exact, and the seed entry right
+// after the first compose-up. It touches nothing; Execute runs this list and
+// `stackfork plan` shows it for a plan without recorded steps.
+func (r PlanRunner) Steps() []knowledge.Step {
 	steps, _ := r.Plan.ForMode(r.Mode)
 	if !r.Exact {
-		if err := r.Check(); err != nil {
-			return err
-		}
 		hasUp := false
 		for _, s := range steps {
 			hasUp = hasUp || s.Kind == knowledge.KindComposeUp
@@ -98,6 +98,18 @@ func (r PlanRunner) Execute() error {
 		}
 		steps = withImplicitPrepare(steps)
 	}
+	seed, hasSeed := SeedEntry(r.Root, r.Main, r.InstanceDir, r.Plan, r.Mode)
+	return RunOrder(steps, seed, hasSeed)
+}
+
+// Execute checks, then runs the steps in list order, no retries.
+func (r PlanRunner) Execute() error {
+	if !r.Exact {
+		if err := r.Check(); err != nil {
+			return err
+		}
+	}
+	steps := r.Steps()
 	r.declare(steps)
 	for _, s := range r.HostSkipped {
 		r.skip(s, r.HostSkipReason)
@@ -175,15 +187,14 @@ func (r PlanRunner) prepare(w io.Writer, args []string) error {
 	return nil
 }
 
-// declare lists every step of the run as pending. The seed entry follows the
-// first compose-up (design.md D9), so the plan's own data step is not listed
-// at its place in the plan.
+// declare lists every step of the run as pending. Steps already puts the
+// seed entry after the first compose-up (design.md D9), so the plan's own
+// data step is not listed at its place in the plan.
 func (r PlanRunner) declare(steps []knowledge.Step) {
 	if r.Run == nil {
 		return
 	}
-	seed, hasSeed := SeedEntry(r.Root, r.Main, r.InstanceDir, r.Plan, r.Mode)
-	for _, s := range RunOrder(steps, seed, hasSeed) {
+	for _, s := range steps {
 		r.Run.Step(s.ID, s.Kind, StepText(s))
 	}
 }
