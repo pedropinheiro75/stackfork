@@ -12,26 +12,29 @@ enum ChildEnvironment {
     ]
     static let beginMarker = "__STACKFORK_ENV_BEGIN__"
     static let endMarker = "__STACKFORK_ENV_END__"
-    static let shellScript = "printf '%s\\n' \(beginMarker); env; printf '%s\\n' \(endMarker)"
+    /// `env -0` ends each record with NUL, so a value with newlines cannot start another key.
+    static let shellScript = "printf '%s\\n' \(beginMarker); env -0; printf '\\n%s\\n' \(endMarker)"
 
     struct Result: Equatable, Sendable {
         var environment: [String: String]
         var usedDefaultPath: Bool
     }
 
-    /// The KEY=VALUE lines between the markers; nil when a marker is missing.
-    /// Noise before the first marker (profile banners) is ignored.
+    /// The NUL-separated KEY=VALUE records between the markers; nil when a
+    /// marker is missing. Noise before the begin marker (profile banners) is
+    /// ignored. The end marker is the last one, so a value cannot cut the list short.
     static func parse(_ output: String) -> [String: String]? {
-        let lines = output.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .init(charactersIn: "\r")) }
-        guard let begin = lines.firstIndex(of: beginMarker),
-              let end = lines[(begin + 1)...].firstIndex(of: endMarker)
+        guard let begin = output.range(of: beginMarker + "\n"),
+              begin.lowerBound == output.startIndex || output[output.index(before: begin.lowerBound)] == "\n",
+              let end = output.range(of: "\n" + endMarker, options: .backwards),
+              end.lowerBound >= begin.upperBound
         else { return nil }
         var env: [String: String] = [:]
-        for line in lines[(begin + 1)..<end] {
-            guard let eq = line.firstIndex(of: "="), eq != line.startIndex else { continue }
-            let key = String(line[line.startIndex..<eq])
+        for record in output[begin.upperBound..<end.lowerBound].split(separator: "\u{0}", omittingEmptySubsequences: true) {
+            guard let eq = record.firstIndex(of: "="), eq != record.startIndex else { continue }
+            let key = String(record[record.startIndex..<eq])
             guard key.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { continue }
-            env[key] = String(line[line.index(after: eq)...])
+            env[key] = String(record[record.index(after: eq)...])
         }
         return env
     }

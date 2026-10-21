@@ -3,19 +3,24 @@ import Testing
 @testable import Stackfork
 
 @Suite struct ChildEnvironmentTests {
-    let output = """
-    Last login: today
-    some profile banner=with equals
-    __STACKFORK_ENV_BEGIN__
-    PATH=/opt/homebrew/bin:/usr/bin
-    DOCKER_HOST=unix:///x.sock
-    NPM_TOKEN=secret
-    LANG=en_US.UTF-8
-    AWS_SECRET_ACCESS_KEY=secret
-    SSH_AUTH_SOCK=/tmp/agent
-    __STACKFORK_ENV_END__
-    trailing noise
-    """
+    /// What `env -0` prints between the markers: NUL-terminated records.
+    static func records(_ pairs: [String]) -> String {
+        "Last login: today\nsome profile banner=with equals\n__STACKFORK_ENV_BEGIN__\n"
+            + pairs.map { $0 + "\u{0}" }.joined() + "\n__STACKFORK_ENV_END__\ntrailing noise\n"
+    }
+
+    let output = ChildEnvironmentTests.records([
+        "PATH=/opt/homebrew/bin:/usr/bin", "DOCKER_HOST=unix:///x.sock", "NPM_TOKEN=secret",
+        "LANG=en_US.UTF-8", "AWS_SECRET_ACCESS_KEY=secret", "SSH_AUTH_SOCK=/tmp/agent",
+    ])
+
+    @Test func aMultiLineValueCannotInjectAnotherKey() throws {
+        let text = Self.records(["FOO=a\nPATH=/evil\n__STACKFORK_ENV_END__\nLANG=x", "PATH=/good"])
+        let env = try #require(ChildEnvironment.parse(text))
+        #expect(env["PATH"] == "/good")
+        #expect(env["FOO"] == "a\nPATH=/evil\n__STACKFORK_ENV_END__\nLANG=x")
+        #expect(env["LANG"] == nil)
+    }
 
     @Test func noiseBeforeTheMarkersIsIgnored() throws {
         let env = try #require(ChildEnvironment.parse(output))
@@ -36,7 +41,7 @@ import Testing
     }
 
     @Test func aMissingEndMarkerIsAFailure() {
-        #expect(ChildEnvironment.parse("__STACKFORK_ENV_BEGIN__\nPATH=/x\n") == nil)
+        #expect(ChildEnvironment.parse("__STACKFORK_ENV_BEGIN__\nPATH=/x\u{0}\n") == nil)
         #expect(ChildEnvironment.parse("PATH=/x\n") == nil)
     }
 
@@ -52,7 +57,7 @@ import Testing
     }
 
     @Test func aShellThatPrintsTheMarkers() throws {
-        let script = try makeScript("printf 'noise\\n__STACKFORK_ENV_BEGIN__\\nPATH=/from/shell\\nNPM_TOKEN=s\\n__STACKFORK_ENV_END__\\n'")
+        let script = try makeScript("printf 'noise\\n__STACKFORK_ENV_BEGIN__\\nPATH=/from/shell\\000NPM_TOKEN=s\\000\\n__STACKFORK_ENV_END__\\n'")
         let result = ChildEnvironment.resolve(base: ["PATH": "/usr/bin"], shell: script.path, home: "/h", timeout: 5)
         #expect(result.environment["PATH"] == "/from/shell")
         #expect(result.environment["NPM_TOKEN"] == nil)

@@ -108,8 +108,9 @@ final class Supervisor {
 
     private func handleStdout(_ line: String, _ gen: Int) {
         guard gen == generation else { return }
+        let parsed = parseReadyLine(line)
         if ready == nil, state == .starting {
-            switch parseReadyLine(line) {
+            switch parsed {
             case .ready(let info):
                 ready = info
                 readyAt = scheduler.now()
@@ -127,6 +128,8 @@ final class Supervisor {
                 break
             }
         }
+        // A ready line carries the token: it never reaches the buffer, whatever the state.
+        guard parsed == .other else { return }
         diagnostics.append(line: line)
         if state == .quitting, let count = Self.waitingCount(in: line) {
             waitingActions = count

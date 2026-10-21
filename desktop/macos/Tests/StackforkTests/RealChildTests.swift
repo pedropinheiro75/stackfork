@@ -44,6 +44,7 @@ import Testing
         }
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("sf-orphan-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
         let binary = tmp.appendingPathComponent("stackfork")
         let build = Process()
         build.executableURL = URL(fileURLWithPath: go)

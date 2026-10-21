@@ -20,6 +20,19 @@ import Testing
         #expect(!supervisor.diagnostics.text.contains("token"))
     }
 
+    @Test func aReadyLineIsNeverKeptInTheDiagnostics() {
+        let (supervisor, launcher, _) = make()
+        supervisor.start()
+        launcher.last.print(readyJSON)
+        launcher.last.print(readyJSON) // a second one, after ready
+        launcher.last.print(readyJSON.replacingOccurrences(of: "\"schema\":1", with: "\"schema\":2"))
+        launcher.last.print("plain line")
+        #expect(supervisor.diagnostics.text == "plain line\n")
+        supervisor.quit {}
+        launcher.last.print(readyJSON) // while quitting
+        #expect(!supervisor.diagnostics.text.contains(String(repeating: "ab", count: 32)))
+    }
+
     @Test func aChildThatExitsAtOnceIsStartedSixTimesWithTheBackoffThenStopped() {
         let (supervisor, launcher, clock) = make()
         supervisor.start()
