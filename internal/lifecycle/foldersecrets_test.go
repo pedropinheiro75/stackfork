@@ -1,8 +1,10 @@
 package lifecycle
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
@@ -71,7 +73,9 @@ func TestOwnMapBeatsFolderBeatsManifest(t *testing.T) {
 	if err := cfg.Map(repo, "A", "keychain:own-a"); err != nil {
 		t.Fatal(err)
 	}
-	cfg.Save()
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
 	info := &state.Manifest{Root: repo, Secrets: map[string]string{"A": "env:M", "B": "env:M"}}
 	mapped, _ := MappedSecrets(repo)
 	got, source, _ := InstanceSecrets(info, mapped)
@@ -88,5 +92,22 @@ func TestSecretRowsShowFolderSourceAndFrom(t *testing.T) {
 	}
 	if r := rows[0]; r.Name != "NPM_TOKEN" || r.Reference != "keychain:acme-npm" || r.Source != SourceFolder || r.From != folder {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// The preflight line of a folder reference says which folder it came from.
+func TestPreflightNamesTheFolder(t *testing.T) {
+	t.Setenv("SF_FOLDER_PREFLIGHT", "x")
+	folder, repo := folderRepo(t, map[string]string{"TOK": "env:SF_FOLDER_PREFLIGHT"}, "TOK")
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"root":"`+repo+`","secrets":{"TOK":"env:OLD"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if _, err := InstancePreflight(nil, &out, repo, dir, false); err != nil {
+		t.Fatalf("%v: %s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "(from folder "+folder+")") {
+		t.Fatalf("%s", out.String())
 	}
 }

@@ -146,8 +146,7 @@ func TestSecretsSectionShowsFolderSource(t *testing.T) {
 	if !strings.Contains(section, `title="folder: `+folder+`"`) {
 		t.Errorf("no folder source: %s", section)
 	}
-	if !strings.Contains(section, `data-copy="stackfork secret unmap `+folder+` FOLDER_TOK"`) &&
-		!strings.Contains(section, `data-copy="stackfork secret unmap &#39;`+folder) {
+	if !regexp.MustCompile(`data-copy="stackfork secret unmap (&#39;)?` + regexp.QuoteMeta(folder) + `(&#39;)? FOLDER_TOK"`).MatchString(section) {
 		t.Errorf("unmap does not target the folder: %s", section)
 	}
 }

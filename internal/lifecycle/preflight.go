@@ -53,8 +53,9 @@ type Preflight struct {
 	Main        string    // the repository the fix commands name
 	Refs        map[string]string
 	Declared    []knowledge.SecretDecl
-	Unprepared  []string // mapped names the manifest does not record (bare up)
-	Dashboard   bool     // the dashboard does not see the shell environment
+	Folders     map[string]string // name -> folder, for a reference a folder supplies
+	Unprepared  []string          // mapped names the manifest does not record (bare up)
+	Dashboard   bool              // the dashboard does not see the shell environment
 }
 
 // PreflightText is what the row says.
@@ -128,10 +129,10 @@ func (p Preflight) Do() (SecretValues, error) {
 			value, st, err := compose.CheckSecret(ref)
 			if st == secretstore.Resolves {
 				values[name] = SecretValue{Ref: ref, Value: value}
-				fmt.Fprintf(w, "%s (%s): %s\n", name, ref, st)
+				fmt.Fprintf(w, "%s (%s): %s%s\n", name, ref, st, p.fromFolder(name))
 				continue
 			}
-			fmt.Fprintf(w, "%s (%s): %s; %s\n", name, ref, st, p.fix(name, ref, st, err))
+			fmt.Fprintf(w, "%s (%s): %s%s; %s\n", name, ref, st, p.fromFolder(name), p.fix(name, ref, st, err))
 			failed = append(failed, fmt.Sprintf("%s (%s) %s", name, ref, st))
 		}
 	}
@@ -227,7 +228,22 @@ func InstancePreflight(rec *runs.Run, out io.Writer, root, instanceDir string, d
 	if main == "" {
 		main = root
 	}
-	refs, _, unprepared := InstanceSecrets(info, mapped)
-	return Preflight{Run: rec, Out: out, InstanceDir: instanceDir, Main: main, Refs: refs, Declared: DeclaredSecrets(root, main),
+	refs, source, unprepared := InstanceSecrets(info, mapped)
+	_, from, _ := FolderSecrets(root, info.ResolvedSecrets())
+	folders := map[string]string{}
+	for n, src := range source {
+		if src == SourceFolder {
+			folders[n] = from[n]
+		}
+	}
+	return Preflight{Run: rec, Out: out, InstanceDir: instanceDir, Main: main, Refs: refs, Folders: folders, Declared: DeclaredSecrets(root, main),
 		Unprepared: unprepared, Dashboard: dashboard}.Do()
+}
+
+// fromFolder is " (from folder X)" for a reference a folder mapping supplies.
+func (p Preflight) fromFolder(name string) string {
+	if f := p.Folders[name]; f != "" {
+		return " (from folder " + f + ")"
+	}
+	return ""
 }

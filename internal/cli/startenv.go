@@ -456,7 +456,18 @@ func needsPrepare(instanceDir, root, branch, project string) bool {
 	// A mapped name the manifest lacks needs a new prepare (D7).
 	mapped, _ := lifecycle.MappedSecrets(root)
 	_, _, unprepared := lifecycle.InstanceSecrets(info, mapped)
-	return len(unprepared) > 0
+	if len(unprepared) > 0 {
+		return true
+	}
+	// A name a folder supplies that the manifest lacks (declared later) too.
+	have := info.ResolvedSecrets()
+	folder, _, _ := lifecycle.FolderSecrets(root, have)
+	for n := range folder {
+		if _, ok := have[n]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Where the prepare arguments of a Start come from (PrepareChoice.From).
@@ -851,6 +862,7 @@ func siblingRefs(note io.Writer, o StartOptions, root, main, instanceDir string,
 		refs = repos.SiblingSecrets(main, root, insts)
 	}
 	flags := flagSecrets(o.Global)
+	folder, _, _ := lifecycle.FolderSecrets(root, nil) // declared names a folder supplies
 	out := map[string]string{}
 	names := make([]string, 0, len(refs))
 	for n := range refs {
@@ -859,13 +871,13 @@ func siblingRefs(note io.Writer, o StartOptions, root, main, instanceDir string,
 	sort.Strings(names)
 	for _, n := range names {
 		r := refs[n]
-		if mapped[n] != "" || flags[n] != "" {
+		if mapped[n] != "" || flags[n] != "" || folder[n] != "" {
 			continue
 		}
 		if secretstore.IsStoreRef(r) {
 			// Only a person's map holds a keychain: or op:// reference, and prepare
 			// takes sibling references as --secret flags, which refuse them. A name
-			// the map holds now is dropped above and reaches prepare through it.
+			// the map or a folder holds now is dropped above and reaches prepare through it.
 			fmt.Fprintf(note, "note: sibling's %s uses a store reference; map it with `stackfork secret map %s %s=REF`\n", n, filepath.Base(main), n)
 			continue
 		}
@@ -891,16 +903,22 @@ func startPreflight(rec *runs.Run, o StartOptions, root, main, instanceDir, trig
 	if !willPrepare {
 		flags = nil // nothing records them: the manifest's references are the ones `up` runs with
 	}
-	folder, _, err := lifecycle.FolderSecrets(root, manifest)
+	folder, from, err := lifecycle.FolderSecrets(root, manifest)
 	if err != nil {
 		return nil, err
 	}
-	refs, _ := lifecycle.Effective(
+	refs, source := lifecycle.Effective(
 		lifecycle.Layer{Source: lifecycle.SourceSibling, Refs: sibling},
 		lifecycle.Layer{Source: lifecycle.SourceManifest, Refs: manifest},
 		lifecycle.Layer{Source: lifecycle.SourceFolder, Refs: folder},
 		lifecycle.Layer{Source: lifecycle.SourceMap, Refs: mapped},
 		lifecycle.Layer{Source: lifecycle.SourceFlag, Refs: flags})
-	return lifecycle.Preflight{Run: rec, InstanceDir: instanceDir, Main: main, Refs: refs, Declared: lifecycle.DeclaredSecrets(root, main),
+	folders := map[string]string{}
+	for n, src := range source {
+		if src == lifecycle.SourceFolder {
+			folders[n] = from[n]
+		}
+	}
+	return lifecycle.Preflight{Run: rec, InstanceDir: instanceDir, Main: main, Refs: refs, Folders: folders, Declared: lifecycle.DeclaredSecrets(root, main),
 		Dashboard: trigger == "dashboard" || trigger == live.TriggerLive}.Do()
 }
