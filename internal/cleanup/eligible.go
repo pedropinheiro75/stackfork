@@ -92,6 +92,10 @@ func Evaluate(c Check) Verdict {
 		v.Warning = "PR merged, but this worktree also has an instance of " + strings.Join(c.Others, ", ") + "; clean it up yourself"
 		return v
 	}
+	if sm, err := git(path, "submodule", "status"); err != nil || initializedSubmodule(sm) {
+		v.Warning = "PR merged, but git cannot remove a worktree with an initialized submodule; remove it yourself"
+		return v
+	}
 	v.Dirty = dirty(c.Main, path, c.Adapter)
 	if len(v.Dirty) > 0 {
 		v.Warning = "PR merged, but this worktree has uncommitted changes"
@@ -110,6 +114,17 @@ func Evaluate(c Check) Verdict {
 	}
 	v.Eligible = true
 	return v
+}
+
+// initializedSubmodule: a `git submodule status` line that does not start with
+// '-' (an uninitialized submodule is only a gitlink and removes fine).
+func initializedSubmodule(status string) bool {
+	for _, l := range strings.Split(status, "\n") {
+		if l = strings.TrimRight(l, "\r"); l != "" && l[0] != '-' {
+			return true
+		}
+	}
+	return false
 }
 
 func head(s []string, n int) []string {

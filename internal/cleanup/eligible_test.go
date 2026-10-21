@@ -233,3 +233,31 @@ func TestEvaluateCacheFolderBesideAManifestStaysACache(t *testing.T) {
 		t.Fatalf("a git repository in a dependency folder blocks auto: %+v", v)
 	}
 }
+
+// Git refuses to remove a worktree with an initialized submodule, so the
+// cleanup would fail at the first step and pause live mode: not eligible.
+func TestEvaluateInitializedSubmoduleIsNotEligible(t *testing.T) {
+	f := newFixture(t)
+	sub := filepath.Join(tmp(t), "sub")
+	os.MkdirAll(sub, 0o755)
+	run(t, sub, "init", "-q", "-b", "main")
+	commit(t, sub, "s.txt", "s\n", "sub")
+	run(t, f.Main, "-c", "protocol.file.allow=always", "submodule", "add", "-q", sub, "libs/sub")
+	run(t, f.Main, "commit", "-q", "-m", "add submodule")
+	run(t, f.Main, "push", "-q", "origin", "main")
+	f.branch(t, "feature-login", 1)
+	commit(t, f.Main, "other.txt", "o\n", "unrelated")
+	run(t, f.Main, "merge", "-q", "--squash", "feature-login")
+	run(t, f.Main, "commit", "-q", "-m", "feature-login (#42)")
+	f.settle(t, "feature-login", true)
+	cs, _ := Candidates(f.Main)
+	c, r := cs[0], f.detect(t, "feature-login")
+	if v := Evaluate(Check{Main: f.Main, Candidate: c, Result: r}); !v.Eligible {
+		t.Fatalf("an uninitialized submodule does not block: %+v", v)
+	}
+	run(t, c.Path, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+	v := Evaluate(Check{Main: f.Main, Candidate: c, Result: r})
+	if v.Eligible || !strings.Contains(v.Warning, "submodule") {
+		t.Fatalf("initialized submodule: %+v", v)
+	}
+}
