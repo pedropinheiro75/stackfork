@@ -117,6 +117,15 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	if trigger == "" {
 		trigger = "cli"
 	}
+	willPrepare := needsPrepare(instanceDir, root, branch, project)
+	if flags := flagSecrets(o.Global); !willPrepare && len(flags) > 0 {
+		names := make([]string, 0, len(flags))
+		for n := range flags {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		fmt.Fprintf(out, "note: --secret %s ignored: %s is already prepared; run `stackfork prepare --secret …` to change it.\n", strings.Join(names, ", "), project)
+	}
 	var vals lifecycle.SecretValues // the preflight's values redact every step after it (D11)
 	secrets := func() []redact.Secret { return vals.Redactions() }
 	rec, err := runs.Begin(instanceDir, runs.Meta{Command: "start-env", Trigger: trigger, Mode: mode, Project: project, Branch: branch,
@@ -148,7 +157,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 
 	// secrets: resolve every effective reference before prepare, which already
 	// calls Docker, and fail naming every problem (design D8).
-	if vals, err = startPreflight(rec, o, root, main, instanceDir, trigger, sibling, needsPrepare(instanceDir, root, branch, project)); err != nil {
+	if vals, err = startPreflight(rec, o, root, main, instanceDir, trigger, sibling, willPrepare); err != nil {
 		return err
 	}
 	runValues.Store(inRunKey(instanceDir), vals)

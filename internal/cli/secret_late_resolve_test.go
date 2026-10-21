@@ -133,6 +133,9 @@ func TestStartEnvFlagOnPreparedInstanceDoesNotSplitPreflightFromUp(t *testing.T)
 	if code != 0 {
 		t.Fatalf("%d\n%s\n%s", code, out, e)
 	}
+	if note := "note: --secret tok ignored: " + project(t, base, nw) + " is already prepared; run `stackfork prepare --secret …` to change it."; strings.Count(out, note) != 1 {
+		t.Errorf("want one %q in:\n%s", note, out)
+	}
 	env := dockerEnvLog(log)
 	if !strings.Contains(env, "\ntok=manifest-a-value-1234") || strings.Contains(env, "\ntok=flag-b-value-1234") {
 		t.Errorf("up must run with the manifest's reference:\n%s", env)
@@ -173,4 +176,13 @@ func TestStartEnvDropsUnmappedStoreReferencesOfASibling(t *testing.T) {
 	if _, ok := refs["kc"]; ok || refs["kept"] != "" || refs["other"] != "op://Dev/acme/kept" {
 		t.Errorf("manifest %v", refs)
 	}
+}
+
+// project is the instance project name of path.
+func project(t *testing.T, base []string, path string) string {
+	t.Helper()
+	whereOut, _, _ := runCLI(t, append(append([]string{}, base...), "--root", path, "where")...)
+	var w struct{ Project string }
+	json.Unmarshal([]byte(whereOut), &w)
+	return w.Project
 }
