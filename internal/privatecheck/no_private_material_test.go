@@ -19,6 +19,9 @@ import (
 // module path and license)").
 const modulePath = "github.com/pedropinheiro75/stackfork"
 
+// tapName is the public Homebrew install name, exempt the same way.
+const tapName = "pedropinheiro75/tap/stackfork"
+
 // denylist is the D4 list, verbatim.
 var denylist = []string{
 	"idv-isolated",
@@ -77,7 +80,7 @@ func repoRoot(t *testing.T) string {
 func findViolations(path, content string) []string {
 	var violations []string
 	for i, line := range strings.Split(content, "\n") {
-		clean := strings.ReplaceAll(line, modulePath, "")
+		clean := strings.ReplaceAll(strings.ReplaceAll(line, modulePath, ""), tapName, "")
 		for _, term := range denylist {
 			if strings.Contains(clean, term) {
 				violations = append(violations, fmt.Sprintf("%s:%d: contains denylisted %q", path, i+1, term))

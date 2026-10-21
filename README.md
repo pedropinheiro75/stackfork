@@ -28,6 +28,12 @@ Supported platforms: macOS and Linux (amd64 and arm64). Windows is built and vet
 
 Choose one method:
 
+- Homebrew (macOS and Linux):
+
+  ```sh
+  brew install pedropinheiro75/tap/stackfork
+  ```
+
 - Go 1.24 or later:
 
   ```sh
@@ -37,8 +43,6 @@ Choose one method:
   Make sure `$(go env GOPATH)/bin` is on your `PATH`.
 
 - Release binary: download the archive for your system from the [releases page](https://github.com/pedropinheiro75/stackfork/releases), unpack it, and put `stackfork` on your `PATH`.
-
-A Homebrew tap is coming with the first release.
 
 To check the install, run `stackfork version`. Docker with the Compose plugin must be running.
 

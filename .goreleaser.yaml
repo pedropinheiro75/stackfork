@@ -73,3 +73,11 @@ homebrew_casks:
     directory: Casks
     homepage: "https://github.com/pedropinheiro75/stackfork"
     description: "Run N isolated copies of a project's Docker Compose stack, one per Git worktree/branch"
+    # The binary is not notarized: without this, Gatekeeper refuses to run a
+    # cask-installed binary on macOS ("cannot be verified").
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/stackfork"]
+          end
