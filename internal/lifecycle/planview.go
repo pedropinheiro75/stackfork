@@ -30,6 +30,30 @@ type PlanStep struct {
 	State   string         `json:"state"`
 	Step    knowledge.Step `json:"-"` // the original, for StepBlock
 	Trust   string         `json:"trust"`
+	Source  string         `json:"source,omitempty"` // a derived step: where it comes from
+}
+
+// NewPlanStep is the view of one step in the given state.
+func NewPlanStep(s knowledge.Step, state string) PlanStep {
+	return PlanStep{ID: s.ID, Kind: s.Kind, Cmd: s.Cmd, Service: s.Service, Args: s.Args, Exclude: s.Exclude,
+		Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, On: s.On, Text: s.Text, Modes: s.Modes, State: state, Step: s}
+}
+
+// StateDerived is the State of a derived step: nobody recorded it.
+const StateDerived = "derived"
+
+// DerivedPlan is what a Start of a checkout without recorded plan steps would
+// run (add-derived-plan-view): the steps its run declares, each with its
+// source, or the refusal Start would print. PrepareFrom names the prepare
+// source (manifest, plan, adapter_files, adapter, sibling); Gap is the
+// recipe-gap warning of a worktree whose files are fewer than the main
+// checkout's last prepare.
+type DerivedPlan struct {
+	Mode        string     `json:"mode"`
+	Refusal     string     `json:"refusal,omitempty"`
+	PrepareFrom string     `json:"prepare_from,omitempty"`
+	Gap         string     `json:"gap,omitempty"`
+	Steps       []PlanStep `json:"steps"`
 }
 
 // PlanOut is the plan for one mode. Diff (not in the JSON) is what changed
@@ -61,8 +85,7 @@ func PlanView(stateBase, main string, k *knowledge.Knowledge, mode string) PlanO
 	conv := func(in []knowledge.Step) []PlanStep {
 		out := []PlanStep{}
 		for _, s := range in {
-			o := PlanStep{ID: s.ID, Kind: s.Kind, Cmd: s.Cmd, Service: s.Service, Args: s.Args, Exclude: s.Exclude,
-				Name: s.Name, Dir: s.Dir, PortEnv: s.PortEnv, Port: s.Port, Once: s.Once, On: s.On, Text: s.Text, Modes: s.Modes, State: state, Step: s}
+			o := NewPlanStep(s, state)
 			if s.Kind == knowledge.KindHost || s.Kind == knowledge.KindPrepare || s.IsHostExec() {
 				o.Trust = "untrusted"
 				if rawTrusted {
