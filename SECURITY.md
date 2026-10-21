@@ -108,6 +108,7 @@ A committed `.stackfork/knowledge.json` can name a host command in a `host` step
 Known limits:
 
 - The guard does not watch the state directory. An agent with file access can write the trust file directly.
+- Trust covers the command line, not the code it runs. `bun run db:migrate` runs whatever the `package.json` script, the migration files or the seed script hold at that moment, and any committer can change them without a new trust. Trust a host step only for a repository whose committers you trust, and read what the script runs.
 - Trust is stored once for each main checkout. Worktrees with different host steps invalidate each other's trust.
 - If you kill a host supervisor with `kill -9`, its app keeps running. `doctor` reports it (the `host apps` check) when its port still answers.
 - A foreground `host NAME` command that ignores SIGTERM is orphaned after its stackfork gets SIGKILL.
