@@ -230,6 +230,20 @@
   // The knowledge-only host app chip never prints its hint inline: it sits in
   // the tooltip and in the version menu (hostHint). Must match the template.
   function appChipHtml(app, i, project) {
+    if (app.source === "entry" || app.source === "link") {
+      var key = ' data-key="' + escapeHtml(project) + "/app/" + escapeHtml(app.label) + '"';
+      var nm = escapeHtml(app.label);
+      var off = ' role="link" aria-disabled="true" tabindex="0"' + key;
+      if (isWebUrl(app.url) && app.running) {
+        var t = app.url + (app.direct ? " (direct: " + app.direct + ")" : "");
+        return '<a class="app-chip app-chip-link"' + key + ' href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" aria-label="Open ' + nm + ' in a new tab" title="' + escapeHtml(t) + '">' + nm + " →</a>";
+      }
+      if (app.warning) {
+        return '<span class="app-chip app-chip-link stopped app-chip-warn"' + off + ' aria-label="' + nm + " unavailable: " + escapeHtml(app.warning) + '" title="' + escapeHtml(app.warning) +
+          '"><span class="chip-glyph" aria-hidden="true">▲</span>' + nm + " →</span>";
+      }
+      return '<span class="app-chip app-chip-link stopped"' + off + ' aria-label="' + nm + ' is not running" title="' + escapeHtml(app.hint || "Starts with the stack") + '">' + nm + " →</span>";
+    }
     if (isWebUrl(app.url) && app.running) {
       var title = app.url + (app.direct ? " (direct: " + app.direct + ")" : "");
       return '<a class="app-chip" data-key="' + escapeHtml(project) + '/app' + i + '" href="' + escapeHtml(app.url) + '" target="_blank" rel="noopener" title="' + escapeHtml(title) + '">' + escapeHtml(app.label) + "</a>";
@@ -239,6 +253,18 @@
     if (app.source === "knowledge") return '<span class="app-chip stopped host" title="' + escapeHtml(app.hint || "") + '">' + l + " · on host</span>";
     if (app.hint) return '<span class="app-chip stopped" title="Starts with the stack">' + l + " · " + escapeHtml(app.hint) + "</span>";
     return '<span class="app-chip stopped" title="Starts with the stack">' + l + "</span>";
+  }
+
+  // Open App opens the entry; a link never stands in for it. Must match dot.go's openApp.
+  function pickOpenApp(apps) {
+    var list = apps || [], i;
+    for (i = 0; i < list.length; i++) {
+      if (list[i].source === "entry") return isWebUrl(list[i].url) && list[i].running ? list[i] : null;
+    }
+    for (i = 0; i < list.length; i++) {
+      if (list[i].source !== "link" && isWebUrl(list[i].url) && list[i].running) return list[i];
+    }
+    return null;
   }
 
   function hostHint(apps) {
@@ -472,7 +498,7 @@
     var cmds = commandsOf(inst);
     var down = cmds[0];
     var openApp = null;
-    (inst.apps || []).forEach(function (a) { if (!openApp && isWebUrl(a.url) && a.running) openApp = a; });
+    openApp = pickOpenApp(inst.apps);
 
     var items = "";
     if (inst.state === "partial") items += menuItem(inst.project + "/menu/up", "Start stopped services", "", ' data-action="up" data-project="' + p + '"');
