@@ -88,6 +88,15 @@ func RunSeed(stdout, stderr io.Writer, root, branch, project, instanceDir, newBa
 		fmt.Fprintf(stderr, "not seeded: no service to run %q in; record one with `stackfork learn record recipe --seed-service SVC`, then run `%s`\n", cmd, retry)
 		return err
 	}
+	if have := SnapshotServices(instanceDir); len(have) > 0 && !contains(have, service) {
+		err := fmt.Errorf("seed cannot run: its service %s is not in this stack (this stack has: %s). Record the right one with: stackfork learn record step --id seed --kind exec --once data --service SERVICE --cmd %q",
+			service, strings.Join(have, ", "), cmd)
+		if step != nil {
+			step.End(err, 0)
+		}
+		fmt.Fprintf(stderr, "not seeded: %v\n", err)
+		return err
+	}
 	fmt.Fprintf(w, "seeding the new database in %s: %s\n", service, cmd)
 	code, err := Execute(w, ew, "exec", root, branch, project, instanceDir, newBase, legacyBase,
 		Options{Service: service, Command: []string{"sh", "-c", cmd}})
