@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
@@ -79,6 +80,24 @@ func TestHostExecEnvironmentHasNoSecretValue(t *testing.T) {
 	}
 	if strings.Contains(out, canary) || strings.Contains(out, "SF_HOST_SECRET") {
 		t.Fatalf("a secret reached the host command:\n%s", out)
+	}
+}
+
+// A grandchild that keeps stdout open must not hold the run (and its instance
+// lock) after the command itself exited.
+func TestHostExecDoesNotWaitForAGrandchildHoldingOutput(t *testing.T) {
+	_, _, _, run := hostExecEnv(t)
+	t.Setenv("HELPER_BACKGROUND", "1")
+	old := hostExecWaitDelay
+	hostExecWaitDelay = 200 * time.Millisecond
+	t.Cleanup(func() { hostExecWaitDelay = old })
+	start := time.Now()
+	out, code, err := run(helperStep("", "a"))
+	if err != nil || code != 0 || !strings.Contains(out, "parent done") {
+		t.Fatalf("code %d err %v\n%s", code, err, out)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("waited %v for the grandchild", d)
 	}
 }
 

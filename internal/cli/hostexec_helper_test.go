@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strconv"
+	"time"
 )
 
 // The host exec tests run this test binary as the "project command": with
@@ -15,6 +17,18 @@ import (
 func init() {
 	if os.Getenv("STACKFORK_TEST_HELPER") != "1" {
 		return
+	}
+	if os.Getenv("HELPER_SLEEPER") == "1" { // the grandchild: holds the inherited stdout for a while
+		time.Sleep(4 * time.Second)
+		os.Exit(0)
+	}
+	if os.Getenv("HELPER_BACKGROUND") == "1" { // starts a sleeper that keeps stdout open, then exits
+		c := exec.Command(os.Args[0])
+		c.Env = append(os.Environ(), "HELPER_SLEEPER=1")
+		c.Stdout = os.Stdout
+		c.Start()
+		fmt.Println("parent done")
+		os.Exit(0)
 	}
 	argv, _ := json.Marshal(os.Args[1:])
 	wd, _ := os.Getwd()

@@ -1,13 +1,20 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 )
+
+// hostExecWaitDelay is how long a host exec step waits for its output pipes
+// after the command exited: a grandchild that keeps them open must not hold
+// the run, and the instance lock, for as long as it lives.
+var hostExecWaitDelay = 5 * time.Second
 
 func init() {
 	lifecycle.HostExec = runHostExec
@@ -38,9 +45,14 @@ func runHostExec(w io.Writer, project, root, instanceDir, newBase, legacyBase st
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Env, cmd.Dir = hostEnviron(block), dir
-	cmd.Stdout, cmd.Stderr = w, w
+	cmd.Stdout, cmd.Stderr, cmd.WaitDelay = w, w, hostExecWaitDelay
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("could not start %q: %w", argv[0], err)
 	}
-	return exitCode(cmd.Wait())
+	err = cmd.Wait()
+	if errors.Is(err, exec.ErrWaitDelay) { // it exited with status 0; something it started still holds the output
+		fmt.Fprintf(w, "note: stopped waiting for output of a process %s started\n", argv[0])
+		err = nil
+	}
+	return exitCode(err)
 }
