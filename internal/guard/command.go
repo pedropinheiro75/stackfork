@@ -6,6 +6,7 @@
 package guard
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -465,8 +466,12 @@ func bypassesConfirmation(command string) bool {
 			continue
 		}
 		for _, w := range seg.Words[1:] {
+			decoded := w // the server decodes the path: /api/%73ecrets is /api/secrets
+			if d, err := url.PathUnescape(w); err == nil {
+				decoded = d
+			}
 			for _, ep := range []string{"/api/run", "/api/actions", "/api/learn", "/api/secrets"} {
-				if strings.Contains(w, ep) {
+				if strings.Contains(w, ep) || strings.Contains(decoded, ep) {
 					return true
 				}
 			}

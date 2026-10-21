@@ -91,16 +91,25 @@ func secretWrite(w []string) bool {
 const securityArgOpts = "aCcDGjlstZ"
 
 // securityReadsStackfork matches `security find-generic-password|
-// find-internet-password` with -w or -g and the service stackfork,
-// `security dump-keychain -d`, and the interactive `security -i`, which could
-// run either from stdin.
+// find-internet-password` with -w or -g unless -s names another service (no
+// -s may be stackfork too: an item is found by account or label alone),
+// `security dump-keychain -d`, and `-i` among security's own options, which
+// runs any command from stdin.
 func securityReadsStackfork(args []string) bool {
+	for i := 0; i < len(args); i++ { // the options before the subcommand
+		a := args[i]
+		if !strings.HasPrefix(a, "-") || strings.HasPrefix(a, "--") {
+			break
+		}
+		if strings.Contains(a[1:], "i") {
+			return true
+		}
+		if strings.HasSuffix(a, "p") { // -p PROMPT
+			i++
+		}
+	}
 	for i, a := range args {
 		switch a {
-		case "-i":
-			if i == 0 {
-				return true
-			}
 		case "find-generic-password", "find-internet-password":
 			show, service := false, ""
 			opts := args[i+1:]
@@ -127,7 +136,7 @@ func securityReadsStackfork(args []string) bool {
 					}
 				}
 			}
-			return show && service == "stackfork"
+			return show && (service == "" || strings.EqualFold(service, "stackfork"))
 		case "dump-keychain":
 			for _, o := range args[i+1:] {
 				if strings.HasPrefix(o, "-") && !strings.HasPrefix(o, "--") && strings.Contains(o, "d") {
@@ -140,18 +149,23 @@ func securityReadsStackfork(args []string) bool {
 	return false
 }
 
-// secretToolReadsStackfork matches `secret-tool lookup|search ... service
-// stackfork` (search prints the secret too).
+// secretToolReadsStackfork matches `secret-tool lookup|search` unless the
+// attributes name a service other than stackfork (search prints the secret
+// too; with no service attribute the item may be stackfork's).
 func secretToolReadsStackfork(args []string) bool {
 	if len(args) == 0 || (args[0] != "lookup" && args[0] != "search") {
 		return false
 	}
-	for i := 1; i+1 < len(args); i++ {
-		if args[i] == "service" && args[i+1] == "stackfork" {
-			return true
+	rest := args[1:]
+	for len(rest) > 0 && strings.HasPrefix(rest[0], "-") { // --all, --unlock
+		rest = rest[1:]
+	}
+	for i := 0; i+1 < len(rest); i += 2 { // attribute value pairs
+		if rest[i] == "service" {
+			return strings.EqualFold(rest[i+1], "stackfork")
 		}
 	}
-	return false
+	return true
 }
 
 // cmdkeyListsStackfork matches `cmdkey /list:TARGET` for a stackfork target
@@ -189,8 +203,8 @@ func powershellReadsStackfork(command string) bool {
 func opReadsMapped(command string, seg Segment) bool {
 	var refs []string
 	for _, r := range MappedRefs() {
-		if strings.HasPrefix(r, "op://") {
-			refs = append(refs, r)
+		if strings.HasPrefix(strings.ToLower(r), "op://") {
+			refs = append(refs, strings.ToLower(r)) // 1Password matches names without case
 		}
 	}
 	if len(refs) == 0 {
@@ -205,8 +219,9 @@ func opReadsMapped(command string, seg Segment) bool {
 	}
 	switch sub {
 	case "read", "inject", "run":
+		lower := strings.ToLower(command)
 		for _, r := range refs {
-			if strings.Contains(command, r) {
+			if strings.Contains(lower, r) {
 				return true
 			}
 		}
@@ -216,13 +231,13 @@ func opReadsMapped(command string, seg Segment) bool {
 				continue
 			}
 			for _, r := range refs {
-				if strings.Contains(string(b), r) {
+				if strings.Contains(strings.ToLower(string(b)), r) {
 					return true
 				}
 			}
 		}
 	case "item":
-		return opItemGetReveals(rest, refs)
+		return opItemReveals(rest, refs)
 	}
 	return false
 }
@@ -254,38 +269,62 @@ func opInputFiles(seg Segment) []string {
 	return files
 }
 
-// opItemGetReveals matches `op item get ITEM [--vault V] --reveal` where ITEM
-// (and V, when given) belong to a mapped reference.
-func opItemGetReveals(args, refs []string) bool {
-	if len(args) < 2 || args[0] != "item" || args[1] != "get" {
+// opItemReveals matches what prints an item's concealed fields: `op item get
+// ITEM` of a mapped item with --reveal, --fields or --format json, `op item
+// get -` (an item from stdin, as in `op item list --format json | op item get
+// - --reveal`) with any of those, and `op item list --format json`, which
+// feeds that pipe. Best effort: mapped refs are only known by name.
+func opItemReveals(args, refs []string) bool {
+	if len(args) < 2 || args[0] != "item" {
 		return false
 	}
 	reveal, vault := false, ""
 	var words []string
 	for i := 2; i < len(args); i++ {
 		a := args[i]
+		name, val, hasEq := strings.Cut(a, "=")
 		switch {
-		case a == "--reveal":
+		case a == "--reveal" || name == "--fields":
 			reveal = true
+		case name == "--format":
+			if !hasEq && i+1 < len(args) {
+				i++
+				val = args[i]
+			}
+			if strings.EqualFold(val, "json") {
+				reveal = true
+			}
 		case a == "--vault" && i+1 < len(args):
 			i++
 			vault = args[i]
 		case strings.HasPrefix(a, "--vault="):
 			vault = strings.TrimPrefix(a, "--vault=")
-		case !strings.HasPrefix(a, "-"):
+		case a == "-" || !strings.HasPrefix(a, "-"):
 			words = append(words, a)
 		}
 	}
 	if !reveal {
 		return false
 	}
+	switch args[1] {
+	case "list":
+		return true
+	case "get":
+	default:
+		return false
+	}
+	for _, w := range words {
+		if w == "-" {
+			return true
+		}
+	}
 	for _, r := range refs {
 		segs := strings.Split(strings.TrimPrefix(r, "op://"), "/")
-		if len(segs) < 2 || (vault != "" && vault != segs[0]) {
+		if len(segs) < 2 || (vault != "" && !strings.EqualFold(vault, segs[0])) {
 			continue
 		}
 		for _, w := range words {
-			if w == segs[1] {
+			if strings.EqualFold(w, segs[1]) {
 				return true
 			}
 		}
