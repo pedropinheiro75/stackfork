@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 func urlsOut(t *testing.T, v verifyEnv) (string, string) {
@@ -61,8 +65,41 @@ func TestURLsRecordedEntryBehindProxy(t *testing.T) {
 	t.Setenv("STACKFORK_PROXY_NAME", "sf-proxy-test-urls-entry")
 	t.Setenv("DOCKER_FAKE_PROXY_RUNNING", "true")
 	out, _ := urlsOut(t, v)
-	want := fmt.Sprintf("App: http://%[1]s/app (entry web:8080)\nDashboard: http://%[1]s/admin\nEmail: http://%[1]s:4002 (mail:80)\n", v.host)
-	if !strings.HasPrefix(out, want) {
+	want := fmt.Sprintf("App: http://%[1]s/app (entry web:8080)\nDashboard: http://%[1]s/admin\nEmail: http://%[1]s:4002 (mail:80)\nweb: http://%[1]s:4001 (8080/tcp)\nmail: http://%[1]s:4002 (80/tcp)\n", v.host)
+	if out != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", out, want)
+	}
+}
+
+// A host route stands in for the entry: with the proxy running the App line
+// is portless even though no container publishes the entry's port (M1).
+func TestURLsHostRouteBehindProxy(t *testing.T) {
+	v := newVerifyEnv(t, 4001, 4002, nil, nil)
+	manifests, _ := filepath.Glob(filepath.Join(v.flags[1], "*", "manifest.json"))
+	if len(manifests) == 0 {
+		manifests, _ = filepath.Glob(filepath.Join(v.flags[1], "*", "*", "manifest.json"))
+	}
+	m, _ := state.ReadManifest(manifests[0])
+	m.Routes = map[string]int{"app": 3000}
+	data, _ := json.Marshal(m)
+	os.WriteFile(manifests[0], data, 0o600)
+	t.Setenv("DOCKER_FAKE_STATUS", fmt.Sprintf(`{"ID":"c-mail","Name":"mail-1","Service":"mail","State":"running","Health":"","Publishers":[{"Protocol":"tcp","PublishedPort":4002,"TargetPort":80,"URL":"127.0.0.1"}]}`)+"\n")
+	t.Setenv("STACKFORK_PROXY_NAME", "sf-proxy-test-urls-entry")
+	t.Setenv("DOCKER_FAKE_PROXY_RUNNING", "true")
+	out, _ := urlsOut(t, v)
+	if want := fmt.Sprintf("App: http://%s (entry via the host route)\n", v.host); !strings.HasPrefix(out, want) {
 		t.Fatalf("got:\n%s\nwant prefix:\n%s", out, want)
+	}
+}
+
+// A knowledge file that cannot load counts as no entry, with a warning.
+func TestURLsBrokenKnowledgeWarns(t *testing.T) {
+	v := newVerifyEnv(t, 4001, 4002, nil, nil)
+	if err := os.WriteFile(v.path, []byte("{nope"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr := urlsOut(t, v)
+	if !strings.Contains(stderr, "knowledge cannot be loaded") || !strings.Contains(out, "web: ") {
+		t.Fatalf("%q %q", out, stderr)
 	}
 }

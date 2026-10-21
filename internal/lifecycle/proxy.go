@@ -123,6 +123,10 @@ func GatherRoutes(newStateBase, legacyStateBase, mode string) ([]proxy.Route, er
 	return routes, nil
 }
 
+// routeWarnings is where route generation reports a knowledge file that
+// cannot load.
+var routeWarnings io.Writer = os.Stderr
+
 // instanceRoute resolves one instance's manifest to a proxy Route through
 // knowledge.ResolveEntry: a registered host-run route wins when present
 // (task 9.3), else the recorded entry, else the primary HTTP service, on its
@@ -151,7 +155,10 @@ func instanceRoute(info *state.Manifest, instanceDir, mode string) (proxy.Route,
 		return proxy.Route{}, false
 	}
 	// A knowledge file that does not load counts as no entry (D6).
-	k, _ := knowledge.LoadForCheckout(info.Root)
+	k, kerr := knowledge.LoadForCheckout(info.Root)
+	if kerr != nil {
+		fmt.Fprintf(routeWarnings, "stackfork: warning: knowledge cannot be loaded: %s\n", kerr)
+	}
 	entry := knowledge.ResolveEntry(k, model, info.Routes)
 	if !entry.OK {
 		return proxy.Route{}, false

@@ -831,25 +831,32 @@ func cmdStatusURLs(stdout, stderr io.Writer, action string, subArgs []string, ro
 		}
 		// The recorded entry replaces the guessed primary service everywhere
 		// (entry-links D6); a project with none behaves as before.
-		k, _ := knowledge.LoadForCheckout(root)
+		k, kerr := knowledge.LoadForCheckout(root)
+		if kerr != nil {
+			fmt.Fprintf(stderr, "stackfork: warning: knowledge cannot be loaded: %s\n", kerr)
+		}
 		entry := knowledge.ResolveEntry(k, model, info.Routes)
 		where := knowledge.Where{Hostname: hostname, Rows: rows, Stable: info.Ports}
 		// Task 9.4, design.md D7 layer 3: once the shared proxy is running
 		// and actually publishing this instance's primary HTTP service, that
 		// service's line switches to the portless (or proxy-port) URL, since
 		// that's the URL that actually works. Every other published line
-		// (a database port, a secondary service, ...) is unaffected.
+		// (a database port, a secondary service, ...) is unaffected. A
+		// recorded entry keeps the service's own line (D11).
 		if running && model != nil {
-			service, target, https, ok := compose.PrimaryHTTPService(model)
-			if entry.Source != knowledge.SourceHostRoute {
-				service, target, https, ok = entry.Service, entry.Port, entry.HTTPS, entry.OK
-			}
-			if ok {
-				if _, found := compose.PublishedHostPort(rows, service, target); found {
-					if proxyPort, err := proxy.ReadPort(newStateBase); err == nil {
+			if proxyPort, err := proxy.ReadPort(newStateBase); err == nil {
+				_, found := compose.PublishedHostPort(rows, entry.Service, entry.Port)
+				if entry.OK && (entry.Service == "" || found) {
+					where.ProxyPort = proxyPort
+				}
+				if entry.Source != knowledge.SourceRecorded {
+					service, target, https, ok := compose.PrimaryHTTPService(model)
+					if entry.Source != knowledge.SourceHostRoute {
+						service, target, https, ok = entry.Service, entry.Port, entry.HTTPS, entry.OK
+					}
+					if _, found := compose.PublishedHostPort(rows, service, target); ok && found {
 						lines = replacePrimaryLine(lines, service, https,
 							compose.PrimaryLine(service, hostname, https, proxyPort))
-						where.ProxyPort = proxyPort
 					}
 				}
 			}

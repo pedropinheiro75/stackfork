@@ -23,6 +23,12 @@ const entryRoutePS = `{"ID":"a","Name":"web-1","Service":"web","State":"running"
 // proxy would route its hostname to ("" for no route).
 func routeFor(t *testing.T, k *knowledge.Knowledge, routes map[string]int) string {
 	t.Helper()
+	return routeForRaw(t, k, routes, "")
+}
+
+// routeForRaw is routeFor with raw, when set, as the knowledge.json bytes.
+func routeForRaw(t *testing.T, k *knowledge.Knowledge, routes map[string]int, raw string) string {
+	t.Helper()
 	bin := t.TempDir()
 	script := "#!/bin/sh\nprintf '%s' '" + entryRoutePS + "'\n"
 	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
@@ -34,6 +40,14 @@ func routeFor(t *testing.T, k *knowledge.Knowledge, routes map[string]int) strin
 	root := t.TempDir()
 	if k != nil {
 		if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if raw != "" {
+		if err := os.MkdirAll(filepath.Join(root, ".stackfork"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".stackfork", "knowledge.json"), []byte(raw), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -82,5 +96,17 @@ func TestGatherRoutesFollowsEntry(t *testing.T) {
 				t.Fatalf("target %q, want suffix %q", got, tc.suffix)
 			}
 		})
+	}
+}
+
+// A knowledge file that cannot load counts as no entry, and the proxy says so.
+func TestInstanceRouteLogsBrokenKnowledge(t *testing.T) {
+	var buf strings.Builder
+	old := routeWarnings
+	routeWarnings = &buf
+	defer func() { routeWarnings = old }()
+	routeForRaw(t, nil, nil, "{nope")
+	if !strings.Contains(buf.String(), "knowledge cannot be loaded") {
+		t.Fatalf("log %q", buf.String())
 	}
 }
