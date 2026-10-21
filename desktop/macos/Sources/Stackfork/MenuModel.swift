@@ -144,7 +144,7 @@ final class MenuPoller {
     private let interval: TimeInterval
     private let fetch: @MainActor () -> Void
     private var timer: ScheduledTask?
-    private var isOpen = false
+    private(set) var isOpen = false
 
     init(scheduler: any Scheduler, interval: TimeInterval = 5, fetch: @escaping @MainActor () -> Void) {
         self.scheduler = scheduler
