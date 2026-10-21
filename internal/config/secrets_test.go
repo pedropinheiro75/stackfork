@@ -272,3 +272,43 @@ func TestMapFolderRefusals(t *testing.T) {
 		t.Fatalf("%v", c.Secrets)
 	}
 }
+
+// F1: a repository's own entry is never a folder, so a nested clone or a
+// submodule (.git as a file) under it does not inherit it.
+func TestInheritedSecretsSkipsRepositoryKeys(t *testing.T) {
+	tempConfig(t)
+	d := mkdirs(t, t.TempDir(), "r/.git", "r/vendor/lib", "r/sub")
+	r, nested, sub := d[0][:len(d[0])-len("/.git")], d[1], d[2]
+	os.Mkdir(filepath.Join(nested, ".git"), 0o755)
+	os.WriteFile(filepath.Join(sub, ".git"), []byte("gitdir: ../.git/modules/sub\n"), 0o600)
+	c := &Config{Secrets: map[string]map[string]string{r: {"NPM_TOKEN": "keychain:r-own"}}}
+	for _, p := range []string{nested, sub} {
+		if refs, _ := c.InheritedSecretsFor(p); len(refs) != 0 {
+			t.Errorf("%s inherited a repository's own mapping: %v", p, refs)
+		}
+	}
+}
+
+// F2: keys at or above the home directory (or the root) are never folders,
+// and a map target there is refused. A home that is a repository (dotfiles)
+// does not make the folders under it count as inside a repository.
+func TestBroadKeysAreIgnoredAndRefused(t *testing.T) {
+	tempConfig(t)
+	base, _ := identity.ResolvePath(t.TempDir())
+	home := filepath.Join(base, "home")
+	app := mkdirs(t, home, ".git", "clients/acme/app")[1]
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	c := &Config{Secrets: map[string]map[string]string{
+		home: {"A": "env:A"}, base: {"B": "env:B"}, string(filepath.Separator): {"C": "env:C"},
+	}}
+	if refs, _ := c.InheritedSecretsFor(app); len(refs) != 0 {
+		t.Fatalf("broad keys inherited: %v", refs)
+	}
+	if err := c.Map(base, "X", "env:X"); err == nil || !strings.Contains(err.Error(), "above your home") {
+		t.Errorf("a folder above home: %v", err)
+	}
+	if err := c.Map(filepath.Join(home, "clients", "acme"), "X", "env:X"); err != nil {
+		t.Errorf("a folder under a home that is a repository: %v", err)
+	}
+}

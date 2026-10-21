@@ -60,8 +60,14 @@ func (c *Config) InheritedSecretsFor(repo string) (refs, from map[string]string)
 	if p, err := identity.ResolvePath(repo); err == nil {
 		key = p
 	}
+	home := resolvedHome()
 	var dirs []string
 	for k := range c.Secrets {
+		// A repository's own entry is never a folder (a nested clone or a
+		// submodule must not inherit it), and neither is home or anything above.
+		if _, err := os.Lstat(filepath.Join(k, ".git")); err == nil || aboveHome(k, home) {
+			continue
+		}
 		if strings.HasPrefix(key, strings.TrimRight(k, string(filepath.Separator))+string(filepath.Separator)) {
 			dirs = append(dirs, k)
 		}
@@ -75,16 +81,39 @@ func (c *Config) InheritedSecretsFor(repo string) (refs, from map[string]string)
 	return refs, from
 }
 
+// resolvedHome is the user's home directory, resolved, or "".
+func resolvedHome() string {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	if rh, err := identity.ResolvePath(h); err == nil {
+		return rh
+	}
+	return h
+}
+
+// aboveHome reports whether p is the filesystem root, home or a parent of it.
+func aboveHome(p, home string) bool {
+	sep := string(filepath.Separator)
+	if p == filepath.VolumeName(p)+sep {
+		return true
+	}
+	return home != "" && strings.HasPrefix(home+sep, strings.TrimRight(p, sep)+sep)
+}
+
 // checkMapTarget refuses a path that is neither a repository root nor a
 // folder above repositories (R5); the error says why.
 func checkMapTarget(p string) error {
 	if p == filepath.VolumeName(p)+string(filepath.Separator) {
 		return fmt.Errorf("%s is the filesystem root; map a narrower folder", p)
 	}
-	if h, err := os.UserHomeDir(); err == nil {
-		if rh, err := identity.ResolvePath(h); err == nil && rh == p {
-			return fmt.Errorf("%s is your home directory; map a narrower folder", p)
-		}
+	home := resolvedHome()
+	switch {
+	case p == home:
+		return fmt.Errorf("%s is your home directory; map a narrower folder", p)
+	case aboveHome(p, home):
+		return fmt.Errorf("%s is above your home directory; map a narrower folder", p)
 	}
 	fi, err := os.Stat(p)
 	switch {
@@ -96,7 +125,7 @@ func checkMapTarget(p string) error {
 	if _, err := os.Lstat(filepath.Join(p, ".git")); err == nil {
 		return nil // a repository root
 	}
-	for d := filepath.Dir(p); d != filepath.Dir(d); d = filepath.Dir(d) {
+	for d := filepath.Dir(p); d != filepath.Dir(d) && d != home; d = filepath.Dir(d) { // a repository at home (dotfiles) does not count
 		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
 			return fmt.Errorf("%s is inside the repository %s; map the repository itself", p, d)
 		}
