@@ -152,6 +152,9 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		}
 		return cmdStartEnv(stdout, stderr, subArgs, rootArg, newStateBase, legacyStateBase, global)
 	}
+	if action == "secret" {
+		return cmdSecret(stdout, stderr, subArgs, rootArg, newStateBase, legacyStateBase)
+	}
 	if action == "worktree" {
 		return cmdWorktree(stdout, subArgs, newStateBase, legacyStateBase)
 	}

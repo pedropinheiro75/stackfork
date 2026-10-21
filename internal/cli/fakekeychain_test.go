@@ -12,7 +12,8 @@ import (
 // fakeKeychain points the secret store at a shell script that plays
 // /usr/bin/security over a directory of items (one file per item). Nothing
 // touches the real keychain, keyring or 1Password. It returns the item
-// directory; a file "stdin.rec" there records what `security -i` was fed, and creating
+// directory; a file "stdin.rec" there records what `security -i` was fed, "args.rec" the
+// argument lists of every call, and creating
 // a file "locked" there makes reads fail like a locked keychain.
 func fakeKeychain(t *testing.T, items map[string]string) string {
 	t.Helper()
@@ -31,6 +32,7 @@ func fakeKeychain(t *testing.T, items map[string]string) string {
 	}
 	script := `#!/bin/sh
 D="` + dir + `"
+printf '%s\n' "$*" >> "$D/args.rec"
 if [ "$1" = "-i" ]; then
   line=$(cat)
   printf '%s\n' "$line" >> "$D/stdin.rec"
@@ -61,7 +63,7 @@ exit 0
 
 // fakeOp points the 1Password backend at a script that answers `op read`
 // with value (no newline) for every reference.
-func fakeOp(t *testing.T, value string) {
+func fakeOp(t *testing.T, value string) (calls string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake op tool is a shell script")
@@ -71,10 +73,12 @@ func fakeOp(t *testing.T, value string) {
 		t.Fatal(err)
 	}
 	tool := filepath.Join(dir, "op")
-	if err := os.WriteFile(tool, []byte("#!/bin/sh\nprintf '%s' '"+value+"'\n"), 0o755); err != nil {
+	calls = filepath.Join(dir, "calls.rec")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\necho \"$*\" >> \""+calls+"\"\nprintf '%s' '"+value+"'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	old := *secretstore.Default
 	secretstore.Default.OpPaths = []string{tool}
 	t.Cleanup(func() { *secretstore.Default = old })
+	return calls
 }

@@ -95,3 +95,14 @@ func ResolveSecret(name, ref string) (string, error) {
 	}
 	return "", fmt.Errorf("secret %s (%s): %v", name, ref, err)
 }
+
+// ExistsSecret reports a reference's status without ever prompting: env: and
+// npmrc: are read and the value dropped, a keychain: item is checked without
+// reading its value, and op:// is NotChecked (design D4).
+func ExistsSecret(ref string) (secretstore.Status, error) {
+	if secretstore.IsStoreRef(ref) {
+		return secretstore.Exists(ref), nil
+	}
+	_, st, err := CheckSecret(ref)
+	return st, err
+}

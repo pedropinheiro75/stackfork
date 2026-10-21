@@ -220,6 +220,22 @@ Two keys are edited in the file itself:
 stackfork config add-root ~/code
 ```
 
+### secret
+Named secrets: which reference each name uses on this machine, and whether it resolves. No `secret` command prints a value, and none takes one as an argument.
+- `secret ls [REPO] [--json]`: one row per name with its reference, source (`map`, `manifest`, `declared`), hint and status (`resolves`, `missing`, `locked`, `unavailable`, `error`, `not checked`). It reads nothing that would prompt, so `op://` rows are `not checked`. REPO is a path or a scanned repo name; the default is this checkout's repository.
+- `secret check [REPO] [--json]`: the same rows with every value read and thrown away (1Password may prompt). Exit status 1 when any row is not `resolves`.
+- `secret set ITEM [--store keychain]`: stores a value in the OS credential store (service `stackfork`, account ITEM). It reads the value from standard input when that is not a terminal, else it asks twice with echo off. It refuses an empty value, a newline inside the value, and a value over 64 KiB. Then it prints `stored keychain:ITEM` and, when no repository maps the item yet, the `secret map` command.
+- `secret map REPO NAME=REF` and `secret unmap REPO NAME`: edit the machine map in `config.json`. REF is `env:VAR`, `npmrc:PATH#HOST`, `keychain:ITEM` or `op://VAULT/ITEM/FIELD`. `map` prints the status without a prompt. A mapped reference beats the one a prepared instance recorded, with no new `prepare`; a name the instance does not know needs `start-env`.
+
+Agents may run `ls` and `check`; `set`, `map` and `unmap` are for people (the guard blocks them for agents). Every run starts with a `secrets` step that resolves the references and fails, before any Docker command, with one line per problem and the command that fixes it. A Start from the dashboard does not see your shell environment, so keep those values in the keychain or 1Password.
+Flags: `--json`, `--store`
+```sh
+printenv NPM_TOKEN | stackfork secret set acme-npm-token
+stackfork secret map . NPM_TOKEN=keychain:acme-npm-token
+stackfork secret map . STRIPE_TEST_KEY=op://Dev/acme-stripe/test-key
+stackfork secret check --json
+```
+
 ### repos
 List the git repos under the configured roots: group, readiness (`ready` = verified learned knowledge in any checkout; `needs-learn` = it could run from an adapter, a prepared instance or a profile reference, but nobody verified how; `draft`; `unknown`), running count, worktrees, branches without a worktree, last commit. Local git only, never a network call; results are cached per repo while its git metadata is unchanged. With no roots it says how to add one. `--prompt REPO BRANCH` prints the text to give an agent to learn and verify a project that is not `ready`.
 Flags: `--json`, `--rescan`, `--prompt`

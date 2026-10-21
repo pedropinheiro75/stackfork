@@ -52,6 +52,7 @@ var commandSummaries = []struct{ name, summary string }{
 	{"repos", "list git repos under the configured roots with branches, worktrees and readiness"},
 	{"worktree", "worktree add REPO BRANCH: create <repo>/.worktrees/<branch>"},
 	{"start-env", "prepare (if needed) and start a checkout's isolated environment"},
+	{"secret", "named secrets: ls/check statuses, set a keychain value (stdin), map a name to a reference per repository"},
 	{"config", "show or edit the folders the repo browser scans"},
 	{"doctor", "check the local environment (Docker disk too); --free-space frees Docker space no data needs"},
 	{"version", "print the version"},
