@@ -296,3 +296,24 @@ func (k *Knowledge) entrySection(b *strings.Builder) {
 	}
 	b.WriteString("\n")
 }
+
+// EntryLine summarises the entry for the Repos plan list: state is
+// "recorded", "guessed" (proposed or missing) or "none"; target is
+// "service:port[path]", empty for none and for a missing entry.
+func (k *Knowledge) EntryLine() (state, target string) {
+	e := k.Entry
+	switch {
+	case e == nil:
+		return "guessed", ""
+	case e.None:
+		return "none", ""
+	}
+	target = fmt.Sprintf("%s:%d", e.Service, e.Port)
+	if e.Path != "" && e.Path != "/" {
+		target += e.Path
+	}
+	if e.Proposed {
+		return "guessed", target
+	}
+	return "recorded", target
+}

@@ -166,3 +166,21 @@ func TestMarkdownEntryAndLinks(t *testing.T) {
 		t.Fatal("empty section rendered")
 	}
 }
+
+// The Repos plan list line (entry-links D12) reads this summary.
+func TestEntryLine(t *testing.T) {
+	for name, tc := range map[string]struct {
+		k             *Knowledge
+		state, target string
+	}{
+		"recorded":      {&Knowledge{Entry: &Entry{Service: "nginx", Port: 80, Path: "/app"}}, "recorded", "nginx:80/app"},
+		"recorded root": {&Knowledge{Entry: &Entry{Service: "nginx", Port: 80, Path: "/"}}, "recorded", "nginx:80"},
+		"none":          {&Knowledge{Entry: &Entry{None: true}}, "none", ""},
+		"proposed":      {&Knowledge{Entry: &Entry{Service: "web", Port: 3000, Proposed: true}}, "guessed", "web:3000"},
+		"missing":       {&Knowledge{}, "guessed", ""},
+	} {
+		if s, target := tc.k.EntryLine(); s != tc.state || target != tc.target {
+			t.Errorf("%s: %q %q", name, s, target)
+		}
+	}
+}
