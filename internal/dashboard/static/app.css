@@ -796,7 +796,7 @@ code.setting-value { display: inline-block; }
 
 /* Secrets: Settings table of every mapping, and the Add secret dialog. */
 .secrets-empty { margin: 0; }
-.smap-head, .smap-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(120px, 1fr) minmax(0, 1.4fr) 128px auto; align-items: center; gap: var(--space-3); padding: 0 var(--space-2); }
+.smap-head, .smap-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1.2fr) 124px 156px; align-items: center; gap: var(--space-3); padding: 0 var(--space-2); }
 .smap-head { min-height: 24px; color: var(--fg-subtle); border-bottom: 1px solid var(--line); }
 .smap-row { min-height: 40px; padding-top: var(--space-1); padding-bottom: var(--space-1); border-bottom: 1px solid var(--line); }
 .smap-scope { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; overflow-wrap: anywhere; }
@@ -819,3 +819,4 @@ code.setting-value { display: inline-block; }
 .scope-opt input { accent-color: var(--accent); margin: 0; }
 .modal .form-error { margin: 0 0 var(--space-3); }
 .modal-note { margin: 0 0 var(--space-4); }
+.modal [hidden] { display: none; }
