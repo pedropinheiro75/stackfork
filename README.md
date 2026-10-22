@@ -63,6 +63,8 @@ To check the install, run `stackfork version`. Docker with the Compose plugin mu
 
 The app is signed ad hoc and is not notarized yet, so macOS 15 and later refuse to open a downloaded copy until you clear the attribute. The command clears it for the helper inside the app too. Choose **Open at Login** in the menu to start the app after you log in; it works only when the app is in `/Applications` or `~/Applications`.
 
+Press Control-Option-Command-S (`⌃⌥⌘S`) anywhere to show the dashboard window, for example when a full menu bar hides the status item on a Mac with a notch. Opening the app again from Finder, Spotlight or the Dock shows the window too. If another app already uses the shortcut, the app writes that to the dashboard log and the menu shows no shortcut line.
+
 The app runs its own copy of the dashboard, on a port of its own, and never uses or stops a `stackfork dashboard` that already runs in a terminal. Both can run side by side; live mode runs in only one of them. The app and the CLI share the same state directories, so update both together.
 
 ## Quick start
