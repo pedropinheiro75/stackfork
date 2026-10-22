@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var logWindow: NSWindow?
     /// The first ready opens the window, unless macOS started the app at login.
     private var showOnReady = true
+    private var shortcut: DashboardShortcut?
+    /// Log lines from before the supervisor exists.
+    private var earlyLog: [String] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // ponytail: the legacy login-item flag; SMAppService launches may not set it, so the window can open at login too.
@@ -25,12 +28,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showOnReady = false
         }
         buildMainMenu()
+        shortcut = DashboardShortcut(registrar: GlobalHotKey(), show: { [unowned self] in window.show() },
+                                     log: { earlyLog.append($0) })
         poller = MenuPoller(scheduler: scheduler) { [weak self] in self?.refreshInventory() }
         statusMenu = StatusMenu(handlers: .init(
             model: { [unowned self] in currentModel() },
             loginState: { LoginItem.state() },
             opened: { [unowned self] in poller?.menuOpened() },
             closed: { [unowned self] in poller?.menuClosed() },
+            shortcut: { [unowned self] in shortcut?.active == true ? GlobalHotKey.label : nil },
             openDashboard: { [unowned self] in window.show() },
             run: { [unowned self] action, project in run(action, project: project) },
             toggleLogin: { [unowned self] in toggleLogin() },
@@ -66,6 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let supervisor = Supervisor(launcher: launcher, scheduler: scheduler)
         supervisor.onChange = { [weak self] in self?.statusMenu?.rebuildIfOpen() }
         supervisor.onReady = { [weak self] ready in self?.dashboardReady(ready) }
+        earlyLog.forEach { supervisor.note($0) }
+        earlyLog = []
         self.supervisor = supervisor
         supervisor.start()
     }

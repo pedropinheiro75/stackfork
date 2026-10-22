@@ -42,6 +42,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         var loginState: () -> LoginItemState
         var opened: () -> Void
         var closed: () -> Void
+        /// The shortcut's label, or nil when it could not be registered.
+        var shortcut: () -> String?
         var openDashboard: () -> Void
         var run: (InstanceAction, String) -> Void
         var toggleLogin: () -> Void
@@ -95,7 +97,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let model = handlers.model()
         menu.removeAllItems()
         menu.addItem(item(model.statusText))
-        menu.addItem(item("Open Dashboard", action: handlers.openDashboard))
+        let shortcut = handlers.shortcut()
+        let open = item("Open Dashboard", key: shortcut == nil ? "" : "s", action: handlers.openDashboard)
+        open.keyEquivalentModifierMask = [.control, .option, .command]
+        menu.addItem(open)
+        if let shortcut { menu.addItem(item("Shortcut: \(shortcut)")) }
         menu.addItem(.separator())
 
         switch model.list {

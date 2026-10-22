@@ -137,6 +137,9 @@ final class Supervisor {
         }
     }
 
+    /// App-side line for the diagnostics log.
+    func note(_ line: String) { diagnostics.append(line: line) }
+
     private func handleStderr(_ line: String, _ gen: Int) {
         guard gen == generation else { return }
         diagnostics.append(line: line)
