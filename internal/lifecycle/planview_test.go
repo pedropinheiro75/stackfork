@@ -76,3 +76,20 @@ func TestPlanViewListsSeedAfterFirstUpWithRealCommand(t *testing.T) {
 		t.Fatalf("seed command %q", got)
 	}
 }
+
+// A draft's proposed migrate and seed are listed with the reason a Start skips them.
+func TestPlanViewDraftProposedStepsShowTheSkipReason(t *testing.T) {
+	main := t.TempDir()
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusDraft, Plan: knowledge.Plan{Status: knowledge.PlanProposed, Steps: []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "migrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Cmd: "m"},
+		{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Cmd: "s"},
+	}}}
+	got := map[string]string{}
+	for _, s := range PlanView(t.TempDir(), main, k, knowledge.ModeContainer).Steps {
+		got[s.ID] = s.Source
+	}
+	if !strings.Contains(got["seed"], "seed not run: setup is a draft") || !strings.Contains(got["migrate"], "migrate not run: setup is a draft") || got["up"] != "" {
+		t.Fatalf("%v", got)
+	}
+}

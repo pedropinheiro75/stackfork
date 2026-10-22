@@ -366,6 +366,33 @@ func seedAutoDetected(root, main, instanceDir, mode string) bool {
 	return detected != ""
 }
 
+// DraftSkip is the reason a step stackfork only guessed or proposed does not
+// run: the checkout's knowledge is a draft, so nothing it did not record runs
+// as a migrate or seed. label is "seed" or "migrate", once the step's once
+// value.
+func DraftSkip(label, id, once string) string {
+	return fmt.Sprintf("%s not run: setup is a draft; record it with `stackfork learn record step --id %s --kind exec --once %s --cmd …` (or finish `stackfork learn verify`)", label, id, once)
+}
+
+// isDraft: the knowledge exists and was neither verified nor verified once.
+func isDraft(k *knowledge.Knowledge) bool {
+	return k != nil && (k.Status == "" || k.Status == knowledge.StatusDraft)
+}
+
+func draftCheckout(root, main string) bool {
+	k, _ := knowledge.LoadFirst(root, main)
+	return isDraft(k)
+}
+
+// DraftSeedSkip is DraftSkip for the seed of mode, or "" when the seed runs:
+// only a draft checkout's auto-detected seed (no recorded decision) is held back.
+func DraftSeedSkip(root, main, instanceDir, mode string) string {
+	if draftCheckout(root, main) && seedAutoDetected(root, main, instanceDir, mode) {
+		return DraftSkip("seed", "seed", knowledge.OnceData)
+	}
+	return ""
+}
+
 // withMigrate puts the plan's first schema step before the seed, so a new
 // database has its tables. The migrate runs in the seed's service, so a
 // schema step that names another service is not prefixed: it runs at its

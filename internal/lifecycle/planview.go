@@ -98,6 +98,14 @@ func PlanView(stateBase, main string, k *knowledge.Knowledge, mode string) PlanO
 		out := []PlanStep{}
 		for _, s := range in {
 			o := NewPlanStep(s, state)
+			if s.Kind == knowledge.KindExec && isDraft(k) && k.Plan.Status != knowledge.PlanRecorded {
+				switch s.Once {
+				case knowledge.OnceData:
+					o.Source = DraftSkip("seed", "seed", s.Once)
+				case knowledge.OnceSchema:
+					o.Source = DraftSkip("migrate", s.ID, s.Once)
+				}
+			}
 			if s.Kind == knowledge.KindHost || s.Kind == knowledge.KindPrepare || s.IsHostExec() {
 				o.Trust = "untrusted"
 				if rawTrusted {

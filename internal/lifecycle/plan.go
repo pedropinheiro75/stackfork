@@ -137,6 +137,10 @@ func (r PlanRunner) Execute() error {
 			case s.Once == knowledge.OnceData: // the data seed runs with its compose-up
 			case s.Once == knowledge.OnceSchema && seeded && SeedCoversSchema(r.Root, r.Main, r.InstanceDir, r.Plan, r.Mode, s): // the seed prefix (migrate && seed) already ran it
 				r.skip(s, "ran with the seed")
+			case s.Once == knowledge.OnceSchema && r.Plan.Status != knowledge.PlanRecorded && draftCheckout(r.Root, r.Main): // only proposed: nobody recorded it
+				note := DraftSkip("migrate", s.ID, knowledge.OnceSchema)
+				fmt.Fprintln(r.Out, note)
+				r.skip(s, note)
 			default:
 				err = r.step(s, func(w io.Writer) (int, error) { return r.exec(w, s) })
 			}

@@ -210,6 +210,7 @@ func autoSeedFixture(t *testing.T) (root, stateDir, dir, log string) {
 
 func TestNewVolumeIsSeededAutomaticallyOnceWithNoQuestion(t *testing.T) {
 	root, stateDir, _, log := autoSeedFixture(t)
+	saveKnowledge(t, root, knowledge.Knowledge{Status: knowledge.StatusVerified}) // a draft never runs a guessed seed
 	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
 	args := []string{"--root", root, "--state-dir", stateDir}
 	out, stderr, code := runCLI(t, append(args, "up")...)

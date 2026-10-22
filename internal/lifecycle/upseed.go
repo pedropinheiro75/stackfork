@@ -154,6 +154,15 @@ func UpAndSeed(out, errOut io.Writer, a UpSeed) UpOutcome {
 	skipped := false
 	withLock(a.Lock, a.InstanceDir, func() {
 		cmd, svc := SeedRecipeIn(a.Root, a.Main, a.InstanceDir, a.Mode)
+		if note := DraftSeedSkip(a.Root, a.Main, a.InstanceDir, a.Mode); note != "" && cmd != "" {
+			// the seed stays pending: it runs once the person records it
+			fmt.Fprintln(errOut, note)
+			if seedS != nil {
+				seedS.Skip(note)
+			}
+			skipped = true
+			return
+		}
 		if _, _, host := seedRecipeIn(a.Root, a.Main, a.InstanceDir, a.Mode); cmd != "" && svc == "" && !host &&
 			ResolveExecService(a.InstanceDir, knowledge.Step{}, a.Plan) == "" && seedAutoDetected(a.Root, a.Main, a.InstanceDir, a.Mode) {
 			// the stack is up and the script was only guessed: the person decides where it runs

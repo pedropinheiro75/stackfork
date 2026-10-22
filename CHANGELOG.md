@@ -7,6 +7,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- While a checkout's knowledge is a draft (`learn` scanned it, `learn verify` has not run), `up`, `start-env`, `reset` and the dashboard Start no longer run a migrate or seed nobody recorded: an auto-detected seed and a proposed-only plan step are skipped with a `seed not run: setup is a draft; record it with ...` note, recorded as a skipped run step. Recorded steps, verified knowledge and projects with no knowledge behave as before.
 - A stale network endpoint (Docker keeps one after a crash or a full disk) no longer breaks `up` and `reset` with "endpoint with name X already exists in network N". `up` force-disconnects it when N is a network of this project and X is not a running container, says so, and retries once. `down` force-disconnects leftover endpoints of this project's networks whose container is gone and removes the network. Other projects' networks and containers are never touched.
 - `prepare` and `up` refuse a repository that was never learned (no knowledge file, adapter, instance or profile reference), like `start-env`; `--force` overrides it for people and the guard blocks it for agents. A draft and an existing instance are not blocked.
 - A step with no service, and an auto-detected seed, never run in a web server or proxy image (nginx, caddy, traefik, httpd, haproxy, envoy, openresty). A detected seed no service can run is skipped with a note instead of failing `up`.

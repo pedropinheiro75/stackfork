@@ -108,6 +108,9 @@ func DerivePlan(o DeriveOptions) (lifecycle.DerivedPlan, error) {
 			ps.Source = "implicit: starts every service"
 		case s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData:
 			ps.Source = seedSource(s, manifest)
+			if note := lifecycle.DraftSeedSkip(root, main, instanceDir, mode); note != "" {
+				ps.Source = note
+			}
 		}
 		ps.Step.Args = ps.Args // the text of the row names the files
 		d.Steps = append(d.Steps, ps)
