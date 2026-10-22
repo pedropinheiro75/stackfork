@@ -517,7 +517,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			writeActionResult(w, http.StatusForbidden, actionResponse{Message: "not a repo found by the scan under a configured folder"})
 			return
 		}
-		if k, kerr := knowledge.Load(filepath.Join(repo, ".stackfork", "knowledge.json")); kerr == nil && !k.Plan.SupportsMode(mode) && (mode == knowledge.ModeContainer || mode == knowledge.ModeHybrid) {
+		if k, _, kerr := knowledge.LoadFor(repo, repo); kerr == nil && k != nil && !k.Plan.SupportsMode(mode) && (mode == knowledge.ModeContainer || mode == knowledge.ModeHybrid) {
 			var sup []string
 			for _, m := range []string{knowledge.ModeContainer, knowledge.ModeHybrid} {
 				if k.Plan.SupportsMode(m) {
@@ -704,7 +704,7 @@ func stream(w http.ResponseWriter, okMessage string) (*lineWriter, func(error)) 
 // the dialog's first word (Start, Reset).
 func (s *Server) approveHostSteps(lw io.Writer, repo *repos.Repo, checkout, verb string) error {
 	// Same lookup as StartEnv: the checkout's own knowledge.json, then the main repo's.
-	k, err := knowledge.LoadFirst(checkout, repo.Path)
+	k, _, err := knowledge.LoadFor(checkout, repo.Path)
 	if err != nil || k == nil {
 		return err
 	}

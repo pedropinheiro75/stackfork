@@ -209,7 +209,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 // for the repo, runs a host command: a host step or an exec step on the host.
 func planRunsHost(root string) bool {
 	main := repos.MainOrSelf(root)
-	k, err := knowledge.LoadFirst(root, main)
+	k, _, err := knowledge.LoadFor(root, main)
 	if err != nil || k == nil {
 		return false
 	}

@@ -2,6 +2,7 @@ package dashboard_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -157,5 +158,29 @@ func TestReposWithoutTheHookShowsNoPlanAndNoRecipeLine(t *testing.T) {
 	frag := e.get("/fragments/repos").Body.String()
 	if strings.Contains(frag, `class="plan"`) || strings.Contains(frag, "Starts with") {
 		t.Errorf("no hook, no derived plan:\n%s", frag)
+	}
+}
+
+// Knowledge verified in a linked worktree serves the whole repo: the panel
+// shows its recorded plan and where it lives, never "run learn".
+func TestReposShowsKnowledgeVerifiedInAWorktree(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := scratchRepoAt(t, filepath.Join(e.root, "svc"))
+	os.MkdirAll(filepath.Join(repo, ".agent-dev"), 0o755)
+	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(fixtureCompose), 0o644)
+	wt := filepath.Join(repo, ".worktrees", "chore-218")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "chore-218", wt).CombinedOutput(); err != nil {
+		t.Fatalf("%s", out)
+	}
+	k := &knowledge.Knowledge{Status: knowledge.StatusVerified,
+		Verification: &knowledge.Verification{Date: "2026-05-01", Confirmation: "works"},
+		Plan:         knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp}}}}
+	if err := k.Save(filepath.Join(wt, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	e.get("/api/repos")
+	plan := planBlock(t, e.get("/fragments/repos").Body.String())
+	if strings.Contains(plan, derivedLabel) || !strings.Contains(plan, `data-step="up"`) || !strings.Contains(plan, "from worktree chore-218 (verified)") {
+		t.Errorf("plan:\n%s", plan)
 	}
 }

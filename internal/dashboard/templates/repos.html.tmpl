@@ -85,6 +85,7 @@
         <div class="plan-bar">
           {{if .Derived}}<span class="plan-derived"><span class="small">derived — not recorded; run learn to record it</span>{{if $ready}} <button type="button" class="btn btn-ghost learn-btn" data-key="{{$r.Path}}/derived-learn" data-repo="{{$r.Path}}" data-name="{{$r.Name}}" data-prompt="{{prompt $r.Name $r.Path $r.DefaultBranch}}">Learn with your agent</button>{{end}}</span>
           {{else}}<span class="micro">Starts with</span>{{end}}
+          {{if .From}}<span class="small muted" data-plan-from>{{.From}}</span>{{end}}
           <label class="plan-mode"><span class="small muted">Mode</span> {{if or .Unsupported (gt (len .Modes) 1)}}<select data-mode-for="{{$r.Path}}" data-key="{{$r.Path}}/mode" aria-label="Start mode for {{$r.Name}}">{{$m := .Mode}}{{range .Modes}}<option value="{{.}}"{{if eq . $m}} selected{{end}}>{{.}}</option>{{end}}</select>{{else}}<code class="mono" data-mode-label>{{.Mode}}</code>{{end}}{{if .Unsupported}} <span class="chip chip-attention"><span class="chip-glyph" aria-hidden="true">&#9679;</span>{{.Mode}} not supported by this plan</span>{{end}}</label>
         </div>
         {{template "entryline" $row}}

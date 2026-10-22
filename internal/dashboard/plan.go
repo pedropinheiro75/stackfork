@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"path/filepath"
 	"strconv"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
@@ -32,7 +33,7 @@ func entryCommand(v *entryView) string {
 // repoEntry reads the main checkout's knowledge; nil when there is none.
 // With no entry recorded it shows the scan's proposal, when there is one.
 func repoEntry(repo repos.Repo) *entryView {
-	k, err := knowledge.LoadFirst(repo.Path)
+	k, _, err := knowledge.LoadFor(repo.Path, repo.Path)
 	if err != nil || k == nil {
 		return nil
 	}
@@ -64,6 +65,7 @@ type stepView struct {
 // lifecycle.PlanView (the same code as `stackfork plan --json`).
 type planView struct {
 	LoadError           string // knowledge.json exists but cannot be loaded
+	From                string // the plan is borrowed from another worktree: where
 	Unsupported         bool   // the configured mode is not one this plan supports
 	TrustTitle          string // callout title
 	Mode                string
@@ -83,7 +85,7 @@ type planView struct {
 // for a repo whose knowledge has no plan steps, the derived one. nil when
 // there is nothing to show.
 func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
-	k, err := knowledge.LoadFirst(repo.Path)
+	k, from, err := knowledge.LoadFor(repo.Path, repo.Path)
 	if err != nil { // shown as a failed callout, not hidden
 		return &planView{LoadError: err.Error()}
 	}
@@ -95,6 +97,9 @@ func (s *Server) repoPlan(repo repos.Repo, cfg *config.Config) *planView {
 		mode, _ = cfg.ModeForPlan(repo.Path, k.Plan)
 	}
 	v := &planView{Modes: []string{}}
+	if from != repo.Path { // borrowed, read-only
+		v.From = "from worktree " + filepath.Base(from) + " (verified)"
+	}
 	for _, m := range []string{knowledge.ModeContainer, knowledge.ModeHybrid} {
 		if k.Plan.SupportsMode(m) {
 			v.Modes = append(v.Modes, m)
