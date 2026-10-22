@@ -207,7 +207,7 @@ func shellQuote(s string) string {
 
 // DeclaredSecrets are the names knowledge declares for a checkout.
 func DeclaredSecrets(root, main string) []knowledge.SecretDecl {
-	if k, _ := knowledge.LoadFirst(root, main); k != nil {
+	if k, _, _ := knowledge.LoadFor(root, main); k != nil {
 		return k.Secrets
 	}
 	return nil

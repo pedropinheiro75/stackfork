@@ -94,7 +94,7 @@ func dashboardLive(newBase, legacyBase string, loop *atomic.Pointer[live.Loop]) 
 		Enable: func(main string) error { return liveOnWrite(main, newBase) },
 		Resume: func(main string) error {
 			var plan knowledge.Plan
-			k, err := knowledge.LoadFirst(main, main)
+			k, _, err := knowledge.LoadFor(main, main)
 			if err != nil {
 				return err
 			}

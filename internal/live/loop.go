@@ -506,7 +506,7 @@ func Prepare(t Target) ([]Entry, knowledge.Plan, error) {
 		}
 	}
 	var plan knowledge.Plan
-	k, err := knowledge.LoadFirst(t.Root, t.Main)
+	k, _, err := knowledge.LoadFor(t.Root, t.Main)
 	if err != nil {
 		return nil, plan, fmt.Errorf("knowledge.json: %w", err)
 	}

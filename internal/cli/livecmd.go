@@ -202,7 +202,7 @@ func liveOnCheck(main, newBase, legacyBase string) (hasOP bool, code int, err er
 	}
 	// Trust: a plan whose host or prepare steps are not trusted here never runs.
 	var plan knowledge.Plan
-	k, err := knowledge.LoadFirst(main, main)
+	k, _, err := knowledge.LoadFor(main, main)
 	if err != nil {
 		return false, 1, fmt.Errorf("knowledge.json: %w", err)
 	}

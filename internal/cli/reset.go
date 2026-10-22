@@ -207,7 +207,7 @@ func resetPrepareArgs(root, main, instanceDir string) ([]string, error) {
 		}
 		return args, knowledge.CheckPrepareArgs(args)
 	}
-	if k, err := knowledge.LoadFirst(root, main); err != nil {
+	if k, _, err := knowledge.LoadFor(root, main); err != nil {
 		return nil, err
 	} else if k != nil {
 		if args, err := knowledgePrepareArgs(k); args != nil || err != nil {

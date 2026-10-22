@@ -51,7 +51,7 @@ type StartOptions struct {
 
 // startPlan is the plan of a checkout and the mode it starts in.
 func startPlan(out io.Writer, o StartOptions, root, main string) (plan knowledge.Plan, mode string, err error) {
-	kk, err := knowledge.LoadFirst(root, main)
+	kk, _, err := knowledge.LoadFor(root, main)
 	if err != nil { // a broken file is not an empty plan
 		return plan, "", err
 	}
@@ -105,7 +105,7 @@ func learnRefusal(root, instanceDir string, insts func() []inventory.Instance, p
 		return "", nil
 	}
 	main := repos.MainOrSelf(root)
-	if kk, kerr := knowledge.LoadFirst(root, main); kk != nil || kerr != nil { // learn ran (a broken file is for learn to fix)
+	if kk, _, kerr := knowledge.LoadFor(root, main); kk != nil || kerr != nil { // learn ran (a broken file is for learn to fix)
 		return "", nil
 	}
 	level, reason := repos.ReadinessOf(filepath.Base(main), append(repos.Checkouts(main), root), repos.DefaultBranchOf(main), insts(), profileDirs)
@@ -553,7 +553,7 @@ func prepareArgsFrom(root, main, instanceDir string) ([]string, string, error) {
 	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err == nil {
 		return nil, prepareFromManifest, nil // prepare reuses the files, env file and secrets it recorded
 	}
-	k, err := knowledge.LoadFirst(root, main)
+	k, _, err := knowledge.LoadFor(root, main)
 	if err != nil {
 		return nil, "", err
 	}
@@ -733,19 +733,25 @@ func printApplied(out io.Writer, rep repos.SiblingReport, envFile, root, from st
 	}
 }
 
-// copyAdapterFromMain copies, from the main checkout, the untracked adapter
-// files the prepare args name and a linked worktree lacks (untracked files
-// are not in a new worktree). A missing file tracked in main is an error.
+// copyAdapterFromMain copies the untracked adapter files the prepare args
+// name and a linked worktree lacks (untracked files are not in a new
+// worktree), from the checkout the knowledge came from: the main checkout,
+// or the worktree where learn was verified. A missing file tracked there is
+// an error.
 func copyAdapterFromMain(out io.Writer, root, main string, args []string) error {
-	r, err := repos.AdapterRecipeFromMain(main, root, args)
+	src, label := main, " from the main checkout"
+	if _, from, _ := knowledge.LoadFor(root, main); from != "" && from != root && from != main {
+		src, label = from, " from "+from
+	}
+	r, err := repos.AdapterRecipeFromMain(src, root, args)
 	if err != nil || r == nil {
 		return err
 	}
 	rep, err := r.Apply(root)
 	if err != nil {
-		return fmt.Errorf("copying the adapter files from the main checkout: %w", err)
+		return fmt.Errorf("copying the adapter files from %s: %w", src, err)
 	}
-	printApplied(out, rep, r.EnvFile, root, " from the main checkout")
+	printApplied(out, rep, r.EnvFile, root, label)
 	return nil
 }
 

@@ -63,7 +63,7 @@ type ScanInput struct {
 }
 
 func adapterFiles(main string) []string {
-	if k, err := knowledge.LoadFirst(main, main); err == nil && k != nil {
+	if k, _, err := knowledge.LoadFor(main, main); err == nil && k != nil {
 		return k.AdapterFiles
 	}
 	return nil

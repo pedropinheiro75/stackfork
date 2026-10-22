@@ -158,9 +158,8 @@ func recipeFrom(c inventory.Instance, main, target, ref string) (*SiblingRecipe,
 			return nil, err
 		}
 		if !t {
-			d := filepath.Base(filepath.Dir(x))
-			if filepath.Base(x) != "runtime.env" || (d != ".agent-dev" && d != ".stackfork") {
-				return nil, fmt.Errorf("env file %s (used by %s) is not a stackfork runtime env, so it is never copied; create it in the new checkout", x, c.Project)
+			if !adapterEnv(x, c.EnvFile) {
+				return nil, fmt.Errorf("env file %s (used by %s) is outside .stackfork/ and .agent-dev/, so it is never copied; copy it from %s or record a .stackfork/runtime.env with learn", x, c.Project, c.Root)
 			}
 			if _, err := os.Stat(c.EnvFile); err != nil {
 				return nil, fmt.Errorf("env file %s (used by %s) no longer exists", c.EnvFile, c.Project)
@@ -401,8 +400,16 @@ func SiblingSecrets(main, target string, insts []inventory.Instance) map[string]
 	return best.Secrets
 }
 
-// AdapterRecipeFromMain builds the recipe that copies, from the main
-// checkout into the linked worktree root, the untracked files that prepare
+// adapterEnv reports whether the env file x (slash path, at path) sits
+// directly in an adapter folder and is not a credential-looking name: the
+// only env files a recipe copies.
+func adapterEnv(x, path string) bool {
+	d := filepath.Base(filepath.Dir(x))
+	return (d == ".agent-dev" || d == ".stackfork") && filepath.Dir(filepath.Dir(x)) == "." && Denied(x, path) == ""
+}
+
+// AdapterRecipeFromMain builds the recipe that copies, from the checkout
+// main (the main checkout, or the worktree the knowledge came from) into root, the untracked files that prepare
 // args (-f, --file, --env-file) name and root lacks. It returns (nil, nil)
 // when nothing is missing, and an error naming the file when a missing file
 // is tracked in main (a real missing file) or is never copied. Apply does
@@ -456,9 +463,8 @@ func AdapterRecipeFromMain(main, root string, args []string) (*SiblingRecipe, er
 			if x == "" {
 				continue
 			}
-			d := filepath.Base(filepath.Dir(x))
-			if filepath.Base(x) != "runtime.env" || (d != ".agent-dev" && d != ".stackfork") {
-				return nil, fmt.Errorf("env file %s is not a stackfork runtime env, so it is never copied; create it in %s", x, root)
+			if !adapterEnv(x, filepath.Join(main, filepath.FromSlash(x))) {
+				return nil, fmt.Errorf("env file %s is outside .stackfork/ and .agent-dev/, so it is never copied; copy it from %s to %s or record a .stackfork/runtime.env with learn", x, main, root)
 			}
 			r.EnvFile, r.untracked = x, append(r.untracked, x)
 		}

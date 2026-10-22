@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
@@ -33,9 +34,12 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase, legacy
 		main = root
 	}
 	// same lookup as start-env: the checkout's own file, then the main repo's
-	k, err := knowledge.LoadFirst(root, main)
+	k, from, err := knowledge.LoadFor(root, main)
 	if err != nil { // a broken file is not an empty plan
 		return 2, fmt.Errorf("no startup plan; run `stackfork learn` first: %w", err)
+	}
+	if k != nil && from != root && from != main && !*jsonFlag {
+		fmt.Fprintf(stderr, "note: knowledge from worktree %s (verified)\n", filepath.Base(from))
 	}
 	if k == nil || len(k.Plan.Steps) == 0 { // nothing recorded: show what a Start would run
 		return planDerived(stdout, stderr, root, stateBase, legacyStateBase, profileFlag, *modeFlag, *jsonFlag, *trustFlag)

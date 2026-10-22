@@ -129,7 +129,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, t Target) (Outcome, error) {
 		return Outcome{Status: Waiting, Reason: "the checkout is not on " + t.Branch, Warning: "branch switched"}, nil
 	}
 
-	k, err := knowledge.LoadFirst(t.Root, t.Main)
+	k, _, err := knowledge.LoadFor(t.Root, t.Main)
 	if err != nil {
 		return r.pause(t, Pause{Kind: PausePlan, Reason: "knowledge.json: " + err.Error()})
 	}
