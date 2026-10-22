@@ -301,7 +301,7 @@ func SeedRecipe(root, main, instanceDir string) (cmd, service string) {
 
 // LoadPlan is the plan start-env runs for this checkout (empty when none).
 func LoadPlan(root, main string) knowledge.Plan {
-	if k, _ := knowledge.LoadFirst(root, main); k != nil {
+	if k, _, _ := knowledge.LoadFor(root, main); k != nil {
 		return k.Plan
 	}
 	return knowledge.Plan{}
@@ -380,7 +380,7 @@ func isDraft(k *knowledge.Knowledge) bool {
 }
 
 func draftCheckout(root, main string) bool {
-	k, _ := knowledge.LoadFirst(root, main)
+	k, _, _ := knowledge.LoadFor(root, main)
 	return isDraft(k)
 }
 
