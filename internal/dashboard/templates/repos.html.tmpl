@@ -131,16 +131,19 @@
 
       {{end}}
 
-      {{with $row.Secrets}}
       <section class="secrets" aria-labelledby="secrets-h-{{$i}}">
         <div class="secrets-bar">
           <h3 class="micro" id="secrets-h-{{$i}}">Secrets</h3>
           <span class="small muted">Names and status only. A value never reaches this page.</span>
-          <button type="button" class="btn secrets-check" data-secrets-check data-repo="{{$r.Path}}" data-key="{{$r.Path}}/secrets/check" title="Read every reference once; 1Password may ask you to unlock it">Check</button>
+          <span class="secrets-actions">
+            <button type="button" class="btn" data-secret-add data-repo="{{$r.Path}}" data-name="{{$r.Name}}" data-key="{{$r.Path}}/secrets/add">Add secret</button>
+            {{if $row.Secrets}}<button type="button" class="btn secrets-check" data-secrets-check data-repo="{{$r.Path}}" data-key="{{$r.Path}}/secrets/check" title="Read every reference once; 1Password may ask you to unlock it">Check</button>{{end}}
+          </span>
         </div>
+        {{if $row.Secrets}}
         <div class="secret-list" role="table" aria-label="Secrets of {{$r.Name}}">
           <div class="secret-head micro" role="row"><span role="columnheader">Name</span><span role="columnheader">Reference</span><span role="columnheader">Status</span><span role="columnheader"><span class="sr-only">Actions</span></span></div>
-          {{range .}}
+          {{range $row.Secrets}}
           <div class="secret-row" role="row" data-key="{{.Repo}}/secret/{{.Name}}">
             <span class="secret-name" role="cell"><span class="mono secret-id">{{.Name}}</span>{{if .Hint}}<span class="small muted secret-hint">{{.Hint}}</span>{{end}}</span>
             <span class="secret-ref" role="cell">{{if .Reference}}<code class="mono"{{if .Source}} title="{{.Source}}{{if .From}}: {{.From}}{{end}}"{{end}}>{{.Reference}}</code>{{else}}<span class="small muted">not mapped on this machine</span>{{end}}</span>
@@ -154,8 +157,10 @@
           </div>
           {{end}}
         </div>
+        {{else}}
+        <p class="small muted secrets-empty">No secrets. Add one to map a name this project needs to a keychain item or a 1Password reference.</p>
+        {{end}}
       </section>
-      {{end}}
 
       <div class="wt-table">
         <div class="wt-head micro" aria-hidden="true"><span>Lane</span><span>Branch</span><span>Path</span><span>Ahead / behind upstream</span><span>State</span><span></span></div>
@@ -276,6 +281,31 @@
       <input type="number" name="value" min="1" max="12" value="{{.MaxDepth}}" aria-label="Maximum folder depth">
       <button type="submit" class="btn">Save</button>
     </form>
+  </div>
+</section>
+<section class="set-row" aria-labelledby="set-secrets">
+  <div class="set-label"><h3 id="set-secrets">Secrets</h3><p class="muted">References to credentials, per repository or folder. stackfork never stores or shows a value here.</p></div>
+  <div class="set-control">
+    {{if .Secrets}}
+    <div class="smap-list" role="table" aria-label="Mapped secrets">
+      <div class="smap-head micro" role="row"><span role="columnheader">Scope</span><span role="columnheader">Name</span><span role="columnheader">Reference</span><span role="columnheader">Status</span><span role="columnheader"><span class="sr-only">Actions</span></span></div>
+      {{range .Secrets}}
+      <div class="smap-row" role="row" data-key="settings/secret/{{.Path}}/{{.Name}}">
+        <span class="smap-scope" role="cell">{{if .Folder}}<span class="scope-chip">folder</span><code class="mono" title="{{.Path}}">{{.Path}}</code>{{else}}<span title="{{.Path}}">{{.Scope}}</span>{{end}}</span>
+        <span class="smap-name mono" role="cell">{{.Name}}</span>
+        <span class="smap-ref" role="cell"><code class="mono">{{.Reference}}</code></span>
+        <span class="smap-state" role="cell"><span class="chip chip-{{.Chip.Class}}"{{if .Chip.Title}} title="{{.Chip.Title}}"{{end}}><span class="chip-glyph" aria-hidden="true">{{.Chip.Glyph}}</span>{{.Chip.Label}}</span></span>
+        <span class="smap-actions" role="cell">
+          {{if .CanSet}}<button type="button" class="btn btn-ghost" data-key="settings/secret/{{.Path}}/{{.Name}}/set" data-secret-set data-repo="{{.Path}}" data-name="{{.Name}}" aria-label="Set value of {{.Name}}" title="Opens a hidden-answer dialog on this Mac; the value does not pass through this page">Set value&hellip;</button>{{end}}
+          <button type="button" class="btn btn-danger" data-key="settings/secret/{{.Path}}/{{.Name}}/unmap" data-secret-unmap data-path="{{.Path}}" data-name="{{.Name}}" data-scope="{{if .Folder}}the folder {{.Path}}{{else}}{{.Scope}}{{end}}" aria-label="Unmap {{.Name}}">Unmap</button>
+        </span>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="muted secrets-empty">No secrets mapped. A secret is a named credential, such as an API token, that a project reads when it starts.</p>
+    {{end}}
+    <p><button type="button" class="btn" data-secret-add data-key="settings/secrets/add">Add secret</button></p>
   </div>
 </section>
 </div>

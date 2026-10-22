@@ -442,10 +442,12 @@ func (s *Server) handleReposFragment(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSettingsFragment(w http.ResponseWriter, r *http.Request) {
 	res, _ := s.currentRepos()
 	path, _ := config.Path()
+	cfg, _ := config.Load()
 	s.renderFragment(w, "settings", struct {
 		repos.Result
 		ConfigPath string
-	}{res, path})
+		Secrets    []mappingView
+	}{res, path, s.secretMappings(cfg)})
 }
 
 func (s *Server) renderFragment(w http.ResponseWriter, name string, data interface{}) {

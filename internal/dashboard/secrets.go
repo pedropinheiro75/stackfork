@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -512,4 +513,58 @@ func (s *Server) repoSecrets(repo repos.Repo, cfg *config.Config) []secretView {
 // secret name.
 func hasSecretNames(repo string, cfg *config.Config) bool {
 	return cfg != nil && (len(cfg.SecretsFor(repo)) > 0 || len(lifecycle.DeclaredSecrets(repo, repo)) > 0)
+}
+
+// mappingView is a row of the Settings Secrets table: one entry of the
+// machine map, a repository or a folder.
+type mappingView struct {
+	Path, Scope, Name, Reference string
+	Folder                       bool
+	Chip                         chipView
+	CanSet                       bool
+}
+
+// secretMappings lists every entry of the machine map by scope and name. A
+// status never needs a prompt: the same existence check as a repo row.
+func (s *Server) secretMappings(cfg *config.Config) []mappingView {
+	if cfg == nil {
+		return nil
+	}
+	known := s.secrets.snapshot()
+	paths := make([]string, 0, len(cfg.Secrets))
+	for p := range cfg.Secrets {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	var out []mappingView
+	for _, p := range paths {
+		_, gitErr := os.Lstat(filepath.Join(p, ".git"))
+		names := make([]string, 0, len(cfg.Secrets[p]))
+		for n := range cfg.Secrets[p] {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			ref := cfg.Secrets[p][n]
+			row := lifecycle.SecretRow{Name: n, Reference: ref}
+			switch k, had := known[ref]; {
+			case strings.HasPrefix(ref, "env:"):
+				row.Status, row.Detail = StatusShellOnly, shellOnlyNote
+			case had:
+				row.Status, row.Detail = string(k.Status), k.Detail
+			default:
+				st, err := compose.ExistsSecret(ref)
+				row.Status = string(st)
+				if err != nil && st != secretstore.Resolves {
+					row.Detail, _, _ = strings.Cut(err.Error(), "\n")
+				}
+				if strings.HasPrefix(ref, "keychain:") {
+					s.secrets.rememberExists(ref, lifecycle.RefStatus{Status: st, Detail: row.Detail})
+				}
+			}
+			out = append(out, mappingView{Path: p, Scope: filepath.Base(p), Name: n, Reference: ref, Folder: gitErr != nil,
+				Chip: secretChip(secretJSON{SecretRow: row}), CanSet: strings.HasPrefix(ref, "keychain:") && SecretDialogAvailable()})
+		}
+	}
+	return out
 }

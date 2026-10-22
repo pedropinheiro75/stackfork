@@ -37,6 +37,8 @@ body {
 }
 .btn-primary, .repo-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn-primary:hover, .repo-btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.btn-danger { background: transparent; border-color: transparent; color: var(--failed); }
+.btn-danger:hover { background: var(--failed-bg); border-color: var(--failed-line); }
 .btn-ghost { background: transparent; border-color: transparent; }
 .btn-ghost:hover { background: var(--surface-2); border-color: transparent; }
 .btn-icon, .icon-btn { min-width: 32px; padding: 0; }
@@ -519,7 +521,7 @@ code.setting-value { display: inline-block; }
 .secrets-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
 .secrets .btn[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
 .secrets-bar h3 { margin: 0; color: var(--fg-muted); }
-.secrets-bar .secrets-check { margin-left: auto; }
+.secrets-bar .secrets-actions { margin-left: auto; display: flex; gap: var(--space-2); }
 .secret-head, .secret-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 1.4fr) 140px 40px; align-items: center; gap: var(--space-3); padding: 0 var(--space-2); }
 .secret-head { min-height: 24px; color: var(--fg-subtle); border-bottom: 1px solid var(--line); }
 .secret-row { min-height: 40px; padding-top: var(--space-1); padding-bottom: var(--space-1); border-bottom: 1px solid var(--line); }
@@ -533,7 +535,7 @@ code.setting-value { display: inline-block; }
   .secret-head { display: none; }
   .secret-row { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name state actions" "ref ref ref"; padding: var(--space-2); gap: var(--space-1) var(--space-2); }
   .secret-name { grid-area: name; } .secret-state { grid-area: state; } .secret-actions { grid-area: actions; } .secret-ref { grid-area: ref; }
-  .secrets-bar .secrets-check { margin-left: 0; }
+  .secrets-bar .secrets-actions { margin-left: 0; }
 }
 .plan-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .chip-code { max-width: 100%; padding: 1px var(--space-2); border: 1px solid var(--line-control); border-radius: var(--radius-xs); background: var(--surface-1); overflow-wrap: anywhere; }
@@ -673,13 +675,13 @@ code.setting-value { display: inline-block; }
 @media (max-width: 719px) { .set-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); } }
 
 /* --- Learn modal (Modal preset) --- */
-#learn-modal {
+#learn-modal, .modal {
   width: calc(100% - 32px); max-width: 560px; max-height: calc(100vh - 32px); overflow: auto; padding: var(--space-6);
   border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-3); color: var(--fg); box-shadow: var(--shadow-modal);
 }
-#learn-modal::backdrop { background: var(--backdrop); }
-#learn-modal[open] { animation: sf-modal-in var(--duration-slow) var(--ease-out); }
-#learn-modal[open]::backdrop { animation: sf-fade var(--duration-slow) var(--ease-out); }
+#learn-modal::backdrop, .modal::backdrop { background: var(--backdrop); }
+#learn-modal[open], .modal[open] { animation: sf-modal-in var(--duration-slow) var(--ease-out); }
+#learn-modal[open]::backdrop, .modal[open]::backdrop { animation: sf-fade var(--duration-slow) var(--ease-out); }
 @keyframes sf-modal-in { from { opacity: 0; transform: scale(0.97); } }
 @keyframes sf-fade { from { opacity: 0; } }
 .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
@@ -709,8 +711,8 @@ code.setting-value { display: inline-block; }
 #learn-status { margin: 0 0 var(--space-3); min-height: 18px; }
 .modal-foot { display: flex; justify-content: flex-end; gap: var(--space-2); }
 @media (prefers-reduced-motion: reduce) {
-  #learn-modal[open] { animation: sf-fade var(--duration-fast) linear; }
-  #learn-modal[open]::backdrop { animation: none; }
+  #learn-modal[open], .modal[open] { animation: sf-fade var(--duration-fast) linear; }
+  #learn-modal[open]::backdrop, .modal[open]::backdrop { animation: none; }
 }
 
 /* --- LogDrawer: right side, non-modal --- */
@@ -791,3 +793,29 @@ code.setting-value { display: inline-block; }
 
 /* Repos entry line (entry-links D12) */
 .entry-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; }
+
+/* Secrets: Settings table of every mapping, and the Add secret dialog. */
+.secrets-empty { margin: 0; }
+.smap-head, .smap-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(120px, 1fr) minmax(0, 1.4fr) 128px auto; align-items: center; gap: var(--space-3); padding: 0 var(--space-2); }
+.smap-head { min-height: 24px; color: var(--fg-subtle); border-bottom: 1px solid var(--line); }
+.smap-row { min-height: 40px; padding-top: var(--space-1); padding-bottom: var(--space-1); border-bottom: 1px solid var(--line); }
+.smap-scope { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; overflow-wrap: anywhere; }
+.smap-scope code { color: var(--fg-muted); }
+.smap-name, .smap-ref { min-width: 0; overflow-wrap: anywhere; }
+.smap-name { font-weight: 600; }
+.smap-actions { display: flex; justify-content: flex-end; gap: var(--space-1); }
+.scope-chip { display: inline-block; padding: 1px var(--space-2); border: 1px solid var(--line-control); border-radius: var(--radius-xs); color: var(--fg-muted); font-size: 11px; line-height: 14px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
+@media (max-width: 719px) {
+  .smap-head { display: none; }
+  .smap-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name state" "scope scope" "ref ref" "actions actions"; padding: var(--space-2); gap: var(--space-1) var(--space-2); }
+  .smap-name { grid-area: name; } .smap-state { grid-area: state; } .smap-scope { grid-area: scope; } .smap-ref { grid-area: ref; } .smap-actions { grid-area: actions; justify-content: flex-start; }
+}
+.modal .field { display: flex; flex-direction: column; gap: var(--space-1); margin: 0 0 var(--space-4); }
+.modal .field input { width: 100%; }
+.modal .field .small { margin: 0; }
+.modal fieldset { margin: 0 0 var(--space-4); padding: 0; border: 0; min-width: 0; }
+.modal legend { padding: 0; }
+.scope-opt { display: flex; align-items: center; gap: var(--space-2); min-height: 32px; cursor: pointer; }
+.scope-opt input { accent-color: var(--accent); margin: 0; }
+.modal .form-error { margin: 0 0 var(--space-3); }
+.modal-note { margin: 0 0 var(--space-4); }

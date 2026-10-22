@@ -124,6 +124,34 @@
   <div class="modal-foot"><button type="button" id="learn-cancel" class="btn btn-ghost">Cancel</button><button type="button" id="learn-start" class="btn btn-primary" disabled>Start setup</button></div>
 </dialog>
 
+<dialog id="secret-dialog" class="modal" aria-labelledby="sd-title">
+  <form id="sd-form" autocomplete="off">
+    <div class="modal-head"><h2 id="sd-title">Add secret</h2><button type="button" id="sd-close" class="btn btn-ghost btn-icon" aria-label="Close"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></div>
+    <p class="muted modal-lede">Map a name to where its value lives. The value itself never goes through this page.</p>
+    <div id="sd-fields">
+      <div class="field"><label for="sd-name">Name</label><input type="text" id="sd-name" name="name" placeholder="NPM_TOKEN" spellcheck="false" autocapitalize="off" required></div>
+      <div class="field"><label for="sd-ref">Reference</label><input type="text" id="sd-ref" name="reference" placeholder="keychain:acme-npm-token or op://Vault/Item/field" spellcheck="false" autocapitalize="off" aria-describedby="sd-ref-hint" required><p class="small muted" id="sd-ref-hint">A pointer to the value, not the value. Never paste a secret here.</p></div>
+      <fieldset>
+        <legend class="micro modal-label">Applies to</legend>
+        <label class="scope-opt" id="sd-repo-opt"><input type="radio" name="scope" value="repo"><span id="sd-repo-label">This repository</span></label>
+        <label class="scope-opt"><input type="radio" name="scope" value="folder"><span>A folder, and every repository under it</span></label>
+        <div class="field" id="sd-folder-field"><label for="sd-folder" class="sr-only">Folder</label><input type="text" id="sd-folder" name="folder" placeholder="~/code/Client" spellcheck="false" autocapitalize="off"></div>
+      </fieldset>
+    </div>
+    <p id="sd-error" class="form-error" role="alert"></p>
+    <div id="sd-next" class="modal-note" hidden>
+      <p id="sd-next-text" role="status"></p>
+    </div>
+    <div class="modal-foot"><button type="button" id="sd-cancel" class="btn btn-ghost">Cancel</button><button type="button" id="sd-set" class="btn" hidden>Set value&hellip;</button><button type="submit" id="sd-save" class="btn btn-primary">Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="unmap-dialog" class="modal" aria-labelledby="ud-title">
+  <div class="modal-head"><h2 id="ud-title">Unmap secret</h2></div>
+  <p class="muted modal-lede" id="ud-text"></p>
+  <div class="modal-foot"><button type="button" id="ud-cancel" class="btn btn-ghost">Cancel</button><button type="button" id="ud-confirm" class="btn btn-danger">Unmap</button></div>
+</dialog>
+
 <aside id="logs-panel" class="log-drawer" role="dialog" aria-modal="false" aria-labelledby="logs-title" tabindex="-1" hidden>
   <div id="logs-header">
     <h2 id="logs-title" class="mono"></h2>

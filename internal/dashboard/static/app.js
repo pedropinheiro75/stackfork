@@ -1489,7 +1489,7 @@
       .catch(function () { /* keep what is shown */ });
   }
 
-  function loadSettings() {
+  function loadSettings(keepFocus) {
     fetch("/fragments/settings", { credentials: "same-origin" })
       .then(function (r) { return r.text(); })
       .then(function (html) {
@@ -1497,7 +1497,7 @@
         var hadFocus = body.contains(document.activeElement);
         body.innerHTML = html;
         // the form was replaced: put focus on the field to add the next folder
-        if (hadFocus) { var f = body.querySelector('form[data-config-op="add-root"] input'); if (f) f.focus(); }
+        if (hadFocus && !keepFocus) { var f = body.querySelector('form[data-config-op="add-root"] input'); if (f) f.focus(); }
       });
   }
 
@@ -1572,6 +1572,7 @@
     var key = btn.dataset.key, name = btn.dataset.name, repo = btn.dataset.repo;
     if (reposState.secrets[key]) return;
     reposState.secrets[key] = "Set value\u2026";
+    btn.setAttribute("aria-disabled", "true");
     paintSecrets();
     log("secrets: waiting for the dialog for " + name + " on this Mac");
     post("/api/secrets/set", { repo: repo, name: name })
@@ -1581,7 +1582,134 @@
         toast(b.ok ? "ok" : "failed", name + ": " + b.message);
       })
       .catch(function (e) { log("secrets: " + name + ": " + e.message); toast("failed", name + ": " + e.message); })
-      .then(function () { finishSecretCall(key, "Set value\u2026"); });
+      .then(function () { finishSecretCall(key, "Set value\u2026"); loadSettings(true); });
+  }
+
+
+  // --- Add secret and Unmap dialogs ---------------------------------------------
+  // The page sends a name, a reference and a scope, never a value. The server
+  // applies the rules (name, reference, folder) and a refusal shows inline. A
+  // keychain: item with no value offers Set value..., the same native dialog
+  // as a row's.
+  var sd = { opener: null, repo: "", path: "", name: "" };
+
+  function parentDir(p) { return p.replace(/[\\/][^\\/]*$/, "") || p; }
+
+  function sdScope() { return document.getElementById("sd-form").elements.scope.value; }
+
+  function sdShowFolder() { document.getElementById("sd-folder-field").hidden = sdScope() !== "folder"; }
+
+  function openAddSecret(btn) {
+    var repo = btn.dataset.repo || "", $ = function (id) { return document.getElementById(id); };
+    sd.opener = openerOf(btn);
+    sd.repo = repo;
+    $("sd-form").reset();
+    $("sd-error").textContent = "";
+    $("sd-fields").hidden = false;
+    $("sd-next").hidden = true;
+    $("sd-set").hidden = true;
+    $("sd-save").hidden = false;
+    $("sd-save").disabled = false;
+    $("sd-cancel").textContent = "Cancel";
+    $("sd-repo-opt").hidden = !repo;
+    $("sd-repo-label").textContent = repo ? "This repository (" + btn.dataset.name + ")" : "This repository";
+    $("sd-form").elements.scope.value = repo ? "repo" : "folder";
+    $("sd-folder").value = repo ? parentDir(repo) : "";
+    sdShowFolder();
+    $("secret-dialog").showModal();
+    $("sd-name").focus();
+  }
+
+  function sdRefresh(msg) {
+    toast("ok", msg);
+    log("secrets: " + msg);
+    lastRepos = null;
+    loadRepos();
+    loadSettings(true);
+  }
+
+  function saveSecret() {
+    var $ = function (id) { return document.getElementById(id); };
+    var f = $("sd-form").elements, err = $("sd-error"), save = $("sd-save"), scope = sdScope();
+    var body = { scope: scope, path: scope === "repo" ? sd.repo : f.folder.value.trim(), name: f.name.value.trim(), reference: f.reference.value.trim() };
+    err.textContent = "";
+    save.disabled = true;
+    post("/api/secrets/map", body)
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }, function () { return { ok: false, body: { message: "status " + r.status } }; }); })
+      .then(function (res) {
+        if (!res.ok) { err.textContent = res.body.message || "refused"; save.disabled = false; return; }
+        sd.path = res.body.path; sd.name = res.body.name;
+        sdRefresh("mapped " + sd.name);
+        if (res.body.missing && res.body.can_set) {
+          $("sd-fields").hidden = true;
+          save.hidden = true;
+          $("sd-set").hidden = false;
+          $("sd-set").disabled = false;
+          $("sd-next").hidden = false;
+          $("sd-next-text").textContent = body.reference.replace(/^keychain:/, "") + " has no value in the keychain yet. Set it now? A dialog on this Mac asks for it; the value does not pass through this page.";
+          $("sd-cancel").textContent = "Not now";
+          $("sd-set").focus();
+        } else $("secret-dialog").close();
+      })
+      .catch(function (e) { err.textContent = e.message; save.disabled = false; });
+  }
+
+  function setNewSecretValue() {
+    var set = document.getElementById("sd-set"), text = document.getElementById("sd-next-text");
+    set.disabled = true;
+    text.textContent = "Waiting for the dialog on this Mac…";
+    post("/api/secrets/set", { repo: sd.path, name: sd.name })
+      .then(function (r) { return r.json().then(function (b) { return b; }, function () { return { message: "status " + r.status }; }); })
+      .then(function (b) {
+        log("secrets: " + sd.name + ": " + b.message);
+        toast(b.ok ? "ok" : "failed", sd.name + ": " + b.message);
+        if (b.ok) { document.getElementById("secret-dialog").close(); lastRepos = null; loadRepos(); loadSettings(true); }
+        else { text.textContent = b.message; set.disabled = false; }
+      })
+      .catch(function (e) { text.textContent = e.message; set.disabled = false; });
+  }
+
+  var ud = { opener: null, path: "", name: "" };
+
+  function openUnmap(btn) {
+    ud.opener = openerOf(btn); ud.path = btn.dataset.path; ud.name = btn.dataset.name;
+    document.getElementById("ud-title").textContent = "Unmap " + ud.name + "?";
+    document.getElementById("ud-text").textContent = "Removes the mapping of " + ud.name + " for " + btn.dataset.scope + " from this machine. The value stays in the keychain or 1Password.";
+    document.getElementById("ud-confirm").disabled = false;
+    document.getElementById("unmap-dialog").showModal();
+    document.getElementById("ud-cancel").focus();
+  }
+
+  function wireSecretDialogs() {
+    var dlg = document.getElementById("secret-dialog"), und = document.getElementById("unmap-dialog");
+    document.addEventListener("click", function (e) {
+      var add = e.target.closest("[data-secret-add]");
+      if (add) { openAddSecret(add); return; }
+      var un = e.target.closest("[data-secret-unmap]");
+      if (un) { openUnmap(un); return; }
+      var set = e.target.closest("#view-settings [data-secret-set]");
+      if (set) setSecretValue(set);
+    });
+    document.getElementById("sd-close").addEventListener("click", function () { dlg.close(); });
+    document.getElementById("sd-cancel").addEventListener("click", function () { dlg.close(); });
+    document.getElementById("sd-set").addEventListener("click", setNewSecretValue);
+    document.getElementById("sd-form").addEventListener("submit", function (e) { e.preventDefault(); saveSecret(); });
+    document.getElementById("sd-form").addEventListener("change", function (e) { if (e.target.name === "scope") sdShowFolder(); });
+    dlg.addEventListener("close", function () { focusBack(sd.opener); sd.opener = null; });
+    document.getElementById("ud-cancel").addEventListener("click", function () { und.close(); });
+    und.addEventListener("close", function () { focusBack(ud.opener); ud.opener = null; });
+    document.getElementById("ud-confirm").addEventListener("click", function () {
+      this.disabled = true;
+      post("/api/secrets/unmap", { path: ud.path, name: ud.name })
+        .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }, function () { return { ok: false, body: { message: "status " + r.status } }; }); })
+        .then(function (res) {
+          log("secrets: " + (res.body.message || "refused"));
+          toast(res.ok ? "ok" : "failed", res.body.message || "refused");
+          und.close();
+          lastRepos = null; loadRepos(); loadSettings(true);
+        })
+        .catch(function (e) { toast("failed", e.message); und.close(); });
+    });
   }
 
   function shq(v) { return "'" + String(v).replace(/'/g, "'\\''") + "'"; }
@@ -2237,6 +2365,7 @@
     wireCleanup();
     wireLogsPanel();
     wireRepos();
+    wireSecretDialogs();
     wireLive();
     loadDisk();
     poll();
