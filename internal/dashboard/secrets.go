@@ -379,7 +379,7 @@ func (s *Server) handleSecretsMap(w http.ResponseWriter, r *http.Request) {
 		}
 	case "folder":
 		if !filepath.IsAbs(req.Path) {
-			writeActionResult(w, http.StatusBadRequest, actionResponse{Message: "enter the full path of a folder, such as ~/code/Client"})
+			writeActionResult(w, http.StatusBadRequest, actionResponse{Message: "enter the full path of a folder, such as ~/clients/acme"})
 			return
 		}
 	default:
