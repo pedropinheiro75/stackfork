@@ -325,7 +325,7 @@ var registerDashboardWithProxy = func(newStateBase, legacyStateBase string, port
 // bindError explains a failed bind, and says so when the port is held by
 // another stackfork dashboard (its API answers) rather than something else.
 func bindError(addr string, err error) error {
-	client := &http.Client{Timeout: 800 * time.Millisecond}
+	client := &http.Client{Timeout: 2 * time.Second} // a busy machine answers slowly; only paid when the port is taken
 	if resp, gerr := client.Get("http://" + addr + "/api/instances"); gerr == nil {
 		defer resp.Body.Close()
 		var probe struct {
