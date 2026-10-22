@@ -1,9 +1,15 @@
 package knowledge
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
@@ -140,10 +146,74 @@ func (r Resolved) resolveLink(l Link, e *Entry, targets map[string][]int, https 
 	return rl
 }
 
-// LoadForCheckout reads knowledge.json from root, else from root's repo
-// main checkout, as start-env does (D6). nil, nil when neither has one.
+// LoadForCheckout is LoadFor with root's own main checkout.
 func LoadForCheckout(root string) (*Knowledge, error) {
-	return LoadFirst(root, identity.MainRepoOf(root))
+	k, _, err := LoadFor(root, identity.MainRepoOf(root))
+	return k, err
+}
+
+// LoadFor is the one knowledge lookup for a checkout: its own
+// .stackfork/knowledge.json, else the main checkout's, else the newest
+// VERIFIED one among the repo's other linked worktrees (drafts there are
+// someone's work in progress and are not borrowed). It returns the checkout
+// the file came from ("" when there is none), so a UI can say where
+// borrowed knowledge lives. Borrowed knowledge is read-only. nil, "", nil
+// when nothing is recorded; a broken file is an error, as in LoadFirst.
+func LoadFor(root, main string) (*Knowledge, string, error) {
+	for _, d := range []string{root, main} {
+		if k, err := LoadFirst(d); k != nil || err != nil {
+			return k, d, err
+		}
+	}
+	if main == "" {
+		return nil, "", nil
+	}
+	var best *Knowledge
+	var bestDir string
+	var bestTime time.Time
+	for _, d := range worktreesOf(main) {
+		if d == root || d == main {
+			continue
+		}
+		path := filepath.Join(d, ".stackfork", "knowledge.json")
+		k, err := Load(path)
+		if err != nil || k.Status != StatusVerified || k.Verification == nil {
+			continue // ponytail: an unreadable sibling is skipped, it is not ours to fix
+		}
+		fi, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		if best == nil || newer(k, fi.ModTime(), best, bestTime) {
+			best, bestDir, bestTime = k, d, fi.ModTime()
+		}
+	}
+	return best, bestDir, nil
+}
+
+// newer: the later verification date wins, a tie goes to the later file.
+func newer(a *Knowledge, at time.Time, b *Knowledge, bt time.Time) bool {
+	if a.Verification.Date != b.Verification.Date {
+		return a.Verification.Date > b.Verification.Date // ISO dates sort as text
+	}
+	return at.After(bt)
+}
+
+// worktreesOf lists the linked worktrees of the repo at main (local git).
+func worktreesOf(main string) []string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", main, "worktree", "list", "--porcelain").Output()
+	if err != nil {
+		return nil
+	}
+	var dirs []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if p, ok := strings.CutPrefix(strings.TrimSpace(line), "worktree "); ok {
+			dirs = append(dirs, p)
+		}
+	}
+	return dirs
 }
 
 // Where is what the URL builder needs to know about one instance (D7).
