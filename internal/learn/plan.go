@@ -61,10 +61,11 @@ func appTarget(k *knowledge.Knowledge) (name string, target int) {
 			target := strings.SplitN(p[strings.LastIndex(p, ":")+1:], "/", 2)[0]
 			ports = append(ports, map[string]interface{}{"target": json.Number(target)})
 		}
-		services[s.Name] = map[string]interface{}{"ports": ports}
+		services[s.Name] = map[string]interface{}{"ports": ports, "image": s.Image}
 	}
 	name, target, _, ok := compose.PrimaryHTTPService(map[string]interface{}{"services": services})
-	if !ok {
+	// A mail catcher or admin console is a link, never the app.
+	if !ok || compose.UtilityService(services[name]) {
 		return "", 0
 	}
 	return name, target

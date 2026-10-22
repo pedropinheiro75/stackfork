@@ -149,3 +149,21 @@ func TestProposeEntry(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+// A mail catcher or admin console is never the app's entry or app service,
+// even when it is the only service with a published HTTP port.
+func TestProposeEntrySkipsUtilityImages(t *testing.T) {
+	k := &knowledge.Knowledge{}
+	k.Facts.Services = []knowledge.Service{
+		{Name: "smtp4dev", Image: "rnwood/smtp4dev:latest", Ports: []string{"5000:80"}},
+		{Name: "nginx", Image: "nginx:alpine", Ports: []string{"8080:3000"}},
+	}
+	want := &knowledge.Entry{Service: "nginx", Port: 3000, Proposed: true}
+	if got := ProposeEntry(k); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want nginx", got)
+	}
+	k.Facts.Services = k.Facts.Services[:1]
+	if got := ProposeEntry(k); got != nil {
+		t.Fatalf("a utility alone is no entry: %+v", got)
+	}
+}

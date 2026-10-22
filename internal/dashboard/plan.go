@@ -37,14 +37,15 @@ func repoEntry(repo repos.Repo) *entryView {
 		return nil
 	}
 	e := k.Entry
-	if e == nil {
+	guess := e == nil || e.Proposed
+	if guess { // a stored proposal can predate a better heuristic: guess again
 		e = learn.ProposeEntry(k)
 	}
 	v := &entryView{}
 	if e != nil {
 		v.Service, v.Port = e.Service, e.Port
 	}
-	if k.Entry == nil && e != nil {
+	if guess {
 		k = &knowledge.Knowledge{Entry: e}
 	}
 	v.State, v.Target = k.EntryLine()
