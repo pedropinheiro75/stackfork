@@ -515,9 +515,7 @@ func Execute(sel []Candidate, plan Plan, opts Options, stderr io.Writer) []Resul
 			fail(err)
 		}
 		if len(r.Errors) == 0 {
-			if err := os.RemoveAll(c.StateDir); err != nil {
-				fail(fmt.Errorf("state removal failed: %w", err))
-			}
+			fail(lifecycle.ForgetInstance(stderr, c.StateDir, opts.NewBase, opts.LegacyBase))
 		}
 		r.Removed = len(r.Errors) == 0
 		results = append(results, r)
@@ -528,8 +526,6 @@ func Execute(sel []Candidate, plan Plan, opts Options, stderr io.Writer) []Resul
 		} else {
 			results = append(results, Result{Project: plan.ProxyName, Removed: true})
 		}
-	} else if len(sel) > 0 {
-		lifecycle.ReloadProxyIfRunning(stderr, opts.NewBase, opts.LegacyBase)
 	}
 	return results
 }
