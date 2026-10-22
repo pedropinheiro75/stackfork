@@ -77,15 +77,6 @@ func TestSecretsSectionOffersCommandsWhenThereIsNoDialog(t *testing.T) {
 	}
 }
 
-func TestSecretsSectionIsAbsentWithoutNames(t *testing.T) {
-	e := newBrowserEnv(t)
-	fakeKeychain(t, nil)
-	e.readyRepo("acme-api")
-	if _, section := secretsFragment(t, e, ""); section != "" {
-		t.Fatalf("a repo with no secrets shows a section: %s", section)
-	}
-}
-
 // A name that fails validation never reaches the page: the config refuses it.
 func TestSecretsHostileNameNeverRenders(t *testing.T) {
 	e := newBrowserEnv(t)

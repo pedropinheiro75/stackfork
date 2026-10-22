@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -263,24 +265,8 @@ func (s *Server) handleSecretsSet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	repo := s.secretsRepo(w, req.Repo)
-	if repo == nil {
-		return
-	}
-	rows, err := s.secretRows(repo.Path)
-	if err != nil {
-		writeActionResult(w, http.StatusInternalServerError, actionResponse{Message: err.Error()})
-		return
-	}
-	var ref string
-	found := false
-	for _, row := range rows {
-		if row.Name == req.Name {
-			ref, found = row.Reference, true
-		}
-	}
-	if !found {
-		writeActionResult(w, http.StatusNotFound, actionResponse{Message: "not a declared or mapped secret of this repo"})
+	label, ref, ok := s.secretTarget(w, req)
+	if !ok {
 		return
 	}
 	kind, item, perr := secretstore.ParseRef(ref)
@@ -298,7 +284,7 @@ func (s *Server) handleSecretsSet(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.secrets.dialog.Unlock()
 
-	value, err := AskSecretValue(repo.Name, req.Name, item)
+	value, err := AskSecretValue(label, req.Name, item)
 	if err != nil {
 		writeActionResult(w, http.StatusOK, actionResponse{Message: "nothing stored: " + scrub(err.Error(), value)})
 		return
@@ -309,6 +295,143 @@ func (s *Server) handleSecretsSet(w http.ResponseWriter, r *http.Request) {
 	}
 	s.secrets.forget(ref)
 	writeActionResult(w, http.StatusOK, actionResponse{OK: true, Message: "stored keychain:" + item})
+}
+
+// secretTarget finds the reference a Set value names: a name of a repository
+// the scan found (declared, mapped or inherited), or a name mapped on a
+// folder or repository key the config holds. It writes the refusal itself.
+func (s *Server) secretTarget(w http.ResponseWriter, req secretsRequest) (label, ref string, ok bool) {
+	refs := map[string]string{}
+	if repo := s.scannedRepo(req.Repo); repo != nil {
+		rows, err := s.secretRows(repo.Path)
+		if err != nil {
+			writeActionResult(w, http.StatusInternalServerError, actionResponse{Message: err.Error()})
+			return
+		}
+		label = repo.Name
+		for _, row := range rows {
+			refs[row.Name] = row.Reference
+		}
+	} else if cfg, err := config.Load(); err == nil && req.Repo != "" && len(cfg.SecretsFor(req.Repo)) > 0 {
+		label, refs = filepath.Base(req.Repo), cfg.SecretsFor(req.Repo)
+	} else {
+		writeActionResult(w, http.StatusForbidden, actionResponse{Message: "not a repo found by the scan under a configured folder"})
+		return
+	}
+	if ref, ok = refs[req.Name]; !ok {
+		writeActionResult(w, http.StatusNotFound, actionResponse{Message: "not a declared or mapped secret of this repo"})
+	}
+	return
+}
+
+// secretMapRequest is the body of the map and unmap endpoints. Scope is
+// "repo" (a repository the scan found) or "folder" (any folder config.Map
+// accepts). Reference is a reference, never a value.
+type secretMapRequest struct {
+	Scope     string `json:"scope"`
+	Path      string `json:"path"`
+	Name      string `json:"name"`
+	Reference string `json:"reference"`
+}
+
+type secretMapResponse struct {
+	OK      bool   `json:"ok"`
+	Message string `json:"message"`
+	Path    string `json:"path"`
+	Name    string `json:"name"`
+	// Missing: a keychain: item that has no value yet. CanSet: this system can
+	// ask for it in a native dialog. Together they make the page offer Set value.
+	Missing bool `json:"missing"`
+	CanSet  bool `json:"can_set"`
+}
+
+func decodeSecretMapRequest(w http.ResponseWriter, r *http.Request) (secretMapRequest, bool) {
+	var req secretMapRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return req, false
+	}
+	if strings.HasPrefix(req.Path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			req.Path = filepath.Join(home, req.Path[2:])
+		}
+	}
+	return req, true
+}
+
+// handleSecretsMap is POST /api/secrets/map: the dashboard's map command. It
+// takes a reference and never a value; config.Map refuses anything else
+// without echoing it.
+func (s *Server) handleSecretsMap(w http.ResponseWriter, r *http.Request) {
+	if !s.secretsAuthorized(w, r) {
+		return
+	}
+	req, ok := decodeSecretMapRequest(w, r)
+	if !ok {
+		return
+	}
+	switch req.Scope {
+	case "repo":
+		if s.scannedRepo(req.Path) == nil {
+			writeActionResult(w, http.StatusForbidden, actionResponse{Message: "not a repo found by the scan under a configured folder"})
+			return
+		}
+	case "folder":
+		if !filepath.IsAbs(req.Path) {
+			writeActionResult(w, http.StatusBadRequest, actionResponse{Message: "enter the full path of a folder, such as ~/code/Client"})
+			return
+		}
+	default:
+		writeActionResult(w, http.StatusBadRequest, actionResponse{Message: "scope must be repo or folder"})
+		return
+	}
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	cfg, err := config.Load()
+	if err == nil {
+		if err = cfg.Map(req.Path, req.Name, req.Reference); err == nil {
+			err = cfg.Save()
+		}
+	}
+	if err != nil {
+		writeActionResult(w, http.StatusBadRequest, actionResponse{Message: err.Error()})
+		return
+	}
+	s.secrets.forget(req.Reference)
+	resp := secretMapResponse{OK: true, Message: "mapped " + req.Name, Path: req.Path, Name: req.Name}
+	if strings.HasPrefix(req.Reference, "keychain:") {
+		resp.Missing = secretstore.Exists(req.Reference) == secretstore.Missing
+		resp.CanSet = SecretDialogAvailable()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp) //nolint:errcheck // client gone
+}
+
+// handleSecretsUnmap is POST /api/secrets/unmap {path, name}: the dashboard's
+// unmap command. It removes a map entry only; a stored value stays where it is.
+func (s *Server) handleSecretsUnmap(w http.ResponseWriter, r *http.Request) {
+	if !s.secretsAuthorized(w, r) {
+		return
+	}
+	req, ok := decodeSecretMapRequest(w, r)
+	if !ok {
+		return
+	}
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	cfg, err := config.Load()
+	if err == nil {
+		if err = cfg.Unmap(req.Path, req.Name); err != nil {
+			writeActionResult(w, http.StatusNotFound, actionResponse{Message: err.Error()})
+			return
+		}
+		err = cfg.Save()
+	}
+	if err != nil {
+		writeActionResult(w, http.StatusInternalServerError, actionResponse{Message: err.Error()})
+		return
+	}
+	writeActionResult(w, http.StatusOK, actionResponse{OK: true, Message: "unmapped " + req.Name})
 }
 
 // scrub removes a value from a message that should never have held it.
