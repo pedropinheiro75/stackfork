@@ -82,12 +82,11 @@ func Bound(port int) bool {
 		return true
 	}
 	l.Close()
-	// macOS lets a bind to 127.0.0.1 succeed beside a listener on all interfaces
-	// or on IPv6 only, so ask whether anything answers too.
-	return Listening(port)
+	return false
 }
 
-// Listening reports whether something accepts connections on the port at the
+// Listening is the question Bound cannot answer on macOS: a bind to 127.0.0.1 succeeds
+// beside a listener on all interfaces or on IPv6 only. It reports whether something accepts connections on the port at the
 // IPv4 or IPv6 loopback address. A server bound to 0.0.0.0, [::] or only
 // 127.0.0.1 or ::1 all answer.
 func Listening(port int) bool {
