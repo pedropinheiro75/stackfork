@@ -114,7 +114,7 @@ func appLabel(svc Service, isPrimary bool) string {
 // extended to track one), so unlike a route this can only ever suggest a
 // command, never a clickable link or a filled-in `route add <port>` - the
 // upgrade path is teaching `learn` to capture a dev script's port.
-func appendRouteAndKnowledgeApps(apps []AppLink, info *state.Manifest) []AppLink {
+func appendRouteAndKnowledgeApps(apps []AppLink, info *state.Manifest, hostname string) []AppLink {
 	// A recorded entry already shows the host route as its App chip.
 	entryShown := false
 	for _, a := range apps {
@@ -128,7 +128,7 @@ func appendRouteAndKnowledgeApps(apps []AppLink, info *state.Manifest) []AppLink
 		sort.Strings(names)
 		for _, name := range names {
 			apps = append(apps, AppLink{
-				Label: "App", URL: fmt.Sprintf("http://127.0.0.1:%d", info.Routes[name]),
+				Label: "App", URL: fmt.Sprintf("http://%s:%d", hostOr(hostname), info.Routes[name]),
 				Source: "route", Running: true,
 			})
 		}
@@ -159,6 +159,15 @@ func appendRouteAndKnowledgeApps(apps []AppLink, info *state.Manifest) []AppLink
 		})
 	}
 	return apps
+}
+
+// hostOr is the instance hostname a host app's URL uses (it resolves to
+// 127.0.0.1), or 127.0.0.1 itself when the instance has none.
+func hostOr(hostname string) string {
+	if hostname == "" {
+		return "127.0.0.1"
+	}
+	return hostname
 }
 
 func knowledgeJSONPath(root string) string {

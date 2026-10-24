@@ -378,7 +378,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		inst.Warnings = append(inst.Warnings, fmt.Sprintf("branch %s no longer exists in %s; run `stackfork gc`", info.Branch, info.Root))
 	default:
 		services, serviceState, apps, appWarnings := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
-		hosts := hostServices(info, filepath.Dir(manifestPath), snap)
+		hosts := hostServices(info, hostname, filepath.Dir(manifestPath), snap)
 		inst.Services = append(append([]Service{}, services...), hosts...)
 		inst.State = serviceState
 		inst.Warnings = append(inst.Warnings, serviceWarnings(project, services)...)
@@ -392,7 +392,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		}
 		inst.Warnings = append(inst.Warnings, appWarnings...)
 		fillOneOffs(&inst, rows)
-		inst.Apps = appendRouteAndKnowledgeApps(apps, info)
+		inst.Apps = appendRouteAndKnowledgeApps(apps, info, hostname)
 		if k, _ := knowledge.LoadForCheckout(info.Root); k != nil && k.Entry != nil && k.Entry.None {
 			inst.EntryNone = true
 		}
@@ -1299,7 +1299,7 @@ const HostPrefix = "host:"
 // hostServices lists each recorded host process as a service row: running
 // only when the identity holds and the port answers, else exited. It uses
 // the manifest already loaded (no re-read per process).
-func hostServices(info *state.Manifest, instanceDir string, snap *psSnapshot) []Service {
+func hostServices(info *state.Manifest, hostname, instanceDir string, snap *psSnapshot) []Service {
 	names := make([]string, 0, len(info.HostProcs))
 	for n := range info.HostProcs {
 		names = append(names, n)
@@ -1310,8 +1310,8 @@ func hostServices(info *state.Manifest, instanceDir string, snap *psSnapshot) []
 		proc := info.HostProcs[n]
 		svc := Service{Name: HostPrefix + n, Label: n, Kind: "host", Image: "host"}
 		svc.State, svc.Host, svc.Meta = hostInspect(instanceDir, n, proc, snap, time.Now())
-		if proc.Port != 0 {
-			svc.Endpoints = []Endpoint{{Scheme: "http", URL: fmt.Sprintf("http://127.0.0.1:%d", proc.Port), Container: proc.Port, Known: true}}
+		if proc.Port != 0 && svc.Host.Listening {
+			svc.Endpoints = []Endpoint{{Scheme: "http", URL: fmt.Sprintf("http://%s:%d", hostOr(hostname), proc.Port), Container: proc.Port, Known: true}}
 		}
 		out = append(out, svc)
 	}

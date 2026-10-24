@@ -92,6 +92,24 @@ func TestURLsHostRouteBehindProxy(t *testing.T) {
 	}
 }
 
+// Without the proxy a host app's URL has the instance hostname, like every container service's.
+func TestURLsHostRouteUsesTheInstanceHostname(t *testing.T) {
+	v := newVerifyEnv(t, 4001, 4002, nil, nil)
+	manifests, _ := filepath.Glob(filepath.Join(v.flags[1], "*", "manifest.json"))
+	if len(manifests) == 0 {
+		manifests, _ = filepath.Glob(filepath.Join(v.flags[1], "*", "*", "manifest.json"))
+	}
+	m, _ := state.ReadManifest(manifests[0])
+	m.Routes = map[string]int{"app": 3000}
+	data, _ := json.Marshal(m)
+	os.WriteFile(manifests[0], data, 0o600)
+	t.Setenv("DOCKER_FAKE_STATUS", `{"ID":"c-mail","Name":"mail-1","Service":"mail","State":"running","Health":"","Publishers":[{"Protocol":"tcp","PublishedPort":4002,"TargetPort":80,"URL":"127.0.0.1"}]}`+"\n")
+	out, _ := urlsOut(t, v)
+	if want := fmt.Sprintf("App: http://%s:3000 (entry via the host route)\n", v.host); !strings.HasPrefix(out, want) || strings.Contains(out, "127.0.0.1:3000") {
+		t.Fatalf("got:\n%s\nwant prefix:\n%s", out, want)
+	}
+}
+
 // A knowledge file that cannot load counts as no entry, with a warning.
 func TestURLsBrokenKnowledgeWarns(t *testing.T) {
 	v := newVerifyEnv(t, 4001, 4002, nil, nil)

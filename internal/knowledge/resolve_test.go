@@ -194,7 +194,7 @@ func TestURLBuilder(t *testing.T) {
 	})
 	t.Run("host route", func(t *testing.T) {
 		h := ResolveEntry(k, model, map[string]int{"app": 41000})
-		if u, _ := h.AppURL(Where{Hostname: host}); u != "http://127.0.0.1:41000/app" {
+		if u, _ := h.AppURL(Where{Hostname: host}); u != "http://"+host+":41000/app" {
 			t.Fatalf("%q", u)
 		}
 	})

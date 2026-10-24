@@ -153,7 +153,7 @@ func TestAppsFromRoute(t *testing.T) {
 		t.Fatalf("expected 1 app link, got %+v", inst.Apps)
 	}
 	app := inst.Apps[0]
-	if app.Source != "route" || app.URL != "http://127.0.0.1:5173" || !app.Running {
+	if app.Source != "route" || app.URL != "http://"+inst.Hostname+":5173" || !app.Running {
 		t.Errorf("unexpected route app link: %+v", app)
 	}
 }

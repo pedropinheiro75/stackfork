@@ -257,8 +257,12 @@ func suffix(path string) string {
 // direct is the URL on the instance's own published port; "" when the port
 // is not known yet (a random port on a stopped service).
 func (r Resolved) direct(w Where, service string, port int, https bool, path string, host bool) string {
-	if host {
-		return fmt.Sprintf("http://127.0.0.1:%d%s", port, suffix(path))
+	if host { // the app listens on 127.0.0.1, and the instance hostname resolves there
+		name := w.Hostname
+		if name == "" {
+			name = "127.0.0.1"
+		}
+		return fmt.Sprintf("http://%s:%d%s", name, port, suffix(path))
 	}
 	p := w.hostPort(service, port)
 	if p == 0 {

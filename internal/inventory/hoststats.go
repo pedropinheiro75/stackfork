@@ -174,7 +174,7 @@ func uptime(d time.Duration) string {
 // HostApps lists the host apps recorded in m (instanceDir is its directory),
 // with the same state and meta line the dashboard shows. It runs ps once.
 func HostApps(m *state.Manifest, instanceDir string) []Service {
-	return hostServices(m, instanceDir, &psSnapshot{})
+	return hostServices(m, "", instanceDir, &psSnapshot{})
 }
 
 // ComposeRunning is true when every Compose service runs: a host app that is

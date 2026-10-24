@@ -643,7 +643,7 @@ func TestInventoryListsHostProcessAsService(t *testing.T) {
 	if app.Label != "app" || app.Kind != "host" || app.State != "running" || app.Image != "host" {
 		t.Fatalf("app: %+v", app)
 	}
-	want := "http://127.0.0.1:" + strconv.Itoa(port)
+	want := "http://sf-hostrow-1.localhost:" + strconv.Itoa(port)
 	if len(app.Endpoints) != 1 || app.Endpoints[0].URL != want {
 		t.Errorf("app endpoints %+v, want %s", app.Endpoints, want)
 	}

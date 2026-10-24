@@ -195,8 +195,8 @@ func TestAppsEntryHostRoute(t *testing.T) {
 		}
 	}
 	got := appsJSON(t, inst.Apps[:2])
-	want := `[{"label":"App","url":"http://127.0.0.1:41000/app","source":"entry","running":true},` +
-		`{"label":"Docs","url":"http://127.0.0.1:41000/docs","source":"link","running":true}]`
+	want := `[{"label":"App","url":"http://` + inst.Hostname + `:41000/app","source":"entry","running":true},` +
+		`{"label":"Docs","url":"http://` + inst.Hostname + `:41000/docs","source":"link","running":true}]`
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}
