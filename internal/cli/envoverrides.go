@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -72,6 +74,9 @@ func cmdEnvOverrides(stdout, stderr io.Writer, subArgs []string, root, branch, p
 		if *noRestart || len(services) == 0 {
 			return 0, nil
 		}
+		if err := waitForIdle(instanceDir); err != nil {
+			return 1, err
+		}
 		return lifecycleApplyEnv(stdout, root, branch, project, instanceDir, newBase, legacyBase, services)
 	}
 
@@ -121,6 +126,20 @@ func cmdEnvOverrides(stdout, stderr io.Writer, subArgs []string, root, branch, p
 		return apply(touched)
 	}
 	return 0, printEnvOverrides(stdout, instanceDir, filter, *asJSON)
+}
+
+// envBusyWait is how long a change waits for another run of the instance (an
+// up, say) to end before it gives up and leaves the value stored (D9).
+var envBusyWait = 2 * time.Minute
+
+// waitForIdle polls the instance's run lock until it is free or envBusyWait ends.
+func waitForIdle(instanceDir string) error {
+	for end := time.Now().Add(envBusyWait); runs.Busy(instanceDir); time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(end) {
+			return errors.New("stored, not applied yet: another run is using this instance; it applies at the next `stackfork up` (or run the same `env set` again)")
+		}
+	}
+	return nil
 }
 
 // lifecycleApplyEnv is lifecycle.ApplyEnv with the trigger of this process.

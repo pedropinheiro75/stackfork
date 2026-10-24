@@ -29,6 +29,9 @@ func TestHostAppGetsItsOverrides(t *testing.T) {
 			t.Errorf("missing %q in\n%s", want, text)
 		}
 	}
+	if strings.Contains(text, "INHERITED_FLAG=from-os") {
+		t.Error("the inherited value must not survive next to the override")
+	}
 	if strings.Contains(text, "NOT_FOR_APP") {
 		t.Error("another service's override leaked")
 	}

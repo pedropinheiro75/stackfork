@@ -68,4 +68,17 @@ module.exports = function (ex, t) {
   assert.match(ex.envAdd(rows, "npm_password", "x"), /Settings → Secrets/);
   assert.match(ex.envAdd(rows, "LOG_LEVEL", "x"), /already/);
   assert.equal(rows.some((r) => r.name === "API_TOKEN"), false);
+
+  // hostile names and values are escaped in the markup (never raw `<"'&`)
+  const evil = { name: "web", kind: "container", build: false, vars: [
+    { name: "A<\"'&", value: "<\"'&", masked: false, origin: "override", has_default: false, default: null },
+    { name: "B", value: "<img src=x onerror=alert(1)>", masked: false, origin: "project", has_default: true, default: "<\"'&" },
+  ] };
+  const erows = ex.envRowsOf(evil);
+  const ehtml = erows.map((r, i) => ex.envRowHtml(r, i, evil)).join("");
+  assert.doesNotMatch(ehtml, /<img|value="<|aria-label="A<|<"/, "no raw markup from a name or value");
+  assert.match(ehtml, /&lt;/);
+  assert.match(ehtml, /&quot;|&#34;/);
+  assert.match(ehtml, /&#39;|&#x27;/);
+  assert.match(ehtml, /&amp;/);
 };

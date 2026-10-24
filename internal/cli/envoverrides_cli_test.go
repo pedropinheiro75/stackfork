@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -223,5 +224,48 @@ func TestEnvWithoutSubcommandIsUnchanged(t *testing.T) {
 	help, _, code := runCLI(t, "env", "--help")
 	if code != 0 || !strings.Contains(help, "overrides") || !strings.Contains(help, "-format") {
 		t.Errorf("help: %s", help)
+	}
+}
+
+func TestEnvSetWaitsForABusyInstanceThenApplies(t *testing.T) {
+	log, root, stateDir, project, dir := envFixture(t)
+	t.Setenv("DOCKER_FAKE_PS", project+"\n")
+	old := envBusyWait
+	envBusyWait = 10 * time.Second
+	defer func() { envBusyWait = old }()
+	rec, err := runs.Begin(dir, runs.Meta{Command: "up", Trigger: "cli", Project: project, Branch: envBranch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { time.Sleep(600 * time.Millisecond); rec.Finish(nil) }()
+	os.Truncate(log, 0)
+	if out, stderr, code := envCLI(t, root, stateDir, "env", "set", "web", "A=1"); code != 0 {
+		t.Fatalf("%d %s %s", code, out, stderr)
+	}
+	if len(upCalls(log)) != 1 {
+		t.Errorf("expected the apply after the wait: %q", upCalls(log))
+	}
+}
+
+func TestEnvSetStillBusyStoresAndSaysSo(t *testing.T) {
+	log, root, stateDir, project, dir := envFixture(t)
+	old := envBusyWait
+	envBusyWait = 300 * time.Millisecond
+	defer func() { envBusyWait = old }()
+	rec, err := runs.Begin(dir, runs.Meta{Command: "up", Trigger: "cli", Project: project, Branch: envBranch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rec.Finish(nil)
+	os.Truncate(log, 0)
+	_, stderr, code := envCLI(t, root, stateDir, "env", "set", "web", "A=1")
+	if code == 0 || !strings.Contains(stderr, "stored, not applied yet: another run is using this instance; it applies at the next `stackfork up` (or run the same `env set` again)") {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	if o, _ := state.ReadEnvOverrides(dir); o.Services["web"]["A"] != "1" {
+		t.Errorf("must stay stored: %+v", o)
+	}
+	if len(upCalls(log)) != 0 {
+		t.Error("nothing may be applied")
 	}
 }

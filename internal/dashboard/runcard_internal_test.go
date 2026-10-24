@@ -56,6 +56,10 @@ var runCardCases = []struct {
 	}), []string{`<span class="chip chip-attention env-chip"`, "2 env overrides</span>",
 		`<button type="button" class="btn btn-ghost" data-env-reset data-project="sf-acme-web-2ffa6841c75d" data-count="2" data-key="sf-acme-web-2ffa6841c75d/envreset"`, ">Reset to project defaults<",
 		`data-env-open data-project="sf-acme-web-2ffa6841c75d" data-service="web"`, `data-env-open data-project="sf-acme-web-2ffa6841c75d" data-service="host:app"`, ">Environment&hellip;<"}, nil},
+	{"env item: a hostile service name is escaped", runInst(nil, func(i *inventory.Instance) {
+		i.State = "running"
+		i.Services = []inventory.Service{{Name: `<"'&`, Kind: "web", Image: "nginx", State: "running"}}
+	}), []string{`data-env-open data-project="sf-acme-web-2ffa6841c75d" data-service="&lt;&#34;&#39;&amp;"`}, []string{`data-service="<`, `data-service="<"`}},
 	{"one env override", runInst(nil, func(i *inventory.Instance) { i.EnvOverrides = 1 }),
 		[]string{"1 env override</span>", "data-env-reset"}, []string{"1 env overrides"}},
 	{"no env overrides, no chip and no reset", runInst(nil, func(i *inventory.Instance) {
