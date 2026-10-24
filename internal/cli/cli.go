@@ -337,6 +337,9 @@ func dispatch(stdout, stderr io.Writer, action string, subArgs []string, root, b
 	case "clone-db":
 		return cmdCloneDB(stdout, subArgs, root, project, instanceDir, newStateBase, legacyStateBase)
 	case "env":
+		if isEnvOverrideCmd(subArgs) {
+			return cmdEnvOverrides(stdout, stderr, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
+		}
 		return 0, cmdEnv(stdout, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)
 	case "host":
 		return cmdHost(stdout, stderr, subArgs, root, branch, project, instanceDir, newStateBase, legacyStateBase)

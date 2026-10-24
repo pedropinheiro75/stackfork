@@ -432,3 +432,31 @@ func TestConfirmationBypassBackslash(t *testing.T) {
 		`curl -X POST 'http://127.0.0.1:5000\api\secrets\set'`,
 	}, nil)
 }
+
+// Agents may change an env override, but not store a secret-like value, clear
+// every override, or drop them in a reset (add-env-overrides D8).
+func TestEnvOverridesGuard(t *testing.T) {
+	for cmd, want := range map[string]bool{
+		"stackfork env set web ENABLE_GUEST_ACCESS=true":              false,
+		"stackfork env set web ENABLE_GUEST_ACCESS=true --no-restart": false,
+		"stackfork env unset web ENABLE_GUEST_ACCESS":                 false,
+		"stackfork env overrides":                                     false,
+		"stackfork env overrides web --json":                          false,
+		"stackfork --instance x env set web A=b":                      false,
+		"stackfork env set web API_TOKEN=x --allow-secret":            true,
+		"stackfork env set --allow-secret web API_TOKEN=x":            true,
+		"stackfork env set web API_TOKEN=x --allow-secret=true":       true,
+		"stackfork --root /r env overrides --clear":                   true,
+		"stackfork env overrides --clear web":                         true,
+		"stackfork env overrides web --clear --no-restart":            true,
+		"stackfork env":                                              false,
+		"stackfork env --with-passwords":                             false,
+		"stackfork reset --clear-env":                                true,
+		"echo stackfork env overrides --clear":                       false,
+		"bash -c 'stackfork env set web API_TOKEN=x --allow-secret'": true,
+	} {
+		if got := Destructive(cmd, "/repo"); got != want {
+			t.Errorf("Destructive(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}

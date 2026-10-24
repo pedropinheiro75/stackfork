@@ -501,6 +501,8 @@ func Destructive(command, cwd string) bool {
 				return true
 			case action == "seed" && name == "force":
 				return true
+			case action == "env" && len(args) > 0 && ((args[0] == "set" && name == "allow-secret") || (args[0] == "overrides" && name == "clear")):
+				return true // a secret-like value in a plain file, or every override gone: people decide
 			case (action == "start-env" || action == "prepare" || action == "up") && name == "force": // agents learn the project instead
 				return true
 			}
