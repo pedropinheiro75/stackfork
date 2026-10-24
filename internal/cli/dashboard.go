@@ -326,13 +326,11 @@ var registerDashboardWithProxy = func(newStateBase, legacyStateBase string, port
 // another stackfork dashboard (its API answers) rather than something else.
 func bindError(addr string, err error) error {
 	client := &http.Client{Timeout: 2 * time.Second} // a busy machine answers slowly; only paid when the port is taken
-	if resp, gerr := client.Get("http://" + addr + "/api/instances"); gerr == nil {
-		defer resp.Body.Close()
-		var probe struct {
-			Instances json.RawMessage `json:"instances"`
-			Docker    json.RawMessage `json:"docker"`
-		}
-		if resp.StatusCode == 200 && json.NewDecoder(resp.Body).Decode(&probe) == nil && probe.Docker != nil {
+	// The marker header is on every answer, so a cheap page is enough: no
+	// inventory (and no docker call) that a busy machine answers too slowly.
+	if resp, gerr := client.Get("http://" + addr + "/api/disk"); gerr == nil {
+		resp.Body.Close()
+		if resp.Header.Get("X-Stackfork") == "dashboard" {
 			return fmt.Errorf("a stackfork dashboard is already running at http://%s; open it, stop it first, or pass another --port", addr)
 		}
 	}

@@ -17,6 +17,9 @@ func (s *Server) withSecurity(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-Frame-Options", "DENY")
+		// Marks every answer as a stackfork dashboard's, so a second dashboard
+		// that finds the port taken can say so without a docker call.
+		h.Set("X-Stackfork", "dashboard")
 
 		if !s.hostAllowed(r.Host) {
 			http.Error(w, "host not allowed", http.StatusMisdirectedRequest)
