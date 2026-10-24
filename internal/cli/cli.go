@@ -1111,6 +1111,15 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		if rec != nil {
 			runErr = res.RunError(rec, project)
 		}
+		if !inRun && res.Err == nil && res.Code == 0 && runErr == nil {
+			// the host half of a hybrid up; the supervisor takes the instance lock, so release ours first
+			unlock()
+			base := []string{"--root", root, "--state-dir", newStateBase, "--legacy-state-dir", legacyStateBase}
+			if err := lifecycle.StartHostApps(rec, stdout, base, root, main, instanceDir, newStateBase, legacyStateBase, planMode, upPlan); err != nil {
+				runErr = err
+				return 1, err
+			}
+		}
 		return res.Code, res.Err
 	}
 	code, err := lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)

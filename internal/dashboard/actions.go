@@ -172,7 +172,14 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 				NewBase: s.NewStateBase, LegacyBase: s.LegacyStateBase, Mode: mode,
 				Plan: lifecycle.LoadPlan(root, main), Seed: true, Compose: compose,
 			})
-			rec.Finish(res.RunError(rec, req.Project))
+			runErr := res.RunError(rec, req.Project)
+			if res.Err == nil && res.Code == 0 && runErr == nil {
+				base := []string{"--root", root, "--state-dir", s.NewStateBase, "--legacy-state-dir", s.LegacyStateBase}
+				if herr := lifecycle.StartHostApps(rec, &out, base, root, main, instanceDir, s.NewStateBase, s.LegacyStateBase, mode, lifecycle.LoadPlan(root, main)); herr != nil {
+					runErr, res.Err = herr, herr
+				}
+			}
+			rec.Finish(runErr)
 			code, err = res.Code, res.Err
 		} else {
 			code, err = compose(&out, &out)

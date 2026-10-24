@@ -12,6 +12,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -212,4 +213,41 @@ func TestAPIInstancesIncludesHostAppFields(t *testing.T) {
 		}
 	}
 	t.Fatalf("no host:db in %s", rec.Body.String())
+}
+
+// Start (up) of an instance whose host app is down starts that app again, and
+// the run records it as a host step.
+func TestUpStartsRecordedHostAppThatIsDown(t *testing.T) {
+	installFakeDocker(t)
+	srv, project, dir := hostFixture(t, false)
+	mp := filepath.Join(dir, "manifest.json")
+	m, _ := state.ReadManifest(mp)
+	p := m.HostProcs["db"]
+	p.Cmdline = []string{"stackfork", "host", "--supervise", "db", "--", "bun", "dev"}
+	m.HostProcs["db"] = p
+	if err := state.WritePrivate(mp, m); err != nil {
+		t.Fatal(err)
+	}
+	var restarted []string
+	old := lifecycle.HostRestart
+	lifecycle.HostRestart = func(_ io.Writer, _, _, name, _, _ string) error { restarted = append(restarted, name); return nil }
+	t.Cleanup(func() { lifecycle.HostRestart = old })
+
+	if code, resp := postAction(t, srv, "127.0.0.1:55903", actionRequestFixture{Action: "up", Project: project}); code != 200 || !resp.OK {
+		t.Fatalf("up: %d %+v", code, resp)
+	}
+	if len(restarted) != 1 || restarted[0] != "db" {
+		t.Fatalf("restarted %v", restarted)
+	}
+	r, err := runs.Get(dir, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range r.Steps {
+		found = found || (s.ID == "host-db" && s.Kind == "host" && s.State == runs.Succeeded)
+	}
+	if !found {
+		t.Errorf("steps %+v", r.Steps)
+	}
 }

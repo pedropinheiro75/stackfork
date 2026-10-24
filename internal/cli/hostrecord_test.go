@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -75,5 +78,48 @@ func TestHostLsListsStateAndExit(t *testing.T) {
 		if !strings.Contains(out, w) {
 			t.Errorf("ls lacks %q:\n%s", w, out)
 		}
+	}
+}
+
+// `up` of an instance whose host app is down starts it again, after the
+// instance lock is released (the supervisor takes that lock).
+func TestUpStartsHostAppThatIsDown(t *testing.T) {
+	root, stateDir, project, _ := envSetup(t, hostFixture)
+	dir := filepath.Join(stateDir, project)
+	m := readManifestAt(t, stateDir, project)
+	m.HostProcs = map[string]state.HostProc{"api": {PID: 999999, StartedAt: "1970-01-01T00:00:00Z", Port: 40001,
+		Cmdline: []string{"stackfork", "host", "--supervise", "api", "--", "bun", "dev"}}}
+	if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {
+		t.Fatal(err)
+	}
+	var restarted []string
+	lockFree := false
+	old := lifecycle.HostRestart
+	lifecycle.HostRestart = func(_ io.Writer, _, instanceDir, name, _, _ string) error {
+		restarted = append(restarted, name)
+		if l, err := state.TryLock(filepath.Join(instanceDir, ".lock")); err == nil {
+			lockFree = true
+			l.Release()
+		}
+		return nil
+	}
+	t.Cleanup(func() { lifecycle.HostRestart = old })
+	_, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "up", "--wait-timeout", "5")
+	if code != 0 {
+		t.Fatalf("up: %d %s", code, stderr)
+	}
+	if len(restarted) != 1 || restarted[0] != "api" || !lockFree {
+		t.Fatalf("restarted %v, lock free at that point: %v", restarted, lockFree)
+	}
+	r, err := runs.Get(dir, 2) // envSetup's up was run 1
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok := false
+	for _, s := range r.Steps {
+		ok = ok || (s.ID == "host-api" && s.Kind == "host" && s.State == runs.Succeeded)
+	}
+	if !ok {
+		t.Errorf("run steps %+v", r.Steps)
 	}
 }
