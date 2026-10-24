@@ -95,6 +95,14 @@ func StopHost(stderr io.Writer, instanceDir, name string, timeout time.Duration,
 	} else if keep {
 		fmt.Fprintf(stderr, "stackfork: host process %s is not running\n", name)
 	}
+	if keep { // a person stopped it: `up` leaves it down (only host start or restart clears this)
+		r, _ := state.ReadHostRecord(instanceDir, name)
+		if r == nil {
+			r = &state.HostRecord{Name: name}
+		}
+		r.StoppedByPerson = true
+		state.WriteHostRecord(instanceDir, *r) //nolint:errcheck // best effort
+	}
 	m, err = state.ReadManifest(manifestPath)
 	if err != nil || m == nil {
 		return err

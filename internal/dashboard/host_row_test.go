@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
@@ -217,6 +218,8 @@ func TestAPIInstancesIncludesHostAppFields(t *testing.T) {
 
 // Start (up) of an instance whose host app is down starts that app again, and
 // the run records it as a host step.
+var sigExit = 129
+
 func TestUpStartsRecordedHostAppThatIsDown(t *testing.T) {
 	installFakeDocker(t)
 	srv, project, dir := hostFixture(t, false)
@@ -226,6 +229,20 @@ func TestUpStartsRecordedHostAppThatIsDown(t *testing.T) {
 	p.Cmdline = []string{"stackfork", "host", "--supervise", "db", "--", "bun", "dev"}
 	m.HostProcs["db"] = p
 	if err := state.WritePrivate(mp, m); err != nil {
+		t.Fatal(err)
+	}
+	// what a real run left: a server that a signal ended
+	if err := state.WriteHostRecord(dir, state.HostRecord{Name: "db", SupervisorPID: p.PID, Listened: true, ExitedAt: "2026-10-23T17:12:00Z", ExitCode: &sigExit}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetRepoMode(m.Root, "hybrid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
 	var restarted []string

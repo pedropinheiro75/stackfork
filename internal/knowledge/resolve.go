@@ -63,7 +63,7 @@ func ResolveEntry(k *Knowledge, model interface{}, hostRoutes map[string]int) Re
 	return resolveEntry(k, model, hostRoutes, nil)
 }
 
-func resolveEntry(k *Knowledge, model interface{}, hostRoutes map[string]int, hostCmds map[string][]string) Resolved {
+func resolveEntry(k *Knowledge, model interface{}, hostRoutes map[string]int, hostCmds map[string]HostApp) Resolved {
 	var e *Entry
 	var links []Link
 	if k != nil {

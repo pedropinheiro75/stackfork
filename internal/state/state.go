@@ -77,17 +77,37 @@ type HostProc struct {
 }
 
 // RestartArgs are the arguments that start the app again detached, or nil
-// when it cannot be (it was never recorded in a restartable form).
+// when it cannot be: they must read `... host --supervise NAME ... -- COMMAND...`.
+// Anything else is refused, so a hand-edited manifest cannot make stackfork
+// run an arbitrary subcommand.
 func (p HostProc) RestartArgs() []string {
-	if len(p.Restart) > 0 {
-		return p.Restart
+	args := p.Restart
+	if len(args) == 0 && len(p.Cmdline) > 1 {
+		args = p.Cmdline[1:]
 	}
-	for _, a := range p.Cmdline {
-		if a == "--supervise" && len(p.Cmdline) >= 3 {
-			return p.Cmdline[1:]
+	for i := 1; i+1 < len(args); i++ {
+		if args[i] != "--supervise" || args[i-1] != "host" || !hostNameOK(args[i+1]) {
+			continue
+		}
+		for _, a := range args[i+2:] {
+			if a == "--" {
+				return args
+			}
 		}
 	}
 	return nil
+}
+
+func hostNameOK(n string) bool {
+	if n == "" || !(n[0] >= 'a' && n[0] <= 'z' || n[0] >= '0' && n[0] <= '9') {
+		return false
+	}
+	for _, c := range n {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // PortAlloc is one (service, target port) -> stable host port allocation

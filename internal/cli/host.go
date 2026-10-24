@@ -13,6 +13,7 @@ package cli
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/guard"
@@ -102,8 +104,17 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 			portEnv = append(portEnv, e)
 		}
 	}
+	waitSet := false
+	fs.Visit(func(f *flag.Flag) { waitSet = waitSet || f.Name == "wait-timeout" })
+	dir := relDir(root, workDir, *dirFlag)
 	if detach {
-		return hostStart(stderr, name, command, workDir, project, instanceDir, newStateBase, legacyStateBase, hostFlagArgs(*portFlag, *dirFlag, *portEnvFlag), hostWaitTimeout(*waitFlag))
+		flagArgs := hostFlagArgs(*portFlag, dir, *portEnvFlag)
+		wait := hostWaitTimeout(0, false)
+		if waitSet { // an explicit value, 0 included, is remembered for restart and up
+			wait = *waitFlag
+			flagArgs = append(flagArgs, "--wait-timeout", waitArg(wait))
+		}
+		return hostStart(stderr, name, command, workDir, project, instanceDir, newStateBase, legacyStateBase, flagArgs, wait)
 	}
 
 	block, err := envBlock(project, instanceDir, newStateBase, legacyStateBase, true)
@@ -114,10 +125,6 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	os.Remove(lifecycle.HostStopFlag(instanceDir, name)) // a leftover from a stopper that died
 	var restart []string
 	if !supervise { // a foreground run: record how `host restart` and `up` start it again, detached
-		dir := *dirFlag
-		if rel, err := filepath.Rel(root, workDir); dir == "" && err == nil && rel != "." {
-			dir = rel
-		}
 		restart = append([]string{"--state-dir", newStateBase, "--legacy-state-dir", legacyStateBase, "--instance", project, "host", "--supervise", name},
 			hostFlagArgs(*portFlag, dir, *portEnvFlag)...)
 		restart = append(append(restart, "--"), command...)
@@ -154,9 +161,28 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	started, _ := state.ProcStart(cmd.Process.Pid) // unreaped yet, so the pid is still ours
 	rec := state.HostRecord{Name: name, PID: cmd.Process.Pid, SupervisorPID: os.Getpid(), Argv: redactedArgv(instanceDir, command),
 		Cwd: workDir, Port: port, StartedAt: started}
+	var recMu sync.Mutex // the poller and the exit both write the record
 	if err := state.WriteHostRecord(instanceDir, rec); err != nil {
 		fmt.Fprintf(stderr, "stackfork: warning: could not write the host record: %v\n", err)
 	}
+	stopPoll := make(chan struct{})
+	defer close(stopPoll)
+	go func() { // the first answer on the port makes it a server (`up` restarts only servers)
+		for {
+			select {
+			case <-stopPoll:
+				return
+			case <-time.After(200 * time.Millisecond):
+			}
+			if ports.Listening(port) {
+				recMu.Lock()
+				rec.Listened = true
+				state.WriteHostRecord(instanceDir, rec) //nolint:errcheck // best effort
+				recMu.Unlock()
+				return
+			}
+		}
+	}()
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	for {
@@ -166,8 +192,10 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		case err := <-done:
 			code, cerr := exitCode(err)
 			if cerr == nil {
+				recMu.Lock()
 				rec.ExitedAt, rec.ExitCode = time.Now().UTC().Format(time.RFC3339), &code
 				state.WriteHostRecord(instanceDir, rec) //nolint:errcheck // best effort: the dashboard then shows plain "exited"
+				recMu.Unlock()
 			}
 			return code, cerr
 		}
@@ -179,9 +207,12 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 func redactedArgv(instanceDir string, argv []string) []string {
 	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
 	if m == nil {
-		return append([]string{}, argv...)
+		return maskEnvArgs(append([]string{}, argv...))
 	}
-	secrets := lifecycle.SecretsForRedaction(m)
+	return maskEnvArgs(redactArgv(argv, lifecycle.SecretsForRedaction(m)))
+}
+
+func redactArgv(argv []string, secrets []redact.Secret) []string {
 	out := make([]string, len(argv))
 	for i, a := range argv {
 		var b strings.Builder
@@ -261,7 +292,14 @@ func confinedDir(root, dir string) (string, error) {
 // (--instance from elsewhere).
 func hostWorkDir(root string) string {
 	if wd, err := os.Getwd(); err == nil {
-		if rel, err := filepath.Rel(root, wd); err == nil && !strings.HasPrefix(rel, "..") {
+		r, w := root, wd // compare resolved paths: /var and /private/var name one folder on macOS
+		if x, err := filepath.EvalSymlinks(r); err == nil {
+			r = x
+		}
+		if x, err := filepath.EvalSymlinks(w); err == nil {
+			w = x
+		}
+		if rel, err := filepath.Rel(r, w); err == nil && !strings.HasPrefix(rel, "..") {
 			return wd
 		}
 	}
@@ -367,4 +405,46 @@ func unregisterHostRoute(name, root, branch, project, instanceDir, newStateBase,
 		return
 	}
 	lifecycle.ReloadProxyIfRunning(stderr, newStateBase, legacyStateBase)
+}
+
+var envAssign = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+
+// maskEnvArgs shows the KEY=VALUE arguments that come before the program
+// (`env KEY=VALUE cmd`, or bare assignments) as KEY=***: the record is for
+// reading, and a value there may be a secret no redactor knows. The manifest
+// keeps the real command, because restart needs it (the file is 0600).
+func maskEnvArgs(argv []string) []string {
+	out := append([]string{}, argv...)
+	i := 0
+	if len(out) > 0 && filepath.Base(out[0]) == "env" {
+		i = 1
+	}
+	for ; i < len(out) && envAssign.MatchString(out[i]); i++ {
+		out[i] = out[i][:strings.Index(out[i], "=")] + "=***"
+	}
+	return out
+}
+
+// relDir is dir (the --dir flag) or, when the command runs in a folder below
+// the root, that folder relative to the root; so a restart runs it there.
+func relDir(root, workDir, dir string) string {
+	r, w := root, workDir
+	if x, err := filepath.EvalSymlinks(r); err == nil {
+		r = x
+	}
+	if x, err := filepath.EvalSymlinks(w); err == nil {
+		w = x
+	}
+	if rel, err := filepath.Rel(r, w); dir == "" && err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return dir
+}
+
+// waitArg spells a wait the way --wait-timeout reads it back.
+func waitArg(d time.Duration) string {
+	if d == 0 {
+		return "0"
+	}
+	return d.String()
 }

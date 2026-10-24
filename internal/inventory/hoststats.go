@@ -127,8 +127,10 @@ func hostInspect(instanceDir, name string, proc state.HostProc, snap *psSnapshot
 		if rss, cpu, ok := snap.usage(proc.PID); ok {
 			info.Measured, info.RSSBytes, info.CPUPercent = true, rss, cpu
 		}
-	} else if rec != nil {
+	} else if rec != nil && rec.SupervisorPID == proc.PID {
 		info.StartedAt, info.ExitedAt, info.ExitCode = rec.StartedAt, rec.ExitedAt, rec.ExitCode
+	} else if rec != nil { // written by another supervisor: it says nothing about this entry
+		return "exited", info, "exited (details unknown)"
 	}
 	if alive {
 		st = "starting" // up, but nothing answers on the port yet

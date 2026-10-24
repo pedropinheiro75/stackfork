@@ -33,6 +33,8 @@ func hostAppsEnv(t *testing.T) (dir string, rec *runs.Run, restarted, started *[
 	if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {
 		t.Fatal(err)
 	}
+	// what a real run records: api was a server that a signal ended
+	setRecord(t, dir, "api", state.HostRecord{Name: "api", SupervisorPID: 999999, Listened: true, ExitedAt: "2026-10-23T17:12:00Z", ExitCode: intp(129)})
 	restarted, started = &[]string{}, &[]string{}
 	oldR, oldS := HostRestart, HostStart
 	HostRestart = func(_ io.Writer, _, _, name, _, _ string) error { *restarted = append(*restarted, name); return nil }
@@ -49,6 +51,16 @@ func hostAppsEnv(t *testing.T) (dir string, rec *runs.Run, restarted, started *[
 		t.Fatal(err)
 	}
 	return dir, rec, restarted, started
+}
+
+func intp(n int) *int { return &n }
+
+func setRecord(t *testing.T, dir, name string, r state.HostRecord) {
+	t.Helper()
+	r.Name = name
+	if err := state.WriteHostRecord(dir, r); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func stepStates(t *testing.T, dir string, rec *runs.Run, err error) map[string]string {
@@ -83,7 +95,7 @@ func TestStartHostAppsRestartsRecordedAppsThatAreDown(t *testing.T) {
 	}
 }
 
-func TestStartHostAppsPlanStepsOnlyInHybridMode(t *testing.T) {
+func TestStartHostAppsStartsNothingInContainerMode(t *testing.T) {
 	plan := knowledge.Plan{Steps: []knowledge.Step{{ID: "ui", Kind: knowledge.KindHost, Name: "ui", Cmd: "bun dev"}}}
 	base, main := t.TempDir(), t.TempDir()
 	if _, err := TrustHere(base, main, plan); err != nil {
@@ -93,8 +105,8 @@ func TestStartHostAppsPlanStepsOnlyInHybridMode(t *testing.T) {
 	if err := StartHostApps(rec, io.Discard, nil, "/r", main, dir, base, "", knowledge.ModeContainer, plan); err != nil {
 		t.Fatal(err)
 	}
-	if len(*started) != 0 || len(*restarted) != 1 {
-		t.Errorf("a recorded app restarts in any mode, a plan host step only in hybrid: restarted %v started %v", *restarted, *started)
+	if len(*started) != 0 || len(*restarted) != 0 {
+		t.Errorf("container mode starts no host app: restarted %v started %v", *restarted, *started)
 	}
 }
 
@@ -147,5 +159,59 @@ func TestStartHostAppsFailureIsOneStepsAndTheRunsError(t *testing.T) {
 	}
 	if got := stepStates(t, dir, rec, err); got["boom"] != runs.Failed || got["host-api"] != runs.Succeeded {
 		t.Errorf("steps %v", got)
+	}
+}
+
+func TestStartHostAppsRestartsOnlyAServerThatEndedByItself(t *testing.T) {
+	for name, tc := range map[string]struct {
+		rec  *state.HostRecord
+		want bool
+	}{
+		"killed by a signal":                 {&state.HostRecord{Listened: true, ExitedAt: "x", ExitCode: intp(129)}, true},
+		"crashed with a code":                {&state.HostRecord{Listened: true, ExitedAt: "x", ExitCode: intp(1)}, true},
+		"supervisor killed, no exit written": {&state.HostRecord{Listened: true}, true},
+		"clean exit 0":                       {&state.HostRecord{Listened: true, ExitedAt: "x", ExitCode: intp(0)}, false},
+		"stopped by a person":                {&state.HostRecord{Listened: true, StoppedByPerson: true, ExitedAt: "x", ExitCode: intp(143)}, false},
+		"never listened (a one-shot)":        {&state.HostRecord{ExitedAt: "x", ExitCode: intp(1)}, false},
+		"no record":                          {nil, false},
+	} {
+		dir, rec, restarted, _ := hostAppsEnv(t)
+		os.Remove(state.HostRecordPath(dir, "api"))
+		if tc.rec != nil {
+			r := *tc.rec
+			r.SupervisorPID = 999999
+			setRecord(t, dir, "api", r)
+		}
+		if err := StartHostApps(rec, io.Discard, nil, "/r", "/r", dir, t.TempDir(), "", knowledge.ModeHybrid, knowledge.Plan{}); err != nil {
+			t.Fatal(err)
+		}
+		if got := len(*restarted) == 1; got != tc.want {
+			t.Errorf("%s: restarted=%v, want %v", name, *restarted, tc.want)
+		}
+		rec.Finish(nil)
+	}
+}
+
+func TestStartHostAppsPlanCommandBeatsTheRecordedOne(t *testing.T) {
+	plan := knowledge.Plan{Steps: []knowledge.Step{{ID: "api", Kind: knowledge.KindHost, Name: "api", Cmd: "bun run dev:api"}}}
+	base, main := t.TempDir(), t.TempDir()
+	if _, err := TrustHere(base, main, plan); err != nil {
+		t.Fatal(err)
+	}
+	dir, rec, restarted, started := hostAppsEnv(t)
+	if err := StartHostApps(rec, io.Discard, nil, "/r", main, dir, base, "", knowledge.ModeHybrid, plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(*restarted) != 0 || len(*started) != 1 || (*started)[0] != "api" {
+		t.Errorf("the plan's api step must run, not the recorded command: restarted %v started %v", *restarted, *started)
+	}
+	// but not when a person stopped it
+	dir, rec, restarted, started = hostAppsEnv(t)
+	setRecord(t, dir, "api", state.HostRecord{SupervisorPID: 999999, Listened: true, StoppedByPerson: true})
+	if err := StartHostApps(rec, io.Discard, nil, "/r", main, dir, base, "", knowledge.ModeHybrid, plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(*restarted)+len(*started) != 0 {
+		t.Errorf("a stopped app stays stopped: restarted %v started %v", *restarted, *started)
 	}
 }

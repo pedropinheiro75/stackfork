@@ -22,6 +22,12 @@ type HostRecord struct {
 	StartedAt     string   `json:"started_at"` // RFC3339 UTC, the command's process start time
 	ExitedAt      string   `json:"exited_at,omitempty"`
 	ExitCode      *int     `json:"exit_code,omitempty"` // 128+N when a signal N ended it
+	// Listened is true once the port first answered: the app is a server and
+	// not a one-shot command. StoppedByPerson is set by `host stop` and the
+	// dashboard Stop; only a new start (a fresh record) clears it. `up` starts
+	// an app again only if it listened and nobody stopped it (see lifecycle).
+	Listened        bool `json:"listened,omitempty"`
+	StoppedByPerson bool `json:"stopped_by_person,omitempty"`
 }
 
 // HostRecordPath is where the record of host app name lives.

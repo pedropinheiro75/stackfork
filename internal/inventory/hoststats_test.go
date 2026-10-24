@@ -109,7 +109,7 @@ func TestExitedHostAppMakesInstancePartialWithWarning(t *testing.T) {
 	})
 	code := 1
 	exited := time.Date(2026, 10, 23, 17, 12, 0, 0, time.Local)
-	if err := state.WriteHostRecord(dir, state.HostRecord{Name: "api", PID: 999999, StartedAt: "1970-01-01T00:00:00Z",
+	if err := state.WriteHostRecord(dir, state.HostRecord{Name: "api", PID: 999999, SupervisorPID: 999999, StartedAt: "1970-01-01T00:00:00Z",
 		ExitedAt: exited.UTC().Format(time.RFC3339), ExitCode: &code}); err != nil {
 		t.Fatal(err)
 	}
@@ -208,6 +208,22 @@ func TestHostAppListeningOnAnyInterfaceIsRunning(t *testing.T) {
 			if s.Name == "host:app" && (s.State != "running" || s.Host == nil || !s.Host.Listening) {
 				t.Errorf("listening on %s: %+v", addr, s)
 			}
+		}
+	}
+}
+
+// A record written by another supervisor (another pid) says nothing about this entry.
+func TestHostRecordOfAnotherSupervisorIsUnknown(t *testing.T) {
+	base, dir := hostInstance(t, map[string]state.HostProc{
+		"api": {PID: 999999, StartedAt: "1970-01-01T00:00:00Z", Cmdline: []string{"x"}, Port: 40999},
+	})
+	code := 1
+	if err := state.WriteHostRecord(dir, state.HostRecord{Name: "api", SupervisorPID: 12345, ExitedAt: "2026-10-23T17:12:00Z", ExitCode: &code}); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range collectOne(t, base).Services {
+		if s.Name == "host:api" && (s.Meta != "exited (details unknown)" || s.Host.ExitCode != nil) {
+			t.Errorf("api: meta=%q host=%+v", s.Meta, s.Host)
 		}
 	}
 }

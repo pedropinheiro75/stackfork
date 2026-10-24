@@ -127,7 +127,7 @@ func appendRouteAndKnowledgeApps(apps []AppLink, info *state.Manifest, hostname 
 		}
 		sort.Strings(names)
 		hk, _ := knowledge.LoadForCheckout(info.Root)
-		picked := knowledge.PickHostApp(hk, info.Routes, knowledge.HostCommands(info))
+		picked := knowledge.PickHostApp(hk, info.Routes, knowledge.HostApps(info))
 		for _, name := range names {
 			label := name
 			if name == picked {

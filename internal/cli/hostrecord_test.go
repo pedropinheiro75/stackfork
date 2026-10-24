@@ -70,6 +70,10 @@ func TestHostLsListsStateAndExit(t *testing.T) {
 	if err := state.WritePrivate(mp, m); err != nil {
 		t.Fatal(err)
 	}
+	if rec, _ := state.ReadHostRecord(filepath.Join(stateDir, project), "app"); rec != nil {
+		rec.SupervisorPID = 999999 // the entry above is the dead supervisor
+		state.WriteHostRecord(filepath.Join(stateDir, project), *rec)
+	}
 	out, stderr, code := runCLI(t, append(g, "host", "ls")...)
 	if code != 0 {
 		t.Fatalf("ls: %d %s", code, stderr)
@@ -92,6 +96,9 @@ func TestUpStartsHostAppThatIsDown(t *testing.T) {
 	if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {
 		t.Fatal(err)
 	}
+	if err := state.WriteHostRecord(dir, state.HostRecord{Name: "api", SupervisorPID: 999999, Listened: true, ExitedAt: "2026-10-23T17:12:00Z", ExitCode: intp(129)}); err != nil {
+		t.Fatal(err)
+	}
 	var restarted []string
 	lockFree := false
 	old := lifecycle.HostRestart
@@ -104,7 +111,7 @@ func TestUpStartsHostAppThatIsDown(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { lifecycle.HostRestart = old })
-	_, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "up", "--wait-timeout", "5")
+	_, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "up", "--mode", "hybrid", "--wait-timeout", "5")
 	if code != 0 {
 		t.Fatalf("up: %d %s", code, stderr)
 	}
@@ -121,5 +128,22 @@ func TestUpStartsHostAppThatIsDown(t *testing.T) {
 	}
 	if !ok {
 		t.Errorf("run steps %+v", r.Steps)
+	}
+}
+
+func intp(n int) *int { return &n }
+
+// The record shows an env prefix with its values masked; the real command stays in the 0600 manifest to re-run it.
+func TestHostRecordMasksEnvAssignments(t *testing.T) {
+	root, stateDir, project, psLine := envSetup(t, hostFixture)
+	t.Setenv("DOCKER_FAKE_PS", psLine+"\n")
+	runCLI(t, "--root", root, "--state-dir", stateDir, "host", "app", "--", "env", "API_KEY=hunter2-value", "NODE_ENV=dev", "sh", "-c", "exit 0")
+	rec, _ := state.ReadHostRecord(filepath.Join(stateDir, project), "app")
+	if rec == nil {
+		t.Fatal("no record")
+	}
+	got := strings.Join(rec.Argv, " ")
+	if strings.Contains(got, "hunter2-value") || strings.Contains(got, "=dev") || !strings.HasPrefix(got, "env API_KEY=*** NODE_ENV=*** sh") {
+		t.Errorf("argv %q", got)
 	}
 }

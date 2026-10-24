@@ -38,7 +38,7 @@ func init() {
 		if err := lifecycle.StopHostLocked(stderr, instanceDir, name, newBase, legacyBase); err != nil {
 			return err
 		}
-		_, err = spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, hostWaitTimeout(0))
+		_, err = spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, restartWait(proc.RestartArgs()))
 		return err
 	}
 	lifecycle.HostStart = func(out, errOut io.Writer, base []string, root, instanceDir string, step knowledge.Step) error {
@@ -108,11 +108,10 @@ var hostClaimWait = 60 * time.Second
 // hostWaitDefault is how long `host start` waits for the app to listen.
 const hostWaitDefault = 90 * time.Second
 
-// hostWaitTimeout is flag when set, else STACKFORK_HOST_WAIT_TIMEOUT (a Go
-// duration), else 90 s. Zero means: do not wait for the port, return once the
-// supervisor recorded the app.
-func hostWaitTimeout(flag time.Duration) time.Duration {
-	if flag > 0 {
+// hostWaitTimeout is the wait for the port: flag when set (0 included: no
+// wait), else STACKFORK_HOST_WAIT_TIMEOUT (a Go duration), else 90 s.
+func hostWaitTimeout(flag time.Duration, set bool) time.Duration {
+	if set {
 		return flag
 	}
 	if v := os.Getenv("STACKFORK_HOST_WAIT_TIMEOUT"); v != "" {
@@ -121,6 +120,27 @@ func hostWaitTimeout(flag time.Duration) time.Duration {
 		}
 	}
 	return hostWaitDefault
+}
+
+// waitFromArgs reads the --wait-timeout a supervisor command line remembers.
+func waitFromArgs(args []string) (time.Duration, bool) {
+	for i, a := range args {
+		if a == "--" {
+			break
+		}
+		if a == "--wait-timeout" && i+1 < len(args) {
+			if d, err := time.ParseDuration(args[i+1]); err == nil && d >= 0 {
+				return d, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// restartWait is the wait a restart or up uses: the one the app was started with.
+func restartWait(args []string) time.Duration {
+	d, set := waitFromArgs(args)
+	return hostWaitTimeout(d, set)
 }
 
 // hostLogTail is the last n lines of host-NAME.log, secrets redacted.
@@ -169,6 +189,9 @@ func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, inst
 	pid := cmd.Process.Pid
 	exited := make(chan struct{})
 	go func() { cmd.Wait(); close(exited) }() //nolint:errcheck // reaps it; the manifest tells the story
+	failed := func() error {                  // the log is redacted: this text reaches run errors and action responses
+		return fmt.Errorf("host process %s exited at start:\n%s", name, strings.TrimSpace(hostLogTail(instanceDir, name, 15)))
+	}
 	claimWait := wait
 	if claimWait == 0 {
 		claimWait = hostClaimWait
@@ -177,44 +200,50 @@ func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, inst
 	for {
 		select {
 		case <-exited:
-			tail, _ := os.ReadFile(logPath)
-			return 0, fmt.Errorf("host process %s exited at start:\n%s", name, strings.TrimSpace(string(tail)))
+			return 0, failed()
 		case <-deadline:
 			select {
 			case <-exited: // it died just now: report that, signal nothing
-				tail, _ := os.ReadFile(logPath)
-				return 0, fmt.Errorf("host process %s exited at start:\n%s", name, strings.TrimSpace(string(tail)))
+				return 0, failed()
 			default:
 			}
-			if state.KillGroup(pid, syscall.SIGKILL) != nil { // unreaped, so the pid is still ours; the group (Windows: tree) dies with it
-				cmd.Process.Kill() //nolint:errcheck // not a group leader (yet): at least the process
+			// It never recorded itself, so it holds no route. TERM first anyway, KILL after 5 s.
+			state.KillGroup(pid, syscall.SIGTERM) //nolint:errcheck // unreaped, so the pid is still ours
+			select {
+			case <-exited:
+			case <-time.After(5 * time.Second):
+				if state.KillGroup(pid, syscall.SIGKILL) != nil {
+					cmd.Process.Kill() //nolint:errcheck // not a group leader (yet): at least the process
+				}
 			}
-			tail, _ := os.ReadFile(logPath)
-			return 0, fmt.Errorf("host process %s did not report in %v; see %s\n%s", name, claimWait, logPath, strings.TrimSpace(string(tail)))
+			return 0, fmt.Errorf("host process %s did not report in %v; see %s\n%s", name, claimWait, logPath, strings.TrimSpace(hostLogTail(instanceDir, name, 15)))
 		case <-time.After(50 * time.Millisecond):
 		}
 		if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
 			if p, ok := m.HostProcs[name]; ok && p.PID == pid {
 				select { // a supervisor that fails to start its command dies right after claiming the name
 				case <-exited:
-					tail, _ := os.ReadFile(logPath)
-					return 0, fmt.Errorf("host process %s exited at start:\n%s", name, strings.TrimSpace(string(tail)))
+					return 0, failed()
 				case <-time.After(300 * time.Millisecond):
 				}
-				for wait > 0 && !ports.Listening(p.Port) {
-					select {
-					case <-exited:
-						return 0, fmt.Errorf("host process %s exited at start:\n%s", name, strings.TrimSpace(hostLogTail(instanceDir, name, 15)))
-					case <-deadline:
+				for wait > 0 {
+					if ports.Listening(p.Port) {
+						// cheap ownership check: the supervisor is alive now and still is half a second on
 						select {
 						case <-exited:
-						default:
-							if state.KillGroup(pid, syscall.SIGKILL) != nil {
-								cmd.Process.Kill() //nolint:errcheck // not a group leader (yet): at least the process
-							}
+							return 0, failed()
+						case <-time.After(500 * time.Millisecond):
 						}
-						return 0, fmt.Errorf("host process %s did not listen on port %d within %v (raise it with --wait-timeout); last log lines of %s:\n%s",
+						break
+					}
+					select {
+					case <-exited:
+						return 0, failed()
+					case <-deadline:
+						// A worker may never listen, or not use PORT: leave it running, as `starting`.
+						fmt.Fprintf(stderr, "stackfork: warning: %s is running but not listening on %d after %v; it may not use PORT. Last log lines of %s:\n%s\n",
 							name, p.Port, wait, logPath, strings.TrimSpace(hostLogTail(instanceDir, name, 15)))
+						return 0, nil
 					case <-time.After(100 * time.Millisecond):
 					}
 				}
@@ -273,7 +302,7 @@ func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, br
 		fmt.Fprintf(stdout, "stopped %s\n", name)
 		return 0, nil
 	}
-	return spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, hostWaitTimeout(0))
+	return spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, restartWait(proc.RestartArgs()))
 }
 
 func contains(l []string, s string) bool {
