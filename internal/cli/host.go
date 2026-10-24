@@ -112,7 +112,17 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 
 	os.Remove(lifecycle.HostStopFlag(instanceDir, name)) // a leftover from a stopper that died
-	port, err := registerHostRoute(name, *portFlag, supervise, root, branch, project, instanceDir, newStateBase, legacyStateBase, stderr)
+	var restart []string
+	if !supervise { // a foreground run: record how `host restart` and `up` start it again, detached
+		dir := *dirFlag
+		if rel, err := filepath.Rel(root, workDir); dir == "" && err == nil && rel != "." {
+			dir = rel
+		}
+		restart = append([]string{"--state-dir", newStateBase, "--legacy-state-dir", legacyStateBase, "--instance", project, "host", "--supervise", name},
+			hostFlagArgs(*portFlag, dir, *portEnvFlag)...)
+		restart = append(append(restart, "--"), command...)
+	}
+	port, err := registerHostRoute(name, *portFlag, supervise, restart, root, branch, project, instanceDir, newStateBase, legacyStateBase, stderr)
 	if err != nil {
 		return 0, err
 	}
@@ -260,7 +270,7 @@ func hostWorkDir(root string) string {
 
 // registerHostRoute picks (or reuses) name's stable port, persists it, and
 // registers the proxy route, all under the instance lock.
-func registerHostRoute(name string, requested int, supervise bool, root, branch, project, instanceDir, newStateBase, legacyStateBase string, stderr io.Writer) (int, error) {
+func registerHostRoute(name string, requested int, supervise bool, restart []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string, stderr io.Writer) (int, error) {
 	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
 	if err != nil {
 		return 0, err
@@ -318,7 +328,7 @@ func registerHostRoute(name string, requested int, supervise bool, root, branch,
 		lock.Release()
 		return 0, perr
 	}
-	proc := state.HostProc{PID: os.Getpid(), StartedAt: started, Cmdline: os.Args, Port: port}
+	proc := state.HostProc{PID: os.Getpid(), StartedAt: started, Cmdline: os.Args, Port: port, Restart: restart}
 	if supervise {
 		proc.Log = filepath.Join(instanceDir, "host-"+name+".log")
 	}

@@ -129,7 +129,7 @@ echo '{"cwd":"/repo","tool_name":"Bash","tool_input":{"command":"bun run dev"}}'
 ```
 
 ### host
-The sanctioned way to run an app on the host in a managed checkout: `stackfork host NAME [--port N] -- COMMAND...`. The instance must be running. It gives COMMAND a stable free port (kept in the manifest), the same environment as `env --with-passwords` plus `PORT`, `NUXT_PORT`, `NITRO_PORT` and `HOST` (and each `--port-env` name), and a proxy route `NAME` for as long as it runs; signals are forwarded and the route is removed on exit. The guard allows it.
+The sanctioned way to run an app on the host in a managed checkout: `stackfork host NAME [--port N] -- COMMAND...` in the foreground (it ends with your shell), or, for agents and anything that must outlive a shell, `stackfork host start NAME [--port N] -- COMMAND...`, which is detached and supervised. A foreground run also records how to start it again, so `host restart NAME` and `up` can start it detached later. The instance must be running. It gives COMMAND a stable free port (kept in the manifest), the same environment as `env --with-passwords` plus `PORT`, `NUXT_PORT`, `NITRO_PORT` and `HOST` (and each `--port-env` name), and a proxy route `NAME` for as long as it runs; signals are forwarded and the route is removed on exit. The guard allows it.
 Sub-forms:
 - `host start NAME [--port N] [--dir D] [--port-env A,B] [--wait-timeout D] -- COMMAND...` runs it detached: a supervisor outlives your terminal, writes `host-NAME.log` in the instance directory (truncated at each start), records itself in the manifest and removes its route on exit. Returns once the app listens on its port (127.0.0.1), waiting up to 90 s (`--wait-timeout 3m`, or `STACKFORK_HOST_WAIT_TIMEOUT`; `0` returns as soon as it is recorded). On timeout it stops the app and the error names the app, the port and the last 15 lines of the log (redacted). Refused when NAME already runs.
 - `host ls` lists the host apps of the instance: state (`running` only when the recorded pid and start time match and the port answers), port, and pid, memory, CPU and uptime, or `exited CODE at HH:MM`.
@@ -143,7 +143,7 @@ The dashboard shows each host app as a row of the service table: state chip, an 
 Flags: `--port`, `--dir` (working directory, relative to the checkout), `--port-env` (extra env names set to the port, comma separated), `--wait-timeout` (`host start` only)
 ```sh
 stackfork host ls
-stackfork host app -- bun run dev
+stackfork host start app -- bun run dev
 stackfork host app --port 3000 --instance sf-310-parsed-report-8d0cca37ec66 -- bun run dev
 stackfork host start web --port-env VITE_PORT -- bun run dev
 stackfork host logs web -f

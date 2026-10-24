@@ -83,7 +83,7 @@ func StartHostApps(rec *runs.Run, out io.Writer, base []string, root, main, inst
 			case state.HostIdentity(proc):
 				skip("already running")
 				continue
-			case len(proc.Cmdline) < 3 || !contains(proc.Cmdline, "--supervise"):
+			case proc.RestartArgs() == nil:
 				skip("was not started with `host start`; start it again")
 				continue
 			}

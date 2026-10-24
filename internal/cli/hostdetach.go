@@ -32,13 +32,13 @@ func init() {
 		if !ok {
 			return fmt.Errorf("no host process %s", name)
 		}
-		if len(proc.Cmdline) < 3 || !contains(proc.Cmdline, "--supervise") {
+		if proc.RestartArgs() == nil {
 			return fmt.Errorf("%s was not started with `host start`; start it again", name)
 		}
 		if err := lifecycle.StopHostLocked(stderr, instanceDir, name, newBase, legacyBase); err != nil {
 			return err
 		}
-		_, err = spawnSupervisor(stderr, name, proc.Cmdline[1:], hostWorkDir(root), instanceDir, hostWaitTimeout(0))
+		_, err = spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, hostWaitTimeout(0))
 		return err
 	}
 	lifecycle.HostStart = func(out, errOut io.Writer, base []string, root, instanceDir string, step knowledge.Step) error {
@@ -272,7 +272,7 @@ func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, br
 	if !ok {
 		return 0, fmt.Errorf("no host process %s", name)
 	}
-	if sub == "restart" && (len(proc.Cmdline) < 3 || !contains(proc.Cmdline, "--supervise")) {
+	if sub == "restart" && proc.RestartArgs() == nil {
 		return 0, fmt.Errorf("%s was not started with `host start`; start it again", name)
 	}
 	err = lifecycle.StopHostLocked(stderr, instanceDir, name, newBase, legacyBase)
@@ -283,7 +283,7 @@ func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, br
 		fmt.Fprintf(stdout, "stopped %s\n", name)
 		return 0, nil
 	}
-	return spawnSupervisor(stderr, name, proc.Cmdline[1:], hostWorkDir(root), instanceDir, hostWaitTimeout(0))
+	return spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, hostWaitTimeout(0))
 }
 
 func contains(l []string, s string) bool {

@@ -69,6 +69,25 @@ type HostProc struct {
 	Cmdline   []string `json:"cmdline"`    // the supervisor's own argv
 	Port      int      `json:"port"`
 	Log       string   `json:"log,omitempty"`
+	// Restart is the supervisor's argument list (without the executable) that
+	// starts this app again detached. A foreground `host` run records it, since
+	// its own Cmdline is not a supervised one; `host start` leaves it empty and
+	// Cmdline[1:] serves.
+	Restart []string `json:"restart,omitempty"`
+}
+
+// RestartArgs are the arguments that start the app again detached, or nil
+// when it cannot be (it was never recorded in a restartable form).
+func (p HostProc) RestartArgs() []string {
+	if len(p.Restart) > 0 {
+		return p.Restart
+	}
+	for _, a := range p.Cmdline {
+		if a == "--supervise" && len(p.Cmdline) >= 3 {
+			return p.Cmdline[1:]
+		}
+	}
+	return nil
 }
 
 // PortAlloc is one (service, target port) -> stable host port allocation
