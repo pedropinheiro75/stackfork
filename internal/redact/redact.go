@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // minLength is design.md D5's "values shorter than 8 characters are not
@@ -128,4 +129,22 @@ func (w *Writer) firstMatch(buf []byte) (idx, needleIdx int) {
 		}
 	}
 	return
+}
+
+// SecretLikeName reports whether an environment variable name looks like it
+// holds a secret (add-env-overrides D5): case-insensitive TOKEN, SECRET or
+// PASSWORD, or a name ending in _TOKEN, _SECRET, _PASSWORD, _PASSWD, _KEY or
+// _CREDENTIALS. The CLI, the dashboard and the output masking share it.
+func SecretLikeName(name string) bool {
+	n := strings.ToUpper(name)
+	switch n {
+	case "TOKEN", "SECRET", "PASSWORD":
+		return true
+	}
+	for _, suf := range []string{"_TOKEN", "_SECRET", "_PASSWORD", "_PASSWD", "_KEY", "_CREDENTIALS"} {
+		if strings.HasSuffix(n, suf) {
+			return true
+		}
+	}
+	return false
 }
