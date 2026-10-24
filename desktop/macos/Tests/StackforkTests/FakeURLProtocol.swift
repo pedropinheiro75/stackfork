@@ -1,4 +1,9 @@
 import Foundation
+import Testing
+
+/// Every suite that uses FakeURLProtocol nests here: its recorder is shared, so
+/// they must not run at the same time as each other.
+@Suite(.serialized) enum FakeNetworkTests {}
 
 struct RecordedRequest: @unchecked Sendable {
     let method: String

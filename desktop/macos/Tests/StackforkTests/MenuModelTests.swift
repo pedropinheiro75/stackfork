@@ -102,8 +102,9 @@ import Testing
     }
 }
 
+extension FakeNetworkTests {
 @MainActor
-@Suite(.serialized) struct PollerTests {
+@Suite struct PollerTests {
     @Test func noRequestWhileClosedAndThreeInElevenSecondsOpen() async throws {
         guard case .ready(let line) = parseReadyLine(readyJSON), let endpoint = DashboardEndpoint(line) else { return }
         FakeURLProtocol.reset { _ in (200, Data(instancesJSON.utf8)) }
@@ -122,4 +123,5 @@ import Testing
         try await Task.sleep(nanoseconds: 100_000_000)
         #expect(FakeURLProtocol.recorded.count == 3)
     }
+}
 }

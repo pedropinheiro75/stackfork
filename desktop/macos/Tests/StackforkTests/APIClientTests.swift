@@ -2,7 +2,8 @@ import Foundation
 import Testing
 @testable import Stackfork
 
-@Suite(.serialized) struct APIClientTests {
+extension FakeNetworkTests {
+@Suite struct APIClientTests {
     func client() -> APIClient {
         guard case .ready(let line) = parseReadyLine(readyJSON), let endpoint = DashboardEndpoint(line) else { fatalError() }
         return APIClient(endpoint: endpoint, session: FakeURLProtocol.session())
@@ -84,6 +85,7 @@ import Testing
             #expect(!text.contains("NSLog"), "\(url.lastPathComponent)")
         }
     }
+}
 }
 
 enum Sources {
