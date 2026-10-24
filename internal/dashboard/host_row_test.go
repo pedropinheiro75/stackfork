@@ -1,6 +1,7 @@
 package dashboard_test
 
 import (
+	"encoding/json"
 	"io"
 	"net"
 	"net/http/httptest"
@@ -171,4 +172,44 @@ func TestHostLogsReadOnlyTheEndOfABigFile(t *testing.T) {
 	if !strings.HasPrefix(out, "filler line of text\n") {
 		t.Errorf("partial first line not dropped: %q", out[:30])
 	}
+}
+
+func TestAPIInstancesIncludesHostAppFields(t *testing.T) {
+	installFakeDocker(t)
+	srv, _, dir := hostFixture(t, true)
+	code := 2
+	if err := state.WriteHostRecord(dir, state.HostRecord{Name: "gone", StartedAt: "1970-01-01T00:00:00Z", ExitedAt: "2026-10-23T17:12:00Z", ExitCode: &code}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/api/instances", nil)
+	req.Host = "127.0.0.1:55903"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	var inv struct {
+		Instances []struct {
+			Services []struct {
+				Name string `json:"name"`
+				Meta string `json:"meta"`
+				Host *struct {
+					PID       int    `json:"pid"`
+					Listening bool   `json:"listening"`
+					Measured  bool   `json:"measured"`
+					RSSBytes  int64  `json:"rss_bytes"`
+					StartedAt string `json:"started_at"`
+				} `json:"host"`
+			} `json:"services"`
+		} `json:"instances"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &inv); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range inv.Instances[0].Services {
+		if s.Name == "host:db" {
+			if s.Host == nil || s.Host.PID != os.Getpid() || !s.Host.Listening || s.Host.StartedAt == "" || s.Meta == "" {
+				t.Fatalf("host:db: %+v meta=%q", s.Host, s.Meta)
+			}
+			return
+		}
+	}
+	t.Fatalf("no host:db in %s", rec.Body.String())
 }
