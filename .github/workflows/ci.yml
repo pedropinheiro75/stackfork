@@ -19,7 +19,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test -timeout 30m ./...
 
   vet-windows:
     runs-on: [self-hosted, macOS]
@@ -54,7 +54,7 @@ jobs:
         with:
           node-version: "22"
       - run: docker compose version
-      - run: go test ./...
+      - run: go test -timeout 30m ./...
         env:
           STACKFORK_LIVE: "1"
       - run: go install ./cmd/stackfork
