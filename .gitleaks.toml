@@ -1,0 +1,10 @@
+# Test canaries: fake secrets that tests print to prove redaction. They all
+# carry the 0123456789 run, so a real key is still caught.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "test canaries"
+regexes = ['''0123456789''']
+paths = ['''_test\.go$''']
+condition = "AND"
