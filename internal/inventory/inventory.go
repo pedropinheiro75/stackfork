@@ -223,6 +223,9 @@ type Instance struct {
 	SeedStep string `json:"seed_step,omitempty"`
 	// LastRun is the newest run of the instance (design.md D14); nil when it has none.
 	LastRun *LastRun `json:"last_run,omitempty"`
+	// EnvOverrides counts the instance's env overrides (add-env-overrides D7);
+	// the card shows a chip when it is above zero. Names and values stay out.
+	EnvOverrides int `json:"env_overrides,omitempty"`
 	// Cleanup is the branch-cleanup callout of this instance's worktree
 	// (add-live-mode D20); the dashboard fills it from the live loop.
 	Cleanup *CleanupNote `json:"cleanup,omitempty"`
@@ -363,6 +366,9 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 	inst.SeedOnce, inst.SeedService = info.SeedOnce, info.SeedService
 	fillSeed(&inst, info, filepath.Dir(manifestPath))
 	inst.LastRun = lastRun(filepath.Dir(manifestPath))
+	if o, err := state.ReadEnvOverrides(filepath.Dir(manifestPath)); err == nil {
+		inst.EnvOverrides = o.Count()
+	}
 	if fi, err := os.Stat(manifestPath); err == nil {
 		inst.Used = fi.ModTime()
 	}

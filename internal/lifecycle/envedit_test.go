@@ -206,3 +206,24 @@ func TestEnvViewHostAppShowsOnlyItsOverrides(t *testing.T) {
 	}
 	t.Fatal("no app")
 }
+
+// A service with a build key is flagged, so the panel can say a VITE_* value applies at the next build.
+func TestEnvViewFlagsBuiltServices(t *testing.T) {
+	dir := envInstance(t)
+	p := filepath.Join(dir, "compose.json")
+	var snap map[string]map[string]map[string]any
+	b, _ := os.ReadFile(p)
+	json.Unmarshal(b, &snap)
+	snap["services"]["web"]["build"] = map[string]any{"context": "."}
+	b, _ = json.Marshal(snap)
+	os.WriteFile(p, b, 0o600)
+	view, err := EnvView(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range view {
+		if want := s.Name == "web"; s.Build != want {
+			t.Errorf("%s: build=%v, want %v", s.Name, s.Build, want)
+		}
+	}
+}

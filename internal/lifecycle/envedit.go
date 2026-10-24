@@ -116,6 +116,8 @@ type EnvService struct {
 	Name string   `json:"name"`
 	Kind string   `json:"kind"`
 	Vars []EnvVar `json:"vars"`
+	// Build: the service has a build key, so a VITE_* value applies at the next build.
+	Build bool `json:"build,omitempty"`
 }
 
 var (
@@ -208,7 +210,9 @@ func EnvView(instanceDir string) ([]EnvService, error) {
 	var out []EnvService
 	for _, name := range containers {
 		cfg, _ := snapServices[name].(map[string]any)
-		out = append(out, build(name, "container", projectEnv(cfg, root, vault)))
+		svc := build(name, "container", projectEnv(cfg, root, vault))
+		_, svc.Build = cfg["build"]
+		out = append(out, svc)
 	}
 	for _, name := range hosts {
 		out = append(out, build(name, "host", nil))

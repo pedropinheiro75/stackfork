@@ -191,6 +191,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/secrets/set", s.handleSecretsSet)
 	mux.HandleFunc("POST /api/secrets/map", s.handleSecretsMap)
 	mux.HandleFunc("POST /api/secrets/unmap", s.handleSecretsUnmap)
+	mux.HandleFunc("GET /api/env", s.handleEnvGet)
+	mux.HandleFunc("POST /api/env", s.handleEnvPost)
 	mux.HandleFunc("GET /api/runs", s.handleRuns)
 	mux.HandleFunc("GET /api/runs/log", s.handleRunLog)
 	mux.HandleFunc("POST /api/actions", s.handleActions)
