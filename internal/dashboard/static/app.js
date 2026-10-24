@@ -493,6 +493,7 @@
           ? menuItem(key + "/menu/stop", "Stop", "", ' data-action="service-stop"' + pa)
           : menuItem(key + "/menu/start", "Start", "", ' data-action="service-start"' + pa)) +
         menuItem(key + "/menu/restart", "Restart", "", ' data-action="restart"' + pa) +
+        menuItem(key + "/menu/env", "Environment…", "", " data-env-open" + pa) +
         menuItem(key + "/menu/logs", "Logs", "", pa, "logs-button mobile-only")) +
       "</div></td></tr>" +
       '<tr class="service-settings"' + (settingsOpen ? "" : " hidden") + '><td colspan="4">' + settingsHtml(svc, inst.files) + "</td></tr></tbody>"
@@ -542,7 +543,11 @@
 
     var chips = '<div class="stack-chips">' + chipHtml(startingChip(inst) || stateChip(inst.state)) + (inst.legacy ? '<span class="chip chip-off">legacy</span>' : "") +
       (inst.knowledge && (inst.knowledge.status === "draft" || inst.knowledge.status === "stale")
-        ? '<span class="chip chip-attention" title="Setup knowledge: ' + escapeHtml(inst.knowledge.status) + '"><span class="chip-glyph" aria-hidden="true">' + GLYPH.attention + "</span>Setup unverified</span>" : "") + "</div>";
+        ? '<span class="chip chip-attention" title="Setup knowledge: ' + escapeHtml(inst.knowledge.status) + '"><span class="chip-glyph" aria-hidden="true">' + GLYPH.attention + "</span>Setup unverified</span>" : "") +
+      (inst.env_overrides
+        ? '<span class="chip chip-attention env-chip" title="Env overrides replace the project\'s values until you reset them"><span class="chip-glyph" aria-hidden="true">' + GLYPH.attention + "</span>" + plural(inst.env_overrides, "env override") + "</span>" +
+          '<button type="button" class="btn btn-ghost" data-env-reset data-project="' + p + '" data-count="' + inst.env_overrides + '" data-key="' + p + '/envreset">Reset to project defaults</button>'
+        : "") + "</div>";
     var meta = '<div class="stack-meta mono"><span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.rel_root || inst.root) + "</span>" +
       (inst.hostname ? '<span class="stack-sep" aria-hidden="true"> · </span><span class="stack-host" title="' + escapeHtml(inst.hostname) + '">' + escapeHtml(inst.hostname) + "</span>" : "") + "</div>";
     var actions =
@@ -1714,6 +1719,214 @@
     });
   }
 
+  // --- Environment panel (add-env-overrides D7) ----------------------------
+  // A dialog per service, outside the cards, so a poll's re-render cannot
+  // wipe an edit in progress. GET /api/env never carries a masked value.
+
+  var FLAG_NAME = /^(ENABLE_|FEATURE_|VITE_ENABLE_)|_ENABLED$/;
+  // mirrors redact.SecretLikeName; names of the instance's vault secrets are
+  // refused by the server.
+  var SECRET_NAME = /^(TOKEN|SECRET|PASSWORD)$|_(TOKEN|SECRET|PASSWORD|PASSWD|KEY|CREDENTIALS)$/i;
+
+  // A name like ENABLE_* with a boolean-looking value, or any true/false value.
+  function isFlagLike(name, value) {
+    if (value === null || value === undefined) return false;
+    if (value === "true" || value === "false") return true;
+    return FLAG_NAME.test(name) && (value === "" || value === "1" || value === "0");
+  }
+
+  // The toggle writes the vocabulary the app already uses (true/false, 1/0).
+  function flagNext(v) { return v === "true" ? "false" : v === "false" ? "true" : v === "1" ? "0" : v === "0" ? "1" : "true"; }
+
+  function envRowsOf(svc) {
+    return (svc.vars || []).map(function (v) {
+      return { name: v.name, value: v.value, masked: !!v.masked, origin: v.origin, has_default: !!v.has_default, def: v.default === undefined ? null : v.default,
+        orig: { origin: v.origin, value: v.value }, gone: false };
+    });
+  }
+
+  function envRowHtml(r, i, svc) {
+    if (r.gone) return "";
+    var n = escapeHtml(r.name), control;
+    if (r.masked) {
+      control = '<span class="env-masked mono" title="Hidden: this page never receives the value">••••</span>';
+    } else if (isFlagLike(r.name, r.value)) {
+      control = '<input type="checkbox" role="switch" class="env-switch" data-env-toggle="' + i + '" aria-label="' + n + '"' + (r.value === "true" || r.value === "1" ? " checked" : "") + ">";
+    } else {
+      control = '<input type="text" class="env-value mono" data-env-value="' + i + '" value="' + escapeHtml(r.value) + '" aria-label="Value of ' + n + '" spellcheck="false" autocapitalize="off" autocomplete="off">';
+    }
+    var chip = '<span class="chip ' + (r.origin === "override" ? "chip-busy" : "chip-off") + ' env-origin">' + escapeHtml(r.origin) + "</span>";
+    var note = svc.build && /^VITE_/.test(r.name) ? '<span class="env-note">applies at next build</span>' : "";
+    var remove = r.origin === "override"
+      ? '<button type="button" class="btn btn-ghost env-remove" data-env-remove="' + i + '" aria-label="' + (r.has_default ? "Restore default of " : "Remove ") + n + '">' + (r.has_default ? "Restore default" : "Remove") + "</button>"
+      : "";
+    return '<li class="env-row" data-i="' + i + '" data-origin="' + escapeHtml(r.origin) + '"><span class="env-name mono">' + n + "</span>" +
+      '<span class="env-control">' + control + "</span>" + chip + note + remove + "</li>";
+  }
+
+  function envEdit(rows, i, value) {
+    var r = rows[i];
+    r.value = value;
+    r.origin = r.orig && value === r.orig.value ? r.orig.origin : "override";
+  }
+
+  function envRestore(rows, i) {
+    var r = rows[i];
+    if (r.has_default) { r.value = r.def; r.origin = "project"; } else r.gone = true;
+  }
+
+  // envAdd returns "" or what is wrong with the name.
+  function envAdd(rows, name, value) {
+    name = (name || "").trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return "Use letters, digits and underscores in the name; it cannot start with a digit.";
+    if (SECRET_NAME.test(name)) return name + " looks like a secret. Map it under Settings → Secrets and let the service read the reference.";
+    if (/[\n\0]/.test(value)) return "A value cannot contain a newline.";
+    if (value === "" && FLAG_NAME.test(name)) value = "true";
+    var at = rows.findIndex(function (r) { return r.name === name; });
+    if (at >= 0 && !rows[at].gone) return name + " is already listed; change its value there.";
+    if (at >= 0) { rows[at].gone = false; envEdit(rows, at, value); return ""; }
+    rows.push({ name: name, value: value, masked: false, origin: "override", has_default: false, def: null, orig: null, gone: false });
+    return "";
+  }
+
+  // What Save sends: only the names whose override changed.
+  function envChanges(rows) {
+    var set = {}, unset = [];
+    rows.forEach(function (r) {
+      var was = r.orig && r.orig.origin === "override";
+      if (was && (r.gone || r.origin !== "override")) unset.push(r.name);
+      else if (!r.gone && r.origin === "override" && (!was || r.value !== r.orig.value)) set[r.name] = r.value;
+    });
+    return { set: set, unset: unset };
+  }
+
+  var envSt = null;
+
+  function envPaint(keepFocus) {
+    var list = document.getElementById("env-rows"), svc = envSt.svc;
+    var html = envSt.rows.map(function (r, i) { return envRowHtml(r, i, svc); }).join("");
+    list.innerHTML = html || '<li class="muted env-empty">No variables yet.</li>';
+    var c = envChanges(envSt.rows);
+    document.getElementById("env-save").disabled = !Object.keys(c.set).length && !c.unset.length;
+    if (keepFocus) {
+      var again = list.querySelector('[data-env-remove="' + keepFocus + '"], [data-env-toggle="' + keepFocus + '"], [data-env-value="' + keepFocus + '"]');
+      if (again) again.focus();
+    }
+  }
+
+  function envShowError(msg) { document.getElementById("env-error").textContent = msg || ""; }
+
+  function openEnv(btn) {
+    var $ = function (id) { return document.getElementById(id); };
+    var project = btn.dataset.project, service = btn.dataset.service, name = service.replace(/^host:/, "");
+    envSt = { project: project, service: name, opener: btn, svc: { name: name, vars: [] }, rows: [] };
+    $("env-title").textContent = "Environment · " + name;
+    $("env-lede").textContent = "Overrides replace the project's value for " + name + " only. Save applies just this service.";
+    $("env-rows").innerHTML = '<li class="muted env-empty" role="status">loading…</li>';
+    $("env-save").disabled = true;
+    $("env-add-form").hidden = true;
+    $("env-new-name").value = ""; $("env-new-value").value = "";
+    envShowError("");
+    $("env-dialog").showModal();
+    fetch("/api/env?project=" + encodeURIComponent(project), { credentials: "same-origin" })
+      .then(function (r) { return r.ok ? r.json() : r.text().then(function (t) { throw new Error(t.trim() || "status " + r.status); }); })
+      .then(function (body) {
+        if (!envSt || envSt.project !== project || envSt.service !== name) return;
+        envSt.svc = (body.services || []).filter(function (s) { return s.name === name; })[0] || { name: name, vars: [] };
+        envSt.rows = envRowsOf(envSt.svc);
+        $("env-add-form").hidden = false;
+        envPaint();
+      })
+      .catch(function (e) { $("env-rows").innerHTML = ""; envShowError(e.message); });
+  }
+
+  function envDone(res, what, opener) {
+    var b = res.body, msg = what + ": " + (b.message || (res.ok ? "ok" : "failed"));
+    log(msg);
+    toast(res.ok && b.ok !== false ? "ok" : "failed", msg);
+    poll();
+    if (b.run) openRunLog(b.project, b.run, "", opener);
+  }
+
+  function envPost(body, what, dlg, errEl, btn, opener) {
+    var project = body.project;
+    btn.disabled = true;
+    errEl.textContent = "";
+    post("/api/env", body)
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, status: r.status, body: b }; }, function () { return { ok: false, status: r.status, body: { message: "status " + r.status } }; }); })
+      .then(function (res) {
+        if (!res.ok) { errEl.textContent = res.body.message || "refused"; btn.disabled = false; return; }
+        dlg.close();
+        res.body.project = project;
+        envDone(res, what, opener);
+      })
+      .catch(function (e) { errEl.textContent = e.message; btn.disabled = false; });
+  }
+
+  var envReset = { project: "", opener: null };
+
+  function wireEnv() {
+    var $ = function (id) { return document.getElementById(id); };
+    var dlg = $("env-dialog"), rdlg = $("envreset-dialog");
+    document.addEventListener("click", function (e) {
+      var open = e.target.closest("[data-env-open]");
+      if (open) { openEnv(open); return; }
+      var rs = e.target.closest("[data-env-reset]");
+      if (rs) {
+        envReset = { project: rs.dataset.project, opener: rs };
+        var n = Number(rs.dataset.count);
+        $("er-text").textContent = "Removes " + plural(n, "env override") + " from this instance. Every service that has one goes back to the project's values and is recreated or restarted, one step per service in a single run.";
+        $("er-error").textContent = "";
+        $("er-confirm").disabled = false;
+        rdlg.showModal();
+        $("er-cancel").focus();
+      }
+    });
+    $("env-close").addEventListener("click", function () { dlg.close(); });
+    $("env-cancel").addEventListener("click", function () { dlg.close(); });
+    dlg.addEventListener("close", function () { if (envSt) focusBack(openerOf(envSt.opener)); envSt = null; });
+    $("env-rows").addEventListener("change", function (e) {
+      var tgt = e.target;
+      if (tgt.dataset.envToggle !== undefined) {
+        var i = Number(tgt.dataset.envToggle);
+        envEdit(envSt.rows, i, flagNext(envSt.rows[i].value));
+        envPaint(String(i));
+      } else if (tgt.dataset.envValue !== undefined) {
+        var j = Number(tgt.dataset.envValue);
+        envEdit(envSt.rows, j, tgt.value);
+        envPaint();
+      }
+    });
+    $("env-rows").addEventListener("click", function (e) {
+      var rm = e.target.closest("[data-env-remove]");
+      if (!rm) return;
+      envRestore(envSt.rows, Number(rm.dataset.envRemove));
+      envPaint();
+      $("env-new-name").focus();
+    });
+    function add() {
+      var err = envAdd(envSt.rows, $("env-new-name").value, $("env-new-value").value);
+      envShowError(err);
+      if (err) return;
+      $("env-new-name").value = ""; $("env-new-value").value = "";
+      envPaint();
+      $("env-new-name").focus();
+    }
+    $("env-add").addEventListener("click", add);
+    $("env-add-form").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); add(); } });
+    $("env-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var c = envChanges(envSt.rows);
+      if (!Object.keys(c.set).length && !c.unset.length) return;
+      envPost({ project: envSt.project, service: envSt.service, set: c.set, unset: c.unset }, envSt.project + " env " + envSt.service, dlg, $("env-error"), $("env-save"), envSt.opener);
+    });
+    $("er-cancel").addEventListener("click", function () { rdlg.close(); });
+    rdlg.addEventListener("close", function () { focusBack(openerOf(envReset.opener)); envReset.opener = null; });
+    $("er-confirm").addEventListener("click", function () {
+      envPost({ project: envReset.project, reset: true }, envReset.project + " reset env overrides", rdlg, $("er-error"), this, envReset.opener);
+    });
+  }
+
   function shq(v) { return "'" + String(v).replace(/'/g, "'\\''") + "'"; }
 
   // --- the live run in the plan list (design.md D13) -------------------------
@@ -2368,6 +2581,7 @@
     wireLogsPanel();
     wireRepos();
     wireSecretDialogs();
+    wireEnv();
     wireLive();
     loadDisk();
     poll();
@@ -2382,7 +2596,7 @@
   // The script tests (appscript_runs_test.go) load this file in Node and ask
   // for the functions they exercise; a browser never defines __sfExport.
   if (typeof window.__sfExport === "function") {
-    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, cleanupNoteHtml: cleanupNoteHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, noteLiveRuns: noteLiveRuns, liveOp: liveOp, paintLive: paintLive, loadRepos: loadRepos, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip, pickOpenApp: pickOpenApp });
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, cleanupNoteHtml: cleanupNoteHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, noteLiveRuns: noteLiveRuns, liveOp: liveOp, paintLive: paintLive, loadRepos: loadRepos, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip, pickOpenApp: pickOpenApp, isFlagLike: isFlagLike, flagNext: flagNext, envRowsOf: envRowsOf, envRowHtml: envRowHtml, envEdit: envEdit, envRestore: envRestore, envAdd: envAdd, envChanges: envChanges });
   }
 
   if (document.readyState === "loading") {

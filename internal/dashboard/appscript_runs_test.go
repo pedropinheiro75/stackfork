@@ -63,3 +63,9 @@ func TestResetStreamsLikeStart(t *testing.T) {
 func TestLiveModeOnThePage(t *testing.T) {
 	runAppJS(t, "live_ui.case.js")
 }
+
+// The Environment panel: toggles for flag-like names, masked rows, the build
+// note and the changes Save sends (add-env-overrides D7).
+func TestEnvPanelRowsAndChanges(t *testing.T) {
+	runAppJS(t, "env_panel.case.js")
+}

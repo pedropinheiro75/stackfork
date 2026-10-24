@@ -47,6 +47,21 @@ var runCardCases = []struct {
 		i.Services = []inventory.Service{{Name: "host:app", Label: "app", Kind: "host", Image: "host", State: "starting", Meta: "pid 4242 \u00b7 up 3s",
 			Host: &inventory.HostInfo{PID: 4242}}}
 	}), []string{`chip-busy`, "Starting…", `data-action="service-stop"`}, []string{`data-action="service-start"`, ">Stopped<"}},
+	{"env overrides: chip, reset and an Environment item per service", runInst(nil, func(i *inventory.Instance) {
+		i.State, i.EnvOverrides = "running", 2
+		i.Services = []inventory.Service{
+			{Name: "web", Kind: "web", Image: "nginx", State: "running"},
+			{Name: "host:app", Label: "app", Kind: "host", Image: "host", State: "running", Host: &inventory.HostInfo{PID: 4242, Listening: true}},
+		}
+	}), []string{`<span class="chip chip-attention env-chip"`, "2 env overrides</span>",
+		`<button type="button" class="btn btn-ghost" data-env-reset data-project="sf-acme-web-2ffa6841c75d" data-count="2" data-key="sf-acme-web-2ffa6841c75d/envreset"`, ">Reset to project defaults<",
+		`data-env-open data-project="sf-acme-web-2ffa6841c75d" data-service="web"`, `data-env-open data-project="sf-acme-web-2ffa6841c75d" data-service="host:app"`, ">Environment&hellip;<"}, nil},
+	{"one env override", runInst(nil, func(i *inventory.Instance) { i.EnvOverrides = 1 }),
+		[]string{"1 env override</span>", "data-env-reset"}, []string{"1 env overrides"}},
+	{"no env overrides, no chip and no reset", runInst(nil, func(i *inventory.Instance) {
+		i.State = "running"
+		i.Services = []inventory.Service{{Name: "web", Kind: "web", Image: "nginx", State: "stopped"}}
+	}), []string{`data-env-open data-project="sf-acme-web-2ffa6841c75d" data-service="web"`}, []string{"env-chip", "data-env-reset", "env override"}},
 	{"none", runInst(nil, nil), []string{`data-repo-action="reset" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login"`, "Reset environment&hellip;",
 		`data-key="sf-acme-web-2ffa6841c75d/menu/remove" data-run="stackfork down --instance sf-acme-web-2ffa6841c75d --volumes --forget"`,
 		`data-copy="stackfork down --instance sf-acme-web-2ffa6841c75d --volumes"`},

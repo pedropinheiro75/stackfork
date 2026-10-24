@@ -821,3 +821,32 @@ code.setting-value { display: inline-block; }
 .modal .form-error { margin: 0 0 var(--space-3); }
 .modal-note { margin: 0 0 var(--space-4); }
 .modal [hidden] { display: none; }
+
+/* Environment panel: the per-service dialog (add-env-overrides D7). */
+.env-modal { max-width: 720px; }
+.env-rows { list-style: none; margin: 0 0 var(--space-3); padding: 0; max-height: 52vh; overflow: auto; border-top: 1px solid var(--line); }
+.env-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.5fr) 88px 132px; align-items: center; gap: var(--space-1) var(--space-3); min-height: 44px; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--line); }
+.env-name { min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
+.env-control { min-width: 0; }
+.env-value { width: 100%; }
+.env-masked { color: var(--fg-subtle); letter-spacing: 0.2em; }
+.env-origin { justify-self: start; }
+.env-note { grid-column: 2 / -1; font-size: 12px; line-height: 16px; color: var(--attention); }
+.env-remove { justify-self: end; }
+.env-empty { padding: var(--space-3) var(--space-2); border-bottom: 0; }
+.env-switch { appearance: none; -webkit-appearance: none; position: relative; width: 36px; height: 20px; margin: 0; border: 1px solid var(--line-control); border-radius: var(--radius-full); background: var(--surface-2); cursor: pointer; transition: background-color var(--duration-fast) linear, border-color var(--duration-fast) linear; }
+.env-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--fg-muted); transition: transform var(--duration-fast) var(--ease-out), background-color var(--duration-fast) linear; }
+.env-switch:checked { background: var(--accent); border-color: var(--accent); }
+.env-switch:checked::after { transform: translateX(16px); background: var(--on-accent); }
+.env-switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.env-add { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.5fr) auto; gap: var(--space-2); margin: 0 0 var(--space-2); }
+.env-add[hidden] { display: none; }
+.env-add input { min-width: 0; }
+.env-hint { margin: 0 0 var(--space-3); }
+.env-chip + .btn { margin-left: var(--space-1); }
+@media (prefers-reduced-motion: reduce) { .env-switch, .env-switch::after { transition: none; } }
+@media (max-width: 719px) {
+  .env-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name chip" "control control" "note note" "remove remove"; padding: var(--space-2); }
+  .env-name { grid-area: name; } .env-origin { grid-area: chip; justify-self: end; } .env-control { grid-area: control; } .env-note { grid-area: note; grid-column: auto; } .env-remove { grid-area: remove; justify-self: start; }
+  .env-add { grid-template-columns: minmax(0, 1fr); }
+}

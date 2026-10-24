@@ -152,6 +152,29 @@
   <div class="modal-foot"><button type="button" id="ud-cancel" class="btn btn-ghost">Cancel</button><button type="button" id="ud-confirm" class="btn btn-danger">Unmap</button></div>
 </dialog>
 
+<dialog id="env-dialog" class="modal env-modal" aria-labelledby="env-title">
+  <form id="env-form" autocomplete="off">
+    <div class="modal-head"><h2 id="env-title">Environment</h2><button type="button" id="env-close" class="btn btn-ghost btn-icon" aria-label="Close"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></div>
+    <p class="muted modal-lede" id="env-lede"></p>
+    <ul id="env-rows" class="env-rows"></ul>
+    <div id="env-add-form" class="env-add" role="group" aria-label="Add a variable" hidden>
+      <label class="sr-only" for="env-new-name">Name</label><input type="text" id="env-new-name" placeholder="ENABLE_GUEST_ACCESS" spellcheck="false" autocapitalize="off" class="mono">
+      <label class="sr-only" for="env-new-value">Value</label><input type="text" id="env-new-value" placeholder="value" spellcheck="false" autocapitalize="off" class="mono">
+      <button type="button" id="env-add" class="btn">Add</button>
+    </div>
+    <p class="small muted env-hint">Secrets stay out of here: map them under Settings &rarr; Secrets.</p>
+    <p id="env-error" class="form-error" role="alert"></p>
+    <div class="modal-foot"><button type="button" id="env-cancel" class="btn btn-ghost">Cancel</button><button type="submit" id="env-save" class="btn btn-primary" disabled>Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="envreset-dialog" class="modal" aria-labelledby="er-title">
+  <div class="modal-head"><h2 id="er-title">Reset to project defaults?</h2></div>
+  <p class="muted modal-lede" id="er-text"></p>
+  <p id="er-error" class="form-error" role="alert"></p>
+  <div class="modal-foot"><button type="button" id="er-cancel" class="btn btn-ghost">Cancel</button><button type="button" id="er-confirm" class="btn btn-primary">Reset to project defaults</button></div>
+</dialog>
+
 <aside id="logs-panel" class="log-drawer" role="dialog" aria-modal="false" aria-labelledby="logs-title" tabindex="-1" hidden>
   <div id="logs-header">
     <h2 id="logs-title" class="mono"></h2>
