@@ -384,7 +384,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		inst.Warnings = append(inst.Warnings, serviceWarnings(project, services)...)
 		if serviceState == StateRunning {
 			for _, h := range hosts {
-				if h.State != "running" {
+				if h.State == "exited" {
 					inst.State = StatePartial
 					inst.Warnings = append(inst.Warnings, fmt.Sprintf("host app %s is not running (%s); start it with `stackfork host restart %s` or Restart in the dashboard", h.Label, h.Meta, h.Label))
 				}

@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -158,5 +159,29 @@ func TestComposeRunningIgnoresHostApps(t *testing.T) {
 	}
 	if (Instance{State: StateStopped}).ComposeRunning() {
 		t.Error("stopped")
+	}
+}
+
+func TestAliveHostAppThatDoesNotListenYetIsStarting(t *testing.T) {
+	start, err := state.ProcStart(os.Getpid())
+	if err != nil {
+		t.Skip("no process start time on this platform")
+	}
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close() // a port nothing listens on
+	base, _ := hostInstance(t, map[string]state.HostProc{
+		"app": {PID: os.Getpid(), StartedAt: start, Cmdline: os.Args, Port: port},
+	})
+	inst := collectOne(t, base)
+	for _, s := range inst.Services {
+		if s.Name == "host:app" {
+			if s.State != "starting" || s.Host == nil || s.Host.Listening || len(s.Endpoints) != 0 {
+				t.Errorf("alive but not listening: %+v", s)
+			}
+		}
+	}
+	if inst.State != StateRunning {
+		t.Errorf("a starting host app is not a reason for partial, got %s", inst.State)
 	}
 }

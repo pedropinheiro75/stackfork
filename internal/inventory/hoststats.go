@@ -131,7 +131,7 @@ func hostInspect(instanceDir, name string, proc state.HostProc, snap *psSnapshot
 		info.StartedAt, info.ExitedAt, info.ExitCode = rec.StartedAt, rec.ExitedAt, rec.ExitCode
 	}
 	if alive {
-		st = "exited" // up, but nothing answers on the port yet
+		st = "starting" // up, but nothing answers on the port yet
 		if info.Listening {
 			st = "running"
 		}

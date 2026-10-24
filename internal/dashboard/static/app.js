@@ -169,6 +169,7 @@
     if (svc.state === "running" && health === "unhealthy") { r.cls = "attention"; r.glyph = GLYPH.attention; r.label = "Unhealthy"; }
     else if (svc.state === "running" && health === "health: starting") { r.cls = "busy"; r.glyph = GLYPH.busy; r.label = "Starting…"; }
     else if (svc.state === "running") { r.cls = "ok"; r.glyph = GLYPH.ok; r.label = "Running"; }
+    else if (svc.state === "starting") { r.cls = "busy"; r.glyph = GLYPH.busy; r.label = "Starting…"; }
     else if (svc.state === "dead") { r.cls = "failed"; r.glyph = GLYPH.failed; r.label = "Dead"; }
     else if (svc.state === "restarting") { r.cls = "attention"; r.glyph = GLYPH.attention; r.label = "Restarting"; }
     else if (svc.state === "waiting") { r.cls = "busy"; r.glyph = GLYPH.busy; r.label = "Waiting"; }
@@ -460,7 +461,7 @@
   function serviceHtml(inst, svc) {
     var p = inst.project;
     var key = p + "/" + svc.name;
-    var running = svc.state === "running";
+    var running = svc.state === "running" || svc.state === "starting";
     var endpoints = (svc.endpoints || []).map(function (e, i) { return endpointHtml(e, svc.state, key + "/ep" + i); }).join("");
     if (svc.connection_url) {
       endpoints += '<button type="button" class="endpoint-copy copyable connection-url" data-key="' + escapeHtml(key) + '/conn" data-copy="' + escapeHtml(svc.connection_url) +

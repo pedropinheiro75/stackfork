@@ -101,6 +101,10 @@ func hostStart(stderr io.Writer, name string, command []string, workDir, project
 	return spawnSupervisor(stderr, name, append(args, command...), workDir, instanceDir, wait)
 }
 
+// hostClaimWait is how long a start with no port wait gives the supervisor to
+// record the app. A loaded machine took more than 10 s once (a flaky test).
+var hostClaimWait = 60 * time.Second
+
 // hostWaitDefault is how long `host start` waits for the app to listen.
 const hostWaitDefault = 90 * time.Second
 
@@ -153,7 +157,7 @@ func hostLogTail(instanceDir, name string, n int) string {
 // spawnSupervisor runs `stackfork ARGS` detached, log to host-NAME.log, and
 // returns once the supervisor recorded its HostProcs entry and, when wait is
 // not zero, the app listens on its port. wait is the deadline of the whole
-// start; with zero the entry alone has 10 s.
+// start; with zero the entry alone has hostClaimWait.
 func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, instanceDir string, wait time.Duration) (int, error) {
 	exe, err := hostExecutable()
 	if err != nil {
@@ -177,7 +181,7 @@ func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, inst
 	go func() { cmd.Wait(); close(exited) }() //nolint:errcheck // reaps it; the manifest tells the story
 	claimWait := wait
 	if claimWait == 0 {
-		claimWait = 10 * time.Second
+		claimWait = hostClaimWait
 	}
 	deadline := time.After(claimWait)
 	for {

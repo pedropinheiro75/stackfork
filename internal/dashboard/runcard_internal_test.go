@@ -42,6 +42,11 @@ var runCardCases = []struct {
 				Host: &inventory.HostInfo{ExitCode: &code}},
 		}
 	}), []string{`<span class="service-meta mono">pid 4242 · 312 MB · 3% CPU · up 12m</span>`, `<span class="service-meta mono">exited 1 at 17:12</span>`}, nil},
+	{"host app that is up but not listening yet", runInst(nil, func(i *inventory.Instance) {
+		i.State = "running"
+		i.Services = []inventory.Service{{Name: "host:app", Label: "app", Kind: "host", Image: "host", State: "starting", Meta: "pid 4242 \u00b7 up 3s",
+			Host: &inventory.HostInfo{PID: 4242}}}
+	}), []string{`chip-busy`, "Starting…", `data-action="service-stop"`}, []string{`data-action="service-start"`, ">Stopped<"}},
 	{"none", runInst(nil, nil), []string{`data-repo-action="reset" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login"`, "Reset environment&hellip;",
 		`data-key="sf-acme-web-2ffa6841c75d/menu/remove" data-run="stackfork down --instance sf-acme-web-2ffa6841c75d --volumes --forget"`,
 		`data-copy="stackfork down --instance sf-acme-web-2ffa6841c75d --volumes"`},

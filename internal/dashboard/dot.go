@@ -49,6 +49,8 @@ func serviceChip(s inventory.Service) chipView {
 		c.Class, c.Glyph, c.Label = "busy", glyphBusy, "Starting…"
 	case s.State == "running":
 		c.Class, c.Glyph, c.Label = "ok", glyphOK, "Running"
+	case s.State == "starting":
+		c.Class, c.Glyph, c.Label = "busy", glyphBusy, "Starting…"
 	case s.State == "dead":
 		c.Class, c.Glyph, c.Label = "failed", glyphFailed, "Dead"
 	case s.State == "restarting":
