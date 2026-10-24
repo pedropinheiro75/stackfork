@@ -23,7 +23,9 @@ func TestHostWritesRecordOnStartAndExit(t *testing.T) {
 		t.Fatal(err)
 	}
 	during := filepath.Join(t.TempDir(), "record-during.json")
-	script := "cat " + filepath.Join(stateDir, project, "host-app.json") + " > " + during + "; echo tok-0123456789abcdef; exit 3"
+	// the record is written right after the child starts: wait for it, then copy it
+	recPath := filepath.Join(stateDir, project, "host-app.json")
+	script := "for i in $(seq 1 100); do grep -q '\"pid\"' " + recPath + " 2>/dev/null && break; sleep 0.05; done; cat " + recPath + " > " + during + "; echo tok-0123456789abcdef; exit 3"
 	_, _, code := runCLI(t, "--root", root, "--state-dir", stateDir, "host", "app", "--", "sh", "-c", script)
 	if code != 3 {
 		t.Fatalf("code %d", code)
