@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"time"
 )
 
 // DefaultStart and DefaultEnd are the default allocation window (design.md
@@ -81,5 +82,21 @@ func Bound(port int) bool {
 		return true
 	}
 	l.Close()
+	// macOS lets a bind to 127.0.0.1 succeed beside a listener on all interfaces
+	// or on IPv6 only, so ask whether anything answers too.
+	return Listening(port)
+}
+
+// Listening reports whether something accepts connections on the port at the
+// IPv4 or IPv6 loopback address. A server bound to 0.0.0.0, [::] or only
+// 127.0.0.1 or ::1 all answer.
+func Listening(port int) bool {
+	for _, host := range []string{"127.0.0.1", "::1"} {
+		c, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 200*time.Millisecond)
+		if err == nil {
+			c.Close()
+			return true
+		}
+	}
 	return false
 }

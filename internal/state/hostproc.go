@@ -23,7 +23,7 @@ func HostStatus(instanceDir, name string) (running bool, proc HostProc) {
 		return false, HostProc{}
 	}
 	proc = m.HostProcs[name]
-	return proc.PID != 0 && HostIdentity(proc) && ports.Bound(proc.Port), proc
+	return proc.PID != 0 && HostIdentity(proc) && ports.Listening(proc.Port), proc
 }
 
 // HostAlive is the PID-plus-start-time check alone (no command line, no port).

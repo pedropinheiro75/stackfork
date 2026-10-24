@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/ports"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -123,16 +123,6 @@ func hostWaitTimeout(flag time.Duration) time.Duration {
 	return hostWaitDefault
 }
 
-// hostListening reports whether something accepts connections on 127.0.0.1:port.
-func hostListening(port int) bool {
-	c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 200*time.Millisecond)
-	if err != nil {
-		return false
-	}
-	c.Close()
-	return true
-}
-
 // hostLogTail is the last n lines of host-NAME.log, secrets redacted.
 func hostLogTail(instanceDir, name string, n int) string {
 	b, err := os.ReadFile(filepath.Join(instanceDir, "host-"+name+".log"))
@@ -211,7 +201,7 @@ func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, inst
 					return 0, fmt.Errorf("host process %s exited at start:\n%s", name, strings.TrimSpace(string(tail)))
 				case <-time.After(300 * time.Millisecond):
 				}
-				for wait > 0 && !hostListening(p.Port) {
+				for wait > 0 && !ports.Listening(p.Port) {
 					select {
 					case <-exited:
 						return 0, fmt.Errorf("host process %s exited at start:\n%s", name, strings.TrimSpace(hostLogTail(instanceDir, name, 15)))

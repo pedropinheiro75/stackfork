@@ -185,3 +185,29 @@ func TestAliveHostAppThatDoesNotListenYetIsStarting(t *testing.T) {
 		t.Errorf("a starting host app is not a reason for partial, got %s", inst.State)
 	}
 }
+
+// A dev server may listen on all interfaces or on IPv6 only (Vite does either);
+// a supervisor that is alive and a port that answers is running.
+func TestHostAppListeningOnAnyInterfaceIsRunning(t *testing.T) {
+	start, err := state.ProcStart(os.Getpid())
+	if err != nil {
+		t.Skip("no process start time on this platform")
+	}
+	for _, addr := range []string{"0.0.0.0:0", "[::]:0", "[::1]:0", "127.0.0.1:0"} {
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			continue // no IPv6 here
+		}
+		port := ln.Addr().(*net.TCPAddr).Port
+		base, _ := hostInstance(t, map[string]state.HostProc{
+			"app": {PID: os.Getpid(), StartedAt: start, Cmdline: os.Args, Port: port},
+		})
+		inst := collectOne(t, base)
+		ln.Close()
+		for _, s := range inst.Services {
+			if s.Name == "host:app" && (s.State != "running" || s.Host == nil || !s.Host.Listening) {
+				t.Errorf("listening on %s: %+v", addr, s)
+			}
+		}
+	}
+}

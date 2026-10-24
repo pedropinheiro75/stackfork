@@ -115,7 +115,7 @@ func hostInspect(instanceDir, name string, proc state.HostProc, snap *psSnapshot
 	rec, _ := state.ReadHostRecord(instanceDir, name)
 	info = &HostInfo{StartedAt: proc.StartedAt}
 	alive := proc.PID != 0 && state.HostIdentity(proc)
-	info.Listening = alive && ports.Bound(proc.Port)
+	info.Listening = alive && ports.Listening(proc.Port)
 	if alive {
 		info.PID = proc.PID
 		if rec != nil && rec.StartedAt != "" {
