@@ -156,7 +156,7 @@ func hostLogTail(instanceDir, name string, n int) string {
 	text := strings.Join(lines, "\n") + "\n"
 	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
 		var out strings.Builder
-		w := lifecycle.NewRedactedWriter(&out, m)
+		w := lifecycle.NewRedactedWriter(&out, instanceDir, m)
 		w.Write([]byte(text)) //nolint:errcheck // strings.Builder cannot fail
 		w.Close()
 		return out.String()
@@ -321,7 +321,7 @@ func hostLogs(stdout io.Writer, m *state.Manifest, instanceDir, name string, fol
 		return 0, fmt.Errorf("no log for host process %s", name)
 	}
 	defer f.Close()
-	w := lifecycle.NewRedactedWriter(stdout, m)
+	w := lifecycle.NewRedactedWriter(stdout, instanceDir, m)
 	defer w.Close()
 	for {
 		if _, err := io.Copy(w, f); err != nil {

@@ -142,7 +142,7 @@ func LogSecrets(instanceDir string, info *state.Manifest) ([]redact.Secret, erro
 		}
 		return nil, e
 	}
-	return values.Redactions(), nil
+	return append(values.Redactions(), EnvOverrideSecrets(instanceDir)...), nil
 }
 
 // OutputSecrets are the values `run` and `exec` redact their output with,

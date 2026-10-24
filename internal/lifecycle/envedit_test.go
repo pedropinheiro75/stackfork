@@ -2,11 +2,14 @@ package lifecycle
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/redact"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -25,6 +28,7 @@ func envInstance(t *testing.T) string {
 				"ENABLE_GUEST_ACCESS": "true",
 				"NPM_TOKEN":           "${NPM_TOKEN}",
 				"PLAIN":               "x",
+				"AUTH_LINE":           "Bearer ${NPM_TOKEN}",
 				"API_KEY":             "literal-key",
 			},
 		},
@@ -32,7 +36,7 @@ func envInstance(t *testing.T) string {
 	}}
 	b, _ := json.Marshal(snap)
 	os.WriteFile(filepath.Join(dir, "compose.json"), b, 0o600)
-	m := &state.Manifest{Project: "p", Secrets: map[string]string{"npm_token": "env:NPM"},
+	m := &state.Manifest{Project: "p", Root: dir, Secrets: map[string]string{"npm_token": "env:NPM"},
 		HostProcs: map[string]state.HostProc{"app": {PID: 1}}, HostPorts: map[string]int{"worker": 31000}}
 	if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {
 		t.Fatal(err)
@@ -226,4 +230,80 @@ func TestEnvViewFlagsBuiltServices(t *testing.T) {
 			t.Errorf("%s: build=%v, want %v", s.Name, s.Build, want)
 		}
 	}
+}
+
+// A name whose project value interpolates a secret of the instance is not
+// overridable, even with --allow-secret (add-env-overrides D2).
+func TestSetEnvOverridesRefusesVaultInterpolatedName(t *testing.T) {
+	dir := envInstance(t)
+	for _, allow := range []bool{false, true} {
+		err := SetEnvOverrides(dir, "web", map[string]string{"AUTH_LINE": "x"}, nil, allow)
+		if err == nil || !strings.Contains(err.Error(), "Settings → Secrets") {
+			t.Errorf("allow=%v: %v", allow, err)
+		}
+	}
+	if o, _ := state.ReadEnvOverrides(dir); o.Count() != 0 {
+		t.Error("written")
+	}
+}
+
+func TestMaskURLPassword(t *testing.T) {
+	for in, want := range map[string]string{
+		"postgres://u:pa/ss@h/db":      "postgres://u:****@h/db",
+		"postgres://u:p@ss@h":          "postgres://u:****@h",
+		"postgres://u:hunter2@db:5432": "postgres://u:****@db:5432",
+		"http://h:80/path":             "http://h:80/path",
+		"plain":                        "plain",
+	} {
+		if got := maskURLPassword(in); got != want {
+			t.Errorf("%q: got %q want %q", in, got, want)
+		}
+	}
+}
+
+// A host step of the plan is a target before it ever started (D1).
+func TestEnvTargetsIncludePlanHostSteps(t *testing.T) {
+	dir := envInstance(t)
+	m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json"))
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified,
+		Plan: knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+			{ID: "app", Kind: knowledge.KindHost, Modes: []string{"hybrid"}, Name: "fresh", Cmd: "npm run dev"}}}}
+	if err := k.Save(filepath.Join(dir, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	_, hosts := EnvTargets(dir, m)
+	if !strings.Contains(strings.Join(hosts, ","), "fresh") {
+		t.Errorf("hosts %v", hosts)
+	}
+	if err := SetEnvOverrides(dir, "fresh", map[string]string{"A": "1"}, nil, false); err != nil {
+		t.Error(err)
+	}
+}
+
+// Overrides stored with --allow-secret are redacted in every log path.
+func TestLogRedactionPathsCoverOverrideSecrets(t *testing.T) {
+	dir := envInstance(t)
+	const secret = "sk-live-0123456789"
+	if err := SetEnvOverrides(dir, "web", map[string]string{"STRIPE_KEY": secret}, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json"))
+	m.Secrets = nil // only the override is secret here
+	text := "token " + secret + " end"
+	redactWith := func(name string, w func(io.Writer) io.WriteCloser) {
+		var b strings.Builder
+		c := w(&b)
+		c.Write([]byte(text))
+		c.Close()
+		if strings.Contains(b.String(), secret) || !strings.Contains(b.String(), "[redacted:") {
+			t.Errorf("%s: %q", name, b.String())
+		}
+	}
+	redactWith("NewRedactedWriter", func(w io.Writer) io.WriteCloser { return NewRedactedWriter(w, dir, m) })
+	secrets, err := LogSecrets(dir, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redactWith("LogSecrets", func(w io.Writer) io.WriteCloser { return redact.NewWriter(w, secrets) })
+	redactWith("SecretsForRedaction", func(w io.Writer) io.WriteCloser { return redact.NewWriter(w, SecretsForRedaction(dir, m)) })
 }

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
+	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/redact"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
@@ -65,6 +67,22 @@ func EnvTargets(instanceDir string, m *state.Manifest) (containers, hosts []stri
 		}
 		for n := range m.HostPorts {
 			seen[n] = true
+		}
+	}
+	// A host step of the plan is a target before it ever ran (D1).
+	if m != nil && m.Root != "" {
+		main := identity.MainRepoOf(m.Root)
+		if main == "" {
+			main = m.Root
+		}
+		plan := LoadPlan(m.Root, main)
+		for _, mode := range []string{knowledge.ModeContainer, knowledge.ModeHybrid} {
+			steps, _ := plan.ForMode(mode)
+			for _, st := range steps {
+				if st.Kind == knowledge.KindHost && st.Name != "" && !inStack[st.Name] {
+					seen[st.Name] = true
+				}
+			}
 		}
 	}
 	for n := range seen {

@@ -556,7 +556,7 @@ func hitsEndpoint(w string) bool {
 		return true
 	}
 	norm := normalizeURLWord(w)
-	for _, ep := range []string{"/api/run", "/api/actions", "/api/learn", "/api/secrets", "/api/live"} {
+	for _, ep := range []string{"/api/run", "/api/actions", "/api/learn", "/api/secrets", "/api/live", "/api/env"} {
 		if strings.Contains(w, ep) || strings.Contains(norm, ep) {
 			return true
 		}

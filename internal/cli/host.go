@@ -209,7 +209,7 @@ func redactedArgv(instanceDir string, argv []string) []string {
 	if m == nil {
 		return maskEnvArgs(append([]string{}, argv...))
 	}
-	return maskEnvArgs(redactArgv(argv, lifecycle.SecretsForRedaction(m)))
+	return maskEnvArgs(redactArgv(argv, lifecycle.SecretsForRedaction(instanceDir, m)))
 }
 
 func redactArgv(argv []string, secrets []redact.Secret) []string {

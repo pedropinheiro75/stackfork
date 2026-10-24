@@ -46,6 +46,13 @@ func SetEnvOverrides(instanceDir, service string, set map[string]string, unset [
 			return fmt.Errorf("%s looks like a secret; store it with stackfork secret and let the service read the reference", n)
 		}
 	}
+	if vault := vaultInterpolated(instanceDir, m, service); len(vault) > 0 {
+		for _, n := range names {
+			if vault[n] {
+				return fmt.Errorf("%s gets its value from a secret of this instance; change that secret under Settings → Secrets (stackfork secret map)", n)
+			}
+		}
+	}
 	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
 	if err != nil {
 		return err
@@ -66,6 +73,39 @@ func SetEnvOverrides(instanceDir, service string, set map[string]string, unset [
 		}
 	}
 	return o.Write(instanceDir)
+}
+
+// vaultInterpolated are the names of a container service whose snapshot value
+// interpolates a secret of the instance (`${NPM_TOKEN}`): an override would
+// hide the reference, so they are not overridable.
+func vaultInterpolated(instanceDir string, m *state.Manifest, service string) map[string]bool {
+	b, err := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
+	if err != nil || m == nil {
+		return nil
+	}
+	parsed, err := compose.DecodeJSON(b)
+	if err != nil {
+		return nil
+	}
+	top, _ := parsed.(map[string]any)
+	svcs, _ := top["services"].(map[string]any)
+	cfg, ok := svcs[service].(map[string]any)
+	if !ok {
+		return nil
+	}
+	vault := map[string]bool{}
+	for n := range m.ResolvedSecrets() {
+		for _, a := range compose.SecretEnvAliases(n) {
+			vault[a] = true
+		}
+	}
+	out := map[string]bool{}
+	for k, v := range projectEnv(cfg, m.Root, vault) {
+		if v.vault && v.origin == "project" {
+			out[k] = true
+		}
+	}
+	return out
 }
 
 // ClearEnvOverrides removes the overrides of one service, or of every service
@@ -121,9 +161,14 @@ type EnvService struct {
 }
 
 var (
-	urlPassword = regexp.MustCompile(`(://[^:/@\s]+:)[^@/\s]+@`)
+	urlPassword = regexp.MustCompile(`(://[^:/@\s]*:)\S*@`)
 	varRef      = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)[^}]*\}`)
 )
+
+// maskURLPassword hides the password of every user:password@host in s. The
+// password runs to the last @ of its word, so a password that holds a / or an
+// @ is hidden whole.
+func maskURLPassword(s string) string { return urlPassword.ReplaceAllString(s, "${1}****@") }
 
 // EnvView reads the environment every service of the instance receives
 // (add-env-overrides D6): the snapshot's environment, the names of its
@@ -181,7 +226,7 @@ func EnvView(instanceDir string) ([]EnvService, error) {
 			secretName := SecretLikeEnvName(m, n)
 			pMasked := hasP && (secretName || p.vault)
 			if hasP && !pMasked {
-				s := urlPassword.ReplaceAllString(p.value, "${1}****@")
+				s := maskURLPassword(p.value)
 				v.Default = &s
 			}
 			if val, ok := ov[n]; ok {

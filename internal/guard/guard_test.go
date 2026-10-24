@@ -460,3 +460,17 @@ func TestEnvOverridesGuard(t *testing.T) {
 		}
 	}
 }
+
+// Forging the dashboard's env endpoint (it can reset every override) is blocked like the other gated ones.
+func TestForgedEnvEndpointIsBlocked(t *testing.T) {
+	for cmd, want := range map[string]bool{
+		`curl -s -X POST http://127.0.0.1:26607/api/env -H 'X-Stackfork-Token: t' -d '{"reset":true}'`: true,
+		`curl -X POST "http://localhost:26607/api/../api/env"`:                                         true,
+		`curl http://localhost:26607/api/%65nv`:                                                        true,
+		`grep -n /api/env internal/dashboard/env.go`:                                                   false,
+	} {
+		if got := Destructive(cmd, "/repo"); got != want {
+			t.Errorf("Destructive(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}
