@@ -119,7 +119,7 @@ func LocalDocker() error {
 	return nil
 }
 
-// Execute runs one lifecycle action (up, down, restart, start, stop, run or
+// Execute runs one lifecycle action (up, apply, down, restart, start, stop, run or
 // exec) on an
 // instance: the same guards, the same docker compose invocation shape, the
 // same proxy reload afterward, whoever calls it (the CLI subcommand or a
@@ -134,7 +134,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 	}
 
 	configPath := filepath.Join(instanceDir, "compose.json")
-	if action == "up" || action == "run" || action == "exec" || action == "restart" || action == "start" || action == "stop" {
+	if action == "up" || action == "apply" || action == "run" || action == "exec" || action == "restart" || action == "start" || action == "stop" {
 		configData, err := os.ReadFile(configPath)
 		if err != nil {
 			return 0, err
@@ -171,7 +171,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 
 	var secretEnv map[string]string // for the one docker compose child (design D9)
 	var resolved SecretValues       // what this call resolved itself, for redacting run output
-	if action == "up" || action == "run" {
+	if action == "up" || action == "apply" || action == "run" {
 		// Named secrets (task 6.1, design.md D6): resolve each reference
 		// into its value now, not at prepare, so a rotated env var or
 		// npmrc token is picked up without re-preparing. The value goes
@@ -228,7 +228,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		}
 	}
 
-	if action == "up" {
+	if action == "up" || action == "apply" {
 		if err := refuseBusyRecordedPorts(info.Ports, project); err != nil {
 			return 0, err
 		}
@@ -243,6 +243,18 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 
 	dockerCommand := []string{"compose", "-p", project, "--project-directory", root,
 		"--env-file", os.DevNull, "-f", configPath}
+	switch action {
+	case "up", "apply", "run", "exec", "start", "restart":
+		// Overrides ride in a second file, so the snapshot and its hash stay
+		// as prepared (add-env-overrides D2). No overrides: no file, no -f.
+		derived, err := derivedOverrides(instanceDir)
+		if err != nil {
+			return 0, err
+		}
+		if derived != "" {
+			dockerCommand = append(dockerCommand, "-f", derived)
+		}
+	}
 
 	switch action {
 	case "up":
@@ -258,6 +270,20 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 			dockerCommand = append(dockerCommand, "--build")
 		}
 		dockerCommand = append(dockerCommand, opts.Services...)
+	case "apply":
+		hasService, err := serviceInSnapshot(configPath, opts.Service)
+		if err != nil {
+			return 0, err
+		}
+		if opts.Service == "" || !hasService {
+			return 0, errors.New("Specify a service in this snapshot")
+		}
+		waitTimeout := opts.WaitTimeout
+		if waitTimeout == 0 {
+			waitTimeout = 180
+		}
+		// Only this service: its environment changed, nothing else may restart or block the wait.
+		dockerCommand = append(dockerCommand, "up", "-d", "--no-deps", "--wait", "--wait-timeout", strconv.Itoa(waitTimeout), opts.Service)
 	case "down":
 		dockerCommand = append(dockerCommand, "--profile", "*", "down", "--remove-orphans")
 		if opts.Volumes {
@@ -347,7 +373,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 	// so the proxy's Caddyfile is stale until reloaded from every
 	// manifest. Best effort: a reload problem (or the proxy simply not
 	// running) never fails the action itself.
-	if runErr == nil && (action == "up" || action == "down" || action == "start" || action == "stop") {
+	if runErr == nil && (action == "up" || action == "apply" || action == "down" || action == "start" || action == "stop") {
 		ReloadProxyIfRunning(stderr, newStateBase, legacyStateBase)
 	}
 

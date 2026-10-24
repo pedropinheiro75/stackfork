@@ -167,7 +167,7 @@ func OutputSecrets(instanceDir string, info *state.Manifest, resolved SecretValu
 			}
 		}
 	}
-	return values.Redactions()
+	return append(values.Redactions(), EnvOverrideSecrets(instanceDir)...)
 }
 
 // cacheKey names an instance directory however the state dir was spelled.

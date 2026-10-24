@@ -170,7 +170,7 @@ func (p ResetPreview) Describe() string {
 // resetDown is the `down` step of a reset: containers, networks and volumes
 // go, and the seeded marker is cleared so the data step runs on the new
 // database. An instance that was never prepared has nothing to remove.
-func resetDown(rec *runs.Run, root, branch, project, instanceDir, newBase, legacyBase string) error {
+func resetDown(rec *runs.Run, clearEnv bool, root, branch, project, instanceDir, newBase, legacyBase string) error {
 	st := rec.Step("down", "down", "remove the containers and delete the volumes")
 	if _, err := os.Stat(filepath.Join(instanceDir, "manifest.json")); err != nil {
 		st.Skip("nothing prepared")
@@ -190,9 +190,30 @@ func resetDown(rec *runs.Run, root, branch, project, instanceDir, newBase, legac
 	}
 	if err == nil {
 		lifecycle.SetSeeded(instanceDir, nil)
+		keepOrDropEnvOverrides(w, instanceDir, clearEnv)
 	}
 	st.End(err, code)
 	return err
+}
+
+// keepOrDropEnvOverrides is the env override half of a reset (add-env-overrides
+// D4): the overrides stay, and the log says how many, unless clearEnv drops them.
+func keepOrDropEnvOverrides(w io.Writer, instanceDir string, clearEnv bool) {
+	o, err := state.ReadEnvOverrides(instanceDir)
+	if err != nil || o.Count() == 0 {
+		return
+	}
+	n := o.Count()
+	if !clearEnv {
+		fmt.Fprintf(w, "keeping %d env overrides (stackfork env overrides --clear to drop)\n", n)
+		return
+	}
+	o.Services = map[string]map[string]string{}
+	if err := o.Write(instanceDir); err != nil {
+		fmt.Fprintf(w, "could not drop the env overrides: %v\n", err)
+		return
+	}
+	fmt.Fprintf(w, "dropped %d env overrides\n", n)
 }
 
 // resetPrepareArgs are the prepare args of a reset: the files and env file
@@ -235,6 +256,7 @@ func cmdReset(stdout, stderr io.Writer, subArgs []string, checkout, newBase, leg
 	fs := newFlagSet(stdout, "reset")
 	yes := fs.Bool("yes", false, "delete without asking, and go on with the current code when it cannot be updated")
 	fromMain := fs.Bool("from-main", false, "rebuild this worktree from the main checkout's recipe: its untracked adapter files move to .stackfork-aside first")
+	clearEnv := fs.Bool("clear-env", false, "also drop this instance's env overrides (they are kept by default)")
 	if err := fs.Parse(subArgs); err != nil {
 		return parseFailure(fs, err)
 	}
@@ -273,6 +295,6 @@ func cmdReset(stdout, stderr io.Writer, subArgs []string, checkout, newBase, leg
 	}
 	return 0, StartEnv(stdout, stderr, StartOptions{
 		Checkout: pv.Root, NewStateBase: newBase, LegacyStateBase: legacyBase,
-		Global: global, ProfileDirs: profiles, Reset: true, Current: current, FromMain: *fromMain, Fingerprint: pv.Fingerprint,
+		Global: global, ProfileDirs: profiles, Reset: true, ClearEnv: *clearEnv, Current: current, FromMain: *fromMain, Fingerprint: pv.Fingerprint,
 	})
 }

@@ -140,7 +140,7 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	for _, e := range portEnv {
 		extra = append(extra, e+"="+p)
 	}
-	env := hostEnviron(block, extra...)
+	env := hostChildEnv(instanceDir, name, block, extra...)
 
 	if err := checkHostArgv(command); err != nil {
 		return 0, err
@@ -236,6 +236,17 @@ func hostEnviron(block string, extra ...string) []string {
 		}
 	}
 	return append(append(env, extra...), guard.HostRunEnv+"=1")
+}
+
+// hostChildEnv is hostEnviron with the app's env overrides after the block and
+// before extra, so an override beats the block and the inherited environment
+// but not the PORT the route depends on (add-env-overrides D2). A file that
+// cannot be read adds nothing: the app starts as the project defines it.
+func hostChildEnv(instanceDir, name, block string, extra ...string) []string {
+	if o, err := state.ReadEnvOverrides(instanceDir); err == nil {
+		extra = append(o.Pairs(name), extra...)
+	}
+	return hostEnviron(block, extra...)
 }
 
 // checkHostArgv applies checkBatchArgs on Windows, where cmd.exe would

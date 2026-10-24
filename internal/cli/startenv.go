@@ -44,6 +44,7 @@ type StartOptions struct {
 	Reset           bool             // throw the environment away and start it from zero (command reset)
 	Fingerprint     string           // FromMain: the confirmed recipe and move list; the run refuses when they changed
 	FromMain        bool             // Reset: prepare with the main checkout's recipe, the worktree's own adapter files moved aside
+	ClearEnv        bool             // Reset: also drop the instance's env overrides
 	Current         bool             // Reset: go on with the current code when it is behind and cannot be updated
 	Live            *live.Job        // a live reconcile: run only the steps of this job (command live, trigger live)
 	Observer        func(runs.Event) // receives the run's state changes, may be nil
@@ -277,7 +278,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 	defer runValues.Delete(inRunKey(instanceDir))
 
 	if o.Reset {
-		if err := resetDown(rec, root, branch, project, instanceDir, o.NewStateBase, o.LegacyStateBase); err != nil {
+		if err := resetDown(rec, o.ClearEnv, root, branch, project, instanceDir, o.NewStateBase, o.LegacyStateBase); err != nil {
 			return err
 		}
 	}
