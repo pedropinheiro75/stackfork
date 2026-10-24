@@ -95,7 +95,9 @@ func TestStartHostAppsRestartsRecordedAppsThatAreDown(t *testing.T) {
 	}
 }
 
-func TestStartHostAppsStartsNothingInContainerMode(t *testing.T) {
+// Container mode runs no plan host step, but a recorded server that ended by
+// itself comes back unless the stack has a container of the same name.
+func TestStartHostAppsInContainerModeRestartsOnlyRecordedAppsOutsideTheStack(t *testing.T) {
 	plan := knowledge.Plan{Steps: []knowledge.Step{{ID: "ui", Kind: knowledge.KindHost, Name: "ui", Cmd: "bun dev"}}}
 	base, main := t.TempDir(), t.TempDir()
 	if _, err := TrustHere(base, main, plan); err != nil {
@@ -105,8 +107,19 @@ func TestStartHostAppsStartsNothingInContainerMode(t *testing.T) {
 	if err := StartHostApps(rec, io.Discard, nil, "/r", main, dir, base, "", knowledge.ModeContainer, plan); err != nil {
 		t.Fatal(err)
 	}
-	if len(*started) != 0 || len(*restarted) != 0 {
-		t.Errorf("container mode starts no host app: restarted %v started %v", *restarted, *started)
+	if len(*started) != 0 || len(*restarted) != 1 || (*restarted)[0] != "api" {
+		t.Errorf("container mode: restarted %v started %v", *restarted, *started)
+	}
+
+	dir, rec, restarted, started = hostAppsEnv(t)
+	if err := os.WriteFile(filepath.Join(dir, "compose.json"), []byte(`{"services":{"api":{"image":"node:22"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := StartHostApps(rec, io.Discard, nil, "/r", main, dir, base, "", knowledge.ModeContainer, plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(*started)+len(*restarted) != 0 {
+		t.Errorf("a container of the same name runs instead: restarted %v started %v", *restarted, *started)
 	}
 }
 

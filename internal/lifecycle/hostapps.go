@@ -13,8 +13,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
-// StartHostApps is the host half of `up` for a hybrid instance. In hybrid
-// mode only:
+// StartHostApps is the host half of `up`. In hybrid mode:
 //   - a host step of the plan that is not running starts through `host start`
 //     (HostStart), with the plan's command even when an older run recorded
 //     another, unless a person stopped that app;
@@ -28,8 +27,14 @@ import (
 // runs only on a machine that approved the plan. Call it with the instance
 // lock released, because the supervisor takes that lock.
 func StartHostApps(rec *runs.Run, out io.Writer, base []string, root, main, instanceDir, newBase, legacyBase, mode string, plan knowledge.Plan) error {
-	if mode != knowledge.ModeHybrid {
-		return nil
+	hybrid := mode == knowledge.ModeHybrid
+	// Outside hybrid mode a recorded app still comes back, unless the stack
+	// runs a container of the same name (it would run twice).
+	inStack := map[string]bool{}
+	if !hybrid {
+		for _, n := range SnapshotServices(instanceDir) {
+			inStack[n] = true
+		}
 	}
 	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
 	type app struct {
@@ -48,12 +53,15 @@ func StartHostApps(rec *runs.Run, out io.Writer, base []string, root, main, inst
 	if m != nil {
 		for n := range m.HostProcs {
 			recorded[n] = true
+			if inStack[n] {
+				continue
+			}
 			apps = append(apps, app{name: n, step: planned[n]})
 		}
 	}
 	sort.Slice(apps, func(i, j int) bool { return apps[i].name < apps[j].name })
 	for i, s := range run {
-		if s.Kind == knowledge.KindHost && !recorded[s.Name] {
+		if hybrid && s.Kind == knowledge.KindHost && !recorded[s.Name] {
 			apps = append(apps, app{name: s.Name, step: &run[i]})
 		}
 	}
