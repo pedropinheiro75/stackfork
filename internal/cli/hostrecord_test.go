@@ -49,3 +49,31 @@ func TestHostWritesRecordOnStartAndExit(t *testing.T) {
 		t.Errorf("mode %v", fi.Mode())
 	}
 }
+
+func TestHostLsListsStateAndExit(t *testing.T) {
+	root, stateDir, project, psLine := envSetup(t, hostFixture)
+	t.Setenv("DOCKER_FAKE_PS", psLine+"\n")
+	g := []string{"--root", root, "--state-dir", stateDir}
+	if out, _, code := runCLI(t, append(g, "host", "ls")...); code != 0 || !strings.Contains(out, "no host apps") {
+		t.Fatalf("empty: %d %q", code, out)
+	}
+	runCLI(t, append(g, "host", "app", "--", "sh", "-c", "exit 3")...)
+	// runCLI runs in this process, which outlives the command; a real stackfork has exited by now
+	mp := filepath.Join(stateDir, project, "manifest.json")
+	m := readManifestAt(t, stateDir, project)
+	p := m.HostProcs["app"]
+	p.PID, p.StartedAt = 999999, "1970-01-01T00:00:00Z"
+	m.HostProcs["app"] = p
+	if err := state.WritePrivate(mp, m); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, code := runCLI(t, append(g, "host", "ls")...)
+	if code != 0 {
+		t.Fatalf("ls: %d %s", code, stderr)
+	}
+	for _, w := range []string{"NAME", "STATE", "app", "exited", "exited 3 at "} {
+		if !strings.Contains(out, w) {
+			t.Errorf("ls lacks %q:\n%s", w, out)
+		}
+	}
+}

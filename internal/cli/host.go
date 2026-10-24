@@ -34,7 +34,7 @@ import (
 
 var hostNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-const hostUsage = "usage: host <name> [--port N] -- <command...> | host start <name> [--port N] -- <command...> | host stop|restart <name> | host logs <name> [-f]"
+const hostUsage = "usage: host <name> [--port N] -- <command...> | host start <name> [--port N] -- <command...> | host stop|restart <name> | host logs <name> [-f] | host ls"
 
 func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string) (int, error) {
 	if hostUnsupported != nil {
@@ -46,7 +46,7 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	if len(subArgs) > 0 && !supervise {
 		switch subArgs[0] {
-		case "stop", "restart", "logs":
+		case "stop", "restart", "logs", "ls":
 			return cmdHostManage(stdout, stderr, subArgs[0], subArgs[1:], root, branch, project, instanceDir, newStateBase, legacyStateBase)
 		}
 	}

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/state"
@@ -159,6 +160,9 @@ func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, inst
 
 // cmdHostManage runs host stop|restart|logs NAME.
 func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, branch, project, instanceDir, newBase, legacyBase string) (int, error) {
+	if sub == "ls" {
+		return hostLs(stdout, args, instanceDir)
+	}
 	follow := false
 	var name string
 	for _, a := range args {
@@ -232,4 +236,29 @@ func hostLogs(stdout io.Writer, m *state.Manifest, instanceDir, name string, fol
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
+}
+
+// hostLs prints each recorded host app: state, port, and the dashboard's
+// summary (pid, memory, CPU, uptime, or how it exited).
+func hostLs(stdout io.Writer, args []string, instanceDir string) (int, error) {
+	if len(args) > 0 {
+		return 2, errors.New(hostUsage)
+	}
+	m, err := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+	if err != nil {
+		return 0, err
+	}
+	if m == nil {
+		return 0, errors.New("No prepared stack for this checkout/branch. Run prepare first.")
+	}
+	apps := inventory.HostApps(m, instanceDir)
+	if len(apps) == 0 {
+		fmt.Fprintln(stdout, "no host apps")
+		return 0, nil
+	}
+	fmt.Fprintf(stdout, "%-16s %-8s %-6s %s\n", "NAME", "STATE", "PORT", "DETAIL")
+	for _, a := range apps {
+		fmt.Fprintf(stdout, "%-16s %-8s %-6d %s\n", a.Label, a.State, m.HostProcs[a.Label].Port, a.Meta)
+	}
+	return 0, nil
 }

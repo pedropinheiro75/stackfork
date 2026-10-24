@@ -170,3 +170,9 @@ func uptime(d time.Duration) string {
 	}
 	return fmt.Sprintf("%dd", int(d.Hours())/24)
 }
+
+// HostApps lists the host apps recorded in m (instanceDir is its directory),
+// with the same state and meta line the dashboard shows. It runs ps once.
+func HostApps(m *state.Manifest, instanceDir string) []Service {
+	return hostServices(m, instanceDir, &psSnapshot{})
+}
