@@ -123,7 +123,9 @@ func TestOpenAppScriptAgrees(t *testing.T) {
 		lists = append(lists, pick{Apps: apps})
 	}
 	route := inventory.AppLink{Label: "App", Source: "route", Running: true, URL: "http://r"}
-	lists = append(lists, pick{Apps: []inventory.AppLink{mail, svc}, None: true}, pick{Apps: []inventory.AppLink{svc, route}, None: true})
+	api := inventory.AppLink{Label: "api", Source: "route", Running: true, URL: "http://api"}
+	lists = append(lists, pick{Apps: []inventory.AppLink{mail, svc}, None: true}, pick{Apps: []inventory.AppLink{svc, route}, None: true},
+		pick{Apps: []inventory.AppLink{api, route}}, pick{Apps: []inventory.AppLink{api}}, pick{Apps: []inventory.AppLink{api, route}, None: true}, pick{Apps: []inventory.AppLink{api}, None: true})
 	dir := t.TempDir()
 	in, out := filepath.Join(dir, "in.json"), filepath.Join(dir, "out.json")
 	b, _ := json.Marshal(lists)

@@ -507,7 +507,7 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 	primaryService, primaryTarget, primaryHTTPS, hasPrimary := compose.PrimaryHTTPService(model)
 	// The recorded entry (or the host route) replaces the guess (entry-links D6).
 	k, kerr := knowledge.LoadForCheckout(info.Root)
-	entry := knowledge.ResolveEntry(k, model, info.Routes)
+	entry := knowledge.ResolveEntryFor(k, model, info)
 	inPlay := k != nil && k.Entry != nil && !k.Entry.Proposed
 	if inPlay && entry.Source != knowledge.SourceHostRoute {
 		primaryService, primaryTarget, primaryHTTPS, hasPrimary = entry.Service, entry.Port, entry.HTTPS, entry.OK

@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +30,7 @@ type Resolved struct {
 	Service string // Compose service; "" for a host route or none
 	Port    int    // container port; for a host route, the host port
 	HTTPS   bool
+	HostApp string // for a host route: the name of the host app it points to
 	Path    string // "/" by default
 	// OK is true when the entry has a target a URL can be built for. A
 	// recorded target the stack lacks, `none` and a failed guess are not OK.
@@ -47,6 +47,7 @@ type ResolvedLink struct {
 	Service string
 	Port    int
 	HTTPS   bool
+	HostApp string // for a host route: the name of the host app it points to
 	Path    string
 	OnEntry bool
 	OK      bool
@@ -57,8 +58,12 @@ type ResolvedLink struct {
 // entry's service and port, else a recorded entry (never replaced by a
 // guess when the stack lacks it), else `none`, else the primary-service
 // heuristic. k may be nil. hostRoutes is the manifest's Routes (name to
-// host port); the first by name wins, as the proxy has always done.
+// host port); PickHostApp chooses among several.
 func ResolveEntry(k *Knowledge, model interface{}, hostRoutes map[string]int) Resolved {
+	return resolveEntry(k, model, hostRoutes, nil)
+}
+
+func resolveEntry(k *Knowledge, model interface{}, hostRoutes map[string]int, hostCmds map[string][]string) Resolved {
 	var e *Entry
 	var links []Link
 	if k != nil {
@@ -76,12 +81,8 @@ func ResolveEntry(k *Knowledge, model interface{}, hostRoutes map[string]int) Re
 	}
 	switch {
 	case len(hostRoutes) > 0:
-		names := make([]string, 0, len(hostRoutes))
-		for n := range hostRoutes {
-			names = append(names, n)
-		}
-		sort.Strings(names)
-		r.Source, r.Port, r.OK = SourceHostRoute, hostRoutes[names[0]], true
+		r.HostApp = PickHostApp(k, hostRoutes, hostCmds)
+		r.Source, r.Port, r.OK = SourceHostRoute, hostRoutes[r.HostApp], true
 	case e != nil && e.None:
 		r.Source = SourceNone
 	case e != nil && !e.Proposed:

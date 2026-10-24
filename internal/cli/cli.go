@@ -867,7 +867,7 @@ func cmdStatusURLs(stdout, stderr io.Writer, action string, subArgs []string, ro
 		if kerr != nil {
 			fmt.Fprintf(stderr, "stackfork: warning: knowledge cannot be loaded: %s\n", kerr)
 		}
-		entry := knowledge.ResolveEntry(k, model, info.Routes)
+		entry := knowledge.ResolveEntryFor(k, model, info)
 		where := knowledge.Where{Hostname: hostname, Rows: rows, Stable: info.Ports}
 		// Task 9.4, design.md D7 layer 3: once the shared proxy is running
 		// and actually publishing this instance's primary HTTP service, that

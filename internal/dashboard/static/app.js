@@ -264,14 +264,14 @@
     }
     if (none) {
       for (i = 0; i < list.length; i++) {
-        if (list[i].source === "route" && isWebUrl(list[i].url) && list[i].running) return list[i];
+        if (list[i].source === "route" && list[i].label === "App" && isWebUrl(list[i].url) && list[i].running) return list[i];
       }
       return null;
     }
     var labels = ["App", ""];
     for (var j = 0; j < labels.length; j++) {
       for (i = 0; i < list.length; i++) {
-        if (list[i].source !== "link" && isWebUrl(list[i].url) && list[i].running && (!labels[j] || list[i].label === labels[j])) return list[i];
+        if (list[i].source !== "link" && !(list[i].source === "route" && list[i].label !== "App") && isWebUrl(list[i].url) && list[i].running && (!labels[j] || list[i].label === labels[j])) return list[i];
       }
     }
     return null;

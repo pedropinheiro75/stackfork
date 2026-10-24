@@ -355,3 +355,42 @@ func TestBuildEnvBlockPrefersProxiedServiceURL(t *testing.T) {
 		t.Errorf("expected only the proxied address, direct one leaked into the block: %q", block)
 	}
 }
+
+// Two host apps: the frontend is "the app" for the chip and Open App, the
+// other chip carries its own name, and every URL has the instance hostname.
+func TestAppsTwoHostAppsPickTheFrontend(t *testing.T) {
+	installFakeDocker(t)
+	newBase := t.TempDir()
+	root := gitRepo(t, "main")
+	project := "sf-twohosts-1"
+	writeAppsFixture(t, newBase, project, root, &state.Manifest{
+		Routes: map[string]int{"api": 27882, "app": 28605},
+		HostProcs: map[string]state.HostProc{
+			"api": {Port: 27882, Cmdline: []string{"stackfork", "host", "--supervise", "api", "--", "node", "--import=tsx", "src/app.ts"}},
+			"app": {Port: 28605, Cmdline: []string{"stackfork", "host", "--supervise", "app", "--", "node", "/r/node_modules/vite/bin/vite.js", "--host", "0.0.0.0"}},
+		},
+	}, map[string]interface{}{"services": map[string]interface{}{"keepalive": map[string]interface{}{"image": "alpine:3.20"}}})
+	inst := collectOne(t, newBase)
+	got := map[string]string{}
+	for _, a := range inst.Apps {
+		if a.Source == "route" {
+			got[a.Label] = a.URL
+		}
+	}
+	h := inst.Hostname
+	if len(got) != 2 || got["App"] != "http://"+h+":28605" || got["api"] != "http://"+h+":27882" {
+		t.Fatalf("route chips %v", got)
+	}
+	app, err := OpenApp(inst.Apps, false, false)
+	if err != nil || app.URL != "http://"+h+":28605" {
+		t.Errorf("Open App: %+v %v", app, err)
+	}
+	if app, err := OpenApp(inst.Apps, true, false); err != nil || app.URL != "http://"+h+":28605" {
+		t.Errorf("Open App with entry none: %+v %v", app, err)
+	}
+	// without a pick that stands out nothing is "the app" by accident: the API alone is never opened as App
+	only := []AppLink{{Label: "api", Source: "route", URL: "http://x:1", Running: true}}
+	if a, err := OpenApp(only, false, false); err == nil {
+		t.Errorf("a named host app chip is not picked as the app: %+v", a)
+	}
+}

@@ -18,6 +18,9 @@ const entryRoutePS = `{"ID":"a","Name":"web-1","Service":"web","State":"running"
 {"ID":"b","Name":"nginx-1","Service":"nginx","State":"running","Health":"","Publishers":[{"Protocol":"tcp","PublishedPort":48000,"TargetPort":80}]}
 `
 
+// routeHostProcs are the host apps routeForRaw records (a test sets and clears it).
+var routeHostProcs map[string]state.HostProc
+
 // routeFor builds one instance (manifest, snapshot, optional knowledge) with a
 // fake docker that reports both services running, and returns the target the
 // proxy would route its hostname to ("" for no route).
@@ -58,7 +61,7 @@ func routeForRaw(t *testing.T, k *knowledge.Knowledge, routes map[string]int, ra
 	if err := os.WriteFile(filepath.Join(dir, "compose.json"), []byte(entryRouteModel), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	m := state.Manifest{Project: "sf-acme-web-1f", Root: root, Branch: "main", Routes: routes}
+	m := state.Manifest{Project: "sf-acme-web-1f", Root: root, Branch: "main", Routes: routes, HostProcs: routeHostProcs}
 	if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {
 		t.Fatal(err)
 	}
@@ -108,5 +111,19 @@ func TestInstanceRouteLogsBrokenKnowledge(t *testing.T) {
 	routeForRaw(t, nil, nil, "{nope")
 	if !strings.Contains(buf.String(), "knowledge cannot be loaded") {
 		t.Fatalf("log %q", buf.String())
+	}
+}
+
+// With several host apps the proxy routes the hostname to the frontend, the
+// same app the App chip and Open App choose.
+func TestGatherRoutesPicksTheFrontendHostApp(t *testing.T) {
+	routeHostProcs = map[string]state.HostProc{
+		"api": {Cmdline: []string{"stackfork", "host", "--supervise", "api", "--", "node", "--import=tsx", "src/app.ts"}},
+		"app": {Cmdline: []string{"stackfork", "host", "--supervise", "app", "--", "node", "/r/node_modules/vite/bin/vite.js", "--host", "0.0.0.0"}},
+	}
+	t.Cleanup(func() { routeHostProcs = nil })
+	got := routeFor(t, nil, map[string]int{"api": 27882, "app": 28605})
+	if !strings.HasSuffix(got, ":28605") {
+		t.Errorf("target %q, want the frontend on 28605", got)
 	}
 }

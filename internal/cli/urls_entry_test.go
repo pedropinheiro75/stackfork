@@ -121,3 +121,25 @@ func TestURLsBrokenKnowledgeWarns(t *testing.T) {
 		t.Fatalf("%q %q", out, stderr)
 	}
 }
+
+// Two host apps: urls names the frontend as the app, not the first by name.
+func TestURLsPicksTheFrontendHostApp(t *testing.T) {
+	v := newVerifyEnv(t, 4001, 4002, nil, nil)
+	manifests, _ := filepath.Glob(filepath.Join(v.flags[1], "*", "manifest.json"))
+	if len(manifests) == 0 {
+		manifests, _ = filepath.Glob(filepath.Join(v.flags[1], "*", "*", "manifest.json"))
+	}
+	m, _ := state.ReadManifest(manifests[0])
+	m.Routes = map[string]int{"api": 27882, "app": 28605}
+	m.HostProcs = map[string]state.HostProc{
+		"api": {Cmdline: []string{"stackfork", "host", "--supervise", "api", "--", "node", "--import=tsx", "src/app.ts"}},
+		"app": {Cmdline: []string{"stackfork", "host", "--supervise", "app", "--", "node", "/r/node_modules/vite/bin/vite.js", "--host", "0.0.0.0"}},
+	}
+	data, _ := json.Marshal(m)
+	os.WriteFile(manifests[0], data, 0o600)
+	t.Setenv("DOCKER_FAKE_STATUS", `{"ID":"c-mail","Name":"mail-1","Service":"mail","State":"running","Health":"","Publishers":[{"Protocol":"tcp","PublishedPort":4002,"TargetPort":80,"URL":"127.0.0.1"}]}`+"\n")
+	out, _ := urlsOut(t, v)
+	if want := fmt.Sprintf("App: http://%s:28605 (entry via the host route)\n", v.host); !strings.HasPrefix(out, want) {
+		t.Fatalf("got:\n%s\nwant prefix:\n%s", out, want)
+	}
+}

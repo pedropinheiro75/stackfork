@@ -120,15 +120,24 @@ func appendRouteAndKnowledgeApps(apps []AppLink, info *state.Manifest, hostname 
 	for _, a := range apps {
 		entryShown = entryShown || a.Source == "entry"
 	}
-	if len(info.Routes) > 0 && !entryShown {
+	if len(info.Routes) > 0 {
 		names := make([]string, 0, len(info.Routes))
 		for name := range info.Routes {
 			names = append(names, name)
 		}
 		sort.Strings(names)
+		hk, _ := knowledge.LoadForCheckout(info.Root)
+		picked := knowledge.PickHostApp(hk, info.Routes, knowledge.HostCommands(info))
 		for _, name := range names {
+			label := name
+			if name == picked {
+				if entryShown {
+					continue
+				}
+				label = "App"
+			}
 			apps = append(apps, AppLink{
-				Label: "App", URL: fmt.Sprintf("http://%s:%d", hostOr(hostname), info.Routes[name]),
+				Label: label, URL: fmt.Sprintf("http://%s:%d", hostOr(hostname), info.Routes[name]),
 				Source: "route", Running: true,
 			})
 		}
@@ -359,7 +368,7 @@ func OpenApp(apps []AppLink, none, needRunning bool) (*AppLink, error) {
 	if none {
 		// A host route still wins over none, as in knowledge.ResolveEntry.
 		for i := range apps {
-			if apps[i].Source == "route" && ok(apps[i]) {
+			if apps[i].Source == "route" && apps[i].Label == "App" && ok(apps[i]) {
 				return &apps[i], nil
 			}
 		}
@@ -367,7 +376,8 @@ func OpenApp(apps []AppLink, none, needRunning bool) (*AppLink, error) {
 	}
 	for _, label := range []string{knowledge.ReservedLinkName, ""} {
 		for i := range apps {
-			if apps[i].Source != "link" && ok(apps[i]) && (label == "" || apps[i].Label == label) {
+			// a host app chip with its own name is not "the app": only the picked one is labelled App
+			if apps[i].Source != "link" && !(apps[i].Source == "route" && apps[i].Label != "App") && ok(apps[i]) && (label == "" || apps[i].Label == label) {
 				return &apps[i], nil
 			}
 		}

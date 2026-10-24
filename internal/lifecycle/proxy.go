@@ -159,7 +159,7 @@ func instanceRoute(info *state.Manifest, instanceDir, mode string) (proxy.Route,
 	if kerr != nil {
 		fmt.Fprintf(routeWarnings, "stackfork: warning: knowledge cannot be loaded: %s\n", kerr)
 	}
-	entry := knowledge.ResolveEntry(k, model, info.Routes)
+	entry := knowledge.ResolveEntryFor(k, model, info)
 	if !entry.OK {
 		return proxy.Route{}, false
 	}
