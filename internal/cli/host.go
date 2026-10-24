@@ -23,10 +23,12 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/guard"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
+	"github.com/pedropinheiro75/stackfork/internal/redact"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -139,6 +141,11 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		return 0, fmt.Errorf("could not start %q: %w", command[0], err)
 	}
 	started, _ := state.ProcStart(cmd.Process.Pid) // unreaped yet, so the pid is still ours
+	rec := state.HostRecord{Name: name, PID: cmd.Process.Pid, SupervisorPID: os.Getpid(), Argv: redactedArgv(instanceDir, command),
+		Cwd: workDir, Port: port, StartedAt: started}
+	if err := state.WriteHostRecord(instanceDir, rec); err != nil {
+		fmt.Fprintf(stderr, "stackfork: warning: could not write the host record: %v\n", err)
+	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	for {
@@ -146,9 +153,33 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		case sig := <-sigCh:
 			forwardSignal(cmd.Process, started, sig, supervise)
 		case err := <-done:
-			return exitCode(err)
+			code, cerr := exitCode(err)
+			if cerr == nil {
+				rec.ExitedAt, rec.ExitCode = time.Now().UTC().Format(time.RFC3339), &code
+				state.WriteHostRecord(instanceDir, rec) //nolint:errcheck // best effort: the dashboard then shows plain "exited"
+			}
+			return code, cerr
 		}
 	}
+}
+
+// redactedArgv is argv with the instance's resolved secret values replaced
+// (internal/redact), so the record never holds one.
+func redactedArgv(instanceDir string, argv []string) []string {
+	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+	if m == nil {
+		return append([]string{}, argv...)
+	}
+	secrets := lifecycle.SecretsForRedaction(m)
+	out := make([]string, len(argv))
+	for i, a := range argv {
+		var b strings.Builder
+		w := redact.NewWriter(&b, secrets)
+		w.Write([]byte(a)) //nolint:errcheck // strings.Builder cannot fail
+		w.Close()
+		out[i] = b.String()
+	}
+	return out
 }
 
 // hostEnviron is the environment of a command stackfork runs on the host for
