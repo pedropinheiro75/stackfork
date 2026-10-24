@@ -103,9 +103,13 @@ type Service struct {
 	Name string `json:"name"`
 	// Label is the text shown instead of Name when it differs (a host
 	// process row has the id "host:NAME" and the label NAME).
-	Label  string `json:"label,omitempty"`
-	State  string `json:"state"`
-	Health string `json:"health,omitempty"`
+	Label string `json:"label,omitempty"`
+	// Host and Meta are set on a host app row only: the process and how it
+	// ended, and the one-line summary the row prints under its name.
+	Host   *HostInfo `json:"host,omitempty"`
+	Meta   string    `json:"meta,omitempty"`
+	State  string    `json:"state"`
+	Health string    `json:"health,omitempty"`
 	// HealthDetail is the last health-check line of an unhealthy service.
 	HealthDetail string `json:"health_detail,omitempty"`
 	// WaitingFor lists the dependencies a StateWaiting service waits for.
@@ -298,8 +302,9 @@ func Collect(opts Options) (Inventory, error) {
 		}
 	}
 
+	snap := &psSnapshot{}
 	for _, e := range entries {
-		inst := buildInstance(e.path, e.legacy, byProject[filepath.Base(filepath.Dir(e.path))], inv.Proxy)
+		inst := buildInstance(e.path, e.legacy, byProject[filepath.Base(filepath.Dir(e.path))], inv.Proxy, snap)
 		inv.Instances = append(inv.Instances, inst)
 	}
 
@@ -335,7 +340,7 @@ func Collect(opts Options) (Inventory, error) {
 
 // buildInstance turns one manifest into an Instance, given the containers
 // (if any) already parsed for its Compose project.
-func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyStatus ProxyStatus) Instance {
+func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyStatus ProxyStatus, snap *psSnapshot) Instance {
 	project := filepath.Base(filepath.Dir(manifestPath))
 	info, err := state.ReadManifest(manifestPath)
 	if err != nil || info == nil {
@@ -373,9 +378,18 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		inst.Warnings = append(inst.Warnings, fmt.Sprintf("branch %s no longer exists in %s; run `stackfork gc`", info.Branch, info.Root))
 	default:
 		services, serviceState, apps, appWarnings := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
-		inst.Services = append(append([]Service{}, services...), hostServices(info)...)
+		hosts := hostServices(info, filepath.Dir(manifestPath), snap)
+		inst.Services = append(append([]Service{}, services...), hosts...)
 		inst.State = serviceState
 		inst.Warnings = append(inst.Warnings, serviceWarnings(project, services)...)
+		if serviceState == StateRunning {
+			for _, h := range hosts {
+				if h.State != "running" {
+					inst.State = StatePartial
+					inst.Warnings = append(inst.Warnings, fmt.Sprintf("host app %s is not running (%s); start it with `stackfork host restart %s` or Restart in the dashboard", h.Label, h.Meta, h.Label))
+				}
+			}
+		}
 		inst.Warnings = append(inst.Warnings, appWarnings...)
 		fillOneOffs(&inst, rows)
 		inst.Apps = appendRouteAndKnowledgeApps(apps, info)
@@ -1285,7 +1299,7 @@ const HostPrefix = "host:"
 // hostServices lists each recorded host process as a service row: running
 // only when the identity holds and the port answers, else exited. It uses
 // the manifest already loaded (no re-read per process).
-func hostServices(info *state.Manifest) []Service {
+func hostServices(info *state.Manifest, instanceDir string, snap *psSnapshot) []Service {
 	names := make([]string, 0, len(info.HostProcs))
 	for n := range info.HostProcs {
 		names = append(names, n)
@@ -1294,10 +1308,8 @@ func hostServices(info *state.Manifest) []Service {
 	var out []Service
 	for _, n := range names {
 		proc := info.HostProcs[n]
-		svc := Service{Name: HostPrefix + n, Label: n, Kind: "host", Image: "host", State: "exited"}
-		if proc.PID != 0 && state.HostIdentity(proc) && ports.Bound(proc.Port) {
-			svc.State = "running"
-		}
+		svc := Service{Name: HostPrefix + n, Label: n, Kind: "host", Image: "host"}
+		svc.State, svc.Host, svc.Meta = hostInspect(instanceDir, n, proc, snap, time.Now())
 		if proc.Port != 0 {
 			svc.Endpoints = []Endpoint{{Scheme: "http", URL: fmt.Sprintf("http://127.0.0.1:%d", proc.Port), Container: proc.Port, Known: true}}
 		}
