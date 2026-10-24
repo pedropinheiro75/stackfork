@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -79,12 +80,28 @@ func TestEnvPostRefusesWithoutTokenOrOrigin(t *testing.T) {
 
 func TestEnvPostSetAppliesOnlyThatServiceAsOneRun(t *testing.T) {
 	srv, host, project, dir := envServer(t, 55402)
+	log := filepath.Join(t.TempDir(), "docker.log")
+	t.Setenv("DOCKER_FAKE_LOG", log)
+	t.Setenv("DOCKER_FAKE_PS", project+"\n") // db runs
 	code, resp, raw := postEnv(t, srv, host, envReq{Project: project, Service: "db", Set: map[string]string{"ENABLE_X": "false"}}, nil)
 	if code != 200 || !resp.OK || resp.Run == 0 {
 		t.Fatalf("%d %s", code, raw)
 	}
 	if o, _ := state.ReadEnvOverrides(dir); o.Services["db"]["ENABLE_X"] != "false" {
 		t.Fatalf("not stored: %+v", o)
+	}
+	if resp.Message != "applied: db" {
+		t.Errorf("message %q", resp.Message)
+	}
+	logged, _ := os.ReadFile(log)
+	var ups []string
+	for _, l := range strings.Split(string(logged), "\n") {
+		if strings.HasPrefix(l, "compose ") && strings.Contains(l, " up ") {
+			ups = append(ups, l)
+		}
+	}
+	if len(ups) != 1 || !strings.HasSuffix(ups[0], " up -d --no-deps --wait --wait-timeout 180 db") || !strings.Contains(ups[0], "compose.env-overrides.json") {
+		t.Fatalf("expected one recreate of db only: %q", ups)
 	}
 	r, err := runs.Get(dir, resp.Run)
 	if err != nil || r.Command != "env" || len(r.Steps) != 1 || !strings.Contains(r.Steps[0].Text, "db") {
@@ -214,5 +231,29 @@ func TestEnvGetNeverCarriesAMaskedValue(t *testing.T) {
 	}
 	if rec := doRequest(srv, "GET", "/api/env?project=nope", host, nil); rec.Code != 400 {
 		t.Errorf("bad project: %d", rec.Code)
+	}
+}
+
+// The response says what really happened to each service (I3).
+func TestEnvPostReportsStoppedAndMissingContainers(t *testing.T) {
+	srv, host, project, dir := envServer(t, 55410)
+	log := filepath.Join(t.TempDir(), "docker.log")
+	t.Setenv("DOCKER_FAKE_LOG", log)
+	t.Setenv("DOCKER_FAKE_PS_ALL", project+"\n") // db exists, nothing runs
+	_, resp, raw := postEnv(t, srv, host, envReq{Project: project, Service: "db", Set: map[string]string{"A": "1"}}, nil)
+	if !resp.OK || resp.Message != "recreated (stopped): db" {
+		t.Fatalf("%s", raw)
+	}
+	logged, _ := os.ReadFile(log)
+	if !strings.Contains(string(logged), " up -d --no-deps --no-start db") {
+		t.Errorf("docker calls:\n%s", logged)
+	}
+	t.Setenv("DOCKER_FAKE_PS_ALL", "")
+	_, resp, raw = postEnv(t, srv, host, envReq{Project: project, Service: "db", Set: map[string]string{"B": "1"}}, nil)
+	if !resp.OK || resp.Message != "skipped: db (no container)" {
+		t.Fatalf("%s", raw)
+	}
+	if o, _ := state.ReadEnvOverrides(dir); o.Count() != 2 {
+		t.Errorf("overrides stay stored: %+v", o)
 	}
 }

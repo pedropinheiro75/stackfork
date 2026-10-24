@@ -118,8 +118,8 @@ func (s *Server) handleEnvPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var out bytes.Buffer
-	code, err := lifecycle.ApplyEnv(&out, TriggerDashboard, root, branch, req.Project, instanceDir, s.NewStateBase, s.LegacyStateBase, services)
-	resp := actionResponse{OK: err == nil && code == 0, Message: fmt.Sprintf("env overrides applied to %d service(s)", len(services))}
+	outcomes, code, err := lifecycle.ApplyEnvDetailed(&out, TriggerDashboard, root, branch, req.Project, instanceDir, s.NewStateBase, s.LegacyStateBase, services)
+	resp := actionResponse{OK: err == nil && code == 0, Message: lifecycle.DescribeEnvOutcomes(outcomes)}
 	if latest := runs.Latest(instanceDir); latest != nil {
 		resp.Run = latest.ID
 	}

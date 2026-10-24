@@ -35,7 +35,8 @@ type Options struct {
 	Services    []string
 	WaitTimeout int // up only; 0 means 180
 	Volumes     bool
-	Service     string   // restart/start/stop/run/exec
+	Service     string   // restart/start/stop/run/exec/apply
+	NoStart     bool     // apply only: recreate the service without starting it
 	Targets     []string // restart/start/stop: several services at once (Service is the first)
 	Command     []string // run/exec
 	// Secrets are the values the run's preflight resolved, by manifest name,
@@ -283,7 +284,11 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 			waitTimeout = 180
 		}
 		// Only this service: its environment changed, nothing else may restart or block the wait.
-		dockerCommand = append(dockerCommand, "up", "-d", "--no-deps", "--wait", "--wait-timeout", strconv.Itoa(waitTimeout), opts.Service)
+		if opts.NoStart { // a stopped service: new container, old state of "stopped"
+			dockerCommand = append(dockerCommand, "up", "-d", "--no-deps", "--no-start", opts.Service)
+		} else {
+			dockerCommand = append(dockerCommand, "up", "-d", "--no-deps", "--wait", "--wait-timeout", strconv.Itoa(waitTimeout), opts.Service)
+		}
 	case "down":
 		dockerCommand = append(dockerCommand, "--profile", "*", "down", "--remove-orphans")
 		if opts.Volumes {
@@ -328,7 +333,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		cmd.Env = compose.DockerEnv(secretEnv)
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
-		if action == "up" {
+		if action == "up" || action == "apply" {
 			upFailure.Reset()
 			cmd.Stderr = io.MultiWriter(stderr, &upFailure)
 		}
@@ -358,7 +363,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		cmd.Stdin = os.Stdin
 	}
 	runErr := cmd.Run()
-	if runErr != nil && action == "up" && RecoverStaleEndpoint(stderr, project, upFailure.String()) {
+	if runErr != nil && (action == "up" || action == "apply") && RecoverStaleEndpoint(stderr, project, upFailure.String()) {
 		cmd = newCmd()
 		cmd.Stdin = os.Stdin
 		runErr = cmd.Run() // once: a second failure is reported as it is

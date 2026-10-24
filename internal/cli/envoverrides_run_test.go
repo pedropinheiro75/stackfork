@@ -90,19 +90,96 @@ func TestApplyEnvHostAppSteps(t *testing.T) {
 	}
 }
 
-func TestApplyEnvDoesNotStartAStoppedService(t *testing.T) {
+func TestApplyEnvSkipsAServiceWithNoContainer(t *testing.T) {
 	log, root, stateDir, project, dir := envFixture(t)
 	writeOverrides(t, dir, "web", "A", "1")
-	os.Truncate(log, 0) // DOCKER_FAKE_PS is empty: nothing runs
+	os.Truncate(log, 0) // DOCKER_FAKE_PS and _ALL are empty: no container at all
 	var out strings.Builder
-	if code, err := lifecycle.ApplyEnv(&out, "cli", root, envBranch, project, dir, stateDir, "", []string{"web"}); code != 0 || err != nil {
+	res, code, err := lifecycle.ApplyEnvDetailed(&out, "cli", root, envBranch, project, dir, stateDir, "", []string{"web"})
+	if code != 0 || err != nil {
 		t.Fatalf("%d %v", code, err)
 	}
 	if strings.Contains(fakeLog(log), " up ") {
-		t.Errorf("a stopped service must not be started:\n%s", fakeLog(log))
+		t.Errorf("nothing may be created:\n%s", fakeLog(log))
+	}
+	if len(res) != 1 || res[0].Kind != lifecycle.EnvSkipped || res[0].Detail != "no container" {
+		t.Errorf("outcome %+v", res)
 	}
 	r := runs.Latest(dir)
-	if r.Steps[0].State != runs.Skipped || r.Steps[0].Reason != "not running; applies at next up" {
+	if r.Steps[0].State != runs.Skipped || r.Steps[0].Reason != "no container; applies at next up" {
 		t.Errorf("step: %+v", r.Steps[0])
+	}
+}
+
+// A stopped container is recreated without starting it: start and restart
+// would reuse the old container and its old environment.
+func TestApplyEnvRecreatesAStoppedContainerWithoutStartingIt(t *testing.T) {
+	log, root, stateDir, project, dir := envFixture(t)
+	writeOverrides(t, dir, "web", "A", "1")
+	t.Setenv("DOCKER_FAKE_PS_ALL", project+"\n") // exists; `docker ps` (running only) stays empty
+	os.Truncate(log, 0)
+	res, code, err := lifecycle.ApplyEnvDetailed(io.Discard, "cli", root, envBranch, project, dir, stateDir, "", []string{"web"})
+	if code != 0 || err != nil {
+		t.Fatalf("%d %v", code, err)
+	}
+	calls := upCalls(log)
+	if len(calls) != 1 || !strings.HasSuffix(strings.TrimSpace(calls[0]), " up -d --no-deps --no-start web") || strings.Contains(calls[0], "--wait") {
+		t.Fatalf("up calls %q", calls)
+	}
+	if len(res) != 1 || res[0].Kind != lifecycle.EnvRecreatedStopped {
+		t.Errorf("outcome %+v", res)
+	}
+	if lifecycle.DescribeEnvOutcomes(res) != "recreated (stopped): web" {
+		t.Errorf("message %q", lifecycle.DescribeEnvOutcomes(res))
+	}
+}
+
+func TestDescribeEnvOutcomes(t *testing.T) {
+	got := lifecycle.DescribeEnvOutcomes([]lifecycle.EnvOutcome{
+		{Service: "web", Kind: lifecycle.EnvApplied}, {Service: "db", Kind: lifecycle.EnvRecreatedStopped},
+		{Service: "x", Kind: lifecycle.EnvSkipped, Detail: "no container"}})
+	if got != "applied: web; recreated (stopped): db; skipped: x (no container)" {
+		t.Errorf("%q", got)
+	}
+}
+
+// The dashboard has no shell environment: an env: reference it cannot resolve
+// is served from the values it checked earlier (add-env-overrides I4).
+func TestApplyEnvUsesRememberedSecretValues(t *testing.T) {
+	log, root, stateDir, project, dir := envFixture(t)
+	t.Setenv("DOCKER_FAKE_PS", project+"\n")
+	m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json"))
+	m.Secrets = map[string]string{"my_cred": "env:STACKFORK_TEST_CRED_NOT_SET"}
+	state.WritePrivate(filepath.Join(dir, "manifest.json"), m)
+	writeOverrides(t, dir, "web", "A", "1")
+	os.Unsetenv("STACKFORK_TEST_CRED_NOT_SET")
+
+	if _, code, err := lifecycle.ApplyEnvDetailed(io.Discard, "dashboard", root, envBranch, project, dir, stateDir, "", []string{"web"}); code == 0 && err == nil {
+		t.Fatal("without a remembered value the apply must fail on the unresolved reference")
+	}
+	lifecycle.CacheSecrets(dir, lifecycle.SecretValues{"my_cred": {Ref: "env:STACKFORK_TEST_CRED_NOT_SET", Value: "remembered-value-1234"}})
+	os.Truncate(log, 0)
+	var out strings.Builder
+	if _, code, err := lifecycle.ApplyEnvDetailed(&out, "dashboard", root, envBranch, project, dir, stateDir, "", []string{"web"}); code != 0 || err != nil {
+		t.Fatalf("%d %v %s", code, err, out.String())
+	}
+	if !strings.Contains(dockerEnvLog(log), "my_cred=remembered-value-1234") || strings.Contains(out.String(), "remembered-value-1234") {
+		t.Errorf("the child must get the value and the output must not:\n%s", out.String())
+	}
+}
+
+// Apply retries once after a stale network endpoint, like up (M5).
+func TestApplyEnvRetriesAfterStaleEndpoint(t *testing.T) {
+	log, root, stateDir, project, dir := envFixture(t)
+	t.Setenv("DOCKER_FAKE_PS", project+"\n")
+	t.Setenv("DOCKER_FAKE_NETWORKS", project+"_default\n")
+	t.Setenv("DOCKER_FAKE_UP_MSG", "Error response from daemon: endpoint with name "+project+"-web-1 already exists in network "+project+"_default")
+	writeOverrides(t, dir, "web", "A", "1")
+	os.Truncate(log, 0)
+	if _, code, err := lifecycle.ApplyEnvDetailed(io.Discard, "cli", root, envBranch, project, dir, stateDir, "", []string{"web"}); code != 0 || err != nil {
+		t.Fatalf("%d %v", code, err)
+	}
+	if strings.Count(fakeLog(log), " --no-deps --wait ") != 2 || !strings.Contains(fakeLog(log), "network disconnect -f "+project+"_default "+project+"-web-1") {
+		t.Fatalf("expected a disconnect and one retry:\n%s", fakeLog(log))
 	}
 }

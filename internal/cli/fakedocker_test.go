@@ -16,7 +16,7 @@ import (
 // returns canned output without touching a real daemon:
 //   - `docker context inspect` -> a local unix-socket context
 //   - `docker ps --filter label=<legacy root label>=...` -> $DOCKER_FAKE_PS_LEGACY (empty by default)
-//   - `docker ps ...`          -> $DOCKER_FAKE_PS (empty by default)
+//   - `docker ps ...`          -> $DOCKER_FAKE_PS (empty by default); `docker ps -a ...` -> $DOCKER_FAKE_PS_ALL (else $DOCKER_FAKE_PS)
 //   - `docker compose ... ps --format json` -> $DOCKER_FAKE_STATUS (empty by default)
 //   - `docker compose ... logs ...`         -> $DOCKER_FAKE_LOGS (empty by default)
 //   - `docker compose ... exec|run ...`     -> $DOCKER_FAKE_EXEC_OUT (empty by default)
@@ -86,6 +86,7 @@ if [ "$1" = "context" ] && [ "$2" = "inspect" ]; then
 fi
 if [ "$1" = "ps" ]; then
   case " $* " in
+    *" -a "*) printf '%s' "${DOCKER_FAKE_PS_ALL:-$DOCKER_FAKE_PS}" ;;
     *"` + identity.LegacyLabelRoot + `"*) printf '%s' "$DOCKER_FAKE_PS_LEGACY" ;;
     *) printf '%s' "$DOCKER_FAKE_PS" ;;
   esac
