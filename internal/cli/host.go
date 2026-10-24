@@ -34,7 +34,7 @@ import (
 
 var hostNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-const hostUsage = "usage: host <name> [--port N] -- <command...> | host start <name> [--port N] -- <command...> | host stop|restart <name> | host logs <name> [-f] | host ls"
+const hostUsage = "usage: host <name> [--port N] -- <command...> | host start <name> [--port N] [--wait-timeout D] -- <command...> | host stop|restart <name> | host logs <name> [-f] | host ls"
 
 func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, instanceDir, newStateBase, legacyStateBase string) (int, error) {
 	if hostUnsupported != nil {
@@ -68,6 +68,7 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	portFlag := fs.Int("port", 0, "")
 	dirFlag := fs.String("dir", "", "")
 	portEnvFlag := fs.String("port-env", "", "")
+	waitFlag := fs.Duration("wait-timeout", 0, "")
 	var name string
 	if len(own) > 0 && !strings.HasPrefix(own[0], "-") {
 		name, own = own[0], own[1:]
@@ -102,7 +103,7 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		}
 	}
 	if detach {
-		return hostStart(stderr, name, command, workDir, project, instanceDir, newStateBase, legacyStateBase, hostFlagArgs(*portFlag, *dirFlag, *portEnvFlag))
+		return hostStart(stderr, name, command, workDir, project, instanceDir, newStateBase, legacyStateBase, hostFlagArgs(*portFlag, *dirFlag, *portEnvFlag), hostWaitTimeout(*waitFlag))
 	}
 
 	block, err := envBlock(project, instanceDir, newStateBase, legacyStateBase, true)

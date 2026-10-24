@@ -176,3 +176,20 @@ func uptime(d time.Duration) string {
 func HostApps(m *state.Manifest, instanceDir string) []Service {
 	return hostServices(m, instanceDir, &psSnapshot{})
 }
+
+// ComposeRunning is true when every Compose service runs: a host app that is
+// down makes the instance partial but does not take the containers away.
+func (i Instance) ComposeRunning() bool {
+	if i.State == StateRunning {
+		return true
+	}
+	if i.State != StatePartial {
+		return false
+	}
+	for _, s := range i.Services {
+		if s.Kind != "host" && s.State != "running" && s.State != ServiceOptional {
+			return false
+		}
+	}
+	return true
+}

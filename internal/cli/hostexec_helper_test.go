@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
@@ -29,6 +30,18 @@ func init() {
 		c.Start()
 		fmt.Println("parent done")
 		os.Exit(0)
+	}
+	if d := os.Getenv("HELPER_LISTEN_AFTER"); d != "" { // a slow dev server: prints, waits, then listens on $PORT until killed
+		wait, _ := time.ParseDuration(d)
+		fmt.Println("booting " + os.Getenv("HELPER_PRINT"))
+		time.Sleep(wait)
+		ln, err := net.Listen("tcp", "127.0.0.1:"+os.Getenv("PORT"))
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		defer ln.Close()
+		time.Sleep(time.Hour)
 	}
 	argv, _ := json.Marshal(os.Args[1:])
 	wd, _ := os.Getwd()

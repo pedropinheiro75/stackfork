@@ -84,6 +84,7 @@ func killOnCleanup(t *testing.T, stateDir, project string) {
 func hostEnv(t *testing.T) (root, stateDir, project string) {
 	t.Helper()
 	useRealBinary(t)
+	t.Setenv("STACKFORK_HOST_WAIT_TIMEOUT", "0") // these commands never listen: do not wait for the port
 	t.Setenv("STACKFORK_PORT_RANGE_START", "31500")
 	t.Setenv("STACKFORK_PORT_RANGE_END", "31999")
 	root, stateDir, project, psLine := envSetup(t, hostFixture)

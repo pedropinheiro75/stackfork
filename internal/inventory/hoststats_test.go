@@ -147,3 +147,16 @@ func TestRecycledPidIsNotRunning(t *testing.T) {
 		}
 	}
 }
+
+func TestComposeRunningIgnoresHostApps(t *testing.T) {
+	host := Service{Name: "host:app", Kind: "host", State: "exited"}
+	if !(Instance{State: StatePartial, Services: []Service{{Name: "db", State: "running"}, host}}).ComposeRunning() {
+		t.Error("a down host app alone must not count against the containers")
+	}
+	if (Instance{State: StatePartial, Services: []Service{{Name: "db", State: "exited"}, host}}).ComposeRunning() {
+		t.Error("a stopped container is not running")
+	}
+	if (Instance{State: StateStopped}).ComposeRunning() {
+		t.Error("stopped")
+	}
+}

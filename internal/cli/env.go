@@ -98,7 +98,7 @@ func envBlock(project, instanceDir, newStateBase, legacyStateBase string, withPa
 	// lines (a service's ConnectionURL/endpoint URL is only ever built from
 	// a live, currently-bound port) - refuse rather than hand a host app a
 	// silently incomplete environment.
-	if inst.State != "running" {
+	if !inst.ComposeRunning() {
 		return "", fmt.Errorf("instance is %s, not running; run `stackfork up` first", inst.State)
 	}
 
