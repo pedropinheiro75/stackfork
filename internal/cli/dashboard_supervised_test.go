@@ -189,6 +189,16 @@ func TestSupervisedReadyLineAndExitOnStdinEOF(t *testing.T) {
 }
 
 func TestSupervisedKeepsItsPortOnTheNextLaunch(t *testing.T) {
+	// A range of one free port, so a real app on this machine (whose own
+	// supervised dashboard lives in the default range) cannot take it.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	free := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
+	ln.Close()
+	t.Setenv("STACKFORK_PORT_RANGE_START", free)
+	t.Setenv("STACKFORK_PORT_RANGE_END", free)
 	state := t.TempDir()
 	a := startSupervised(t, state)
 	first := a.ready(t)
