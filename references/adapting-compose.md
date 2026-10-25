@@ -30,3 +30,31 @@ Select the actual source filenames/services; do not assume the database service 
 `up --build` starts all non-profile services; use `--profile NAME` explicitly when needed. `run SERVICE COMMAND...` runs a one-off container with no dependencies; start required dependencies first. `exec SERVICE COMMAND...` executes in an existing container. These commands always target the snapshot, never the source files directly. Re-run `prepare` after changing the source Compose files or the selected env file; never edit the generated snapshot directly.
 
 Run migrations explicitly after database readiness, using the project's real script. Seed a **new, verified instance DB once** when the task requires initial data: `clone-db --from <instance>` copies another prepared instance's data volume; `clone-db --from-dump FILE` restores a local `.sql`/`.sql.gz`/Postgres custom-format dump instead (a teammate's export, a production snapshot) — both refuse a non-empty target unless `--replace`, and `--from-dump` needs the instance already `up` (it restores through the live database, not a stopped volume). Ordinary app start/restart must not seed/reset. No persistent marker may suppress future migrations.
+
+## Host-run apps
+
+In hybrid mode (`stackfork config set mode hybrid`) the app runs on the host and its dependencies stay in the isolated stack. Start the app with `host`, never with `bun run dev` or `npm run dev` directly (the guard blocks that in a managed checkout):
+
+```sh
+stackfork --root "$CHECKOUT" host start app -- bun run dev
+stackfork --root "$CHECKOUT" host ls
+stackfork --root "$CHECKOUT" host logs app -f
+```
+
+- `host start NAME -- COMMAND...` runs the app detached and supervised, so it survives your shell. It gives the app a stable port, this instance's environment (as `env --with-passwords` prints it, plus `PORT`) and a portless route. It returns once the app listens, and waits up to 90 seconds (`--wait-timeout`).
+- `host ls` shows each app's state, port, PID, memory and CPU. `host stop|restart|logs NAME` manage it. `up` starts a host app that stopped by itself, and `down` stops it first.
+- `host NAME -- COMMAND...` without `start` runs in the foreground and ends with your shell. Use it only in an interactive terminal.
+- A person must trust the plan's host steps once per machine: `stackfork plan --trust`. An agent never runs it.
+- The URL of a host app is `http://<hostname>:<port>`, like the container services (`references/hostnames.md`).
+
+## Changing one variable of one instance
+
+To test a feature flag or another variable without editing the project, use an env override. It is stored outside the repository, belongs to one instance, and recreates only that service (or restarts only that host app):
+
+```sh
+stackfork --root "$CHECKOUT" env set web ENABLE_GUEST_ACCESS=true
+stackfork --root "$CHECKOUT" env overrides
+stackfork --root "$CHECKOUT" env unset web ENABLE_GUEST_ACCESS
+```
+
+`env set` refuses a secret-like name (`*_TOKEN`, `*_SECRET`, `*_PASSWORD`, `*_KEY`): keep those in `stackfork secret`. Overrides survive `up`, `down` and `reset`.
