@@ -14,25 +14,18 @@
 
 </div>
 
+
 You open a second Git worktree of a project and run `docker compose up`. It collides with the first one: same ports, same container names, same volumes, sometimes the same database. This happens each time a coding agent works next to you, or next to another agent.
 
 **stackfork takes the Compose stack you already have and isolates it for each checkout and branch.** Each copy gets its own ports, volumes, network and container names. A person and an agent, or five agents, can run the same project at the same time on one machine without coordination.
-
-With live mode, stackfork is also GitOps for your local environments: the repository is the only desired state, and running instances follow it. Live mode reconciles only while the dashboard runs.
 
 <img src="docs/demo.gif" alt="Terminal demo: two Git worktrees of one project each start with stackfork up, then stackfork list shows both instances running, and both app URLs answer in the browser">
 
 ## Install
 
-Supported platforms: macOS and Linux (amd64 and arm64). Windows is built and vetted, but it has not run on a Windows machine yet. See [SECURITY.md](SECURITY.md) for its limits.
+Supported platforms: macOS and Linux (amd64 and arm64). Windows is built and vetted, but it has not run on a Windows machine yet. See [SECURITY.md](SECURITY.md) for its limits. Docker with the Compose plugin must be running.
 
 Choose one method:
-
-- Homebrew (macOS and Linux):
-
-  ```sh
-  brew install pedropinheiro75/tap/stackfork
-  ```
 
 - Go 1.24 or later:
 
@@ -42,73 +35,84 @@ Choose one method:
 
   Make sure `$(go env GOPATH)/bin` is on your `PATH`.
 
-- Release binary: download the archive for your system from the [releases page](https://github.com/pedropinheiro75/stackfork/releases), unpack it, and put `stackfork` on your `PATH`.
+- Build from a clone:
 
-To check the install, run `stackfork version`. Docker with the Compose plugin must be running.
+  ```sh
+  git clone https://github.com/pedropinheiro75/stackfork && cd stackfork
+  go build -o stackfork ./cmd/stackfork
+  ```
 
-## macOS app
+  Put the `stackfork` binary on your `PATH`.
 
-`Stackfork.app` is a menu bar app for macOS 14 or later. It runs its own dashboard for as long as it runs, shows your instances in the menu bar with **Start** and **Stop**, and opens the dashboard in a window. It needs no terminal and no installed CLI.
+- Homebrew (macOS and Linux), after the first public release. The cask is not published yet:
 
-1. Download `stackfork-app_VERSION_darwin_universal.dmg` and its `.sha256` file from the [releases page](https://github.com/pedropinheiro75/stackfork/releases).
-2. Check the download. In the folder that holds both files, run `shasum -a 256 -c stackfork-app_VERSION_darwin_universal.dmg.sha256`. It prints `OK`.
-3. Open the DMG and drag `Stackfork.app` to Applications.
-4. Clear the quarantine attribute:
+  ```sh
+  brew install --cask pedropinheiro75/tap/stackfork
+  ```
+
+To check the install, run `stackfork version`.
+
+### macOS app
+
+`Stackfork.app` is a menu bar app for macOS 14 or later. It runs its own dashboard, lists your instances in the menu bar with **Start** and **Stop**, and opens the dashboard in a window. It needs no installed CLI.
+
+Until the first public release, build the DMG on your Mac. You need Xcode and Go.
+
+1. From the root of a clone, run `scripts/build-macos-app.sh 0.1.0`. The script writes `dist/macos-app/stackfork-app_0.1.0_darwin_universal.dmg` and a `.sha256` file.
+2. Open the DMG and drag `Stackfork.app` to Applications.
+3. If macOS refuses to open the app, clear the quarantine attribute:
 
    ```sh
    xattr -dr com.apple.quarantine /Applications/Stackfork.app
    ```
 
-5. Open Stackfork. The first menu row reads `Dashboard running`.
+4. Open Stackfork. The first menu row reads `Dashboard running`.
 
-The app is signed ad hoc and is not notarized yet, so macOS 15 and later refuse to open a downloaded copy until you clear the attribute. The command clears it for the helper inside the app too. Choose **Open at Login** in the menu to start the app after you log in; it works only when the app is in `/Applications` or `~/Applications`.
+The app is signed ad hoc and is not notarized. Choose **Open at Login** in the menu to start it after you log in; this works only when the app is in `/Applications` or `~/Applications`. Press Control-Option-Command-S (`⌃⌥⌘S`) anywhere to show the dashboard window.
 
-Press Control-Option-Command-S (`⌃⌥⌘S`) anywhere to show the dashboard window, for example when a full menu bar hides the status item on a Mac with a notch. Opening the app again from Finder, Spotlight or the Dock shows the window too. If another app already uses the shortcut, the app writes that to the dashboard log and the menu shows no shortcut line.
-
-The app runs its own copy of the dashboard, on a port of its own, and never uses or stops a `stackfork dashboard` that already runs in a terminal. Both can run side by side; live mode runs in only one of them. The app and the CLI share the same state directories, so update both together.
+The app never uses or stops a `stackfork dashboard` that runs in a terminal. Both can run side by side, but live mode runs in only one of them. They share the same state directories, so update both together.
 
 ## Quick start
 
-These five steps start two isolated copies of one Compose project. The project is the `examples/node-postgres` example: a small Node server and Postgres. Each request counts a visit, so you can see that the two copies have separate data. The first run builds the app image.
+These five commands start two isolated copies of the `examples/node-postgres` project: a small Node server and Postgres. Each request counts a visit, so you can see that the two copies have separate data. The first run builds the app image.
 
-1. Clone the repository and go into it:
+```sh
+git clone https://github.com/pedropinheiro75/stackfork && cd stackfork
+stackfork learn && stackfork prepare -f examples/node-postgres/docker-compose.yml && stackfork up
+git worktree add ../stackfork-2 && cd ../stackfork-2
+stackfork prepare -f examples/node-postgres/docker-compose.yml && stackfork up
+stackfork list && stackfork urls
+```
 
-   ```sh
-   git clone https://github.com/pedropinheiro75/stackfork && cd stackfork
-   ```
+`stackfork learn` comes first because `prepare` and `up` refuse a repository that was never learned. The second worktree reads what `learn` recorded in the main checkout.
 
-2. Prepare and start the first copy:
+`stackfork list` shows two instances in the `running` state, one for each checkout. `stackfork urls` prints the app URL of this checkout, for example `http://stackfork-2-ba629bc76a3b.localhost`. Run it in the first checkout for the other URL. Request each URL more than once. The `visits` count of one copy does not change the count of the other.
 
-   ```sh
-   stackfork prepare -f examples/node-postgres/docker-compose.yml && stackfork up
-   ```
+If the `.localhost` URLs do not answer, for example after a Docker restart, run `stackfork proxy up`. To clean up, run `stackfork down --volumes` in each checkout. Without `--volumes`, `down` keeps your data.
 
-3. Create a second worktree of the same repository and go into it:
+For your own project, replace the `-f` path with your Compose file. `stackfork prepare` renders the file into an isolated snapshot and never edits it.
 
-   ```sh
-   git worktree add ../stackfork-2 && cd ../stackfork-2
-   ```
+## Feature tour
 
-4. Prepare and start the second copy. Use the same command as in step 2:
+Each item links to the details.
 
-   ```sh
-   stackfork prepare -f examples/node-postgres/docker-compose.yml && stackfork up
-   ```
+- **Learn once, reuse everywhere.** `stackfork learn` scans a project. You or your agent record an ordered startup plan, the app's entry URL and named links in `.stackfork/knowledge.json`, then confirm it with `learn verify`. The file is safe to commit. Later worktrees reuse it, and a worktree can borrow verified knowledge from a sibling worktree. `stackfork plan` shows the steps, and a derived plan for a project that has none. See [references/learning.md](references/learning.md).
+- **One command per branch.** `stackfork worktree add REPO BRANCH` creates a worktree. `stackfork start-env` prepares and starts it. `stackfork reset` deletes its environment, volumes included, and starts it again from the code in the worktree. `reset --from-main` reuses the main checkout's Compose recipe. See [references/worktrees.md](references/worktrees.md).
+- **Runs.** Each start is a recorded run with steps and logs. After a failed start, run `stackfork runs show`, and add `--step STEP` for that step's log. Secret values are redacted. See [`runs`](references/commands.md#runs).
+- **Hybrid mode and host apps.** The app can run on the host while its dependencies stay in Docker. `stackfork host start NAME -- COMMAND` runs it detached, on a stable port, with this instance's environment and a `.localhost` route. `host ls` shows PID, memory and CPU, and `up` restarts a host app that stopped by itself. A person must trust host steps first with `stackfork plan --trust`. See [`host`](references/commands.md#host).
+- **Per-instance environment overrides.** `stackfork env set SERVICE NAME=VALUE` changes one variable of one service of one instance, outside the repository, and recreates only that service. See [`env`](references/commands.md#env).
+- **Secrets.** A project names the secrets it needs. Each person maps them on their machine to a `keychain:` item (macOS Keychain, Linux Secret Service or Windows Credential Manager) or to a 1Password `op://` reference, for one repository or for a whole folder such as `~/clients/acme`. No `secret` command prints a value or takes one as an argument. See [`secret`](references/commands.md#secret).
+- **Live mode.** `stackfork live on` makes the running instances of a repository follow their upstream while the dashboard runs, and rebuild what changed. When a worktree's branch is merged or its pull request is closed, live mode can offer to clean the worktree up. See [`live`](references/commands.md#live).
+- **Dashboard.** `stackfork dashboard --open` starts a local web page with four views. **Instances** are grouped by project, with status, health, endpoints and host apps. **Repos** shows branches, worktrees and readiness, and starts a ready project with one click. **Clean up** shows Docker disk use, frees space and prunes instances. **Settings** holds the folders to scan (add one with `stackfork config add-root PATH`; nothing is scanned before that) and the **Secrets** table. It binds to `127.0.0.1`.
+- **Agent guard.** `stackfork hooks install` blocks a host dev server or a raw `docker compose up` in a managed checkout, for Claude Code, Codex and Copilot CLI.
 
-5. Show both instances and the URL of this one:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-overview-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/dashboard-overview-light.png">
+  <img src="docs/screenshots/dashboard-overview-light.png" alt="Dashboard overview: three running instances (two container-based, one host-run) and one stopped, each with its app/DB/mail endpoints and branch/checkout shown">
+</picture>
 
-   ```sh
-   stackfork list
-   stackfork urls
-   ```
-
-`stackfork list` shows two instances in the `running` state, one for each checkout. `stackfork urls` prints the app URL, for example `http://stackfork-2-ba629bc76a3b.localhost`. Run `stackfork urls` in the first checkout to get the other URL. Request each URL more than once. The `visits` count of one copy does not change the count of the other.
-
-If the `.localhost` URLs do not answer, for example after a Docker restart, run `stackfork proxy up`.
-
-To clean up, run `stackfork down --volumes` in each checkout. Without `--volumes`, `down` keeps your data.
-
-The example is a normal Compose project that stackfork does not change. For your own project, replace the `-f` path with your Compose file. `stackfork prepare` renders the file into an isolated snapshot and does not edit it.
+For every command and flag, see [references/commands.md](references/commands.md) or run `stackfork help`.
 
 ## How it differs from other tools
 
@@ -125,22 +129,17 @@ stackfork does not add an environment format. It isolates the Compose file that 
 stackfork isolates checkouts from each other. It is not a sandbox. It does not protect you from a malicious Compose file, and it adds no isolation between containers and the host beyond what Docker gives you.
 
 - **Refusals.** stackfork refuses a stack that it cannot isolate safely. Examples are fixed container names, external networks, the Docker socket, writable binds outside the checkout and fixed subnets.
-- **Guard hooks.** `stackfork hooks install` adds a pre-tool-use hook to Claude Code, Codex and Copilot CLI. The hook blocks a host dev server or a raw `docker compose up` inside a managed checkout, and it allows everything else. It is a guardrail for cooperative agents, not a security boundary.
-- **Trust for host steps.** A project can record a command to run on the host (hybrid mode). That command runs only after a person runs `stackfork plan --trust` or clicks **Trust** in the dashboard. Trust is stored for each machine. The guard blocks agents from trusting a plan.
-- **Native confirmation.** The dashboard runs a data-deleting command (`down --volumes`, `prune`, `gc`, worktree removal) only after a person clicks Run in a native macOS dialog. An agent can send the request, but it cannot answer the dialog.
-- **Environment reset.** `stackfork reset` deletes one worktree's volumes and rebuilds its environment from the code in the worktree; it asks first and never touches your code.
+- **Guard hooks.** The hook blocks host dev servers and raw `docker compose up` in a managed checkout. It also blocks agents from commands that delete data or widen trust: `down --volumes`, `reset`, `prune --yes`, `plan --trust`, `live on`, `secret set|map|unmap` and `env set --allow-secret`. It is a guardrail for cooperative agents, not a security boundary.
+- **Trust for host steps.** A project can record a command to run on the host (hybrid mode). That command runs only after a person runs `stackfork plan --trust` or clicks **Trust** in the dashboard. Trust is stored for each machine.
+- **Native confirmation.** The dashboard runs a data-deleting command only after a person clicks Run in a native macOS dialog. An agent can send the request, but it cannot answer the dialog.
 - **Data kept by default.** `stackfork down` removes no volumes. `stackfork prune` is a dry run until you pass `--yes`. It touches only Docker objects that carry stackfork labels, and it never runs `docker system prune`.
-- **Secrets.** stackfork prints no secret value. The dashboard shows a `<password>` placeholder. It returns a real password only when the value is written literally in your Compose file. Named secrets (tokens, API keys) come from your OS keychain or 1Password: see [Secrets](#secrets).
+- **Secrets.** The dashboard shows a `<password>` placeholder. It returns a real password only when the value is written literally in your Compose file. Named secrets come from your OS credential store or 1Password, and `env set` refuses secret-like names.
 
 Read [SECURITY.md](SECURITY.md) for the full boundary, the known limits and how to report a vulnerability.
 
-## Runs
-
-Each Start (`start-env`, the dashboard's Start button, `up` and `seed`) is a run. stackfork records the steps of a run, their states and output under the instance's `runs/` directory and keeps the last 20 runs. After a failed start, run `stackfork runs show` to see which step failed, and `stackfork runs show --step <step>` for its log (secret values are redacted). While a start is in progress, the dashboard's Repos list shows its plan as it runs, and each instance card shows the last run.
-
 ## Agent skill
 
-The repository ships an agent skill (`SKILL.md` and `references/`). It teaches an agent the flow: discover, prepare, up, verify, down. Link a checkout of this repository into your agent's skill directory. Run these commands from the root of your clone.
+The repository ships an agent skill (`SKILL.md` and `references/`). It teaches an agent the flow: reuse what was learned, prepare, up, verify, down. Link a checkout of this repository into your agent's skill directory. Run these commands from the root of your clone.
 
 For Claude Code:
 
@@ -160,90 +159,18 @@ Then ask the agent in your own words, for example "prepare this project in a new
 Use $stackfork to prepare this checkout with an isolated development environment using stackfork.
 ```
 
-To block agents that start a dev server on the host, install the guard hooks:
+To block agents that start a dev server on the host, install the guard hooks and check them:
 
 ```sh
-stackfork hooks install      # add --tool to choose one tool
+stackfork hooks install      # add --tool claude|codex|copilot to choose one tool
 stackfork hooks status
 ```
 
 Codex runs only a hook that you trusted. After `hooks install --tool codex`, open `codex` once and approve the hook, or run `/hooks`.
 
-## Secrets
-
-A project can name the secrets it needs (`learn record secret NPM_TOKEN --hint "..."`). Each person decides where the value comes from on their machine. To move a token from your shell to the keychain:
-
-```sh
-printenv NPM_TOKEN | stackfork secret set acme-npm-token     # stores it; the value is never an argument
-stackfork secret map . NPM_TOKEN=keychain:acme-npm-token      # this repo's NPM_TOKEN now comes from the keychain
-stackfork secret check                                        # resolves | missing | locked | unavailable | error
-```
-
-`keychain:` uses the macOS Keychain, the Linux Secret Service (`secret-tool`) or the Windows Credential Manager (target `stackfork/ITEM`, at most 2560 bytes). `op://VAULT/ITEM/FIELD` reads from 1Password with `op`. Every run starts with a `secrets` step that fails before any Docker command and lists each problem with the command that fixes it. A Start from the dashboard does not see your shell, so use the keychain or 1Password for those values. The dashboard's Repos panel has a Secrets table with a hidden-answer **Set value…** dialog.
-
-## Live mode
-
-Live mode keeps the running instances of one repository in step with their checkouts. Turn it on with `stackfork live on` or the **Live** switch in the Repos view. While the dashboard runs, stackfork fetches each upstream, fast-forwards a clean checkout, and then rebuilds or restarts what changed: images when a Dockerfile or lockfile changes, the Compose model when a Compose or adapter file changes, and the schema when a migration file changes. Each reconcile is a recorded run (`stackfork runs`).
-
-Live mode has limits:
-
-- It runs only while the dashboard process runs. When the dashboard stops, nothing reconciles. On its next start, the dashboard reconciles what changed meanwhile, once.
-- The repository is the only desired state. Live mode does not start a stopped instance, create an instance for a new branch, follow a branch switch, run host steps, or roll back a failed change.
-- A failed run pauses live mode for the repository until you choose **Resume**.
-- A person turns live mode on. The guard blocks `live on` for agents. Read [SECURITY.md](SECURITY.md) first: a commit pushed upstream runs on this machine after `live on`.
-
-When a worktree's branch is merged into the default branch, live mode can offer to clean it up (the worktree, the instance's volumes and, optionally, the local branch). See `stackfork live cleanup` in [references/commands.md](references/commands.md).
-
-## Dashboard
-
-```sh
-stackfork dashboard --open
-```
-
-The dashboard is a local web page. It lists every instance in every checkout that stackfork knows about, with status, health and clickable endpoints. It binds to `127.0.0.1`, checks the `Host` header and uses a token for each process. `stackfork list --json` gives the same data in a terminal.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-overview-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/dashboard-overview-light.png">
-  <img src="docs/screenshots/dashboard-overview-light.png" alt="Dashboard overview: three running instances (two container-based, one host-run) and one stopped, each with its app/DB/mail endpoints and branch/checkout shown">
-</picture>
-
-Each service row expands to show the exact command for a destructive action and one-click copy of connection strings:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-service-detail-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/dashboard-service-detail-light.png">
-  <img src="docs/screenshots/dashboard-service-detail-light.png" alt="One instance expanded, showing its down command to copy and each service's connection URL/psql/exec copy actions">
-</picture>
-
-The **Repos** tab finds the repositories under the folders that you add with `stackfork config add-root PATH`. It shows branches, worktrees and readiness, and it starts a ready project with one click. Nothing is scanned until you add a folder.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/repos-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/repos-light.png">
-  <img src="docs/screenshots/repos-light.png" alt="Repos tab: repositories grouped by folder with readiness badges, worktrees, branches without a worktree and Start buttons">
-</picture>
-
-## Learn and plan: container or hybrid mode
-
-`stackfork learn` scans a project and records how to start it in `.stackfork/knowledge.json`. You or your agent check the result with `stackfork learn verify`. The file is safe to commit, and later worktrees reuse it. The record is a startup plan: an ordered list of steps. Run `stackfork plan` to see the steps and whether this machine trusts them.
-
-The plan has two modes:
-
-- **container** (default): every service, including the app, runs in Docker.
-- **hybrid**: the app runs on the host as a `host` step. The app service and the services that depend on it are dropped from Compose. The other services stay in containers.
-
-To use hybrid mode:
-
-1. Run `stackfork config set mode hybrid`. For one repository, run `stackfork config set-mode REPO hybrid`.
-2. Run `stackfork plan --mode hybrid` and read the host steps.
-3. Run `stackfork plan --trust`, or click **Trust** in the dashboard.
-4. Run `stackfork start-env`.
-
-Manage a host app with `stackfork host stop|restart|logs NAME`. `stackfork down` stops it first. For the full command list, see [references/commands.md](references/commands.md) and `stackfork --help`.
-
 ## Project files
 
+- [references/](references/): the command reference and guides for learning, worktrees, hostnames and adapting Compose.
 - [SECURITY.md](SECURITY.md): the safety boundary, known limits and how to report a vulnerability.
 - [CHANGELOG.md](CHANGELOG.md): the history of changes.
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to build, test and contribute. Run `go test ./...` to run the offline tests.
