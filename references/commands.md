@@ -2,7 +2,7 @@
 
 A compact cheat sheet, one section per subcommand. `stackfork help` (or bare `stackfork`) prints the same list; `stackfork <command> --help` prints that command's own flags. Every flag named here is checked against the real `flag.FlagSet` by `TestCommandsMdMatchesRealFlagSets` (`internal/cli/commands_md_test.go`), so it can't silently drift.
 
-Global flags, accepted anywhere (before or after the command): `--root DIR`, `--state-dir DIR`, `--legacy-state-dir DIR`, `--npmrc PATH`, `--secret NAME=REF` (REF is `env:VAR` or `npmrc:PATH#HOST` only; `keychain:` and `op://` come from `secret map`), `--profile-dir DIR`, `--instance NAME`. `--instance NAME` (up, down, restart, start, stop, status, urls, logs, exec, run, env, open, host) addresses any prepared instance from any directory; `stackfork list` shows the names. A relative `-f`/`--env-file` resolves against `--root` (the checkout), not the directory you happen to run `stackfork` from.
+Global flags, accepted anywhere (before or after the command): `--root DIR`, `--state-dir DIR`, `--legacy-state-dir DIR`, `--npmrc PATH`, `--secret NAME=REF` (REF is `env:VAR` or `npmrc:PATH#HOST` only; `keychain:` and `op://` come from `secret map`), `--profile-dir DIR`, `--instance NAME`. `--instance NAME` (up, down, restart, start, stop, status, urls, logs, exec, run, env, open, host, seed, runs) addresses any prepared instance from any directory; `stackfork list` shows the names. A relative `-f`/`--env-file` resolves against `--root` (the checkout), not the directory you happen to run `stackfork` from.
 
 ### prepare
 Isolate this checkout+branch's copy of the Compose stack.
@@ -19,6 +19,7 @@ Dependency caches across restarts: `prepare` turns an anonymous volume on a depe
 ### up
 Start the prepared stack.
 Flags: `--build`, `--force`, `--mode`, `--profile`, `--service`, `--wait-timeout`
+`--build` rebuilds images first. `--profile NAME` and `--service NAME` are repeatable: they enable a Compose profile and limit the start to those services. `--wait-timeout SECONDS` (default 180) bounds the wait for healthy services. `--force` overrides the never-learned refusal (people only).
 If Compose fails with `endpoint with name X already exists in network N` (Docker keeps these after a crash or a full disk) and N is one of this project's networks and X is not a running container, `up` force-disconnects X, prints a note and retries once.
 `--mode container|hybrid` names the plan mode that decides whether this `up` runs the one-time seed (default: the configured mode); `start-env` sets it.
 ```sh
@@ -160,6 +161,7 @@ stackfork host stop web
 
 ### hooks
 Install, remove or report the `guard` pre-tool-use hook in each agent tool's own config: `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR`), `~/.codex/hooks.json` (`$CODEX_HOME`) and `~/.copilot/settings.json` (`$COPILOT_HOME`; not `config.json`, which Copilot CLI rewrites at the end of a session and drops hooks from. A hook an older version put there is removed). Existing hooks are preserved, repeated runs change nothing, and a changed file is first copied to `<file>.stackfork-bak-<timestamp>`. Codex only runs a hook the user has trusted: after installing, open `codex` once and approve it (or run `/hooks`); stackfork never writes that approval, and `hooks status` says `installed but untrusted` until a matching `[hooks.state."…"]` entry exists in Codex's `config.toml`.
+Sub-forms: `hooks install`, `hooks uninstall`, `hooks status`
 Flags: `--tool` (repeatable: `claude`, `codex`, `copilot`; default all)
 ```sh
 stackfork hooks status
@@ -183,7 +185,7 @@ stackfork seed
 
 ### runs
 List the recorded runs (`start-env`, `up`, `seed`) of this checkout's instance, newest first: id, command, trigger, mode, outcome, start, duration and the failed step. `runs show [ID]` prints one run (the latest by default) with each step's state, duration and reason; `--step STEP` prints that step's log (secret values are already redacted). Read-only; agents may run it. After a failed start, read `stackfork runs show --step <failed step>`. Works with `--instance NAME` from any directory.
-Flags: `--json`, `--limit`, `--step`
+Flags: `--json`, `--limit` (`runs show` also takes `--json` and `--step`)
 ```sh
 stackfork runs
 stackfork runs show --step seed
@@ -221,7 +223,7 @@ stackfork route add app 5173
 ```
 
 ### dashboard
-A local web page (127.0.0.1-only) listing every instance, plus a Repos tab (find a repo under your configured folders, see its branches and worktrees, Start one) and a Settings panel for those folders.
+A local web page (127.0.0.1-only) with four views: Instances (every instance, grouped by project, with status, health, endpoints and host apps), Repos (find a repo under your configured folders, see its branches and worktrees, Start one, turn live mode on), Clean up (Docker disk use, Free Docker space, and the prune targets) and Settings (the scanned folders and the Secrets table).
 Flags: `--port`, `--open`, `--supervised`
 `--supervised` is for a parent process such as the macOS app: it listens on a port of its own (`<state>/dashboard/app-port`, never `port`), prints one JSON ready line (`url`, `port`, `token`, `pid`, `version`) as its first output instead of the `listening on` line, registers no `stackfork.localhost` route, and shuts down when standard input closes. It refuses `--port` and `--open` (exit 2).
 ```sh
@@ -300,7 +302,7 @@ stackfork start-env .worktrees/fix-login
 `reset [--yes] [--from-main] [--clear-env]`: throw away this checkout's environment and start it again from zero, from the code in the worktree. Steps of the recorded run (`reset`): `sync` (fast-forward when clean, as every start does), `secrets`, `down` with volumes (this deletes the instance's data), `prepare` (re-render), `up --build`, then the plan's schema and data steps on the new database and, in hybrid mode, the host steps. It never touches your code: no `git reset`, no discarded changes. When the checkout is behind its upstream and has local changes or commits, it stops before deleting anything and asks `reset with the current code?`. Without `--yes` it lists the volumes it will delete and asks `y/N` on a terminal; with no terminal and no `--yes` it refuses. `--yes` confirms the deletion and means continue with the current code. The checkout comes from `--root`/the current directory or `--instance NAME`; the main checkout works too (it resets the environment, not git). The instance's env overrides are kept (the `down` step logs `keeping N env overrides`); `--clear-env` drops them. The dashboard has the same action in the instance and worktree menus. Destructive: the guard blocks it for agents, who should ask the user to run it.
 
 `--from-main` (linked worktrees only) rebuilds the worktree from the main checkout's recipe, for a worktree prepared with fewer Compose files than the main checkout (see the recipe gap under `prepare`). Before anything changes it checks that this is a linked worktree, that the main checkout has a prepared instance and that its recipe can be reused here (a tracked file of the recipe must exist in the worktree). The confirmation adds the recipe it will use and the untracked files it will move. The `prepare` step then moves the worktree's untracked adapter files (the regular files of the adapter folders, such as `.stackfork` or `.agent-dev`, and an untracked env file) to `.stackfork-aside/<UTC time>/`, copies the main checkout's files and runtime env (paths rewritten to this worktree), and prepares with the main checkout's files and env file. Tracked files are never touched, nothing is deleted (delete `.stackfork-aside/<time>` yourself when you do not need it), and a failed `sync`, `secrets` or `down` step moves nothing. The instance's own secret references stay. The retry of a failed run is `stackfork --root WORKTREE reset --yes --from-main`.
-Flags: `--yes`, `--from-main`
+Flags: `--yes`, `--from-main`, `--clear-env`
 ```sh
 stackfork reset
 stackfork --instance sf-fix-login-1a2b3c reset --yes
