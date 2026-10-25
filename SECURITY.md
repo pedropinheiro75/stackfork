@@ -14,9 +14,13 @@ isolated is one you already trust enough to run its Compose stack directly.
 Running an untrusted project's Compose file through stackfork is no safer
 than running it with `docker compose` yourself.
 
+## Agent guard hooks
+
+`stackfork hooks install` registers `stackfork guard` as a pre-tool-use hook in Claude Code, Codex and Copilot CLI. The hook blocks a host dev server and a raw `docker compose up` in a managed checkout, and the commands that only a person may run: deleting data (`down --volumes`, `reset`, `prune --yes` and `--all`, `gc --apply`), widening trust (`plan --trust`, `live on`, automatic cleanup), secrets (`secret set|map|unmap`, reads of stackfork items) and `env set --allow-secret`. Each section below lists the rule for its feature. The guard is a guardrail for cooperative agents. It reads the command line it is given, so an agent that runs another tool as the same user can bypass it. It is not a security boundary. Anything it cannot parse is allowed.
+
 ## Dashboard credentials
 
-`stackfork dashboard` (design.md D2-D5) is read-mostly and never shows a
+`stackfork dashboard` is read-mostly and never shows a
 password: every connection string, CLI command and `.env` block on the page
 uses a literal `<password>` placeholder, in `GET /api/instances`, `list
 --json` and the rendered HTML alike.
@@ -42,7 +46,7 @@ service's environment through `${VAR}` interpolation, which the check above
 already refuses.
 
 The endpoint carries the same boundary as every other dashboard action
-(design.md D5): the per-process token, an allowed `Origin`, an allowed
+(the dashboard design): the per-process token, an allowed `Origin`, an allowed
 `Host`, POST only, and its responses are sent with `Cache-Control:
 no-store`. The page itself only calls it for a pill whose displayed text
 already contains the `<password>` placeholder, and writes the response
