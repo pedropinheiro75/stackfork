@@ -144,7 +144,8 @@ func TestResetKeepsThePrepareRecipe(t *testing.T) {
 		t.Fatalf("%d %s %s", code, out, e)
 	}
 	l := dockerLog(log)
-	if countLines(l, " config ") != 2 || countLines(l, " up -d ") != 1 {
+	// the secrets preflight's read-only render (-p sf-render) is not a prepare
+	if countLines(l, " config ")-countLines(l, "-p sf-render ") != 2 || countLines(l, " up -d ") != 1 {
 		t.Fatalf("%s", l)
 	}
 }
