@@ -74,6 +74,8 @@ when no knowledge):
 A step node also carries `"recent_runs": [{"id": 44, "state": "failed", "ms": 4200, "started_at": "…", "reason": ""}]`,
 the last 3 runs that ran that step (newest first) for the `checkout=` checkout, omitted when none.
 
+When the plan has two modes, each mode branch ends on its own terminal: `ready` (first mode) and `ready-<mode>` (the others), each `in_mode` only in its mode.
+
 Every step node has `in_mode` (false = shown dimmed on the inactive branch).
 
 ## Resources
