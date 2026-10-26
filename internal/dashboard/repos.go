@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,6 +31,11 @@ import (
 var reposTemplateSrc embed.FS
 
 var reposFuncs = template.FuncMap{
+	// projectHref is the Project page link: the name as a path segment and the
+	// checkout path as a query value, so same-named repos stay apart.
+	"projectHref": func(name, path string) template.URL {
+		return template.URL("#project/" + url.PathEscape(name) + "?path=" + url.QueryEscape(path))
+	},
 	"entryCommand": entryCommand,
 	"date": func(t time.Time) string {
 		if t.IsZero() {

@@ -1,0 +1,155 @@
+/* Project page shell, checkouts and configuration (owner C). Colours are Berth tokens only.
+   Ported from docs/design/project-page/prototype/prototype.css. */
+
+#view-project { scroll-padding-top: 64px; }
+#view-project .pp-skip, .pp-title, .pp-section-head h2, .pp-empty h2 { text-wrap: balance; }
+.pp-actions-line { display: flex; gap: var(--space-2); margin: var(--space-2) 0 0; }
+
+/* --- toolbar breadcrumb --- */
+.pp-crumbs { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: 14px; font-weight: 600; min-width: 0; }
+.pp-crumbs a { color: var(--fg-muted); text-decoration: none; font-weight: 600; border-radius: var(--radius-xs); }
+.pp-crumbs a:hover { color: var(--fg); text-decoration: underline; }
+.pp-crumbs .pp-crumb-sep { color: var(--fg-subtle); font-weight: 400; }
+.pp-crumbs [aria-current] { overflow-wrap: anywhere; }
+
+/* --- page --- */
+.pp-page { display: flex; flex-direction: column; gap: var(--space-4); }
+.pp-page[hidden] { display: none; }
+.pp-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2) var(--space-3); }
+.pp-head .avatar { width: 36px; height: 36px; font-size: 15px; }
+.pp-head-id { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pp-title-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); }
+.pp-title { margin: 0; font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.pp-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); margin: 0; color: var(--fg-muted); font-size: 12px; line-height: 18px; }
+.pp-meta .mono { color: var(--fg-muted); overflow-wrap: anywhere; }
+.pp-meta .dot { color: var(--fg-subtle); }
+.pp-head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-left: auto; }
+.pp-chips { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+.pp-page .chip { text-transform: none; letter-spacing: 0; font-size: 12px; border-radius: var(--radius-xs); }
+
+/* Section: a card with a heading row and a collapsible body. */
+.pp-section { background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); scroll-margin-top: 64px; }
+.pp-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-height: 32px; }
+.pp-section-head .chevron { margin: 0 0 0 -8px; }
+.pp-section-head h2 { margin: 0; font-size: 15px; line-height: 20px; font-weight: 600; }
+.pp-section-sub { color: var(--fg-muted); font-size: 12px; line-height: 16px; }
+.pp-section-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-left: auto; }
+.pp-section-body { margin-top: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
+.pp-section[data-collapsed="1"] .pp-section-body { display: none; }
+.pp-section[data-collapsed="1"] .pp-section-tools { display: none; }
+
+/* --- Checkouts table --- */
+.pp-co-head, .pp-co-row {
+  display: grid; align-items: center; column-gap: var(--space-3);
+  grid-template-columns: 24px minmax(150px, 1.2fr) minmax(150px, 1.2fr) 120px 96px 132px minmax(170px, 1fr) 150px;
+}
+.pp-co-head { min-height: 28px; color: var(--fg-subtle); border-bottom: 1px solid var(--line-strong); }
+.pp-co-row { position: relative; min-height: 44px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.pp-co-row:last-child { border-bottom: 0; }
+@media (hover: hover) and (pointer: fine) { .pp-co-row:hover { background: var(--surface-2); } }
+.pp-co-row[data-selected="true"] { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--focus); border-radius: var(--radius-xs); }
+.pp-co-row .wt-lane { min-height: 44px; }
+.pp-co-row .wt-branch { padding: 6px 0; }
+.pp-co-path { min-width: 0; color: var(--fg-muted); overflow-wrap: anywhere; }
+.pp-co-run { min-width: 0; }
+.pp-co-meta { display: none; }
+.pp-run-btn {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px var(--space-2); max-width: 100%;
+  padding: 3px var(--space-2); margin-left: calc(-1 * var(--space-2)); border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: none; color: var(--fg); font: 400 12px/16px var(--font-sans); text-align: left; cursor: pointer;
+}
+.pp-run-btn:hover { border-color: var(--line-control); }
+.pp-run-btn[aria-pressed="true"] { border-color: var(--focus); }
+.pp-run-btn .mono { font-size: 12px; }
+.pp-run-when { color: var(--fg-subtle); }
+.pp-co-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-1); }
+.pp-co-actions .btn { background: var(--surface-2); }
+.pp-co-actions .btn-ghost { background: transparent; }
+.pp-mode { font: 500 12px/16px var(--font-mono); color: var(--fg-muted); }
+.pp-mode[data-mode="hybrid"] { color: var(--fg); }
+.pp-disclosure { margin-top: var(--space-1); }
+.pp-disclosure summary { cursor: pointer; color: var(--fg-muted); font-size: 12px; padding: var(--space-1) 0; border-radius: var(--radius-xs); width: fit-content; }
+.pp-disclosure summary:hover { color: var(--fg); }
+
+/* --- Workflow --- */
+.segmented .pp-default-tag { display: inline; padding: 0; background: none; box-shadow: none; }
+.pp-default-tag { font: 600 10px/12px var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-subtle); }
+.pp-overlay-tag { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-height: 32px; padding: 0 var(--space-1) 0 var(--space-2); border: 1px solid var(--line-control); border-radius: var(--radius-sm); font-size: 12px; }
+.pp-overlay-tag .btn { min-height: 24px; padding: 0 var(--space-2); }
+.pp-overlay-tag[hidden] { display: none; }
+
+
+/* --- Configuration --- */
+.pp-config { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: var(--space-3) var(--space-4); align-items: start; }
+.pp-config h3 { margin: 6px 0 0; font-size: 13px; line-height: 18px; font-weight: 600; }
+.pp-config h3 + p { margin: 2px 0 0; color: var(--fg-muted); font-size: 12px; line-height: 16px; }
+.pp-config .entry-line { margin: 0; min-height: 32px; }
+.pp-config .secret-list, .pp-config .pp-env { min-width: 0; }
+.pp-env-row { display: grid; grid-template-columns: minmax(140px, 200px) minmax(60px, 1fr) minmax(0, 1.4fr) auto; align-items: center; column-gap: var(--space-3); min-height: 40px; border-bottom: 1px solid var(--line); }
+.pp-env-row:last-child { border-bottom: 0; }
+.pp-env-where { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+
+.pp-skel-lg { height: 160px; }
+.pp-empty { max-width: 560px; padding: var(--space-6); background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.pp-empty h2 { margin: 0 0 var(--space-2); font-size: 15px; line-height: 20px; }
+.pp-empty p { margin: 0 0 var(--space-3); color: var(--fg-muted); }
+
+
+/* Toolbar breadcrumb (the toolbar h1 becomes a navigation landmark on this view). */
+.toolbar-title.pp-crumbs { font-size: 14px; }
+
+/* Repos list: the name is a link, the chevron is its own button. */
+.repo-lead { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.repo-lead .repo-toggle { flex: none; width: 24px; justify-content: center; }
+.repo-lead a.repo-name { color: var(--fg); text-decoration: none; border-radius: var(--radius-xs); }
+.repo-lead a.repo-name:hover { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+.repo-open-project { margin-left: var(--space-3); }
+
+/* Loading, error and not-found states. */
+.pp-note { margin: 0; color: var(--fg-muted); font-size: 12px; line-height: 16px; }
+.pp-note-attention { color: var(--attention); }
+.pp-res-wrap { display: flex; flex-direction: column; gap: var(--space-2); }
+.pp-wf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.pp-wf-bar .small, .pp-overlay-tag .small { font-size: 12px; }
+.pp-overlay-tag select { min-height: 24px; max-width: 220px; }
+.pp-live-reason { color: var(--fg-muted); font-size: 12px; }
+.pp-cleanup-note { margin: var(--space-1) 0 0; }
+
+/* --- narrower desktops: drop the least useful columns first --- */
+@media (max-width: 1399px) {
+  .pp-co-head, .pp-co-row { grid-template-columns: 24px minmax(150px, 1.2fr) minmax(130px, 1fr) 96px 132px minmax(160px, 1fr) 140px; }
+  .pp-co-ab { display: none; }
+}
+@media (max-width: 1099px) {
+  .pp-co-head, .pp-co-row { grid-template-columns: 24px minmax(150px, 1.3fr) 96px 132px minmax(160px, 1fr) 140px; }
+  .pp-co-path-col, .pp-co-row .pp-co-path { display: none; }
+}
+
+/* --- 400 px: two-line rows, nothing scrolls sideways --- */
+@media (max-width: 719px) {
+  .repo-lead { grid-area: id; }
+  .pp-head .avatar { width: 28px; height: 28px; font-size: 13px; }
+  .pp-head-actions { margin-left: 0; width: 100%; }
+  .pp-section { padding: var(--space-3); }
+  .pp-section-tools { margin-left: 0; width: 100%; }
+  .pp-co-head { display: none; }
+  .pp-co-row {
+    grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "branch state" "meta act" "run act";
+    row-gap: 2px; padding: var(--space-2) var(--space-2);
+  }
+  .pp-co-row .wt-lane, .pp-co-row .pp-co-path, .pp-co-row .pp-co-ab, .pp-co-row .pp-co-mode { display: none; }
+  .pp-co-row .pp-co-meta { display: block; color: var(--fg-muted); overflow-wrap: anywhere; }
+  .pp-co-row .wt-branch { grid-area: branch; padding: 0; }
+  .pp-co-row .wt-state { grid-area: state; justify-self: end; }
+  .pp-co-row .pp-co-meta { grid-area: meta; }
+  .pp-co-row .pp-co-run { grid-area: run; }
+  .pp-co-row .pp-co-actions { grid-area: act; align-self: end; }
+  .pp-co-row .pp-co-actions .pp-secondary { display: none; }
+  .pp-config { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+  .pp-config h3 { margin-top: var(--space-2); }
+  .pp-env-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "key act" "val val" "where where"; padding: var(--space-2) 0; }
+  .pp-env-row > :nth-child(1) { grid-area: key; }
+  .pp-env-row > :nth-child(2) { grid-area: val; }
+  .pp-env-row > :nth-child(3) { grid-area: where; }
+  .pp-env-row > :nth-child(4) { grid-area: act; }
+}

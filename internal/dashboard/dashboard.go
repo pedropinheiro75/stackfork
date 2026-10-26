@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/pedropinheiro75/stackfork/internal/metrics"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -129,6 +130,15 @@ type Server struct {
 	// Risks: "max 10 concurrent log streams"); a buffered channel used as
 	// a counting semaphore.
 	logSlots chan struct{}
+
+	// StartSampler runs the metrics sampler until stop closes; nil (the
+	// default, and in tests) never starts it.
+	StartSampler func(m *metrics.Sampler, stop <-chan struct{})
+	sm           *metrics.Sampler
+	smOnce       sync.Once
+	// done ends the metrics sampler; Close closes it.
+	done     chan struct{}
+	doneOnce sync.Once
 }
 
 // maxLogStreams is design.md's documented cap.
@@ -144,7 +154,7 @@ func New(newStateBase, legacyStateBase, version string, port int) (*Server, erro
 		NewStateBase: newStateBase, LegacyStateBase: legacyStateBase,
 		Version: version, Port: port, Token: token,
 		cache: &inventoryCache{}, actionsRun: map[string]bool{},
-		logSlots: make(chan struct{}, maxLogStreams),
+		logSlots: make(chan struct{}, maxLogStreams), done: make(chan struct{}),
 	}
 	s.mux = s.routes()
 	return s, nil
@@ -156,7 +166,11 @@ func (s *Server) Warm() {
 	s.collect() //nolint:errcheck // a failure just leaves the cache cold
 	s.currentRepos()
 	s.disk.get()
+	s.sampler() // history starts with the dashboard, not with the first Project page view
 }
+
+// Close stops the background metrics sampler. Safe to call twice.
+func (s *Server) Close() { s.doneOnce.Do(func() { close(s.done) }) }
 
 // Handler returns the full stack: security headers and the Host allowlist
 // wrap every route (design.md D5).
@@ -177,6 +191,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /api/instances", s.handleInstances)
 	mux.HandleFunc("GET /api/repos", s.handleRepos)
+	mux.HandleFunc("GET /api/project", s.handleProject)
+	mux.HandleFunc("GET /api/project/resources", s.handleProjectResources)
 	mux.HandleFunc("GET /fragments/repos", s.handleReposFragment)
 	mux.HandleFunc("GET /fragments/settings", s.handleSettingsFragment)
 	mux.HandleFunc("POST /api/config", s.handleConfig)

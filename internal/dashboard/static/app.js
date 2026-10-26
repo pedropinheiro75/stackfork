@@ -1346,11 +1346,13 @@
   }
 
   // Views, switched by the rail and mirrored in the URL hash (#repos, ...).
-  var views = ["instances", "repos", "cleanup", "settings"];
-  var viewTitles = { instances: "Instances", repos: "Repos", cleanup: "Clean up", settings: "Settings" };
+  var views = ["instances", "repos", "cleanup", "settings", "project"];
+  var viewTitles = { instances: "Instances", repos: "Repos", cleanup: "Clean up", settings: "Settings", project: "Repos" };
 
+  // #project/NAME?... is the Project page (project.js reads the rest of the hash).
   function viewFromHash() {
     var h = location.hash.replace(/^#/, "");
+    if (/^project\/./.test(h)) return "project";
     return views.indexOf(h) >= 0 ? h : "instances";
   }
 
@@ -1358,11 +1360,11 @@
     if (views.indexOf(view) < 0) view = "instances";
     reposState.tab = view;
     closeMenus(false);
-    if (viewFromHash() !== view || !location.hash) {
+    if (view !== "project" && (viewFromHash() !== view || !location.hash)) {
       try { history.replaceState(null, "", "#" + view); } catch (e) { /* ignore */ }
     }
     document.querySelectorAll(".rail-item").forEach(function (b) {
-      var on = b.dataset.view === view;
+      var on = b.dataset.view === (view === "project" ? "repos" : view); // the page is a child of Repos
       if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
       b.tabIndex = on ? 0 : -1;
     });
@@ -1372,6 +1374,7 @@
     if (view === "repos") loadRepos();
     if (view === "cleanup") { loadCleanup(); loadDisk(); }
     if (view === "settings") loadSettings();
+    if (window.sfProject) { if (view === "project") window.sfProject.enter(); else window.sfProject.leave(); }
   }
 
   function applyRepoFilters() {
@@ -2183,7 +2186,7 @@
       loadRepos();
     }
     log(label + ": started");
-    post("/api/actions", body)
+    return post("/api/actions", body)
       .then(function (r) {
         if ((r.headers.get("Content-Type") || "").indexOf("ndjson") === -1) {
           return r.json().then(function (b) {
@@ -2478,7 +2481,7 @@
     var body = { repo: sel.dataset.cleanupFor, op: "cleanup", mode: sel.value };
     if (grace && grace.value) body.grace_hours = Number(grace.value);
     if (del) body.delete_branch = del.checked;
-    post("/api/live", body)
+    return post("/api/live", body)
       .then(function (r) { return r.text().then(function (t) { try { return JSON.parse(t); } catch (e) { return { message: t }; } }); })
       .then(function (res) { finishLive(res, body.repo, "Cleanup setting"); })
       .catch(function (err) { toast("failed", "cleanup: " + err.message); })
@@ -2595,6 +2598,10 @@
 
   // The script tests (appscript_runs_test.go) load this file in Node and ask
   // for the functions they exercise; a browser never defines __sfExport.
+  // The Project page (project.js) reuses these helpers instead of posting on its own.
+  window.sfDash = { post: post, toast: toast, log: log, copyText: copyText, runRepoAction: runRepoAction, runAction: runAction, showLogs: showLogs,
+    openLearn: openLearn, checkSecrets: checkSecrets, postCleanup: postCleanup, stackColorIndex: stackColorIndex };
+
   if (typeof window.__sfExport === "function") {
     window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, cleanupNoteHtml: cleanupNoteHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, noteLiveRuns: noteLiveRuns, liveOp: liveOp, paintLive: paintLive, loadRepos: loadRepos, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip, pickOpenApp: pickOpenApp, isFlagLike: isFlagLike, flagNext: flagNext, envRowsOf: envRowsOf, envRowHtml: envRowHtml, envEdit: envEdit, envRestore: envRestore, envAdd: envAdd, envChanges: envChanges });
   }

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/pedropinheiro75/stackfork/internal/metrics"
 	"io"
 	"net"
 	"net/http"
@@ -236,6 +237,8 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 		fmt.Fprintf(stdout, "stackfork dashboard listening on http://%s\n", addr)
 		go startRegistration()
 	}
+	srv.StartSampler = func(m *metrics.Sampler, stop <-chan struct{}) { go m.Run(stop) }
+	defer srv.Close()
 	go srv.Warm() // first collection and repo scan, off the request path
 	loop, stopLoop, loopDone := startLiveLoop(newStateBase, legacyStateBase, profiles, srv)
 	liveLoop.Store(loop)
