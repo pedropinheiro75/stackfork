@@ -190,3 +190,26 @@ func TestPlanGraphDerivedWithoutKnowledge(t *testing.T) {
 		t.Errorf("empty plan: %+v", g)
 	}
 }
+
+// A seed that RunOrder places after other steps gets its decision there.
+func TestPlanGraphDecisionFollowsTheSeedPosition(t *testing.T) {
+	plan := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "build", Kind: knowledge.KindExec, Service: "app", Cmd: "b"},
+		{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Service: "app", Cmd: "s"},
+	}}
+	o := graphEnv(t, plan, knowledge.StatusVerified)
+	order := PlanRunner{Root: o.Root, Main: o.Main, Plan: plan, Mode: knowledge.ModeContainer}.Steps()
+	g := PlanGraph(plan, knowledge.ModeContainer, o)
+	prev := "up"
+	for _, s := range order[2:] { // after prepare, up
+		if s.ID == "seed" {
+			if !hasEdge(g, prev, "new-volume", "") || !hasEdge(g, "new-volume", "seed", "yes") {
+				t.Errorf("edges %v", g.Edges)
+			}
+			return
+		}
+		prev = s.ID
+	}
+	t.Fatalf("no seed in %v", order)
+}

@@ -154,7 +154,7 @@ type graphBuilder struct {
 	seen       map[string]int
 	inMode     map[string]map[string]bool
 	edgeSet    map[GraphEdge]bool
-	decisionOf map[string]string // compose-up id -> its New data volume decision
+	decisionOf map[string]string // seed id -> its New data volume decision
 	ends       []gFront
 	inPlan     map[string]bool
 	endSet     map[gFront]bool
@@ -223,14 +223,14 @@ func (b *graphBuilder) walk(items []gItem, mode string, split int, modes []strin
 		}
 		s := it.steps[0]
 		isSeed := s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData
-		if isSeed && firstUp != "" && i > 0 && items[i-1].steps[0].ID == firstUp {
-			d := b.decisionOf[firstUp]
+		if isSeed && firstUp != "" { // drawn where RunOrder puts the seed; the choice itself is made at compose-up
+			d := b.decisionOf[s.ID]
 			if d == "" {
 				d = "new-volume"
 				if _, taken := b.seen[d]; taken {
 					d += "-" + mode
 				}
-				b.decisionOf[firstUp] = d
+				b.decisionOf[s.ID] = d
 			}
 			b.node(GraphNode{ID: d, Kind: "decision", Label: "New data volume?", Branches: []string{"yes", "no"}}, mode)
 			link(d, "")
