@@ -12,6 +12,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 // HostStart starts one host step. The cli package sets the real one (`host start`); tests stub it.
@@ -149,6 +150,8 @@ func (r PlanRunner) Execute() error {
 				note := DraftSkip("migrate", s.ID, knowledge.OnceSchema)
 				fmt.Fprintln(r.Out, note)
 				r.skip(s, note)
+			case s.Once == knowledge.OnceDeps:
+				err = r.deps(s)
 			default:
 				err = r.step(s, func(w io.Writer) (int, error) { return r.exec(w, s) })
 			}
@@ -171,6 +174,35 @@ func (r PlanRunner) Execute() error {
 		}
 	}
 	return hostErr
+}
+
+// deps runs an `exec once: deps` step when the lockfiles changed since its
+// last success (always on the first start) and stores the hash only when it
+// succeeds, so a failed install runs again.
+func (r PlanRunner) deps(s knowledge.Step) error {
+	hash := knowledge.DepsHash(r.Root, s.Dir)
+	path := filepath.Join(r.InstanceDir, "manifest.json")
+	if m, _ := state.ReadManifest(path); m != nil && m.DepsHashes[s.ID] == hash {
+		fmt.Fprintf(r.Out, "%s: lockfiles unchanged, not run\n", s.ID)
+		r.skip(s, "lockfiles unchanged")
+		return nil
+	}
+	if err := r.step(s, func(w io.Writer) (int, error) { return r.exec(w, s) }); err != nil {
+		return err
+	}
+	lock, err := state.AcquireLock(filepath.Join(r.InstanceDir, ".lock"))
+	if err != nil {
+		return nil // the step ran; it runs again next time
+	}
+	defer lock.Release()
+	if m, _ := state.ReadManifest(path); m != nil {
+		if m.DepsHashes == nil {
+			m.DepsHashes = map[string]string{}
+		}
+		m.DepsHashes[s.ID] = hash
+		_ = state.WritePrivate(path, m)
+	}
+	return nil
 }
 
 // withImplicitPrepare puts a prepare step before the first compose-up unless

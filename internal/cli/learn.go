@@ -400,7 +400,7 @@ func cmdLearnRecordStep(stdout, stderr io.Writer, rest []string, root, newStateB
 		}
 	} else {
 		if *id == "" || *kind == "" {
-			return errors.New("usage: learn record step --id ID --kind K [--cmd C] [--service S] [--once data|schema|none] [--on host|container] [--modes a,b] [--exclude a,b] [--name N] [--dir D] [--port-env A,B] [--port N] [--args A,B] [--text T] [--before ID] | --remove ID")
+			return errors.New("usage: learn record step --id ID --kind K [--cmd C] [--service S] [--once data|schema|deps|none] [--on host|container] [--modes a,b] [--exclude a,b] [--name N] [--dir D] [--port-env A,B] [--port N] [--args A,B] [--text T] [--before ID] | --remove ID")
 		}
 		st := knowledge.Step{ID: *id, Kind: *kind, Cmd: *cmd, Service: *service, Once: *once,
 			Modes: splitList(*modes), Exclude: splitList(*exclude), Name: *name, Dir: *dir,

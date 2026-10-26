@@ -31,6 +31,7 @@ const KindSecrets = "secrets"
 const (
 	OnceData   = "data"
 	OnceSchema = "schema"
+	OnceDeps   = "deps"
 )
 
 // OnHost is the value of Step.On that runs an exec step on the host.
@@ -282,8 +283,8 @@ func ValidatePlan(p Plan) error {
 				return fmt.Errorf("step %q: unknown mode %q", s.ID, m)
 			}
 		}
-		if s.Once != "" && (s.Kind != KindExec || (s.Once != OnceData && s.Once != OnceSchema)) {
-			return fmt.Errorf("step %q: once %q is not valid here (exec steps take data or schema)", s.ID, s.Once)
+		if s.Once != "" && (s.Kind != KindExec || (s.Once != OnceData && s.Once != OnceSchema && s.Once != OnceDeps)) {
+			return fmt.Errorf("step %q: once %q is not valid here (exec steps take data, schema or deps)", s.ID, s.Once)
 		}
 		if s.Port != 0 && (s.Kind != KindHost || s.Port < 1 || s.Port > 65535) {
 			return fmt.Errorf("step %q: port %d is not valid here (host steps take 1..65535)", s.ID, s.Port)

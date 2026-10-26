@@ -39,7 +39,7 @@ The recipe is a startup plan: an ordered list of steps in `.stackfork/knowledge.
 |---|---|
 | `prepare` | Runs `prepare` with the recorded arguments. |
 | `compose-up` | Starts the stack. `exclude` lists services to leave out. |
-| `exec` | Runs `cmd` in `service`. `once` is `data` (seed, new database only) or `schema` (migrate). With `on: host` it runs on the host instead (see below). |
+| `exec` | Runs `cmd` in `service`. `once` is `data` (seed, new database only), `schema` (migrate) or `deps` (install dependencies, see below). With `on: host` it runs on the host instead (see below). |
 | `host` | Runs `cmd` on the host. `cmd` is an argument vector: no shell, so no pipes, redirects or `&&`. |
 | `note` | Shows `text` to the person. Runs nothing. |
 
@@ -82,6 +82,16 @@ stackfork learn record step --id app --kind host --name app --dir apps/web --mod
 stackfork learn record step --id studio --kind host --name studio --dir apps/api --modes hybrid \
   --cmd "prisma studio --port {{port}}"
 ```
+
+#### Dependencies after a sync
+
+`start-env` fast-forwards the checkout, so a new commit can add a dependency. Record the install command as an `exec` step with `once: deps`, on the host (`--on host`) or in a container, before the build and migrate steps. Use `yarn install --frozen-lockfile`, `npm ci`, `pnpm install --frozen-lockfile` or `bun install`.
+
+```sh
+stackfork learn record step --id install --kind exec --on host --once deps --dir apps/api --cmd "yarn install --frozen-lockfile" --before migrate
+```
+
+The step runs on the first start, and again when the hash of the lockfiles changed since its last successful run for this instance. The lockfiles are `yarn.lock`, `package-lock.json`, `pnpm-lock.yaml`, `bun.lockb`, `bun.lock`, `go.sum`, `Gemfile.lock`, `poetry.lock`, `uv.lock`, `requirements*.txt`, `composer.lock` and `Cargo.lock`, at the checkout root and in the step's `dir`. The hash is stored in the manifest only when the step succeeds, so a failed install runs again. An unchanged step shows as skipped (`lockfiles unchanged`). The step is part of the trusted plan text like any other step.
 
 After the first Start, check that the host command used this instance's database: a tool that reads its own `.env` file can ignore `DATABASE_URL`.
 
