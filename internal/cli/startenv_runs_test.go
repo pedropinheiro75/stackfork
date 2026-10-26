@@ -103,7 +103,7 @@ func schemaRunStates(t *testing.T, migrateService string) (states, seedText stri
 // both run in the same service.
 func TestOnlyThePrefixedSchemaStepIsSkipped(t *testing.T) {
 	got, text := schemaRunStates(t, "db")
-	want := "sync=succeeded: secrets=skipped:no secrets prepare=succeeded: up=succeeded: seed=succeeded: migrate=skipped:ran with the seed migrate2=succeeded:"
+	want := "sync=succeeded: secrets=skipped:no secrets prepare=succeeded: up=succeeded: migrate=skipped:ran with the seed migrate2=succeeded: seed=succeeded:"
 	if got != want || text != "m && s  in db" {
 		t.Fatalf("%s\n%q", got, text)
 	}
@@ -111,7 +111,7 @@ func TestOnlyThePrefixedSchemaStepIsSkipped(t *testing.T) {
 
 func TestSchemaStepInAnotherServiceIsNotPrefixedAndRunsAtItsPlace(t *testing.T) {
 	got, text := schemaRunStates(t, "web")
-	want := "sync=succeeded: secrets=skipped:no secrets prepare=succeeded: up=succeeded: seed=succeeded: migrate=succeeded: migrate2=succeeded:"
+	want := "sync=succeeded: secrets=skipped:no secrets prepare=succeeded: up=succeeded: migrate=succeeded: migrate2=succeeded: seed=succeeded:"
 	if got != want || text != "s  in db" {
 		t.Fatalf("%s\n%q", got, text)
 	}

@@ -48,21 +48,21 @@
     },
     {
       "ended_at": "TIME",
-      "id": "seed",
-      "kind": "exec",
-      "reason": "data already exists",
-      "started_at": "TIME",
-      "state": "skipped",
-      "text": "m \u0026\u0026 s  in db"
-    },
-    {
-      "ended_at": "TIME",
       "id": "migrate",
       "kind": "exec",
       "log": "2/migrate.log",
       "started_at": "TIME",
       "state": "succeeded",
       "text": "m  in db"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "seed",
+      "kind": "exec",
+      "reason": "data already exists",
+      "started_at": "TIME",
+      "state": "skipped",
+      "text": "m \u0026\u0026 s  in db"
     }
   ],
   "trigger": "cli"

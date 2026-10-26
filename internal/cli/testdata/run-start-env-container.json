@@ -48,21 +48,21 @@
     },
     {
       "ended_at": "TIME",
-      "id": "seed",
-      "kind": "exec",
-      "log": "1/seed.log",
-      "started_at": "TIME",
-      "state": "succeeded",
-      "text": "m \u0026\u0026 s  in db"
-    },
-    {
-      "ended_at": "TIME",
       "id": "migrate",
       "kind": "exec",
       "reason": "ran with the seed",
       "started_at": "TIME",
       "state": "skipped",
       "text": "m  in db"
+    },
+    {
+      "ended_at": "TIME",
+      "id": "seed",
+      "kind": "exec",
+      "log": "1/seed.log",
+      "started_at": "TIME",
+      "state": "succeeded",
+      "text": "m \u0026\u0026 s  in db"
     }
   ],
   "trigger": "cli"

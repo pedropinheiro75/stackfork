@@ -87,8 +87,8 @@ func (r PlanRunner) Check() error {
 }
 
 // Steps are the steps a run declares, in execution order: the mode's steps,
-// an implicit compose-up and prepare unless Exact, and the seed entry right
-// after the first compose-up. It touches nothing; Execute runs this list and
+// an implicit compose-up and prepare unless Exact, and the seed entry (RunOrder:
+// right after the first compose-up, or at its recorded place after exec steps). It touches nothing; Execute runs this list and
 // `stackfork plan` shows it for a plan without recorded steps.
 func (r PlanRunner) Steps() []knowledge.Step {
 	steps, _ := r.Plan.ForMode(r.Mode)
@@ -119,7 +119,9 @@ func (r PlanRunner) Execute() error {
 		r.skip(s, r.HostSkipReason)
 	}
 	prepared, seeded := false, false
-	var hostErr error // the first host app that failed: the others still start, the run still fails
+	deferred := seedDeferredIn(steps) // the seed runs at its own place, not with the compose-up
+	seedDue := false                  // deferred: the compose-up found a new volume, the seed is still to run
+	var hostErr error                 // the first host app that failed: the others still start, the run still fails
 	for _, s := range steps {
 		var err error
 		switch s.Kind {
@@ -138,13 +140,18 @@ func (r PlanRunner) Execute() error {
 				r.AllocHostPorts()
 				r.AllocHostPorts = nil
 			}
-			var sd bool
-			sd, err = r.composeUp(s)
-			seeded = seeded || sd
+			var out UpOutcome
+			out, err = r.composeUp(s, deferred)
+			seeded = seeded || out.Seeded
+			seedDue = seedDue || out.SeedDue
 		case knowledge.KindExec:
 			switch {
+			case s.Once == knowledge.OnceData && deferred:
+				var sd bool
+				seedDue, sd, err = r.deferredSeed(s, seedDue)
+				seeded = seeded || sd
 			case s.Once == knowledge.OnceData: // the data seed runs with its compose-up
-			case s.Once == knowledge.OnceSchema && seeded && SeedCoversSchema(r.Root, r.Main, r.InstanceDir, r.Plan, r.Mode, s): // the seed prefix (migrate && seed) already ran it
+			case s.Once == knowledge.OnceSchema && (seeded || seedDue) && SeedCoversSchema(r.Root, r.Main, r.InstanceDir, r.Plan, r.Mode, s): // the seed prefix (migrate && seed) already ran it
 				r.skip(s, "ran with the seed")
 			case s.Once == knowledge.OnceSchema && r.Plan.Status != knowledge.PlanRecorded && draftCheckout(r.Root, r.Main): // only proposed: nobody recorded it
 				note := DraftSkip("migrate", s.ID, knowledge.OnceSchema)
@@ -237,8 +244,8 @@ func (r PlanRunner) prepare(w io.Writer, args []string) error {
 }
 
 // declare lists every step of the run as pending. Steps already puts the
-// seed entry after the first compose-up (design.md D9), so the plan's own
-// data step is not listed at its place in the plan.
+// seed entry where RunOrder puts it (design.md D9), so a data step that follows
+// the compose-up directly is not listed twice.
 func (r PlanRunner) declare(steps []knowledge.Step) {
 	if r.Run == nil {
 		return
@@ -266,14 +273,11 @@ func (r PlanRunner) skip(s knowledge.Step, reason string) {
 	}
 }
 
-// composeUp runs Up as the compose-up step and, when that up creates the
-// data, the seed (UpAndSeed), and reports whether the seed ran. The inner up
-// runs with --in-run: it neither records nor seeds, this call does both.
-func (r PlanRunner) composeUp(s knowledge.Step) (seeded bool, err error) {
-	res := UpAndSeed(r.Out, r.Err, UpSeed{
+func (r PlanRunner) upSeed(s knowledge.Step, deferred bool) UpSeed {
+	return UpSeed{
 		Run: r.Run, Root: r.Root, Main: r.Main, Branch: r.Branch, Project: r.Project, InstanceDir: r.InstanceDir,
 		NewBase: r.NewBase, LegacyBase: r.LegacyBase, Mode: r.Mode, Plan: r.Plan,
-		UpID: s.ID, UpText: StepText(s), Seed: !r.skipsHostSeed(), Lock: true, FreshData: r.FreshData,
+		UpID: s.ID, UpText: StepText(s), Seed: !r.skipsHostSeed(), Lock: true, FreshData: r.FreshData, DeferSeed: deferred,
 		Compose: func(stdout, stderr io.Writer) (int, error) {
 			services, err := r.upServices(stdout, s)
 			if err != nil {
@@ -281,17 +285,52 @@ func (r PlanRunner) composeUp(s knowledge.Step) (seeded bool, err error) {
 			}
 			return 0, r.Up(stdout, services)
 		},
-	})
+	}
+}
+
+// composeUp runs Up as the compose-up step and, when that up creates the
+// data, the seed (UpAndSeed), and reports the outcome. The inner up runs with
+// --in-run: it neither records nor seeds, this call does both. With deferred
+// the seed is only decided here; deferredSeed runs it at its place.
+func (r PlanRunner) composeUp(s knowledge.Step, deferred bool) (UpOutcome, error) {
+	res := UpAndSeed(r.Out, r.Err, r.upSeed(s, deferred))
 	if res.Err != nil {
-		return false, res.Err
+		return UpOutcome{}, res.Err
 	}
 	if res.SeedErr != nil {
 		if r.Run != nil {
 			r.Run.SetRetry("stackfork --instance " + r.Project + " seed")
 		}
-		return false, seedFailure(r.Plan, r.Root, r.Main, r.InstanceDir, r.Mode, res.SeedErr)
+		return UpOutcome{}, seedFailure(r.Plan, r.Root, r.Main, r.InstanceDir, r.Mode, res.SeedErr)
 	}
-	return res.Seeded, nil
+	return res, nil
+}
+
+// deferredSeed is the data step at its recorded place: it runs the seed the
+// compose-up decided (a new volume) or records why it does not.
+func (r PlanRunner) deferredSeed(s knowledge.Step, due bool) (stillDue, seeded bool, err error) {
+	var seedS *runs.Step
+	if r.Run != nil {
+		seedS = r.Run.Step(s.ID, s.Kind, StepText(s))
+	}
+	if !due {
+		if seedS != nil && seedS.State == runs.Pending {
+			reason := "data already exists"
+			if cmd, _ := SeedRecipeIn(r.Root, r.Main, r.InstanceDir, r.Mode); cmd == "" {
+				reason = "no seed for this mode"
+			}
+			seedS.Skip(reason)
+		}
+		return false, false, nil
+	}
+	serr, ok := runDueSeed(r.Out, r.Err, r.upSeed(knowledge.Step{}, true), seedS)
+	if serr != nil {
+		if r.Run != nil {
+			r.Run.SetRetry("stackfork --instance " + r.Project + " seed")
+		}
+		return false, false, seedFailure(r.Plan, r.Root, r.Main, r.InstanceDir, r.Mode, serr)
+	}
+	return false, ok, nil
 }
 
 // skipsHostSeed: a live run leaves the host data step out, so it must not

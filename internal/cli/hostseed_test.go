@@ -122,7 +122,7 @@ func TestHostMigrateInAnotherDirRunsAtItsOwnPlace(t *testing.T) {
 	code, e, states, _, _ := startHostSeed(t, hostSeedPlan(
 		hostStep("migrate", knowledge.OnceSchema, "bun run db:migrate", "apps/api"),
 		hostStep("seed", knowledge.OnceData, "bun run db:seed", "apps/web")))
-	if code != 0 || strings.Join(*calls, "|") != "seed: bun run db:seed|migrate: bun run db:migrate" {
+	if code != 0 || strings.Join(*calls, "|") != "migrate: bun run db:migrate|seed: bun run db:seed" {
 		t.Fatalf("%d %s %v", code, e, *calls)
 	}
 	if strings.Contains(states, "ran with the seed") {
