@@ -307,9 +307,6 @@ func (b *graphBuilder) stepNode(s knowledge.Step) GraphNode {
 		} else if n.Service == "" {
 			n.Service = b.plan.AppService
 		}
-		if s.Once != "" {
-			n.Subtitle += " · once " + s.Once
-		}
 	}
 	k := b.o.K
 	switch {

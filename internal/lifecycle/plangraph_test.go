@@ -117,7 +117,7 @@ func TestPlanGraphContainerVsHybrid(t *testing.T) {
 	if n := gnode(t, c, "api"); n.Command != "npm run dev -w api  port 4000" || n.StepKind != "host" || n.CommandExpanded != "" {
 		t.Errorf("api: %+v", n)
 	}
-	if n := gnode(t, c, "migrate"); n.Once != "schema" || n.Subtitle != "exec · once schema" || n.SkipReason != "" {
+	if n := gnode(t, c, "migrate"); n.Once != "schema" || n.Subtitle != "exec" || n.SkipReason != "" {
 		t.Errorf("migrate: %+v", n)
 	}
 	if n := gnode(t, c, "up-deps"); n.Command != "compose up  without app, nginx" {
