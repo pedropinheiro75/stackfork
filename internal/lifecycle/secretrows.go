@@ -48,7 +48,9 @@ func SecretRows(root, repo string, check bool, known map[string]RefStatus, flags
 		return nil, err
 	}
 	own, sibling := manifestRefsFor(repo, newBase, legacyBase)
-	folder, folderFrom, err := FolderSecrets(repo, own)
+	files, envFile := RecipeFiles(repo, newBase, legacyBase)
+	used := ComposeSecrets(repo, files, envFile) // names the Compose source needs count as declared
+	folder, folderFrom, err := FolderSecrets(repo, UsedPlus(own, repo, files, envFile))
 	if err != nil {
 		return nil, err
 	}
@@ -63,6 +65,14 @@ func SecretRows(root, repo string, check bool, known map[string]RefStatus, flags
 		hints[d.Name] = d.Hint
 		if _, ok := refs[d.Name]; !ok {
 			refs[d.Name], source[d.Name] = "", "declared"
+		}
+	}
+	for n, f := range used {
+		if _, ok := refs[n]; !ok {
+			refs[n], source[n] = "", "declared"
+			if hints[n] == "" {
+				hints[n] = "used by " + f
+			}
 		}
 	}
 	names := make([]string, 0, len(refs))

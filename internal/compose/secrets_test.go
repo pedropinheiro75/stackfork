@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 // Task 6.1: ParseSecretFlag validates shape only, never resolves a value.
@@ -131,5 +133,17 @@ func TestDockerEnvSkipsReservedSecretNames(t *testing.T) {
 	}
 	if !strings.Contains(joined, "\nNPM_TOKEN=ok\n") {
 		t.Error("an ordinary name must still be passed")
+	}
+}
+
+func TestSourceSecretsOnlyUsedAndUnsourced(t *testing.T) {
+	testsupport.RequireCompose(t)
+	dir := t.TempDir()
+	src := "services:\n  app:\n    image: alpine\n    build:\n      context: .\n      secrets: [b]\n    secrets: [a, f, e]\nsecrets:\n  a:\n    environment: SF_UNSET_A\n  b:\n    environment: SF_UNSET_B\n  f:\n    file: ./f.txt\n  e:\n    environment: HOME\n  unused:\n    environment: SF_UNSET_U\n"
+	os.WriteFile(filepath.Join(dir, "c.yaml"), []byte(src), 0o644)
+	os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x"), 0o600)
+	got := SourceSecrets(dir, []string{filepath.Join(dir, "c.yaml")}, "")
+	if len(got) != 3 || got["a"] != "SF_UNSET_A" || got["b"] != "SF_UNSET_B" || got["e"] != "HOME" {
+		t.Fatalf("%v", got)
 	}
 }

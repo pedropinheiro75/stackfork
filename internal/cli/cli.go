@@ -672,7 +672,7 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	}
 	// The machine map beats the recorded references (D7), and a mapped name
 	// the manifest lacks is recorded now: Render must know every name.
-	folder, _, err := lifecycle.FolderSecrets(root, secretRefs)
+	folder, _, err := lifecycle.FolderSecrets(root, lifecycle.UsedPlus(secretRefs, root, resolvedFiles, envFile))
 	if err != nil {
 		return err
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 // preflightFixture is a ready repo, a fake docker, an empty fake keychain and
@@ -53,11 +54,12 @@ func secretsStepLog(t *testing.T, base []string, repo string) (log string, r *ru
 
 func noDockerCalls(t *testing.T, dockerLog string) {
 	t.Helper()
-	// the read-only inventory (inspect, ps) runs before the run begins; no
+	// the read-only inventory (inspect, ps) runs before the run begins, and
+	// the preflight reads the Compose source with `compose config`; no other
 	// Compose command may have
 	b, _ := os.ReadFile(dockerLog)
 	for _, line := range strings.Split(string(b), "\n") {
-		if line != "" && !strings.HasPrefix(line, "inspect ") && !strings.HasPrefix(line, "ps ") {
+		if line != "" && !strings.HasPrefix(line, "inspect ") && !strings.HasPrefix(line, "ps ") && !strings.Contains(line, " config --no-env-resolution ") {
 			t.Fatalf("docker was called after a failed preflight:\n%s", b)
 		}
 	}
@@ -158,4 +160,51 @@ func TestPreflightBareUpAndSeedFailBeforeDocker(t *testing.T) {
 		t.Fatalf("%d %s", code, e)
 	}
 	noDockerCalls(t, dockerLog)
+}
+
+// usedSecretCompose uses npm_token (nothing supplies it) and tok_file (a file
+// supplies it): only the first needs a reference.
+const usedSecretCompose = "services:\n  app:\n    image: alpine\n    secrets: [npm_token, tok_file]\nsecrets:\n  npm_token:\n    environment: SF_TEST_USED_SECRET_UNSET\n  tok_file:\n    file: ./tok.txt\n"
+
+func usedSecretFixture(t *testing.T) (repo string, base []string, dockerLog string) {
+	t.Helper()
+	testsupport.RequireCompose(t)
+	os.Unsetenv("SF_TEST_USED_SECRET_UNSET")
+	repo, base, dockerLog, _ = preflightFixture(t)
+	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(usedSecretCompose), 0o644)
+	os.WriteFile(filepath.Join(repo, ".agent-dev", "tok.txt"), []byte("x"), 0o600)
+	return repo, base, dockerLog
+}
+
+func TestPreflightComposeSecretWithoutReferenceFailsBeforePrepare(t *testing.T) {
+	repo, base, dockerLog := usedSecretFixture(t)
+	_, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if code == 0 || !strings.Contains(e, "step secrets failed: npm_token has no reference") {
+		t.Fatalf("%d %s", code, e)
+	}
+	noDockerCalls(t, dockerLog)
+	log, _ := secretsStepLog(t, base, repo)
+	if !strings.Contains(log, "npm_token is used by app.compose.yaml but has no reference; run: stackfork secret map REPO npm_token=npmrc:") || strings.Contains(log, "tok_file") {
+		t.Fatalf("%s", log)
+	}
+	if ms, _ := filepath.Glob(filepath.Join(base[1], "*", "manifest.json")); len(ms) != 0 {
+		t.Fatalf("prepare ran: %v", ms)
+	}
+}
+
+func TestComposeSecretCountsAsDeclaredForFolderMapsAndLs(t *testing.T) {
+	repo, base, _ := usedSecretFixture(t)
+	out, _, code := runCLI(t, append(base, "secret", "ls", repo)...)
+	if code != 0 || !strings.Contains(out, "npm_token") || !strings.Contains(out, "missing") || strings.Contains(out, "tok_file") {
+		t.Fatalf("%d %s", code, out)
+	}
+	mapSecret(t, filepath.Dir(repo), "npm_token", "keychain:acme-npm-token")
+	out, _, _ = runCLI(t, append(base, "secret", "ls", repo)...)
+	if !strings.Contains(out, "folder") || !strings.Contains(out, "keychain:acme-npm-token") {
+		t.Fatalf("a folder map must apply to a name the Compose file uses:\n%s", out)
+	}
+	fakeKeychain(t, map[string]string{"acme-npm-token": "v"})
+	if _, e, code := runCLI(t, append(base, "start-env", repo)...); code != 0 {
+		t.Fatalf("%d %s", code, e)
+	}
 }

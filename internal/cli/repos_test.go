@@ -149,13 +149,13 @@ func TestStartEnvPreparesOnlyWhenNeededThenUps(t *testing.T) {
 		t.Fatalf("progress lines missing: %s", out)
 	}
 	b, _ := os.ReadFile(log)
-	if countLines(string(b), " up -d ") != 1 || countLines(string(b), " config ") != 1 {
+	if countLines(string(b), " up -d ") != 1 || countLines(string(b), " config ") != 2 { // the secrets step reads the source, then prepare renders it
 		t.Fatalf("first start: %s", b)
 	}
 
 	out, _, code = runCLI(t, append(base, "start-env", repo)...)
 	b, _ = os.ReadFile(log)
-	if code != 0 || !strings.Contains(out, "already prepared") || countLines(string(b), " config ") != 1 || countLines(string(b), " up -d ") != 2 {
+	if code != 0 || !strings.Contains(out, "already prepared") || countLines(string(b), " config ") != 2 || countLines(string(b), " up -d ") != 2 { // the secrets step's read is cached per process
 		t.Fatalf("second start must not re-prepare: %d %s\n%s", code, out, b)
 	}
 
@@ -163,7 +163,7 @@ func TestStartEnvPreparesOnlyWhenNeededThenUps(t *testing.T) {
 	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(readyCompose+"  cache:\n    image: redis:7\n"), 0o644)
 	out, _, code = runCLI(t, append(base, "start-env", repo)...)
 	b, _ = os.ReadFile(log)
-	if code != 0 || !strings.Contains(out, "preparing") || countLines(string(b), " config ") != 2 {
+	if code != 0 || !strings.Contains(out, "preparing") || countLines(string(b), " config ") != 4 { // secrets step + prepare
 		t.Fatalf("changed input must re-prepare: %d %s\n%s", code, out, b)
 	}
 }

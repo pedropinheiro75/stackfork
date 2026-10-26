@@ -233,3 +233,47 @@ func Render(root string, files []string, envFile string, hostname string, secret
 	}
 	return model, unresolvedVarNames(stderr.String()), nil
 }
+
+// SourceSecrets are the top-level secrets of the Compose source that a
+// service (or its build) uses and that have no source of their own: no
+// `file:`, `content:` or `external`. The value is the env var an
+// `environment:` source reads, or "". Best effort: nil when Compose cannot
+// render the files (prepare reports that).
+func SourceSecrets(root string, files []string, envFile string) map[string]string {
+	if len(files) == 0 {
+		return nil
+	}
+	model, _, err := Render(root, files, envFile, "", nil)
+	if err != nil {
+		return nil
+	}
+	m, _ := asMap(model)
+	top, _ := asMap(m["secrets"])
+	services, _ := asMap(m["services"])
+	used := map[string]bool{}
+	for _, raw := range services {
+		svc, _ := asMap(raw)
+		lists := [][]interface{}{}
+		l, _ := asList(svc["secrets"])
+		lists = append(lists, l)
+		if b, ok := asMap(svc["build"]); ok {
+			l, _ := asList(b["secrets"])
+			lists = append(lists, l)
+		}
+		for _, list := range lists {
+			for _, e := range list {
+				used[secretEntryName(e)] = true
+			}
+		}
+	}
+	out := map[string]string{}
+	for name := range used {
+		def, _ := asMap(top[name])
+		if _, ok := top[name]; !ok || def["file"] != nil || def["content"] != nil || truthy(def["external"]) {
+			continue
+		}
+		env, _ := def["environment"].(string)
+		out[name] = env
+	}
+	return out
+}

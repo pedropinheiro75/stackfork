@@ -493,7 +493,11 @@ func needsPrepare(instanceDir, root, branch, project string) bool {
 	}
 	// A name a folder supplies that the manifest lacks (declared later) too.
 	have := info.ResolvedSecrets()
-	folder, _, _ := lifecycle.FolderSecrets(root, have)
+	envFile := ""
+	if info.EnvFile != nil {
+		envFile = *info.EnvFile
+	}
+	folder, _, _ := lifecycle.FolderSecrets(root, lifecycle.UsedPlus(have, root, info.Files, envFile))
 	for n := range folder {
 		if _, ok := have[n]; !ok {
 			return true
@@ -952,7 +956,9 @@ func startPreflight(rec *runs.Run, o StartOptions, root, main, instanceDir, trig
 	if !willPrepare {
 		flags = nil // nothing records them: the manifest's references are the ones `up` runs with
 	}
-	folder, from, err := lifecycle.FolderSecrets(root, manifest)
+	files, envFile := recipeFiles(root, main, instanceDir, o)
+	used := lifecycle.ComposeSecrets(root, files, envFile) // names the Compose source needs (an unprepared instance has not recorded them)
+	folder, from, err := lifecycle.FolderSecrets(root, lifecycle.UsedPlus(manifest, root, files, envFile))
 	if err != nil {
 		return nil, err
 	}
@@ -968,6 +974,30 @@ func startPreflight(rec *runs.Run, o StartOptions, root, main, instanceDir, trig
 			folders[n] = from[n]
 		}
 	}
-	return lifecycle.Preflight{Run: rec, InstanceDir: instanceDir, Main: main, Refs: refs, Folders: folders, Declared: lifecycle.DeclaredSecrets(root, main),
+	return lifecycle.Preflight{Run: rec, InstanceDir: instanceDir, Main: main, Refs: refs, Folders: folders, Declared: lifecycle.DeclaredSecrets(root, main), Used: used,
 		Dashboard: trigger == "dashboard" || trigger == live.TriggerLive}.Do()
+}
+
+// recipeFiles are the Compose files (absolute) and env file the Start will
+// prepare or run with: the recipe prepare is given, else what the checkout's
+// instance or adapter records. Read-only; none when unknown.
+func recipeFiles(root, main, instanceDir string, o StartOptions) (files []string, envFile string) {
+	if ch, err := prepareChoice(root, main, instanceDir); err == nil && ch.Args != nil {
+		abs := func(p string) string {
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(root, p)
+			}
+			return p
+		}
+		for _, f := range append(globalFlagValues(ch.Args, "f"), globalFlagValues(ch.Args, "file")...) {
+			files = append(files, abs(f))
+		}
+		if e := globalFlagValues(ch.Args, "env-file"); len(e) > 0 {
+			envFile = abs(e[0])
+		}
+		if len(files) > 0 {
+			return files, envFile
+		}
+	}
+	return lifecycle.RecipeFiles(root, o.NewStateBase, o.LegacyStateBase)
 }

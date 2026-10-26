@@ -53,6 +53,7 @@ type Preflight struct {
 	Main        string    // the repository the fix commands name
 	Refs        map[string]string
 	Declared    []knowledge.SecretDecl
+	Used        map[string]string // name -> Compose file that uses it (ComposeSecrets)
 	Folders     map[string]string // name -> folder, for a reference a folder supplies
 	Unprepared  []string          // mapped names the manifest does not record (bare up)
 	Dashboard   bool              // the dashboard does not see the shell environment
@@ -81,6 +82,9 @@ func (p Preflight) Do() (SecretValues, error) {
 		names[n] = true
 	}
 	for _, n := range p.Unprepared {
+		names[n] = true
+	}
+	for n := range p.Used {
 		names[n] = true
 	}
 	var step *runs.Step
@@ -118,6 +122,9 @@ func (p Preflight) Do() (SecretValues, error) {
 		case unprepared[name]:
 			fmt.Fprintf(w, "%s: %v\n", name, UnpreparedError(name))
 			failed = append(failed, UnpreparedError(name).Error())
+		case !hasRef && p.Used[name] != "":
+			fmt.Fprintf(w, "%s is used by %s but has no reference; run: stackfork secret map %s %s=npmrc:$HOME/.npmrc#npm.pkg.github.com (or keychain:%s, op://VAULT/ITEM/FIELD)\n", name, p.Used[name], shellQuote(p.Main), name, itemFor(name))
+			failed = append(failed, name+" has no reference")
 		case !hasRef:
 			label := name
 			if h := declared[name]; h != "" {
