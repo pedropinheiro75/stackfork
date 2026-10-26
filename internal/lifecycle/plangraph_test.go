@@ -73,7 +73,7 @@ func TestPlanGraphContainerVsHybrid(t *testing.T) {
 		{"mode", "up", "container"}, {"mode", "up-deps", "hybrid"},
 		{"up", "new-volume", ""}, {"new-volume", "seed", "yes"}, {"new-volume", "migrate", "no"}, {"seed", "migrate", ""}, {"migrate", "ready", ""},
 		{"up-deps", "new-volume-hybrid", ""}, {"new-volume-hybrid", "seed-host", "yes"}, {"new-volume-hybrid", "migrate-host", "no"}, {"seed-host", "migrate-host", ""},
-		{"migrate-host", "api", "start together"}, {"migrate-host", "app", "start together"}, {"api", "ready", ""}, {"app", "ready", ""},
+		{"migrate-host", "api", "start together"}, {"migrate-host", "app", "start together"}, {"api", "ready-hybrid", ""}, {"app", "ready-hybrid", ""},
 	} {
 		if !hasEdge(c, e[0], e[1], e[2]) {
 			t.Errorf("missing edge %v in %v", e, c.Edges)
@@ -91,7 +91,7 @@ func TestPlanGraphContainerVsHybrid(t *testing.T) {
 
 	// in_mode follows the viewed mode; shared nodes are always in.
 	for id, want := range map[string][2]bool{ // container view, hybrid view
-		"secrets": {true, true}, "prepare": {true, true}, "mode": {true, true}, "ready": {true, true},
+		"secrets": {true, true}, "prepare": {true, true}, "mode": {true, true}, "ready": {true, false}, "ready-hybrid": {false, true},
 		"up": {true, false}, "migrate": {true, false}, "seed": {true, false}, "new-volume": {true, false},
 		"up-deps": {false, true}, "migrate-host": {false, true}, "seed-host": {false, true}, "api": {false, true}, "app": {false, true},
 		"new-volume-hybrid": {false, true},

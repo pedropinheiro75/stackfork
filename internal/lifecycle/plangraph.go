@@ -127,12 +127,22 @@ func PlanGraph(plan knowledge.Plan, mode string, o GraphOpts) Graph {
 	}
 	b.node(sec, "")
 	b.edge("start", knowledge.KindSecrets, "")
-	for _, m := range modes {
+	for i, m := range modes {
 		b.walk(items[m], m, split, modes)
-	}
-	b.node(GraphNode{ID: "ready", Kind: "terminal", Label: o.EntryTarget, EntryURL: o.EntryURL}, "")
-	for _, f := range b.ends {
-		b.edge(f.id, "ready", f.label)
+		// One Ready per mode branch, so each branch ends on its own pill.
+		id := "ready"
+		if split >= 0 && i > 0 {
+			id += "-" + m
+		}
+		rm := m
+		if split < 0 {
+			rm = ""
+		}
+		b.node(GraphNode{ID: id, Kind: "terminal", Label: o.EntryTarget, EntryURL: o.EntryURL}, rm)
+		for _, f := range b.ends {
+			b.edge(f.id, id, f.label)
+		}
+		b.ends, b.endSet = nil, nil
 	}
 	for i := range b.g.Nodes {
 		n := &b.g.Nodes[i]
