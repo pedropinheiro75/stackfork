@@ -665,9 +665,10 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	// ever computed here - never a value. Computed before Render so it can
 	// protect each name from resolving to empty (design.md D6, 253fb81's
 	// regression).
-	secretRefs := map[string]string{}
-	if previous != nil {
-		secretRefs = previous.ResolvedSecrets()
+	// A removed instance's kept references count as recorded too (D7).
+	secretRefs := state.RecordedSecrets(instanceDir)
+	if secretRefs == nil {
+		secretRefs = map[string]string{}
 	}
 	// The machine map beats the recorded references (D7), and a mapped name
 	// the manifest lacks is recorded now: Render must know every name.
@@ -811,6 +812,7 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	if err := state.WritePrivate(manifestPath, info); err != nil {
 		return err
 	}
+	os.Remove(filepath.Join(instanceDir, state.KeptSecrets)) //nolint:errcheck // the manifest holds them now
 
 	services := []string{}
 	if m, ok := model.(map[string]interface{}); ok {

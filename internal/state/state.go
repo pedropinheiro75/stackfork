@@ -139,6 +139,26 @@ func (m *Manifest) ResolvedSecrets() map[string]string {
 	return out
 }
 
+// KeptSecrets is the file a removed instance leaves in its state dir: the
+// secret references (never values) its manifest recorded. Removing an
+// instance throws its data away, not the person's choice of where a secret
+// comes from, so the next prepare of the same checkout+branch records them
+// again (add-secret-vault D7: the manifest's references survive).
+const KeptSecrets = "kept-secrets.json"
+
+// RecordedSecrets are the references an instance recorded: its manifest's,
+// or, when it has none, those its removal kept. Nil when neither exists.
+func RecordedSecrets(instanceDir string) map[string]string {
+	if m, err := ReadManifest(filepath.Join(instanceDir, "manifest.json")); err == nil && m != nil {
+		return m.ResolvedSecrets()
+	}
+	var kept map[string]string
+	if b, err := os.ReadFile(filepath.Join(instanceDir, KeptSecrets)); err == nil {
+		json.Unmarshal(b, &kept) //nolint:errcheck // an unreadable file keeps nothing
+	}
+	return kept
+}
+
 // SeedLog is the file in an instance dir holding the last seed's output.
 const SeedLog = "seed.log"
 

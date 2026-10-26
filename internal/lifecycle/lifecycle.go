@@ -484,9 +484,28 @@ func SnapshotServices(instanceDir string) []string {
 // runs, port records) and reloads the proxy so its route goes, the same
 // removal `gc --apply` and `prune` do for each instance. Callers run it only
 // after `down --volumes` succeeded.
+//
+// The secret references the instance recorded stay behind in
+// state.KeptSecrets while its checkout exists: they are where the person said
+// a secret comes from, not data, and a later Start of the same checkout and
+// branch records them again instead of starting without them.
 func ForgetInstance(stderr io.Writer, instanceDir, newStateBase, legacyStateBase string) error {
+	var keep map[string]string
+	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
+		if _, err := os.Stat(m.Root); err == nil { // ponytail: an orphan's refs go with it; nothing can prepare it again
+			keep = m.ResolvedSecrets()
+		}
+	}
 	if err := os.RemoveAll(instanceDir); err != nil {
 		return fmt.Errorf("state removal failed: %w", err)
+	}
+	if len(keep) > 0 {
+		if err := os.MkdirAll(instanceDir, 0o700); err != nil {
+			return fmt.Errorf("keeping the secret references failed: %w", err)
+		}
+		if err := state.WritePrivate(filepath.Join(instanceDir, state.KeptSecrets), keep); err != nil {
+			return fmt.Errorf("keeping the secret references failed: %w", err)
+		}
 	}
 	ReloadProxyIfRunning(stderr, newStateBase, legacyStateBase)
 	return nil

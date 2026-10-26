@@ -901,6 +901,7 @@ func siblingRefs(note io.Writer, o StartOptions, root, main, instanceDir string,
 	}
 	flags := flagSecrets(o.Global)
 	folder, _, _ := lifecycle.FolderSecrets(root, nil) // declared names a folder supplies
+	kept := state.RecordedSecrets(instanceDir)         // a removed instance's own references beat a sibling's (D7)
 	out := map[string]string{}
 	names := make([]string, 0, len(refs))
 	for n := range refs {
@@ -909,7 +910,7 @@ func siblingRefs(note io.Writer, o StartOptions, root, main, instanceDir string,
 	sort.Strings(names)
 	for _, n := range names {
 		r := refs[n]
-		if mapped[n] != "" || flags[n] != "" || folder[n] != "" {
+		if mapped[n] != "" || flags[n] != "" || folder[n] != "" || kept[n] != "" {
 			continue
 		}
 		if secretstore.IsStoreRef(r) {
@@ -933,10 +934,7 @@ func startPreflight(rec *runs.Run, o StartOptions, root, main, instanceDir, trig
 	if err != nil {
 		return nil, err
 	}
-	var manifest map[string]string
-	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
-		manifest = m.ResolvedSecrets()
-	}
+	manifest := state.RecordedSecrets(instanceDir) // or a removed instance's kept ones
 	flags := flagSecrets(o.Global)
 	if !willPrepare {
 		flags = nil // nothing records them: the manifest's references are the ones `up` runs with
