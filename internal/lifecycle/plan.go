@@ -118,6 +118,7 @@ func (r PlanRunner) Execute() error {
 		r.skip(s, r.HostSkipReason)
 	}
 	prepared, seeded := false, false
+	var hostErr error // the first host app that failed: the others still start, the run still fails
 	for _, s := range steps {
 		var err error
 		switch s.Kind {
@@ -158,13 +159,18 @@ func (r PlanRunner) Execute() error {
 		}
 		if err != nil {
 			var se stepError
-			if errors.As(err, &se) || strings.HasPrefix(err.Error(), "step "+s.ID+":") {
+			if !errors.As(err, &se) && !strings.HasPrefix(err.Error(), "step "+s.ID+":") {
+				err = fmt.Errorf("step %s failed: %v; retry with stackfork start-env", s.ID, err)
+			}
+			if s.Kind != knowledge.KindHost {
 				return err
 			}
-			return fmt.Errorf("step %s failed: %v; retry with stackfork start-env", s.ID, err)
+			if hostErr == nil {
+				hostErr = err
+			}
 		}
 	}
-	return nil
+	return hostErr
 }
 
 // withImplicitPrepare puts a prepare step before the first compose-up unless

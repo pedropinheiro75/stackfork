@@ -38,7 +38,7 @@ func init() {
 		if err := lifecycle.StopHostLocked(stderr, instanceDir, name, newBase, legacyBase); err != nil {
 			return err
 		}
-		_, err = spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, restartWait(proc.RestartArgs()))
+		_, err = spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, restartWait(proc.RestartArgs()), false)
 		return err
 	}
 	lifecycle.HostStart = func(out, errOut io.Writer, base []string, root, instanceDir string, step knowledge.Step) error {
@@ -67,6 +67,9 @@ func init() {
 			args = []string{"--root", root}
 		}
 		args = append(append(args, "host", "start", step.Name), flags...)
+		if step.Port != 0 || len(step.PortEnv) > 0 {
+			args = append(args, "--require-listen")
+		}
 		code, err := run(append(append(args, "--"), argv...), out, errOut)
 		if err == nil && code != 0 {
 			err = fmt.Errorf("host start %s exited with status %d", step.Name, code)
@@ -90,7 +93,7 @@ func hostFlagArgs(port int, dir, portEnv string) []string {
 }
 
 // hostStart spawns the detached supervisor for a new host process.
-func hostStart(stderr io.Writer, name string, command []string, workDir, project, instanceDir, newBase, legacyBase string, flagArgs []string, wait time.Duration) (int, error) {
+func hostStart(stderr io.Writer, name string, command []string, workDir, project, instanceDir, newBase, legacyBase string, flagArgs []string, wait time.Duration, require bool) (int, error) {
 	if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); m != nil {
 		if proc, ok := m.HostProcs[name]; ok && state.HostIdentity(proc) {
 			return 0, fmt.Errorf("host process %s is already running (pid %d); use `host restart %s`", name, proc.PID, name)
@@ -98,7 +101,7 @@ func hostStart(stderr io.Writer, name string, command []string, workDir, project
 	}
 	args := []string{"--state-dir", newBase, "--legacy-state-dir", legacyBase, "--instance", project, "host", "--supervise", name}
 	args = append(append(args, flagArgs...), "--")
-	return spawnSupervisor(stderr, name, append(args, command...), workDir, instanceDir, wait)
+	return spawnSupervisor(stderr, name, append(args, command...), workDir, instanceDir, wait, require)
 }
 
 // hostClaimWait is how long a start with no port wait gives the supervisor to
@@ -168,7 +171,7 @@ func hostLogTail(instanceDir, name string, n int) string {
 // returns once the supervisor recorded its HostProcs entry and, when wait is
 // not zero, the app listens on its port. wait is the deadline of the whole
 // start; with zero the entry alone has hostClaimWait.
-func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, instanceDir string, wait time.Duration) (int, error) {
+func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, instanceDir string, wait time.Duration, require bool) (int, error) {
 	exe, err := hostExecutable()
 	if err != nil {
 		return 0, err
@@ -240,6 +243,10 @@ func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, inst
 					case <-exited:
 						return 0, failed()
 					case <-deadline:
+						if require { // the plan declared a port: an app that never listens did not start
+							return 0, fmt.Errorf("host process %s is running but not listening on %d after %v; it is still running (stackfork host stop %s). Last log lines of %s:\n%s",
+								name, p.Port, wait, name, logPath, strings.TrimSpace(hostLogTail(instanceDir, name, 15)))
+						}
 						// A worker may never listen, or not use PORT: leave it running, as `starting`.
 						fmt.Fprintf(stderr, "stackfork: warning: %s is running but not listening on %d after %v; it may not use PORT. Last log lines of %s:\n%s\n",
 							name, p.Port, wait, logPath, strings.TrimSpace(hostLogTail(instanceDir, name, 15)))
@@ -302,7 +309,7 @@ func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, br
 		fmt.Fprintf(stdout, "stopped %s\n", name)
 		return 0, nil
 	}
-	return spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, restartWait(proc.RestartArgs()))
+	return spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, restartWait(proc.RestartArgs()), false)
 }
 
 func contains(l []string, s string) bool {

@@ -71,6 +71,7 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	dirFlag := fs.String("dir", "", "")
 	portEnvFlag := fs.String("port-env", "", "")
 	waitFlag := fs.Duration("wait-timeout", 0, "")
+	requireListen := fs.Bool("require-listen", false, "") // plan steps that declare a port: not listening when the wait ends is a failure
 	var name string
 	if len(own) > 0 && !strings.HasPrefix(own[0], "-") {
 		name, own = own[0], own[1:]
@@ -117,7 +118,7 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 			wait = *waitFlag
 			flagArgs = append(flagArgs, "--wait-timeout", waitArg(wait))
 		}
-		return hostStart(stderr, name, command, workDir, project, instanceDir, newStateBase, legacyStateBase, flagArgs, wait)
+		return hostStart(stderr, name, command, workDir, project, instanceDir, newStateBase, legacyStateBase, flagArgs, wait, *requireListen)
 	}
 
 	block, err := envBlock(project, instanceDir, newStateBase, legacyStateBase, true)
