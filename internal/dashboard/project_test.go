@@ -7,10 +7,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/redact"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
@@ -203,6 +206,162 @@ func TestProjectRecentRunsAndLogTail(t *testing.T) {
 	}
 	if got := recent(get("/api/project?name=acme&checkout="+url.QueryEscape(wt)), "migrate"); got != "failed" {
 		t.Errorf("feature recent run of migrate = %q", got)
+	}
+}
+
+func projectBody(t *testing.T, e *browserEnv, url string, v any) {
+	t.Helper()
+	rec := e.get(url)
+	if rec.Code != 200 {
+		t.Fatalf("%s: %d %s", url, rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), v); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Knowledge verified in another worktree serves the repo and says so.
+func TestProjectBorrowedKnowledge(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := e.needsLearnRepo("lend")
+	wt := filepath.Join(repo, ".worktrees", "done")
+	gitIn(t, repo, "worktree", "add", "-q", "-b", "done", wt)
+	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified, Verification: &knowledge.Verification{Date: "2026-10-01"}}).Save(filepath.Join(wt, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	var p struct{ Knowledge struct{ State, From string } }
+	projectBody(t, e, "/api/project?name=lend", &p)
+	if p.Knowledge.State != "borrowed" || p.Knowledge.From != "done" {
+		t.Errorf("knowledge: %+v", p.Knowledge)
+	}
+}
+
+// A repo nobody started has no stack, no last run and no run history.
+func TestProjectWithoutInstances(t *testing.T) {
+	e := newBrowserEnv(t)
+	e.readyRepo("fresh")
+	var p struct {
+		Checkouts []struct {
+			State   string
+			Project string
+			LastRun *struct{} `json:"last_run"`
+		}
+		Workflow map[string]struct {
+			Nodes []struct {
+				Kind       string
+				RecentRuns []any `json:"recent_runs"`
+			}
+		}
+	}
+	projectBody(t, e, "/api/project?name=fresh", &p)
+	if len(p.Checkouts) != 1 || p.Checkouts[0].State != "no-stack" || p.Checkouts[0].Project != "" || p.Checkouts[0].LastRun != nil {
+		t.Errorf("checkouts: %+v", p.Checkouts)
+	}
+	for _, g := range p.Workflow {
+		for _, n := range g.Nodes {
+			if len(n.RecentRuns) != 0 {
+				t.Errorf("a repo with no runs has recent runs: %+v", n)
+			}
+		}
+	}
+}
+
+// recent_runs lists at most three runs, newest first.
+func TestProjectRecentRunsOrder(t *testing.T) {
+	e, _, _ := projectFixture(t)
+	idir := filepath.Join(e.newDir, "sf-acme-1")
+	for i := 0; i < 3; i++ { // the fixture made run 1; these are 2, 3 and 4
+		r, err := runs.Begin(idir, runs.Meta{Command: "start-env", Trigger: "cli", Mode: "container", Project: "sf-acme-1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		st := r.Step("migrate", "exec", "npm run db:migrate")
+		st.Start()
+		st.End(nil, 0)
+		r.Finish(nil)
+	}
+	var p struct {
+		Workflow map[string]struct {
+			Nodes []struct {
+				ID         string
+				RecentRuns []struct{ ID int } `json:"recent_runs"`
+			}
+		}
+	}
+	projectBody(t, e, "/api/project?name=acme", &p)
+	var ids []int
+	for _, n := range p.Workflow["container"].Nodes {
+		if n.ID == "migrate" {
+			for _, r := range n.RecentRuns {
+				ids = append(ids, r.ID)
+			}
+		}
+	}
+	if !reflect.DeepEqual(ids, []int{4, 3, 2}) {
+		t.Errorf("recent runs = %v, want [4 3 2]", ids)
+	}
+}
+
+// A masked env override reaches the page with value null and its secret never.
+func TestProjectMaskedEnvOverride(t *testing.T) {
+	e, _, _ := projectFixture(t)
+	idir := filepath.Join(e.newDir, "sf-acme-1")
+	if err := lifecycle.SetEnvOverrides(idir, "app", map[string]string{"API_PASSWORD": "canary-pw-123", "LOG_LEVEL": "debug"}, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	rec := e.get("/api/project?name=acme")
+	if strings.Contains(rec.Body.String(), "canary-pw-123") {
+		t.Fatal("the masked value reached the page")
+	}
+	var p struct {
+		Config struct {
+			EnvOverrides []struct {
+				Name   string
+				Value  *string
+				Masked bool
+			} `json:"env_overrides"`
+		}
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, o := range p.Config.EnvOverrides {
+		got[o.Name] = o.Masked
+		if o.Masked && o.Value != nil {
+			t.Errorf("%s: masked value must be null, got %q", o.Name, *o.Value)
+		}
+		if !o.Masked && (o.Value == nil || *o.Value != "debug") {
+			t.Errorf("%s: value %v", o.Name, o.Value)
+		}
+	}
+	if !got["API_PASSWORD"] || got["LOG_LEVEL"] {
+		t.Errorf("overrides: %v", got)
+	}
+}
+
+// The log tail of a failed step is the redacted log: a secret canary never shows.
+func TestProjectLogTailIsRedacted(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := e.readyRepo("acme")
+	idir := filepath.Join(e.newDir, "sf-acme-1")
+	os.MkdirAll(idir, 0o700)
+	state.WritePrivate(filepath.Join(idir, "manifest.json"), &state.Manifest{Project: "sf-acme-1", Root: repo, Branch: "main", Hostname: "x.localhost", Files: []string{"compose.yaml"}, Inputs: map[string]string{}})
+	r, err := runs.Begin(idir, runs.Meta{Command: "start-env", Trigger: "cli", Mode: "container", Project: "sf-acme-1",
+		Secrets: func() []redact.Secret { return []redact.Secret{{Name: "TOKEN", Value: "canary-secret-9876"}} }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := r.Step("migrate", "exec", "npm run db:migrate")
+	io.WriteString(st.Start(), "connecting with token canary-secret-9876\nfailed\n")
+	st.End(errors.New("exit 1"), 1)
+	r.Finish(errors.New("exit 1"))
+	body := e.get("/api/project?name=acme").Body.String()
+	if strings.Contains(body, "canary-secret-9876") {
+		t.Fatal("the secret reached /api/project")
+	}
+	if !strings.Contains(body, "connecting with token") || !strings.Contains(body, `"log_tail"`) {
+		t.Errorf("the redacted tail is missing: %s", body)
 	}
 }
 

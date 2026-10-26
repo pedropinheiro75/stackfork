@@ -11,7 +11,7 @@ the parts can be built in parallel. Field names are snake_case. Times are RFC 33
 | `GET /api/project?name=NAME` | B | `Project` (below) |
 | `GET /api/project/resources?name=NAME&range=15m\|1h\|6h` | A | `Resources` (below) |
 
-`GET /api/project` also takes `checkout=KEY` (default `main`): the checkout whose run history fills `recent_runs`.
+`GET /api/project` also takes `checkout=KEY` (a checkout `key`) (default `main`): the checkout whose run history fills `recent_runs`.
 
 `NAME` is the repo name as the Repos list shows it (`repos.Repo.Name`); when two
 repos share a name, `path=` (the main checkout path) disambiguates. Unknown
@@ -43,7 +43,7 @@ The page view is `#project/NAME` (query part after `?`: `mode=container|hybrid`,
 
 `Checkout`:
 ```json
-{"key": "feature/invoices", "branch": "feature/invoices", "path": "…", "main": false,
+{"key": "<main, or the worktree path>", "branch": "feature/invoices", "path": "…", "main": false,
  "changes": true, "ahead": 3, "behind": 12, "upstream": "origin/feature/invoices",
  "mode": "hybrid", "state": "running|partial|starting|stopped|no-stack",
  "project": "sf-…",                      // instance name, "" when no stack

@@ -108,11 +108,11 @@ type projectSecret struct {
 }
 
 type projectEnv struct {
-	Service  string `json:"service"`
-	Name     string `json:"name"`
-	Value    string `json:"value"` // empty when masked
-	Masked   bool   `json:"masked"`
-	Checkout string `json:"checkout"`
+	Service  string  `json:"service"`
+	Name     string  `json:"name"`
+	Value    *string `json:"value"` // null when masked
+	Masked   bool    `json:"masked"`
+	Checkout string  `json:"checkout"`
 }
 
 func projectError(w http.ResponseWriter, code int, msg string) {
@@ -375,7 +375,7 @@ func envOverrides(instanceDir, checkout string) []projectEnv {
 			}
 			e := projectEnv{Service: svc.Name, Name: v.Name, Masked: v.Masked, Checkout: checkout}
 			if v.Value != nil && !v.Masked {
-				e.Value = *v.Value
+				e.Value = v.Value
 			}
 			out = append(out, e)
 		}
