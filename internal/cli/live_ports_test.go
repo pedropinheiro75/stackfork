@@ -22,7 +22,7 @@ func TestLivePortsSurviveRestart(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustRun(t, "git", "init", "-q", root)
+	liveInitRepo(t, root)
 	data, err := os.ReadFile(filepath.Join(modRoot, "testdata", "pg17-fixed-name", "compose.yaml"))
 	if err != nil {
 		t.Fatal(err)

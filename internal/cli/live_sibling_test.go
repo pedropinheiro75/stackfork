@@ -31,6 +31,7 @@ func TestLiveStartEnvFromSiblingRecipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustRun(t, "git", "init", "-q", "-b", "main", repo)
+	mustRun(t, bin, "--root", repo, "--state-dir", filepath.Join(scratch, "learn-state"), "learn")
 	for f, c := range map[string]string{
 		"Dockerfile":         "FROM alpine:latest\nCMD [\"sh\", \"-c\", \"echo $CHECKOUT_MARK; sleep 3600\"]\n",
 		"docker-compose.yml": "services:\n  app:\n    build: .\n    volumes:\n      - data:/data\nvolumes:\n  data: {}\n",

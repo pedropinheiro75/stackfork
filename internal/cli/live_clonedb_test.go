@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,7 +18,7 @@ const cloneDBFixtureComposeYAML = `services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -48,7 +49,7 @@ func TestLiveCloneDB(t *testing.T) {
 		if err := os.MkdirAll(root, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		mustRun(t, "git", "init", "-q", root)
+		liveInitRepo(t, root)
 		if err := os.WriteFile(filepath.Join(root, "compose.yaml"), []byte(cloneDBFixtureComposeYAML), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -56,6 +57,9 @@ func TestLiveCloneDB(t *testing.T) {
 
 	src := liveInstance{binary: bin, root: srcRoot, state: state, legacyState: legacyState}
 	dst := liveInstance{binary: bin, root: dstRoot, state: state, legacyState: legacyState}
+	for _, li := range []liveInstance{src, dst} {
+		defer exec.Command(li.binary, li.cli("down", "--volumes")...).Run() //nolint:errcheck // best-effort cleanup on any exit path
+	}
 
 	src.run(t, "prepare", "-f", filepath.Join(srcRoot, "compose.yaml"))
 	src.run(t, "up", "--wait-timeout", "90")

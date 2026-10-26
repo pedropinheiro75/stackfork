@@ -94,7 +94,7 @@ func TestLiveProxyRoutesInstancesAndHostRoute(t *testing.T) {
 		if err := os.MkdirAll(root, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		mustRun(t, "git", "init", "-q", root)
+		liveInitRepo(t, root)
 		if err := os.WriteFile(filepath.Join(root, "compose.yaml"), fixture, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -183,7 +183,7 @@ func TestLiveProxyRoutesInstancesAndHostRoute(t *testing.T) {
 	if err := os.MkdirAll(hostRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustRun(t, "git", "init", "-q", hostRoot)
+	liveInitRepo(t, hostRoot)
 	keepalive := "services:\n  keepalive:\n    image: alpine:3.20\n    command: [\"sleep\", \"300\"]\n"
 	if err := os.WriteFile(filepath.Join(hostRoot, "compose.yaml"), []byte(keepalive), 0o600); err != nil {
 		t.Fatal(err)

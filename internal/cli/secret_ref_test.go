@@ -78,7 +78,7 @@ func TestLiveSecretReferencedDirectlyResolvesAtUp(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustRun(t, "git", "init", "-q", root)
+	liveInitRepo(t, root)
 	if err := os.WriteFile(filepath.Join(root, "compose.yaml"), []byte(npmTokenRefCompose), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -27,6 +27,7 @@ func TestLiveResetFromMain(t *testing.T) {
 	repo := filepath.Join(scratch, "frommain")
 	os.MkdirAll(filepath.Join(repo, ".stackfork"), 0o755)
 	mustRun(t, "git", "init", "-q", "-b", "main", repo)
+	mustRun(t, bin, "--root", repo, "--state-dir", filepath.Join(scratch, "learn-state"), "learn")
 	for f, c := range map[string]string{
 		"docker-compose.yml":          "services:\n  app:\n    image: alpine:latest\n    command: [\"sleep\", \"3600\"]\n",
 		"f":                           "x",
@@ -61,7 +62,7 @@ func TestLiveResetFromMain(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(wt, ".stackfork"), 0o755)
 	os.WriteFile(filepath.Join(wt, ".stackfork", "dev.compose.yaml"), []byte("services:\n  app:\n    environment:\n      MARK: old\n"), 0o644)
-	if out, code := sf("--root", wt, "prepare", "-f", ".stackfork/dev.compose.yaml"); code != 0 {
+	if out, code := sf("--root", wt, "prepare", "-f", "docker-compose.yml", "-f", ".stackfork/dev.compose.yaml"); code != 0 {
 		t.Fatalf("prepare worktree: %s", out)
 	}
 

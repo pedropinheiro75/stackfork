@@ -27,7 +27,7 @@ func TestLiveCloneDBFromDump(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustRun(t, "git", "init", "-q", root)
+	liveInitRepo(t, root)
 	composeSrc, err := os.ReadFile(filepath.Join(fixtureDir, "compose.yaml"))
 	if err != nil {
 		t.Fatal(err)

@@ -3,7 +3,9 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -170,9 +172,12 @@ func TestLiveTemplate(t *testing.T) {
 
 	// Task 6.0 (live check): the token reached the app container as a real
 	// Compose secret, and never as a value anywhere on disk.
-	tokenInContainer := strings.TrimSpace(stacks[0].run(t, "exec", "app", "cat", "/run/secrets/npm_token"))
-	if tokenInContainer != "synthetic-template-check-only" {
-		t.Fatalf("expected /run/secrets/npm_token inside the app container, got %q", tokenInContainer)
+	// Exec output redacts the token, so compare a hash computed in the
+	// container with the expected one instead of printing the value.
+	want := sha256.Sum256([]byte("synthetic-template-check-only"))
+	got := strings.TrimSpace(stacks[0].run(t, "exec", "app", "sh", "-c", "sha256sum < /run/secrets/npm_token"))
+	if !strings.HasPrefix(got, hex.EncodeToString(want[:])) {
+		t.Fatalf("/run/secrets/npm_token inside the app container does not hold the expected token (sha256sum: %q)", got)
 	}
 
 	var ports []int
