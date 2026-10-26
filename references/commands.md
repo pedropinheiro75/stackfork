@@ -29,7 +29,7 @@ stackfork up --build --wait-timeout 120
 ### down
 Stop it (data kept unless `--volumes`).
 Flags: `--volumes`, `--forget`, `--instance`
-`--forget` (needs `--volumes`, else exit 2) removes the instance's state directory after a successful `down --volumes`, so it leaves the list; the next Start prepares it again. The dashboard's "Remove instance and data" runs it. The guard blocks `--forget` for agents. Every `down` also force-disconnects leftover endpoints of this project's networks (label `com.docker.compose.project`) whose container is gone, and removes the network.
+`--forget` (needs `--volumes`, else exit 2) removes the instance's state directory after a successful `down --volumes`, so it leaves the list; the next Start prepares it again. The secret references the manifest recorded stay in `kept-secrets.json` in that directory (references only, never values) while the checkout exists, and the next prepare of the same checkout and branch records them again; `gc` and `prune` keep them the same way. The dashboard's "Remove instance and data" runs it. The guard blocks `--forget` for agents. Every `down` also force-disconnects leftover endpoints of this project's networks (label `com.docker.compose.project`) whose container is gone, and removes the network.
 ```sh
 stackfork down --volumes
 ```
