@@ -7,6 +7,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `learn record entry` and `learn record link` accept a host app (a `host` step of the plan or a recorded host app) as `--service`, with `--port` defaulting to its allocated port, so a hybrid project can record its real entry. The entry resolves to the host app's URL, `learn verify` probes it and says to start the instance while the app is stopped, and the refusal for an unknown name lists both Compose services and host apps.
 - `host start` waits for the app to listen on its port (90 s by default, `--wait-timeout` or `STACKFORK_HOST_WAIT_TIMEOUT`) instead of failing after 10 s with "did not report". On timeout it stops the app and names the app, the port and the redacted last 15 lines of `host-NAME.log`.
 - Host app URLs use the instance hostname (`http://<hostname>:<port>`) in `urls`, the dashboard and `/api/instances`, like the container services. `env` keeps 127.0.0.1 for the host-to-container database URLs.
 - `up` and the dashboard Start start the host apps of a hybrid instance that are down (recorded command through `host start`, and the plan's host steps without a record when the plan is trusted), as one `host` step each.
