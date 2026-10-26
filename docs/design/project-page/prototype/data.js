@@ -28,8 +28,8 @@ window.PP = {
     { id: "seed", kind: "exec · once data", lane: "docker", cmd: "npm run db:seed  in app", modes: ["container"], plan: "verified" },
     { id: "seed-host", kind: "exec · once data", lane: "host", cmd: "npm run db:seed  on host", modes: ["hybrid"], plan: "draft",
       note: "Proposed by learn, not recorded. A Start skips it until you record it: stackfork learn record step --id seed-host --kind exec --once data --cmd …" },
-    { id: "api", kind: "host app", lane: "host", cmd: "npm run dev -w api  port 4000", modes: ["hybrid"], plan: "trusted" },
-    { id: "app", kind: "host app", lane: "host", cmd: "npm run dev -w web  port 5173", modes: ["hybrid"], plan: "trusted" }
+    { id: "api", kind: "host app", lane: "host", cmd: "npm run dev -w api  port 4000", modes: ["hybrid"], plan: "trusted", raw: "npm run dev -w api", dir: "apps/api", portEnv: ["PORT"], port: 4000 },
+    { id: "app", kind: "host app", lane: "host", cmd: "npm run dev -w web  port 5173", modes: ["hybrid"], plan: "trusted", raw: "npm run dev -w web", dir: "apps/web", portEnv: ["PORT", "VITE_PORT"], port: 5173 }
   ],
 
   checkouts: [
@@ -37,25 +37,29 @@ window.PP = {
       mode: "container", state: "running", host: "acme-web-9b21e07d4c3a.localhost",
       run: { id: 41, mode: "container", when: "3 h ago", outcome: "succeeded", dur: "1 min 12 s", steps: {
         secrets: ["succeeded", "0.4 s"], prepare: ["skipped", "", "already prepared"],
-        up: ["succeeded", "38 s"], migrate: ["succeeded", "6.1 s"], seed: ["skipped", "", "already seeded (once: data)"] } } },
+        up: ["succeeded", "38 s"], migrate: ["succeeded", "6.1 s"], seed: ["skipped", "", "data already exists"] }, data: "no" },
+      older: [[37, "1 d ago"], [30, "4 d ago"]] },
     { key: "invoices", branch: "feature/invoices", path: ".worktrees/feature-invoices", ab: [3, 12], dirty: true,
       mode: "hybrid", state: "running", host: "acme-web-2ffa6841c75d.localhost",
       run: { id: 44, mode: "hybrid", when: "2 h ago", outcome: "succeeded", dur: "52 s", steps: {
         secrets: ["succeeded", "0.5 s"], prepare: ["succeeded", "2.1 s"], "up-deps": ["succeeded", "14 s"],
         "migrate-host": ["succeeded", "4.2 s"], "seed-host": ["skipped", "", "setup is a draft; seed not run"],
-        api: ["succeeded", "3.1 s", "listening on :4000"], app: ["succeeded", "2.4 s", "listening on :5173"] } } },
+        api: ["succeeded", "3.1 s", "listening on :4000"], app: ["succeeded", "2.4 s", "listening on :5173"] }, data: "yes" },
+      older: [[36, "1 d ago"], [29, "3 d ago"]] },
     { key: "login", branch: "fix/login", path: ".worktrees/fix-login", ab: [1, 0],
       mode: "container", state: "stopped", host: "acme-web-51d0a9e3b7c2.localhost",
-      run: { id: 38, mode: "container", when: "1 d ago", outcome: "failed", dur: "51 s", failedAt: "migrate", steps: {
+      run: { id: 38, mode: "container", when: "3 h ago", outcome: "failed", dur: "51 s", failedAt: "migrate", steps: {
         secrets: ["succeeded", "0.4 s"], prepare: ["succeeded", "1.8 s"], up: ["succeeded", "41 s"],
-        migrate: ["failed", "3.4 s", "exit 1"], seed: ["pending", "", "not reached"] },
+        seed: ["skipped", "", "data already exists"], migrate: ["failed", "3.4 s", "exit 1"] }, data: "no",
         log: "> acme-web@1.4.0 db:migrate\n> knex migrate:latest\nUsing environment: development\nmigration file \"20261019_add_login_attempts.js\" failed\nmigration failed with error: relation \"login_attempts\" already exists",
-        retry: "stackfork start-env --resume" } },
+        retry: "stackfork start-env --resume" },
+      older: [[33, "6 h ago"], [27, "2 d ago"]] },
     { key: "search", branch: "spike/search", path: ".worktrees/spike-search", ab: "no upstream",
       mode: "container", state: "starting", host: "acme-web-c4e8f61a0d27.localhost",
       run: { id: 45, mode: "container", when: "just now", outcome: "running", dur: "0:47", steps: {
         secrets: ["succeeded", "0.3 s"], prepare: ["succeeded", "2.4 s"], up: ["running", "0:44", "building image app"],
-        migrate: ["pending"], seed: ["pending"] } } }
+        seed: ["pending"], migrate: ["pending"] } },
+      older: [] }
   ],
 
   branches: [
@@ -98,3 +102,55 @@ window.PP = {
     { name: "notes-cli", folder: "side", chip: ["off", "○", "Not set up"], wt: 1, br: 0, last: "3 w ago" }
   ]
 };
+
+// Sample history, as the dashboard's in-memory ring buffer would hold it:
+// one sample per 60 s for the last 6 h, and one per 10 s since this page
+// opened (here 15 min ago). t is seconds before now. A sample is
+// [cpu % of one core, memory MB]; null means the service did not run then
+// (charts draw a gap, never a zero). Deterministic noise keeps the
+// screenshots stable.
+(function () {
+  var seed = 11;
+  function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+  function n(a) { return (rnd() - 0.5) * 2 * a; }
+  var times = [], t;
+  for (t = -21600; t < -900; t += 60) times.push(t);
+  for (t = -900; t <= 0; t += 10) times.push(t);
+  function series(fn) { return times.map(function (x) { return fn(x); }); }
+  var on = function (from, to) { return function (x) { return x >= from && x <= (to == null ? 0 : to); }; };
+  var invoicesUp = on(-7200), searchUp = on(-3000), loginUp = on(-21600, -10800);
+  window.PP.history = {
+    times: times,
+    machine: { memMB: 32768, cores: 10 },
+    s: {
+      // main: running all 6 h; app memory creeps toward its 2 GB limit
+      "main/app": series(function (x) { var p = (x + 21600) / 21600; return [Math.max(0.5, 5 + n(2) + (rnd() < 0.05 ? 18 + n(6) : 0)), 1230 + p * 530 + n(10)]; }),
+      "main/db": series(function () { return [Math.max(0.1, 1.4 + n(0.8)), 181 + n(5)]; }),
+      "main/nginx": series(function () { return [Math.max(0, 0.1 + n(0.1)), 11 + n(0.5)]; }),
+      "main/mailpit": series(function () { return [Math.max(0, 0.1 + n(0.1)), 24 + n(0.6)]; }),
+      // feature/invoices: hybrid since run #44, 2 h ago
+      "invoices/db": series(function (x) { return invoicesUp(x) ? [Math.max(0.1, 0.9 + n(0.5)), 150 + n(4)] : null; }),
+      "invoices/mailpit": series(function (x) { return invoicesUp(x) ? [Math.max(0, 0.05 + n(0.05)), 21 + n(0.5)] : null; }),
+      "invoices/api": series(function (x) { return invoicesUp(x) ? [Math.max(1, 11 + n(4)), 262 + (x + 7200) / 7200 * 24 + n(4)] : null; }),
+      "invoices/app": series(function (x) { return invoicesUp(x) ? [Math.max(0.5, 3 + n(1.5)), 405 + n(9)] : null; }),
+      // spike/search: created 50 min ago; first build spike, then idle, now rebuilding
+      "search/app": series(function (x) {
+        if (!searchUp(x)) return null;
+        if (x < -2280) return [200 + n(45), 760 + (x + 3000) / 720 * 340 + n(20)];
+        if (x > -120) return [84 + n(6), 600 + n(15)];
+        return [Math.max(0.5, 3 + n(1.2)), 520 + n(8)];
+      }),
+      "search/db": series(function (x) { return searchUp(x) ? [Math.max(0.2, (x < -2280 ? 4 : 2.5) + n(1)), 94 + n(3)] : null; }),
+      // fix/login: ran for 3 h, then run #38 failed at migrate and it was stopped
+      "login/app": series(function (x) { return loginUp(x) ? [Math.max(0.5, 4 + n(1.5)), 640 + n(10)] : null; }),
+      "login/db": series(function (x) { return loginUp(x) ? [Math.max(0.1, 1.2 + n(0.5)), 172 + n(4)] : null; })
+    }
+  };
+  // Every service row names its history key; the current value is the last sample.
+  window.PP.resources.forEach(function (g) {
+    g.services.forEach(function (s) { s.hist = g.checkout + "/" + s.name; });
+  });
+  window.PP.resources.filter(function (g) { return g.checkout === "login"; })[0].services.unshift(
+    { name: "app", kind: "node", where: "docker", image: "acme-web-app:dev", cpu: null, mem: null, disk: 0, hist: "login/app" });
+})();
+
