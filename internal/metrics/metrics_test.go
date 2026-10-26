@@ -51,7 +51,7 @@ func TestSamplerRingRetentionAndRange(t *testing.T) {
 		r.add(point{T: t0.Add(time.Duration(i) * 10 * time.Second).Unix(), CPU: 1, Mem: 1}, retention)
 	}
 	now := t0.Add(8 * 360 * 10 * time.Second)
-	if n := len(r.pts); n > 6*360+1 {
+	if n := len(r.points()); n > 6*360+1 {
 		t.Fatalf("kept %d points, want at most %d", n, 6*360+1)
 	}
 	if got := r.since(now.Add(-15 * time.Minute).Unix()); len(got) != 90 {
@@ -94,14 +94,14 @@ func TestSamplerTickSamplesAndGap(t *testing.T) {
 	*stats = `{"CPUPerc":"20.0%","MemUsage":"200MiB / 1GiB","Name":"sf-a-app-1"}`
 	*now = now.Add(60 * time.Second)
 	s.Tick()
-	app := s.ring("sf-a", "app").pts
+	app := s.ring("sf-a", "app").points()
 	if len(app) != 3 {
 		t.Fatalf("app points = %v, want 3 (gap on the stopped tick)", app)
 	}
 	if app[2].T-app[1].T != 70 {
 		t.Errorf("gap = %d s, want 70", app[2].T-app[1].T)
 	}
-	if h := s.ring("sf-a", "web").pts; len(h) != 4 || h[0].Mem != 1<<20 {
+	if h := s.ring("sf-a", "web").points(); len(h) != 4 || h[0].Mem != 1<<20 {
 		t.Errorf("host points = %v", h)
 	}
 }
@@ -110,7 +110,7 @@ func TestSamplerStatsErrorKeepsHostSamples(t *testing.T) {
 	s, _, stats := fixture(t)
 	*stats = "ERR"
 	s.Tick()
-	if s.StatsError() == "" || len(s.ring("sf-a", "app").pts) != 0 || len(s.ring("sf-a", "web").pts) != 1 {
+	if s.StatsError() == "" || len(s.ring("sf-a", "app").points()) != 0 || len(s.ring("sf-a", "web").points()) != 1 {
 		t.Errorf("err=%q", s.StatsError())
 	}
 }
@@ -153,5 +153,102 @@ func TestSamplerSnapshotShape(t *testing.T) {
 	}
 	if !res.ShortHistory {
 		t.Error("short history expected")
+	}
+}
+
+func TestRingAddDoesNotCopyTheBuffer(t *testing.T) {
+	var r ring
+	var i int64
+	for ; i < 3*360; i++ { // past retention, so the oldest points drop
+		r.add(point{T: 1_000_000 + i*10, CPU: 1, Mem: 1}, retention)
+	}
+	if n := testing.AllocsPerRun(200, func() { i++; r.add(point{T: 1_000_000 + i*10}, retention) }); n > 0.1 {
+		t.Errorf("%.2f allocations per add", n)
+	}
+	if n := len(r.points()); n > 6*360+1 || r.points()[0].T < 1_000_000+(i-6*360)*10 {
+		t.Errorf("kept %d points", n)
+	}
+}
+
+func TestTickPrunesRingsOlderThanRetention(t *testing.T) {
+	s, now, _ := fixture(t)
+	s.Tick()
+	*now = now.Add(retention + time.Minute)
+	targets := s.Targets
+	s.Targets = func() []Target { return nil } // the service is gone for good
+	s.Tick()
+	s.Targets = targets
+	s.mu.Lock()
+	n := len(s.rings)
+	s.mu.Unlock()
+	if n != 0 {
+		t.Errorf("%d rings kept", n)
+	}
+}
+
+func TestFailedStatsKeepsTheLastValues(t *testing.T) {
+	s, _, stats := fixture(t)
+	s.Tick()
+	*stats = "ERR"
+	s.Tick()
+	res := s.Snapshot(s.Targets(), 15*time.Minute)
+	if res.Totals.MemBytes != 100<<20+1<<20 {
+		t.Errorf("totals after a failed tick: %+v", res.Totals)
+	}
+	if n := len(s.ring("sf-a", "app").points()); n != 1 {
+		t.Errorf("a failed tick adds no container point, got %d", n)
+	}
+}
+
+func TestFailedDFBacksOff(t *testing.T) {
+	s, now, _ := fixture(t)
+	calls := 0
+	s.Docker = func(args ...string) (string, error) {
+		calls++
+		return "", errors.New("daemon busy")
+	}
+	wait := func() {
+		for i := 0; i < 200; i++ {
+			s.mu.Lock()
+			busy := s.dfBusy
+			s.mu.Unlock()
+			if !busy {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	s.Touch()
+	wait()
+	s.Touch()
+	wait()
+	if calls != 1 {
+		t.Fatalf("df called %d times, want 1 (back off after a failure)", calls)
+	}
+	*now = now.Add(61 * time.Second)
+	s.Touch()
+	wait()
+	if calls != 2 {
+		t.Errorf("df called %d times after 61 s, want 2", calls)
+	}
+}
+
+func TestTouchWakesRun(t *testing.T) {
+	s, _, _ := fixture(t)
+	s.Now = nil // real clock
+	ticks := make(chan struct{}, 10)
+	inner := s.Targets
+	s.Targets = func() []Target { ticks <- struct{}{}; return inner() }
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() { s.Run(stop); close(done) }()
+	defer func() { close(stop); <-done }()
+	<-ticks // the first tick
+	time.Sleep(1100 * time.Millisecond)
+	s.Touch()
+	select {
+	case <-ticks:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no tick within 2 s of Touch")
 	}
 }

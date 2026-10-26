@@ -20,6 +20,7 @@ const (
 	slowEvery   = 60 * time.Second
 	activeFor   = 30 * time.Second
 	dfCacheFor  = 5 * time.Minute
+	dfRetry     = 60 * time.Second
 	dockerLimit = 60 * time.Second
 )
 
@@ -44,25 +45,32 @@ type point struct {
 	Mem int64
 }
 
-// ring keeps the points of one service, oldest first, trimmed by age.
-type ring struct{ pts []point }
+// ring keeps the points of one service, oldest first, trimmed by age. The
+// live points are buf[off:]; trimming moves off and the buffer is compacted in
+// place once half of it is dead, so a tick never copies the whole history.
+type ring struct {
+	buf []point
+	off int
+}
+
+func (r *ring) points() []point { return r.buf[r.off:] }
 
 func (r *ring) add(p point, keep time.Duration) {
-	r.pts = append(r.pts, p)
+	r.buf = append(r.buf, p)
 	cut := p.T - int64(keep.Seconds())
-	i := 0
-	for i < len(r.pts) && r.pts[i].T < cut {
-		i++
+	for r.off < len(r.buf) && r.buf[r.off].T < cut {
+		r.off++
 	}
-	if i > 0 {
-		r.pts = append([]point(nil), r.pts[i:]...)
+	if r.off > len(r.buf)/2 {
+		n := copy(r.buf, r.buf[r.off:])
+		r.buf, r.off = r.buf[:n], 0
 	}
 }
 
 func (r *ring) since(t int64) []point {
-	for i, p := range r.pts {
+	for i, p := range r.points() {
 		if p.T >= t {
-			return r.pts[i:]
+			return r.points()[i:]
 		}
 	}
 	return nil
@@ -96,6 +104,9 @@ type Sampler struct {
 	statsErr string
 	df       dfData
 	dfBusy   bool
+	dfTry    time.Time // last refresh attempt, so a failing docker is not retried every touch
+	wake     chan struct{}
+	wakeOnce sync.Once
 }
 
 // New returns a Sampler that shells out to the docker CLI.
@@ -133,14 +144,23 @@ func (s *Sampler) ring(project, service string) *ring {
 func (s *Sampler) Touch() {
 	s.mu.Lock()
 	s.touched = s.now()
-	stale := !s.dfBusy && s.now().Sub(s.df.at) > dfCacheFor
+	stale := !s.dfBusy && s.now().Sub(s.df.at) > dfCacheFor && s.now().Sub(s.dfTry) > dfRetry
 	if stale {
-		s.dfBusy = true
+		s.dfBusy, s.dfTry = true, s.now()
 	}
 	s.mu.Unlock()
+	select { // wake Run so the page gets a sample within about a second
+	case s.wakeCh() <- struct{}{}:
+	default:
+	}
 	if stale {
 		go s.RefreshDF()
 	}
+}
+
+func (s *Sampler) wakeCh() chan struct{} {
+	s.wakeOnce.Do(func() { s.wake = make(chan struct{}, 1) })
+	return s.wake
 }
 
 // Interval is the time to the next tick.
@@ -162,13 +182,24 @@ func (s *Sampler) StatsError() string {
 
 // Run ticks until stop is closed.
 func (s *Sampler) Run(stop <-chan struct{}) {
+	s.Tick()
 	for {
-		s.Tick()
+		t := time.NewTimer(s.Interval())
 		select {
 		case <-stop:
+			t.Stop()
 			return
-		case <-time.After(s.Interval()):
+		case <-s.wakeCh():
+			t.Stop()
+			s.mu.Lock()
+			fresh := s.now().Sub(s.sampled) < time.Second
+			s.mu.Unlock()
+			if fresh {
+				continue
+			}
+		case <-t.C:
 		}
+		s.Tick()
 	}
 }
 
@@ -214,7 +245,9 @@ func (s *Sampler) Tick() {
 			}
 		}
 		if !ok {
-			delete(s.last, k)
+			if err == nil || t.Where != "docker" { // a failed stats call keeps the last values
+				delete(s.last, k)
+			}
 			continue
 		}
 		if s.rings[k] == nil {
@@ -222,6 +255,12 @@ func (s *Sampler) Tick() {
 		}
 		s.rings[k].add(point{now.Unix(), l.cpu, l.mem}, retention)
 		s.last[k] = l
+	}
+	cut := now.Unix() - int64(retention.Seconds())
+	for k, r := range s.rings { // a service that is gone for good frees its ring
+		if p := r.points(); len(p) == 0 || p[len(p)-1].T < cut {
+			delete(s.rings, k)
+		}
 	}
 }
 
