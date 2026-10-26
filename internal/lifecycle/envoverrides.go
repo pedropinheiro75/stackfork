@@ -52,13 +52,18 @@ func derivedOverrides(instanceDir string) (string, error) {
 }
 
 // EnvTargets splits a service name into what an override on it means: a
-// Compose service of the snapshot, a host app, or neither. A name in both is a
-// container service (the same rule StartHostApps uses outside hybrid mode).
+// Compose service of the snapshot, a host app, or neither. A name in both is
+// the one that runs in the instance's current mode: the host app when the
+// plan's hybrid mode has a host step of that name, else the container (the
+// same rule StartHostApps uses).
 func EnvTargets(instanceDir string, m *state.Manifest) (containers, hosts []string) {
 	inStack := map[string]bool{}
+	replaced := hybridHostNames(m) // host steps standing in for a Compose service of the same name
 	for _, n := range SnapshotServices(instanceDir) {
-		inStack[n] = true
-		containers = append(containers, n)
+		inStack[n] = !replaced[n]
+		if !replaced[n] {
+			containers = append(containers, n)
+		}
 	}
 	seen := map[string]bool{}
 	if m != nil {
@@ -94,33 +99,27 @@ func EnvTargets(instanceDir string, m *state.Manifest) (containers, hosts []stri
 	return containers, hosts
 }
 
-// EnvNameIsAmbiguous says whether name is both a Compose service of the stack
-// and a host app (running, or a host step of the plan): `env set` would reach
-// the container only, so the caller refuses it.
-func EnvNameIsAmbiguous(instanceDir string, m *state.Manifest, name string) bool {
-	container := false
-	for _, n := range SnapshotServices(instanceDir) {
-		container = container || n == name
-	}
-	if !container || m == nil {
-		return false
-	}
-	if _, ok := m.HostProcs[name]; ok {
-		return true
-	}
-	if m.Root == "" {
-		return false
+// hybridHostNames are the host steps of the plan's current mode when that
+// mode is hybrid: each one replaces the Compose service of its name.
+func hybridHostNames(m *state.Manifest) map[string]bool {
+	out := map[string]bool{}
+	if m == nil || m.Root == "" {
+		return out
 	}
 	main := identity.MainRepoOf(m.Root)
 	if main == "" {
 		main = m.Root
 	}
-	for _, st := range LoadPlan(m.Root, main).HostSteps() {
-		if st.Name == name {
-			return true
+	if PlanMode(m.Root, main) != knowledge.ModeHybrid {
+		return out
+	}
+	run, _ := LoadPlan(m.Root, main).ForMode(knowledge.ModeHybrid)
+	for _, st := range run {
+		if st.Kind == knowledge.KindHost && st.Name != "" {
+			out[st.Name] = true
 		}
 	}
-	return false
+	return out
 }
 
 // EnvOverrideSecrets are the stored override values that must never reach

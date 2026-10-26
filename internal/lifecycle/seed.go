@@ -323,7 +323,7 @@ func SeedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
 	cmd, service, host := seedRecipeIn(root, main, instanceDir, mode)
 	if cmd != "" && !host { // a host seed has no service to leave out // a service this mode leaves out cannot run it: do not burn the one-time seed
 		plan := LoadPlan(root, main)
-		if run, _ := plan.ForMode(mode); contains(excludedServices(run), ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)) {
+		if run, _ := modeSteps(instanceDir, plan, mode); contains(excludedServices(run), ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)) {
 			return "", ""
 		}
 	}

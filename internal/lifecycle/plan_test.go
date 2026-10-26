@@ -178,3 +178,31 @@ func TestStepsIsTheDeclaredList(t *testing.T) {
 		t.Errorf("exact: %s", got)
 	}
 }
+
+// In hybrid mode a host step replaces the Compose service of its name: the
+// compose-up leaves it out without an exclude; container mode is unchanged.
+func TestHybridHostStepExcludesTheServiceOfItsName(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "compose.json"), []byte(`{"services":{"app":{},"db":{},"ui":{}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := knowledge.Plan{Steps: []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "app", Kind: knowledge.KindHost, Name: "app", Cmd: "x", Modes: []string{knowledge.ModeHybrid}},
+		{ID: "web", Kind: knowledge.KindHost, Name: "web", Cmd: "x", Modes: []string{knowledge.ModeHybrid}}, // no such service
+	}}
+	names, all, err := StartedServices(dir, p, knowledge.ModeHybrid)
+	if err != nil || all || strings.Join(names, ",") != "db,ui" {
+		t.Fatalf("hybrid: %v all=%v err=%v", names, all, err)
+	}
+	if _, all, _ := StartedServices(dir, p, knowledge.ModeContainer); !all {
+		t.Fatal("container mode must start every service")
+	}
+	steps := PlanRunner{InstanceDir: dir, Plan: p, Mode: knowledge.ModeHybrid, Exact: true}.Steps()
+	if len(steps) == 0 || steps[0].Kind != knowledge.KindComposeUp || strings.Join(steps[0].Exclude, ",") != "app" {
+		t.Fatalf("plan steps show no exclude: %+v", steps)
+	}
+	if p.Steps[0].Exclude != nil {
+		t.Fatal("the plan itself was changed")
+	}
+}

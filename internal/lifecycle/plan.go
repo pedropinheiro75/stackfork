@@ -72,7 +72,7 @@ func (r PlanRunner) Check() error {
 		}
 		return fmt.Errorf("mode %q is not supported by this plan; supported: %s", r.Mode, strings.Join(sup, ", "))
 	}
-	run, _ := r.Plan.ForMode(r.Mode)
+	run, _ := modeSteps(r.InstanceDir, r.Plan, r.Mode)
 	excluded := excludedServices(run)
 	for _, st := range run {
 		if st.Kind != knowledge.KindExec || st.IsHostExec() { // a host step has no service to exclude
@@ -91,7 +91,7 @@ func (r PlanRunner) Check() error {
 // right after the first compose-up, or at its recorded place after exec steps). It touches nothing; Execute runs this list and
 // `stackfork plan` shows it for a plan without recorded steps.
 func (r PlanRunner) Steps() []knowledge.Step {
-	steps, _ := r.Plan.ForMode(r.Mode)
+	steps, _ := modeSteps(r.InstanceDir, r.Plan, r.Mode)
 	if !r.Exact {
 		hasUp := false
 		for _, s := range steps {
@@ -473,7 +473,7 @@ func (r PlanRunner) exec(w io.Writer, s knowledge.Step) (int, error) {
 // true when one of them starts every service (no exclude), or the plan has no
 // compose-up step, which starts the whole stack.
 func StartedServices(instanceDir string, plan knowledge.Plan, mode string) (names []string, all bool, err error) {
-	run, _ := plan.ForMode(mode)
+	run, _ := modeSteps(instanceDir, plan, mode)
 	r := PlanRunner{InstanceDir: instanceDir}
 	seen := false
 	for _, s := range run {
@@ -491,6 +491,42 @@ func StartedServices(instanceDir string, plan knowledge.Plan, mode string) (name
 		names = append(names, list...)
 	}
 	return names, !seen, nil
+}
+
+// modeSteps is Plan.ForMode with one addition: in hybrid mode a host step
+// replaces the Compose service of its name, so each compose-up leaves that
+// service out as if it listed it in exclude. Without a snapshot (the static
+// plan view) no service is known and nothing is added.
+func modeSteps(instanceDir string, plan knowledge.Plan, mode string) (run, skipped []knowledge.Step) {
+	run, skipped = plan.ForMode(mode)
+	if mode != knowledge.ModeHybrid {
+		return
+	}
+	var replaced []string
+	svcs := SnapshotServices(instanceDir)
+	for _, st := range run {
+		if st.Kind == knowledge.KindHost && contains(svcs, st.Name) {
+			replaced = append(replaced, st.Name)
+		}
+	}
+	if len(replaced) == 0 {
+		return
+	}
+	out := append([]knowledge.Step{}, run...)
+	for i, st := range out {
+		if st.Kind != knowledge.KindComposeUp {
+			continue
+		}
+		ex := append([]string{}, st.Exclude...)
+		for _, n := range replaced {
+			if !contains(ex, n) {
+				ex = append(ex, n)
+			}
+		}
+		sort.Strings(ex)
+		out[i].Exclude = ex
+	}
+	return out, skipped
 }
 
 // excludedServices are the services the steps' compose-up leave out.

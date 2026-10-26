@@ -7,13 +7,22 @@ import (
 	"testing"
 )
 
-// `env set` refuses a name that is both a Compose service and a host app.
-func TestEnvSetRefusesANameThatIsServiceAndHostApp(t *testing.T) {
+// A host step named like a Compose service replaces it in hybrid mode: `env
+// set` reaches the host app there and the container in container mode.
+func TestEnvSetFollowsTheModeWhenANameIsServiceAndHostApp(t *testing.T) {
 	root, stateDir, _, _ := envSetup(t, "services:\n  db:\n    image: postgres:17\n  app:\n    image: busybox\n")
 	writeKnowledgeJSON(t, root, `{"schema":2,"plan":{"status":"recorded","steps":[{"id":"up","kind":"compose-up"},{"id":"app","kind":"host","name":"app","cmd":"echo hi"}]}}`)
-	_, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "env", "set", "app", "FOO=1", "--no-restart")
-	if code == 0 || !strings.Contains(stderr, "both a Compose service and a host app") {
-		t.Fatalf("code %d: %s", code, stderr)
+	for mode, kind := range map[string]string{"container": "container", "hybrid": "host"} {
+		if _, stderr, code := runCLI(t, "config", "set-mode", root, mode); code != 0 {
+			t.Fatalf("set-mode: %s", stderr)
+		}
+		if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "env", "set", "app", "FOO=1", "--no-restart"); code != 0 {
+			t.Fatalf("%s: env set: %s", mode, stderr)
+		}
+		out, _, _ := runCLI(t, "--root", root, "--state-dir", stateDir, "env", "overrides", "--json")
+		if !strings.Contains(out, `"kind": "`+kind+`"`) && !strings.Contains(out, `"kind":"`+kind+`"`) {
+			t.Fatalf("%s: want kind %s:\n%s", mode, kind, out)
+		}
 	}
 }
 

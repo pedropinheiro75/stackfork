@@ -109,7 +109,7 @@ stackfork learn record step --remove web
 
 ### Modes and trust
 
-Each machine runs the plan in a mode: `container` (default) or `hybrid`. Set it with `stackfork config set mode hybrid`, per repo with `stackfork config set-mode REPO hybrid`, or for one run with `start-env --mode`. Hybrid mode drops the app service and every service that depends on it, and runs the `host` step instead.
+Each machine runs the plan in a mode: `container` (default) or `hybrid`. Set it with `stackfork config set mode hybrid`, per repo with `stackfork config set-mode REPO hybrid`, or for one run with `start-env --mode`. Hybrid mode drops the app service and every service that depends on it, and runs the `host` step instead. A host step named like a Compose service replaces it: the `compose-up` leaves that service out without an `exclude`, and a hybrid `up` stops one left running from container mode.
 
 A host step runs a command from a file in the repository, so a person must trust it first. Trust is needed only when the active mode runs a host step or an `exec` step with `on: host`. The trust hash covers all `host` and `prepare` steps and all `exec` steps with `on: host`. Adding a field to a step changes the hash and needs a new trust.
 
