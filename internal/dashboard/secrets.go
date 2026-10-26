@@ -118,7 +118,7 @@ type secretsResponse struct {
 // environment is not the person's shell.
 func (s *Server) secretRows(repo string) ([]secretJSON, error) {
 	known := s.secrets.snapshot()
-	rows, err := lifecycle.SecretRows(repo, false, known, nil, s.NewStateBase, s.LegacyStateBase)
+	rows, err := lifecycle.SecretRows(repo, repo, false, known, nil, s.NewStateBase, s.LegacyStateBase)
 	if err != nil {
 		return nil, err
 	}

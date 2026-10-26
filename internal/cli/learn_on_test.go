@@ -72,3 +72,20 @@ func TestLearnRecordStepOn(t *testing.T) {
 		t.Fatalf("service message: %s", e)
 	}
 }
+
+func TestLearnRecordStepHostModeAddsHybridToPlanModes(t *testing.T) {
+	root, path := onFixture(t)
+	k, _ := knowledge.Load(path)
+	k.Plan.Modes = []string{knowledge.ModeContainer}
+	if err := k.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	_, e, code := runCLI(t, "--root", root, "learn", "record", "step", "--id", "app", "--kind", "host", "--name", "app", "--modes", "hybrid", "--cmd", "node server.js")
+	if code != 0 {
+		t.Fatal(e)
+	}
+	k, _ = knowledge.Load(path)
+	if !k.Plan.SupportsMode(knowledge.ModeHybrid) || !k.Plan.SupportsMode(knowledge.ModeContainer) {
+		t.Fatalf("modes %v", k.Plan.Modes)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -434,6 +435,14 @@ func cmdLearnRecordStep(stdout, stderr io.Writer, rest []string, root, newStateB
 				k.Plan.NoSeed = false
 			}
 			k.Plan.Upsert(st, *before)
+			// A host step may name a mode a scan-written plan lacks (container only).
+			if len(k.Plan.Modes) > 0 {
+				for _, m := range st.Modes {
+					if !slices.Contains(k.Plan.Modes, m) {
+						k.Plan.Modes = append(k.Plan.Modes, m)
+					}
+				}
+			}
 		}
 	}
 	k.Plan.Status = knowledge.PlanRecorded

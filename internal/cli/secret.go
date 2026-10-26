@@ -163,8 +163,9 @@ func secretList(stdout io.Writer, verb string, args []string, rootArg, newStateB
 	if err != nil {
 		return 0, err
 	}
+	root := repo
 	repo = mainRepo(repo)
-	rows, err := lifecycle.SecretRows(repo, verb == "check", nil, flagSecrets(global), newStateBase, legacyStateBase)
+	rows, err := lifecycle.SecretRows(root, repo, verb == "check", nil, flagSecrets(global), newStateBase, legacyStateBase)
 	if err != nil {
 		return 0, err
 	}

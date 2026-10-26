@@ -86,7 +86,7 @@ func TestOwnMapBeatsFolderBeatsManifest(t *testing.T) {
 
 func TestSecretRowsShowFolderSourceAndFrom(t *testing.T) {
 	folder, repo := folderRepo(t, map[string]string{"NPM_TOKEN": "keychain:acme-npm", "OTHER": "keychain:idv-other"}, "NPM_TOKEN")
-	rows, err := SecretRows(repo, false, nil, nil, t.TempDir(), t.TempDir())
+	rows, err := SecretRows(repo, repo, false, nil, nil, t.TempDir(), t.TempDir())
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("%+v %v", rows, err)
 	}
