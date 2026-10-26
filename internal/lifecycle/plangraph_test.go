@@ -71,9 +71,11 @@ func TestPlanGraphContainerVsHybrid(t *testing.T) {
 	for _, e := range [][3]string{
 		{"start", "secrets", ""}, {"secrets", "prepare", ""}, {"prepare", "mode", ""},
 		{"mode", "up", "container"}, {"mode", "up-deps", "hybrid"},
-		{"up", "new-volume", ""}, {"new-volume", "seed", "yes"}, {"new-volume", "migrate", "no"}, {"seed", "migrate", ""}, {"migrate", "ready", ""},
-		{"up-deps", "new-volume-hybrid", ""}, {"new-volume-hybrid", "seed-host", "yes"}, {"new-volume-hybrid", "migrate-host", "no"}, {"seed-host", "migrate-host", ""},
-		{"migrate-host", "api", "start together"}, {"migrate-host", "app", "start together"}, {"api", "ready-hybrid", ""}, {"app", "ready-hybrid", ""},
+		// an exec step between compose-up and the data step: the seed runs at its recorded place, after it
+		{"up", "migrate", ""}, {"migrate", "new-volume", ""}, {"new-volume", "seed", "yes"}, {"new-volume", "ready", "no"}, {"seed", "ready", ""},
+		{"up-deps", "migrate-host", ""}, {"migrate-host", "new-volume-hybrid", ""}, {"new-volume-hybrid", "seed-host", "yes"},
+		{"seed-host", "api", "start together"}, {"seed-host", "app", "start together"}, {"new-volume-hybrid", "api", "start together"}, {"new-volume-hybrid", "app", "start together"},
+		{"api", "ready-hybrid", ""}, {"app", "ready-hybrid", ""},
 	} {
 		if !hasEdge(c, e[0], e[1], e[2]) {
 			t.Errorf("missing edge %v in %v", e, c.Edges)
