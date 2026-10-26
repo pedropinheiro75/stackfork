@@ -94,6 +94,35 @@ func EnvTargets(instanceDir string, m *state.Manifest) (containers, hosts []stri
 	return containers, hosts
 }
 
+// EnvNameIsAmbiguous says whether name is both a Compose service of the stack
+// and a host app (running, or a host step of the plan): `env set` would reach
+// the container only, so the caller refuses it.
+func EnvNameIsAmbiguous(instanceDir string, m *state.Manifest, name string) bool {
+	container := false
+	for _, n := range SnapshotServices(instanceDir) {
+		container = container || n == name
+	}
+	if !container || m == nil {
+		return false
+	}
+	if _, ok := m.HostProcs[name]; ok {
+		return true
+	}
+	if m.Root == "" {
+		return false
+	}
+	main := identity.MainRepoOf(m.Root)
+	if main == "" {
+		main = m.Root
+	}
+	for _, st := range LoadPlan(m.Root, main).HostSteps() {
+		if st.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // EnvOverrideSecrets are the stored override values that must never reach
 // output: those of secret-like names (stored with --allow-secret), and of any
 // name that is a secret reference of the instance.

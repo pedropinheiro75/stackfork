@@ -80,6 +80,12 @@ func cmdEnvOverrides(stdout, stderr io.Writer, subArgs []string, root, branch, p
 		return lifecycleApplyEnv(stdout, root, branch, project, instanceDir, newBase, legacyBase, services)
 	}
 
+	if (sub == "set" || sub == "unset") && len(pos) > 0 {
+		m, _ := state.ReadManifest(manifestFile(instanceDir))
+		if lifecycle.EnvNameIsAmbiguous(instanceDir, m, pos[0]) {
+			return 2, fmt.Errorf("%s is both a Compose service and a host app, so env %s cannot tell which one you mean; rename the host app (learn record step --id ID --kind host --name OTHER)", pos[0], sub)
+		}
+	}
 	switch sub {
 	case "set":
 		if len(pos) != 2 {

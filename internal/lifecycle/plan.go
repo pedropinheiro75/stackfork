@@ -283,7 +283,22 @@ func (r PlanRunner) upSeed(s knowledge.Step, deferred bool) UpSeed {
 			if err != nil {
 				return 0, err
 			}
-			return 0, r.Up(stdout, services)
+			if err := r.Up(stdout, services); err != nil {
+				return 0, err
+			}
+			// An excluded service left running by an earlier container-mode up
+			// would answer next to its host app: stop it.
+			have := SnapshotServices(r.InstanceDir)
+			for _, x := range s.Exclude {
+				if !contains(have, x) {
+					continue
+				}
+				fmt.Fprintf(stdout, "hybrid: stopping %s (excluded from this plan)\n", x)
+				if _, err := Execute(stdout, stdout, "stop", r.Root, r.Branch, r.Project, r.InstanceDir, r.NewBase, r.LegacyBase, Options{Service: x}); err != nil {
+					return 0, err
+				}
+			}
+			return 0, nil
 		},
 	}
 }

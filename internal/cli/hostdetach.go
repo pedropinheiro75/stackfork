@@ -16,6 +16,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
+	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -37,6 +38,21 @@ func init() {
 		}
 		if err := lifecycle.StopHostLocked(stderr, instanceDir, name, newBase, legacyBase); err != nil {
 			return err
+		}
+		// A trusted plan with a host step for this app wins over the recorded
+		// command line: it is what `start-env` would run.
+		main := repos.MainOrSelf(root)
+		plan := lifecycle.LoadPlan(root, main)
+		for _, s := range plan.HostSteps() {
+			if s.Name != name {
+				continue
+			}
+			if ok, _ := lifecycle.TrustedHere(newBase, main, plan, knowledge.ModeHybrid); !ok {
+				fmt.Fprintf(stderr, "stackfork: restarting %s with its recorded command: the plan's host step is not trusted here (run: stackfork plan --trust)\n", name)
+				break
+			}
+			base := []string{"--root", root, "--state-dir", newBase, "--legacy-state-dir", legacyBase}
+			return lifecycle.HostStart(stderr, stderr, base, root, instanceDir, s)
 		}
 		_, err = spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, restartWait(proc.RestartArgs()), false)
 		return err
@@ -320,15 +336,14 @@ func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, br
 	if sub == "restart" && proc.RestartArgs() == nil {
 		return 0, fmt.Errorf("%s was not started with `host start`; start it again", name)
 	}
-	err = lifecycle.StopHostLocked(stderr, instanceDir, name, newBase, legacyBase)
-	if err != nil {
+	if sub == "restart" {
+		return 0, lifecycle.HostRestart(stderr, root, instanceDir, name, newBase, legacyBase)
+	}
+	if err := lifecycle.StopHostLocked(stderr, instanceDir, name, newBase, legacyBase); err != nil {
 		return 0, err
 	}
-	if sub == "stop" {
-		fmt.Fprintf(stdout, "stopped %s\n", name)
-		return 0, nil
-	}
-	return spawnSupervisor(stderr, name, proc.RestartArgs(), hostWorkDir(root), instanceDir, restartWait(proc.RestartArgs()), false)
+	fmt.Fprintf(stdout, "stopped %s\n", name)
+	return 0, nil
 }
 
 func contains(l []string, s string) bool {
