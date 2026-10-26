@@ -123,7 +123,16 @@ func StartHostApps(rec *runs.Run, out io.Writer, base []string, root, main, inst
 		default:
 			if recorded[a.name] {
 				if state.HostIdentity(m.HostProcs[a.name]) {
-					skip("already running")
+					// Running: HostStart says "already running" for the same
+					// command and restarts it when the trusted plan's changed.
+					begin()
+					err := HostStart(w, w, base, root, instanceDir, *a.step)
+					if step != nil {
+						step.End(err, 0)
+					}
+					if err != nil {
+						errs = append(errs, fmt.Errorf("host app %s: %w", a.name, err))
+					}
 					continue
 				}
 				if r, _ := state.ReadHostRecord(instanceDir, a.name); r != nil && r.StoppedByPerson {
