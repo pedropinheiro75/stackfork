@@ -84,9 +84,9 @@ func TestProjectReadModel(t *testing.T) {
 		Live          struct{ State string }
 		Entry         struct{ State string }
 		Checkouts     []struct {
-			Key, Path, Mode, State, Project string
-			Main, Changes                   bool
-			LastRun                         *struct {
+			Key, Branch, Path, Mode, State, Project string
+			Main, Changes                           bool
+			LastRun                                 *struct {
 				ID            int
 				Outcome, Mode string
 				FailedStep    string `json:"failed_step"`
@@ -115,7 +115,7 @@ func TestProjectReadModel(t *testing.T) {
 	if p.Knowledge.State != "verified" || p.Entry.State == "" || p.Live.State != "off" || p.Config.BranchCleanup != "off" {
 		t.Errorf("state: %+v", p)
 	}
-	if len(p.Checkouts) != 2 || !p.Checkouts[0].Main || p.Checkouts[0].Key != "main" || p.Checkouts[1].Key != "feature/x" || p.Checkouts[1].Path != wt {
+	if len(p.Checkouts) != 2 || !p.Checkouts[0].Main || p.Checkouts[0].Key != "main" || p.Checkouts[1].Key != wt || p.Checkouts[1].Path != wt {
 		t.Fatalf("checkouts: %+v", p.Checkouts)
 	}
 	main, feat := p.Checkouts[0], p.Checkouts[1]
@@ -155,7 +155,7 @@ func TestProjectUnknownIs404(t *testing.T) {
 // Each step node carries its last runs for the selected checkout (main by
 // default), and a failed step carries the tail of its log.
 func TestProjectRecentRunsAndLogTail(t *testing.T) {
-	e, _, _ := projectFixture(t)
+	e, _, wt := projectFixture(t)
 	type resp struct {
 		Checkouts []struct {
 			Key     string
@@ -201,8 +201,33 @@ func TestProjectRecentRunsAndLogTail(t *testing.T) {
 	if st := p.Checkouts[0].LastRun.Steps["migrate"]; st.LogTail != "" {
 		t.Errorf("a step that passed has no log tail: %+v", st)
 	}
-	if got := recent(get("/api/project?name=acme&checkout=feature/x"), "migrate"); got != "failed" {
+	if got := recent(get("/api/project?name=acme&checkout="+url.QueryEscape(wt)), "migrate"); got != "failed" {
 		t.Errorf("feature recent run of migrate = %q", got)
+	}
+}
+
+// Two worktrees on the same detached commit still get distinct checkout keys.
+func TestProjectCheckoutKeysAreUnique(t *testing.T) {
+	e := newBrowserEnv(t)
+	repo := e.readyRepo("acme")
+	for _, n := range []string{"d1", "d2"} {
+		gitIn(t, repo, "worktree", "add", "-q", "--detach", filepath.Join(repo, ".worktrees", n))
+	}
+	var p struct {
+		Checkouts []struct{ Key, Branch, Path string }
+	}
+	if err := json.Unmarshal(e.get("/api/project?name=acme").Body.Bytes(), &p); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, c := range p.Checkouts {
+		if c.Key == "" || seen[c.Key] {
+			t.Errorf("key %q is empty or repeated in %+v", c.Key, p.Checkouts)
+		}
+		seen[c.Key] = true
+	}
+	if len(p.Checkouts) != 3 || p.Checkouts[0].Key != "main" || p.Checkouts[1].Key != p.Checkouts[1].Path {
+		t.Errorf("checkouts: %+v", p.Checkouts)
 	}
 }
 

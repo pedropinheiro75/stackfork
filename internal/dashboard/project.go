@@ -228,7 +228,7 @@ func (s *Server) projectFor(repo repos.Repo, cfg *config.Config, history string)
 		return wts[i].Branch < wts[j].Branch
 	})
 	for _, wt := range wts {
-		c := projectCheckout{Key: wt.Branch, Branch: wt.Branch, Path: wt.Path, Main: wt.Main, Changes: wt.Dirty,
+		c := projectCheckout{Key: wt.Path, Branch: wt.Branch, Path: wt.Path, Main: wt.Main, Changes: wt.Dirty,
 			Ahead: wt.Ahead, Behind: wt.Behind, Upstream: wt.Upstream, Mode: out.DefaultMode, State: "no-stack"}
 		if c.Main {
 			c.Key = "main"
@@ -304,7 +304,10 @@ func projectState(s string) string {
 	return "stopped"
 }
 
-const logTailLines = 30
+const (
+	logTailLines = 30
+	logTailBytes = 8 << 10
+)
 
 func lastRun(dir string, r *runs.Run) *projectLastRun {
 	l := &projectLastRun{ID: r.ID, Command: r.Command, Outcome: r.Outcome, Mode: r.Mode, FailedStep: r.FailedStep(),
@@ -326,7 +329,14 @@ func tailLines(s string, n int) string {
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
 	}
-	return strings.Join(lines, "\n")
+	out := strings.Join(lines, "\n")
+	if len(out) > logTailBytes {
+		out = out[len(out)-logTailBytes:]
+		if i := strings.IndexByte(out, '\n'); i >= 0 && i < len(out)-1 { // start on a whole line
+			out = out[i+1:]
+		}
+	}
+	return out
 }
 
 // attachRecentRuns gives each step node the last 3 runs that ran it (newest first).
