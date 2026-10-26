@@ -115,6 +115,19 @@ func DerivePlan(o DeriveOptions) (lifecycle.DerivedPlan, error) {
 		ps.Step.Args = ps.Args // the text of the row names the files
 		d.Steps = append(d.Steps, ps)
 	}
+	// What the app's own start already runs is shown, not run again.
+	k, _, _ := knowledge.LoadFor(root, main)
+	inMigrate, inSeed := learn.EntrypointRuns(k)
+	for _, n := range []struct {
+		id  string
+		run *knowledge.StartupRun
+	}{{"migrate", inMigrate}, {"seed", inSeed}} {
+		if n.run != nil {
+			ps := lifecycle.NewPlanStep(learn.EntrypointNote(n.id, n.run), lifecycle.StateDerived)
+			ps.Source = "found by learn in the app's start"
+			d.Steps = append(d.Steps, ps)
+		}
+	}
 	if main != root {
 		files := argFiles(ch.Args, root)
 		if ch.Reuse && manifest != nil {

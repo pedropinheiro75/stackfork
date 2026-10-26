@@ -126,6 +126,17 @@ func ProposePlan(root string, k *knowledge.Knowledge) knowledge.Plan {
 		execModes = []string{knowledge.ModeContainer}
 	}
 	migrate, seed := DetectSeed(root)
+	// A migrate or seed the app's own start already runs is a note, not a
+	// second run.
+	inMigrate, inSeed := EntrypointRuns(k)
+	if migrate != "" && inMigrate != nil {
+		p.Steps = append(p.Steps, EntrypointNote("migrate", inMigrate))
+		migrate = ""
+	}
+	if seed != "" && inSeed != nil {
+		p.Steps = append(p.Steps, EntrypointNote("seed", inSeed))
+		seed = ""
+	}
 	if migrate != "" {
 		p.Steps = append(p.Steps, knowledge.Step{ID: "migrate", Kind: knowledge.KindExec, Modes: execModes, Cmd: migrate, Once: knowledge.OnceSchema})
 	}
@@ -143,6 +154,11 @@ func ProposePlan(root string, k *knowledge.Knowledge) knowledge.Plan {
 			Name: "app", Cmd: mgr + " run " + devName, PortEnv: []string{"PORT"}, Port: detectDevPort(root, devCmd)})
 	}
 	return p
+}
+
+// EntrypointNote is the note step for a migrate or seed the app's own start runs.
+func EntrypointNote(id string, r *knowledge.StartupRun) knowledge.Step {
+	return knowledge.Step{ID: id, Kind: knowledge.KindNote, Text: id + " runs in the app's entrypoint (" + r.Where() + ")"}
 }
 
 // pickDevScript returns the package.json script a host step runs: dev, then

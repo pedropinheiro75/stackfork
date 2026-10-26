@@ -5,6 +5,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `learn` records, per Compose service, whether its own start already runs a migrate or a seed (`startup_migrate` and `startup_seed` in `knowledge.json`, with file:line, and a line in `knowledge.md`). It reads the Compose `entrypoint` and `command`, the Dockerfile `ENTRYPOINT` and `CMD` the service builds, and the scripts they run. The proposed plan and the derived plan then show a note ("migrate runs in the app's entrypoint (file:line)") instead of a second migrate or seed step, and an auto-detected seed no longer runs on top of an entrypoint that seeds or migrates. `learn record step` and `learn verify` warn (never refuse) when an exec step repeats what the entrypoint runs, or when a `once: data` seed starts with the command of a `once: schema` step, and print the fix. The "Learn with your agent" prompt and `references/learning.md` tell the agent to check this first.
+
 ### Fixed
 
 - A secret the Compose source uses but nothing supplies (a top-level `secrets:` entry that a service or its build uses and that has no `file:`, `content:` or `external`, or an `environment:` variable that is unset) now fails the `secrets` step before prepare when no layer holds a reference. The line names the secret, the Compose file and the `secret map` command. Before, the step said "Skipped · no secrets" and `up` failed later with "container … is unhealthy". Such a name also counts as declared: a folder map applies to it and `secret ls` lists it (status `missing`). The step now runs `docker compose config` (read only).

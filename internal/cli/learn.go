@@ -274,6 +274,7 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 	for _, st := range k.Plan.HostRunSteps() {
 		warnings = append(warnings, knowledge.HostLiteralWarnings(st, hostnameOf(project, manifest))...)
 	}
+	warnings = append(warnings, learn.PlanWarnings(k)...)
 	prepare, warn := recordPrepareRecipe(&k.Plan, top, manifest)
 	if warn != "" {
 		warnings = append(warnings, warn)
@@ -455,6 +456,9 @@ func cmdLearnRecordStep(stdout, stderr io.Writer, rest []string, root, newStateB
 	if *remove == "" {
 		if st := stepByID(k.Plan, *id); st != nil {
 			for _, w := range knowledge.HostLiteralWarnings(*st, checkoutHostname(root, newStateBase, legacyStateBase)) {
+				fmt.Fprintln(stderr, "warning: "+w)
+			}
+			for _, w := range learn.StepWarnings(k, *st) {
 				fmt.Fprintln(stderr, "warning: "+w)
 			}
 		}

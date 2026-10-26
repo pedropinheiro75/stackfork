@@ -349,6 +349,16 @@ func seedRecipeIn(root, main, instanceDir, mode string) (cmd, service string, ho
 	if detected == "" {
 		return "", "", false
 	}
+	// The app's own start already migrates or seeds: the detected seed does
+	// not run it a second time.
+	k, _, _ := knowledge.LoadFor(root, main)
+	inMigrate, inSeed := learn.EntrypointRuns(k)
+	if inSeed != nil {
+		return "", "", false
+	}
+	if inMigrate != nil {
+		return detected, "", false
+	}
 	return withMigrate(root, main, instanceDir, detected, ""), "", false
 }
 

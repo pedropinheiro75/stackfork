@@ -141,6 +141,26 @@ type Service struct {
 	Networks       []string `json:"networks,omitempty"`
 	Healthcheck    bool     `json:"healthcheck,omitempty"`
 	Profiles       []string `json:"profiles,omitempty"`
+	// StartupMigrate and StartupSeed say the service's own start (Compose
+	// entrypoint/command, the Dockerfile ENTRYPOINT/CMD, or a script they
+	// run) already migrates or seeds, with where.
+	StartupMigrate *StartupRun `json:"startup_migrate,omitempty"`
+	StartupSeed    *StartupRun `json:"startup_seed,omitempty"`
+}
+
+// StartupRun is one migrate or seed command found in a service's start.
+type StartupRun struct {
+	File string `json:"file"`
+	Line int    `json:"line,omitempty"`
+	Cmd  string `json:"cmd"`
+}
+
+// Where is "file:line" (just the file when the line is unknown).
+func (r StartupRun) Where() string {
+	if r.Line > 0 {
+		return fmt.Sprintf("%s:%d", r.File, r.Line)
+	}
+	return r.File
 }
 
 // Script is one dev/migrate/seed/reset/test script found by name matching
@@ -378,6 +398,14 @@ func (k *Knowledge) Markdown() string {
 					strings.Join(s.Ports, ", "), s.Healthcheck)
 			}
 			b.WriteString("\n")
+			for _, s := range k.Facts.Services {
+				if s.StartupMigrate != nil {
+					fmt.Fprintf(&b, "- %s already migrates on every start (%s): %s\n", s.Name, s.StartupMigrate.Where(), s.StartupMigrate.Cmd)
+				}
+				if s.StartupSeed != nil {
+					fmt.Fprintf(&b, "- %s already seeds on every start (%s): %s\n", s.Name, s.StartupSeed.Where(), s.StartupSeed.Cmd)
+				}
+			}
 		}
 	}
 

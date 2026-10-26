@@ -206,3 +206,10 @@ func TestPromptNamesSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestPromptEntrypointStartup(t *testing.T) {
+	p := Prompt("proj", t.TempDir(), "main")
+	if !strings.Contains(p, "already migrates or seeds on start") || !strings.Contains(p, "must not repeat the migrate step") {
+		t.Fatalf("prompt lacks the startup guidance: %s", p)
+	}
+}
