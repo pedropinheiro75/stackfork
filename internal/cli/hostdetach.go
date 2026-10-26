@@ -67,7 +67,7 @@ func init() {
 			args = []string{"--root", root}
 		}
 		args = append(append(args, "host", "start", step.Name), flags...)
-		if step.Port != 0 || len(step.PortEnv) > 0 {
+		if step.Port != 0 || len(step.PortEnv) > 0 || knowledge.UsesSelfPort(argv) {
 			args = append(args, "--require-listen")
 		}
 		code, err := run(append(append(args, "--"), argv...), out, errOut)

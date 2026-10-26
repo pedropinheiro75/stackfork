@@ -6,7 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
+
+// maxLockfile caps what one lockfile may add to the hash.
+const maxLockfile = 64 << 20
 
 var lockfileNames = []string{"yarn.lock", "package-lock.json", "pnpm-lock.yaml", "bun.lockb", "bun.lock", "go.sum",
 	"Gemfile.lock", "poetry.lock", "uv.lock", "composer.lock", "Cargo.lock"}
@@ -18,8 +22,9 @@ var lockfileNames = []string{"yarn.lock", "package-lock.json", "pnpm-lock.yaml",
 // fixed value, so such a step runs on the first start only.
 func DepsHash(root, dir string) string {
 	dirs := []string{root}
-	if dir != "" && dir != "." {
-		dirs = append(dirs, filepath.Join(root, dir))
+	// only inside the checkout: a dir that leaves it hashes nothing of its own
+	if d := filepath.Join(root, dir); dir != "" && dir != "." && strings.HasPrefix(d, filepath.Clean(root)+string(filepath.Separator)) {
+		dirs = append(dirs, d)
 	}
 	var files []string
 	for _, d := range dirs {
@@ -32,6 +37,11 @@ func DepsHash(root, dir string) string {
 	sort.Strings(files)
 	h := sha256.New()
 	for _, f := range files {
+		// regular files only, so a committed symlink to /dev/zero or a FIFO cannot hang the start
+		fi, err := os.Lstat(f)
+		if err != nil || !fi.Mode().IsRegular() || fi.Size() > maxLockfile {
+			continue
+		}
 		b, err := os.ReadFile(f)
 		if err != nil {
 			continue

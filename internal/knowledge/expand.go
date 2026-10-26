@@ -48,7 +48,7 @@ func (s Scope) Expand(argv []string) ([]string, error) {
 	for i, a := range argv {
 		out[i] = placeholderRE.ReplaceAllStringFunc(a, func(m string) string {
 			v, e := s.value(placeholderRE.FindStringSubmatch(m)[1])
-			if e == nil && strings.IndexFunc(v, unsafeRune) >= 0 || strings.HasPrefix(v, "-") {
+			if e == nil && (strings.IndexFunc(v, unsafeRune) >= 0 || strings.HasPrefix(v, "-")) {
 				e = errors.New("the value has whitespace, a control character or a leading '-', which a command argument must not get from a placeholder")
 			}
 			if e != nil {
@@ -161,4 +161,17 @@ func HostLiteralWarnings(s Step, hostname string) []string {
 		return out
 	}
 	return append(out, fmt.Sprintf("step %s fixes %s; another worktree would collide or differ. Use {{port}}, {{url}}, {{hostname}}, {{APP.port}} or {{APP.url}} (see references/learning.md)", s.ID, strings.Join(found, ", ")))
+}
+
+// UsesSelfPort reports whether argv uses {{port}} or {{url}}: the app is
+// given a port to listen on, so a start that never listens fails.
+func UsesSelfPort(argv []string) bool {
+	for _, a := range argv {
+		for _, m := range placeholderRE.FindAllStringSubmatch(a, -1) {
+			if m[1] == "port" || m[1] == "url" {
+				return true
+			}
+		}
+	}
+	return false
 }
