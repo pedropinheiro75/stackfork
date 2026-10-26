@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/pedropinheiro75/stackfork/internal/metrics"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -130,6 +131,11 @@ type Server struct {
 	// a counting semaphore.
 	logSlots chan struct{}
 
+	// StartSampler runs the metrics sampler until stop closes; nil (the
+	// default, and in tests) never starts it.
+	StartSampler func(m *metrics.Sampler, stop <-chan struct{})
+	sm           *metrics.Sampler
+	smOnce       sync.Once
 	// done ends the metrics sampler; Close closes it.
 	done     chan struct{}
 	doneOnce sync.Once

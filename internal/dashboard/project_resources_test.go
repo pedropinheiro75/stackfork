@@ -62,8 +62,7 @@ func resourcesServer(t *testing.T) *Server {
 	now = now.Add(10 * time.Second)
 	m.Tick()
 	m.RefreshDF()
-	samplers.Store(s, m)
-	t.Cleanup(func() { samplers.Delete(s) })
+	s.sm = m
 	return s
 }
 
@@ -121,5 +120,33 @@ func TestProjectResourcesErrors(t *testing.T) {
 	}
 	if rec := getResources(s, "name=acme&range=2d"); rec.Code != 400 {
 		t.Errorf("bad range: %d", rec.Code)
+	}
+}
+
+// Warm starts the sampler once through the injected StartSampler, and Close stops it.
+func TestWarmStartsSamplerOnceAndCloseStopsIt(t *testing.T) {
+	s, err := New(t.TempDir(), t.TempDir(), "test", 55512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	starts := 0
+	var stop <-chan struct{}
+	s.StartSampler = func(m *metrics.Sampler, ch <-chan struct{}) { starts++; stop = ch }
+	s.Warm()
+	s.Warm()
+	if starts != 1 {
+		t.Fatalf("starts = %d, want 1", starts)
+	}
+	select {
+	case <-stop:
+		t.Fatal("stopped before Close")
+	default:
+	}
+	s.Close()
+	s.Close()
+	select {
+	case <-stop:
+	default:
+		t.Fatal("Close did not stop the sampler")
 	}
 }

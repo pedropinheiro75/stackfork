@@ -3,8 +3,6 @@ package dashboard
 import (
 	"encoding/json"
 	"net/http"
-	"sync"
-	"testing"
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
@@ -12,33 +10,27 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/metrics"
 )
 
-// samplers holds one metrics sampler per Server, created on first use.
-// ponytail: a package map instead of a Server field, so the sampler stays
-// inside this file; move it to Server when a second file needs it.
-var samplers sync.Map // *Server -> *metrics.Sampler
-
-// sampler returns the server's sampler and, on first use, starts it. It
-// samples every instance, whichever repo asks. The goroutine ends on Close;
-// tests never start it (they store a fake in samplers).
+// sampler returns the server's sampler, built on first use. It samples every
+// instance, whichever repo asks. StartSampler runs it (the CLI sets it; with
+// none, as in tests, nothing ticks on its own).
 func (s *Server) sampler() *metrics.Sampler {
-	if v, ok := samplers.Load(s); ok {
-		return v.(*metrics.Sampler)
-	}
-	m := metrics.New(func() []metrics.Target {
-		inv, _ := s.collect() //nolint:errcheck // an empty inventory just means nothing to sample
-		var all []metrics.Target
-		for _, in := range inv.Instances {
-			all = append(all, resourceTargets(in)...)
+	s.smOnce.Do(func() {
+		if s.sm != nil {
+			return
 		}
-		return all
+		s.sm = metrics.New(func() []metrics.Target {
+			inv, _ := s.collect() //nolint:errcheck // an empty inventory just means nothing to sample
+			var all []metrics.Target
+			for _, in := range inv.Instances {
+				all = append(all, resourceTargets(in)...)
+			}
+			return all
+		})
+		if s.StartSampler != nil {
+			s.StartSampler(s.sm, s.done)
+		}
 	})
-	if v, loaded := samplers.LoadOrStore(s, m); loaded {
-		return v.(*metrics.Sampler)
-	}
-	if !testing.Testing() {
-		go m.Run(s.done)
-	}
-	return m
+	return s.sm
 }
 
 // resourceTargets maps an instance's services to what the sampler measures:
