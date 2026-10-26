@@ -927,6 +927,12 @@ func siblingRefs(note io.Writer, o StartOptions, root, main, instanceDir string,
 			fmt.Fprintf(note, "note: sibling's %s uses a store reference; map it with `stackfork secret map %s %s=REF`\n", n, filepath.Base(main), n)
 			continue
 		}
+		// A borrowed reference that does not resolve here must not fail this
+		// Start (the sibling's env var may not exist in this shell).
+		if st, _ := compose.ExistsSecret(r); st != secretstore.Resolves {
+			fmt.Fprintf(note, "note: sibling's %s (%s) does not resolve here, so it is not borrowed; map it with `stackfork secret map %s %s=REF`\n", n, r, filepath.Base(main), n)
+			continue
+		}
 		out[n] = r
 	}
 	return out, nil

@@ -63,7 +63,7 @@ func secretForbidden(command, cwd string) bool {
 	return false
 }
 
-// secretWrite matches `stackfork [global flags] secret set|map|unmap ...`.
+// secretWrite matches `stackfork [global flags] secret set|map|unmap|forget ...`.
 func secretWrite(w []string) bool {
 	action, args := stackforkCall(w)
 	if action != "secret" {
@@ -73,7 +73,7 @@ func secretWrite(w []string) bool {
 		if strings.HasPrefix(a, "-") {
 			continue
 		}
-		return a == "set" || a == "map" || a == "unmap"
+		return a == "set" || a == "map" || a == "unmap" || a == "forget"
 	}
 	return false
 }

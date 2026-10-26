@@ -23,6 +23,8 @@ func TestSecretCommandsForPeopleOnly(t *testing.T) {
 		"printenv X | stackfork secret set acme-npm-token":                      true,
 		"stackfork secret map . NPM_TOKEN=op://Private/bank/password":           true,
 		"stackfork secret unmap . NPM_TOKEN":                                    true,
+		"stackfork secret forget NPM_TOKEN":                                     true,
+		"stackfork secret forget NPM_TOKEN ~/clients/acme":                      true,
 		"stackfork secret map /home/dev/clients/acme NPM_TOKEN=keychain:acme-npm": true,
 		"stackfork secret unmap ~/clients/acme NPM_TOKEN":                       true,
 		"stackfork --root /x --state-dir /y secret set acme":                    true,

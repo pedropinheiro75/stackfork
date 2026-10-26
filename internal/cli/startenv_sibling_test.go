@@ -284,3 +284,37 @@ func TestStartEnvRefusedSiblingRecipeCopiesNothing(t *testing.T) {
 		t.Error("files were copied before the recipe was refused")
 	}
 }
+
+// A sibling's reference that does not resolve here is not borrowed: the Start
+// goes on and says how to map it (B3a).
+func TestStartEnvSkipsASiblingReferenceThatDoesNotResolve(t *testing.T) {
+	repo, _, base := siblingRepo(t)
+	installFakeDocker(t)
+	t.Setenv(sibTokenName, "") // the sibling's variable is not set in this shell
+	os.Unsetenv(sibTokenName)
+	nw := filepath.Join(repo, ".worktrees", "feat-b")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "feat-b", nw).CombinedOutput(); err != nil {
+		t.Fatalf("%s", out)
+	}
+	out, e, code := runCLI(t, append(base, "start-env", nw)...)
+	if code != 0 {
+		t.Fatalf("%d\n%s\n%s", code, out, e)
+	}
+	if strings.Contains(out, "reusing secret references") || !strings.Contains(out, "sibling's tok") || !strings.Contains(out, "secret map") {
+		t.Errorf("expected a skip note for tok:\n%s", out)
+	}
+}
+
+// secret forget drops one reference from the instance (B3b).
+func TestSecretForgetDropsTheRecordedReference(t *testing.T) {
+	_, sib, base := siblingRepo(t)
+	if _, e, code := runCLI(t, append(append([]string{}, base...), "--root", sib, "secret", "forget", "tok")...); code != 0 {
+		t.Fatal(e)
+	}
+	if _, e, code := runCLI(t, append(append([]string{}, base...), "--root", sib, "secret", "forget", "tok")...); code == 0 || !strings.Contains(e, "no recorded reference tok") {
+		t.Errorf("second forget: %d %s", code, e)
+	}
+	if got := lsSources(t, append(append([]string{}, base...), "--root", sib, "secret", "ls", "--json")...); got["tok"] != "" {
+		t.Errorf("tok still listed: %v", got)
+	}
+}

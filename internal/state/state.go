@@ -159,6 +159,42 @@ func RecordedSecrets(instanceDir string) map[string]string {
 	return kept
 }
 
+// ForgetSecret drops the reference name from the instance's manifest and from
+// its kept references, under the instance lock. It reports whether it held one.
+func ForgetSecret(instanceDir, name string) (bool, error) {
+	lock, err := AcquireLock(filepath.Join(instanceDir, ".lock"))
+	if err != nil {
+		return false, err
+	}
+	defer lock.Release()
+	found := false
+	path := filepath.Join(instanceDir, "manifest.json")
+	if m, err := ReadManifest(path); err == nil && m != nil {
+		_, found = m.Secrets[name]
+		delete(m.Secrets, name)
+		if name == "npm_token" && m.Npmrc != nil { // the legacy key reads as npm_token
+			m.Npmrc, found = nil, true
+		}
+		if found {
+			if err := WritePrivate(path, m); err != nil {
+				return false, err
+			}
+		}
+	}
+	kp := filepath.Join(instanceDir, KeptSecrets)
+	var kept map[string]string
+	if b, err := os.ReadFile(kp); err == nil && json.Unmarshal(b, &kept) == nil {
+		if _, ok := kept[name]; ok {
+			delete(kept, name)
+			if len(kept) == 0 {
+				return true, os.Remove(kp)
+			}
+			return true, WritePrivate(kp, kept)
+		}
+	}
+	return found, nil
+}
+
 // SeedLog is the file in an instance dir holding the last seed's output.
 const SeedLog = "seed.log"
 

@@ -20,6 +20,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 	"github.com/pedropinheiro75/stackfork/internal/secretstore"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 func init() {
@@ -33,7 +34,7 @@ func init() {
 	}
 }
 
-const secretUsage = "secret ls [REPO] [--json] | secret check [REPO] [--json] | secret set ITEM [--store keychain] | secret map REPO|FOLDER NAME=REF | secret unmap REPO|FOLDER NAME"
+const secretUsage = "secret ls [REPO] [--json] | secret check [REPO] [--json] | secret set ITEM [--store keychain] | secret map REPO|FOLDER NAME=REF | secret unmap REPO|FOLDER NAME | secret forget NAME [CHECKOUT]"
 
 // secretStdin is where `secret set` reads a value from; tests replace it.
 var secretStdin io.Reader = os.Stdin
@@ -94,7 +95,7 @@ func cmdSecret(stdout, stderr io.Writer, subArgs []string, rootArg, newStateBase
 	if len(subArgs) == 0 || isHelpRequest(subArgs) {
 		printFlaglessUsage(stdout, "secret", secretUsage)
 		if len(subArgs) == 0 {
-			return 2, errors.New("secret needs a subcommand (ls, check, set, map or unmap)")
+			return 2, errors.New("secret needs a subcommand (ls, check, set, map, unmap or forget)")
 		}
 		return 0, nil
 	}
@@ -104,10 +105,12 @@ func cmdSecret(stdout, stderr io.Writer, subArgs []string, rootArg, newStateBase
 		return secretList(stdout, verb, rest, rootArg, newStateBase, legacyStateBase, global)
 	case "set":
 		return secretSet(stdout, stderr, rest, rootArg)
+	case "forget":
+		return secretForget(stdout, rest, rootArg, newStateBase, legacyStateBase)
 	case "map", "unmap":
 		return secretMap(stdout, verb, rest, newStateBase, legacyStateBase)
 	}
-	return 2, fmt.Errorf("unknown secret subcommand %q (expected ls, check, set, map or unmap)", verb)
+	return 2, fmt.Errorf("unknown secret subcommand %q (expected ls, check, set, map, unmap or forget)", verb)
 }
 
 // parseMixed parses fs over args, allowing flags after positionals.
@@ -324,6 +327,33 @@ func readSecretValue(prompt io.Writer, item string) (string, error) {
 		return "", errors.New("the two entries differ; nothing was stored")
 	}
 	return first, secretstore.ValidateValue(first)
+}
+
+// --- forget ---------------------------------------------------------------
+
+// secretForget drops a recorded reference from one instance (its manifest and
+// kept references). A person action: the guard blocks it for agents.
+func secretForget(stdout io.Writer, args []string, rootArg, newBase, legacyBase string) (int, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return 2, errors.New("usage: stackfork secret forget NAME [CHECKOUT]")
+	}
+	root := rootArg
+	if len(args) == 2 {
+		root = args[1]
+	}
+	_, _, instanceDir, _, err := checkoutManifest(root, newBase, legacyBase)
+	if err != nil {
+		return 0, err
+	}
+	ok, err := state.ForgetSecret(instanceDir, args[0])
+	if err != nil {
+		return 0, err
+	}
+	if !ok {
+		return 1, fmt.Errorf("no recorded reference %s for this checkout (see: stackfork secret ls)", args[0])
+	}
+	fmt.Fprintf(stdout, "forgot %s for this checkout\n", args[0])
+	return 0, nil
 }
 
 // --- map / unmap ----------------------------------------------------------

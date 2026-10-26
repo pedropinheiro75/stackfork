@@ -111,3 +111,27 @@ func TestLockExclusive(t *testing.T) {
 	l1.Release()
 	<-done
 }
+
+func TestForgetSecretDropsManifestAndKeptReferences(t *testing.T) {
+	dir := t.TempDir()
+	if err := WritePrivate(filepath.Join(dir, "manifest.json"), &Manifest{Secrets: map[string]string{"A": "env:A", "B": "env:B"}}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := ForgetSecret(dir, "A"); !ok || err != nil {
+		t.Fatalf("%v %v", ok, err)
+	}
+	if got := RecordedSecrets(dir); len(got) != 1 || got["B"] == "" {
+		t.Errorf("manifest: %v", got)
+	}
+	os.Remove(filepath.Join(dir, "manifest.json"))
+	WritePrivate(filepath.Join(dir, KeptSecrets), map[string]string{"B": "env:B"})
+	if ok, _ := ForgetSecret(dir, "B"); !ok {
+		t.Error("kept B not found")
+	}
+	if got := RecordedSecrets(dir); len(got) != 0 {
+		t.Errorf("kept: %v", got)
+	}
+	if ok, _ := ForgetSecret(dir, "B"); ok {
+		t.Error("nothing left to forget")
+	}
+}
