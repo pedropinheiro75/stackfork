@@ -56,10 +56,16 @@ func init() {
 					i++
 				}
 				if strings.Join(proc.Cmdline[i:], "\x00") != strings.Join(want, "\x00") {
-					return fmt.Errorf("host app %s is already running (pid %d) with a different command; run `stackfork host restart %s` or stop it", step.Name, proc.PID, step.Name)
+					// The caller already checked that the plan is trusted here, and
+					// HostIdentity says stackfork started this exact process.
+					fmt.Fprintf(out, "restarting %s: the plan's command changed\n", step.Name)
+					if err := stopHostForPlan(errOut, instanceDir, step.Name); err != nil {
+						return err
+					}
+				} else {
+					fmt.Fprintf(out, "host app %s already running (pid %d)\n", step.Name, proc.PID)
+					return nil
 				}
-				fmt.Fprintf(out, "host app %s already running (pid %d)\n", step.Name, proc.PID)
-				return nil
 			}
 		}
 		args := append([]string{}, base...)
@@ -76,6 +82,19 @@ func init() {
 		}
 		return err
 	}
+}
+
+// stopHostForPlan stops a recorded host app the way `host stop` does (pid and
+// start-time identity, SIGTERM then SIGKILL), under the instance lock, and
+// forgets it so the plan's command can start. It is not marked as stopped by
+// a person. The new start registers the route again.
+func stopHostForPlan(errOut io.Writer, instanceDir, name string) error {
+	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	return lifecycle.StopHost(errOut, instanceDir, name, lifecycle.HostStopTimeout(), false)
 }
 
 func hostFlagArgs(port int, dir, portEnv string) []string {

@@ -1,7 +1,9 @@
 package lifecycle
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -226,5 +228,57 @@ func TestStartHostAppsPlanCommandBeatsTheRecordedOne(t *testing.T) {
 	}
 	if len(*restarted)+len(*started) != 0 {
 		t.Errorf("a stopped app stays stopped: restarted %v started %v", *restarted, *started)
+	}
+}
+
+// A running app that has a plan step goes through HostStart (which no-ops for
+// the same command and restarts for a changed trusted one); untrusted, nothing.
+func TestStartHostAppsSendsARunningPlanAppThroughHostStart(t *testing.T) {
+	plan := knowledge.Plan{Steps: []knowledge.Step{{ID: "web", Kind: knowledge.KindHost, Name: "web", Cmd: "bun run web"}}}
+	base, main := t.TempDir(), t.TempDir()
+	dir, rec, restarted, started := hostAppsEnv(t)
+	if err := StartHostApps(rec, io.Discard, nil, "/r", main, dir, base, "", knowledge.ModeHybrid, plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(*started) != 0 {
+		t.Fatalf("untrusted: started %v", *started)
+	}
+	rec.Finish(nil)
+	if _, err := TrustHere(base, main, plan); err != nil {
+		t.Fatal(err)
+	}
+	dir, rec, restarted, started = hostAppsEnv(t)
+	var out bytes.Buffer
+	if err := StartHostApps(rec, &out, nil, "/r", main, dir, base, "", knowledge.ModeHybrid, plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(*started) != 1 || (*started)[0] != "web" || len(*restarted) != 1 {
+		t.Fatalf("trusted: the running web app must go through HostStart: restarted %v started %v", *restarted, *started)
+	}
+	if got := stepStates(t, dir, rec, nil); got["web"] != runs.Succeeded {
+		t.Errorf("steps %v", got)
+	}
+}
+
+// With the real-looking hook semantics: same command stays a no-op.
+func TestStartHostAppsRunningAppWithSameCommandIsANoOp(t *testing.T) {
+	plan := knowledge.Plan{Steps: []knowledge.Step{{ID: "web", Kind: knowledge.KindHost, Name: "web", Cmd: "bun run web"}}}
+	base, main := t.TempDir(), t.TempDir()
+	if _, err := TrustHere(base, main, plan); err != nil {
+		t.Fatal(err)
+	}
+	dir, rec, _, _ := hostAppsEnv(t)
+	calls := 0
+	HostStart = func(out, _ io.Writer, _ []string, _, _ string, st knowledge.Step) error {
+		calls++
+		fmt.Fprintf(out, "host app %s already running (pid 1)\n", st.Name)
+		return nil
+	}
+	var out bytes.Buffer
+	if err := StartHostApps(rec, &out, nil, "/r", main, dir, base, "", knowledge.ModeHybrid, plan); err != nil {
+		t.Fatal(err)
+	}
+	if got := stepStates(t, dir, rec, nil); calls != 1 || got["web"] != runs.Succeeded {
+		t.Fatalf("calls %d steps %v", calls, got)
 	}
 }

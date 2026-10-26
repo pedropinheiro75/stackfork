@@ -352,8 +352,58 @@ func TestHostStartHookIsIdempotent(t *testing.T) {
 		readManifestAt(t, stateDir, project).HostProcs["app"].PID != pid {
 		t.Fatalf("respawned or silent: %q", out.String())
 	}
+}
+
+// A changed plan command (the caller already checked trust) stops the old app
+// the safe way and starts the new command; the old process is gone.
+func TestHostStartHookRestartsWhenThePlanCommandChanged(t *testing.T) {
+	root, stateDir, project := hostEnv(t)
+	base := []string{"--root", root, "--state-dir", stateDir}
+	instanceDir := filepath.Join(stateDir, project)
+	step := knowledge.Step{ID: "app", Kind: knowledge.KindHost, Name: "app", Cmd: "sleep 30"}
+	var out, errOut bytes.Buffer
+	if err := lifecycle.HostStart(&out, &errOut, base, root, instanceDir, step); err != nil {
+		t.Fatalf("first: %v %s", err, errOut.String())
+	}
+	old := readManifestAt(t, stateDir, project).HostProcs["app"].PID
 	step.Cmd = "sleep 31"
-	if err := lifecycle.HostStart(&out, &errOut, base, root, instanceDir, step); err == nil || !strings.Contains(err.Error(), "stackfork host restart app") {
-		t.Fatalf("a different command must be refused: %v", err)
+	out.Reset()
+	if err := lifecycle.HostStart(&out, &errOut, base, root, instanceDir, step); err != nil {
+		t.Fatalf("changed command: %v %s", err, errOut.String())
+	}
+	now := readManifestAt(t, stateDir, project).HostProcs["app"]
+	if now.PID == old || !waitDead(old, 5*time.Second) || !alive(now.PID) {
+		t.Fatalf("old pid %d must be gone and a new one running: %+v", old, now)
+	}
+	if !strings.Contains(out.String(), "restarting app: the plan's command changed") {
+		t.Fatalf("no note: %q", out.String())
+	}
+}
+
+// An entry whose pid is alive but is not our supervisor (identity mismatch)
+// is never signalled: the new command starts beside it.
+func TestHostStartHookNeverSignalsAProcessItDidNotStart(t *testing.T) {
+	root, stateDir, project := hostEnv(t)
+	base := []string{"--root", root, "--state-dir", stateDir}
+	instanceDir := filepath.Join(stateDir, project)
+	helper := exec.Command("sleep", "60")
+	if err := helper.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { helper.Process.Kill(); helper.Wait() })
+	started, err := state.ProcStart(helper.Process.Pid)
+	if err != nil {
+		t.Skip("no process start time on this platform")
+	}
+	m := readManifestAt(t, stateDir, project)
+	m.HostProcs = map[string]state.HostProc{"app": {PID: helper.Process.Pid, StartedAt: started, Cmdline: []string{"stackfork", "host", "--supervise", "app", "--", "old"}}}
+	if err := state.WritePrivate(filepath.Join(instanceDir, "manifest.json"), m); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	step := knowledge.Step{ID: "app", Kind: knowledge.KindHost, Name: "app", Cmd: "sleep 32"}
+	_ = lifecycle.HostStart(&out, &errOut, base, root, instanceDir, step)
+	if !alive(helper.Process.Pid) || strings.Contains(out.String(), "restarting") {
+		t.Fatalf("a process stackfork did not start must be left alone: %q", out.String())
 	}
 }
