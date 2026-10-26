@@ -264,7 +264,7 @@
       (log ? '<pre class="mono-log" tabindex="0" aria-label="Log of ' + esc(n.id) + '">' + esc(log) + "</pre>" : "") + "</div>" +
       (canRetry ? '<div class="callout-actions"><button type="button" class="btn" data-fk="retry" data-retry="' + esc(n.id) + '">Retry</button></div>' : "") + "</div>" : "";
     var runs = n.runs || n.recent_runs || [];
-    var history = runs.length ? '<h4 class="pw-panel-h">Last ' + Math.min(3, runs.length) + ' runs of this step</h4><ol class="pw-panel-runs">' + runs.slice(0, 3).map(function (r) {
+    var history = runs.length ? '<h4 class="pw-panel-h">' + (runs.length === 1 ? "Last run" : "Last " + Math.min(3, runs.length) + " runs") + ' of this step</h4><ol class="pw-panel-runs">' + runs.slice(0, 3).map(function (r) {
       var c = RUN[r.state] || RUN.pending;
       return '<li><span class="mono">#' + esc(r.id) + "</span>" + chip(c[0], c[1], c[2]) + '<span class="mono pw-dim">' + esc(dur(r.ms)) + '</span><span class="pw-dim">' + esc(r.started_at ? ago(r.started_at) : r.reason || "") + "</span></li>";
     }).join("") + "</ol>" : "";

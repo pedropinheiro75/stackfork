@@ -463,9 +463,10 @@
     var mine = st;
     if (!mine || mine.inflight) return;
     mine.inflight = true;
-    getJSON("/api/project?" + queryName() + (st.checkout ? "&checkout=" + encodeURIComponent(st.checkout) : "")).then(function (p) {
+    var sel = st.data && selectedCheckout(), hist = sel ? sel.key : st.checkout || "";
+    getJSON("/api/project?" + queryName() + (hist ? "&checkout=" + encodeURIComponent(hist) : "")).then(function (p) {
       if (st !== mine) return;
-      mine.data = p; mine.status = "ready"; mine.error = "";
+      mine.data = p; mine.status = "ready"; mine.error = ""; mine.hist = hist;
     }, function (e) {
       if (st !== mine) return;
       if (e.status === 404) { mine.status = "notfound"; mine.data = null; return; }
@@ -475,6 +476,8 @@
       if (st !== mine) return;
       mine.inflight = false;
       paint();
+      var now = selectedCheckout();
+      if (mine.data && now && now.key !== mine.hist && now.key !== "main") load(); // recent runs of the auto-selected checkout
       if (mine.data && isSetUp(mine.data) && !mine.resLoaded) loadResources();
     });
   }
