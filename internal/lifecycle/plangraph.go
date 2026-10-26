@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"reflect"
+	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
@@ -18,22 +19,32 @@ type Graph struct {
 
 // GraphNode is a terminal (start, ready), a decision or a step.
 type GraphNode struct {
-	ID              string   `json:"id"`
-	Kind            string   `json:"kind"` // terminal, decision, step
-	StepKind        string   `json:"step_kind,omitempty"`
-	Where           string   `json:"where,omitempty"` // stackfork, docker, host
-	Service         string   `json:"service,omitempty"`
-	Title           string   `json:"title,omitempty"`
-	Subtitle        string   `json:"subtitle,omitempty"`
-	Command         string   `json:"command,omitempty"`
-	CommandExpanded string   `json:"command_expanded"` // placeholders filled in; empty until that lands
-	Once            string   `json:"once,omitempty"`
-	PlanState       string   `json:"plan_state,omitempty"` // at-start, verified, trusted, draft, untrusted, derived
-	SkipReason      string   `json:"skip_reason,omitempty"`
-	InMode          bool     `json:"in_mode"`
-	Label           string   `json:"label,omitempty"`    // decision question, or the entry target of ready
-	Branches        []string `json:"branches,omitempty"` // decision
-	EntryURL        string   `json:"entry_url,omitempty"`
+	ID              string    `json:"id"`
+	Kind            string    `json:"kind"` // terminal, decision, step
+	StepKind        string    `json:"step_kind,omitempty"`
+	Where           string    `json:"where,omitempty"` // stackfork, docker, host
+	Service         string    `json:"service,omitempty"`
+	Title           string    `json:"title,omitempty"`
+	Subtitle        string    `json:"subtitle,omitempty"`
+	Command         string    `json:"command,omitempty"`
+	CommandExpanded string    `json:"command_expanded"` // placeholders filled in; empty until that lands
+	Once            string    `json:"once,omitempty"`
+	PlanState       string    `json:"plan_state,omitempty"` // at-start, verified, trusted, draft, untrusted, derived
+	SkipReason      string    `json:"skip_reason,omitempty"`
+	InMode          bool      `json:"in_mode"`
+	Label           string    `json:"label,omitempty"`    // decision question, or the entry target of ready
+	Branches        []string  `json:"branches,omitempty"` // decision
+	EntryURL        string    `json:"entry_url,omitempty"`
+	RecentRuns      []NodeRun `json:"recent_runs,omitempty"` // filled by the dashboard from the run history
+}
+
+// NodeRun is one earlier run of a step node.
+type NodeRun struct {
+	ID        int       `json:"id"`
+	State     string    `json:"state"`
+	MS        int64     `json:"ms"`
+	StartedAt time.Time `json:"started_at,omitzero"`
+	Reason    string    `json:"reason,omitempty"`
 }
 
 // GraphEdge joins two nodes; Label names a decision branch.

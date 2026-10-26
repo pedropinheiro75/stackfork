@@ -150,3 +150,57 @@ func TestProjectUnknownIs404(t *testing.T) {
 		}
 	}
 }
+
+// Each step node carries its last runs for the selected checkout (main by
+// default), and a failed step carries the tail of its log.
+func TestProjectRecentRunsAndLogTail(t *testing.T) {
+	e, _, _ := projectFixture(t)
+	type resp struct {
+		Checkouts []struct {
+			Key     string
+			LastRun *struct {
+				Steps map[string]struct {
+					State   string
+					LogTail string `json:"log_tail"`
+				}
+			} `json:"last_run"`
+		}
+		Workflow map[string]struct {
+			Nodes []struct {
+				ID         string
+				RecentRuns []struct {
+					ID    int
+					State string
+				} `json:"recent_runs"`
+			}
+		}
+	}
+	get := func(u string) resp {
+		var p resp
+		if err := json.Unmarshal(e.get(u).Body.Bytes(), &p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	recent := func(p resp, id string) string {
+		for _, n := range p.Workflow["container"].Nodes {
+			if n.ID == id && len(n.RecentRuns) == 1 {
+				return n.RecentRuns[0].State
+			}
+		}
+		return ""
+	}
+	p := get("/api/project?name=acme")
+	if got := recent(p, "migrate"); got != "succeeded" {
+		t.Errorf("main recent run of migrate = %q", got)
+	}
+	if st := p.Checkouts[1].LastRun.Steps["migrate"]; st.State != "failed" || !strings.HasPrefix(st.LogTail, "boom") {
+		t.Errorf("failed step: %+v", st)
+	}
+	if st := p.Checkouts[0].LastRun.Steps["migrate"]; st.LogTail != "" {
+		t.Errorf("a step that passed has no log tail: %+v", st)
+	}
+	if got := recent(get("/api/project?name=acme&checkout=feature/x"), "migrate"); got != "failed" {
+		t.Errorf("feature recent run of migrate = %q", got)
+	}
+}

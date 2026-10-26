@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
@@ -86,6 +87,9 @@ type projectStep struct {
 	State  string `json:"state"`
 	MS     int64  `json:"ms"`
 	Reason string `json:"reason"`
+	// LogTail is the end of a failed step's log. Logs are redacted when
+	// written (the runs writer), so nothing is redacted again here.
+	LogTail string `json:"log_tail,omitempty"`
 }
 
 type projectConfigJSON struct {
@@ -141,13 +145,19 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		cfg = &config.Config{}
 	}
-	out := s.projectFor(*repo, cfg)
+	out := s.projectFor(*repo, cfg, r.URL.Query().Get("checkout"))
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck // client gone
 }
 
-func (s *Server) projectFor(repo repos.Repo, cfg *config.Config) projectJSON {
+// projectFor builds the read model. history is the checkout key (default
+// "main") whose run history fills each step node's recent_runs.
+func (s *Server) projectFor(repo repos.Repo, cfg *config.Config, history string) projectJSON {
+	if history == "" {
+		history = "main"
+	}
+	historyDir := ""
 	out := projectJSON{Name: repo.Name, Path: repo.Path, DefaultBranch: repo.DefaultBranch, Modes: []string{},
 		Checkouts: []projectCheckout{}, Branches: []projectBranch{}, Workflow: map[string]any{},
 		Config: projectConfigJSON{Secrets: []projectSecret{}, EnvOverrides: []projectEnv{}, BranchCleanup: string(cfg.CleanupFor(repo.Path).Mode)}}
@@ -224,13 +234,16 @@ func (s *Server) projectFor(repo repos.Repo, cfg *config.Config) projectJSON {
 			}
 			if dir, _, _, _, err := s.resolveInstance(c.Project); err == nil {
 				if run := runs.Latest(dir); run != nil {
-					c.LastRun = lastRun(run)
+					c.LastRun = lastRun(dir, run)
 					if c.LastRun.Mode != "" {
 						c.Mode = c.LastRun.Mode
 					}
 					if run.Outcome == runs.Running {
 						c.State = "starting"
 					}
+				}
+				if c.Key == history {
+					historyDir = dir
 				}
 				out.Config.EnvOverrides = append(out.Config.EnvOverrides, envOverrides(dir, c.Key)...)
 			}
@@ -265,7 +278,9 @@ func (s *Server) projectFor(repo repos.Repo, cfg *config.Config) projectJSON {
 	opts := lifecycle.GraphOpts{Root: repo.Path, Main: repo.Path, K: k, Derived: derived, StateBase: s.NewStateBase,
 		HasSecrets: hasSecretNames(repo.Path, cfg), EntryTarget: out.Entry.Target, EntryURL: out.Entry.URL}
 	for _, m := range []string{knowledge.ModeContainer, knowledge.ModeHybrid} {
-		out.Workflow[m] = lifecycle.PlanGraph(plan, m, opts)
+		g := lifecycle.PlanGraph(plan, m, opts)
+		attachRecentRuns(&g, historyDir)
+		out.Workflow[m] = g
 	}
 	return out
 }
@@ -279,13 +294,50 @@ func projectState(s string) string {
 	return "stopped"
 }
 
-func lastRun(r *runs.Run) *projectLastRun {
+const logTailLines = 30
+
+func lastRun(dir string, r *runs.Run) *projectLastRun {
 	l := &projectLastRun{ID: r.ID, Command: r.Command, Outcome: r.Outcome, Mode: r.Mode, FailedStep: r.FailedStep(),
 		StartedAt: r.StartedAt, DurationMS: r.DurationMS, Steps: map[string]projectStep{}}
 	for _, st := range r.Steps {
-		l.Steps[st.ID] = projectStep{State: st.State, MS: st.DurationMS, Reason: st.Reason}
+		ps := projectStep{State: st.State, MS: st.DurationMS, Reason: st.Reason}
+		if st.State == runs.Failed {
+			if b, err := runs.Log(dir, r.ID, st.ID); err == nil {
+				ps.LogTail = tailLines(string(b), logTailLines)
+			}
+		}
+		l.Steps[st.ID] = ps
 	}
 	return l
+}
+
+func tailLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// attachRecentRuns gives each step node the last 3 runs that ran it (newest first).
+func attachRecentRuns(g *lifecycle.Graph, dir string) {
+	if dir == "" {
+		return
+	}
+	all, _ := runs.List(dir) //nolint:errcheck // an unreadable history just shows none
+	for i := range g.Nodes {
+		n := &g.Nodes[i]
+		if n.Kind != "step" {
+			continue
+		}
+		for _, r := range all {
+			for _, st := range r.Steps {
+				if st.ID == n.ID && len(n.RecentRuns) < 3 {
+					n.RecentRuns = append(n.RecentRuns, lifecycle.NodeRun{ID: r.ID, State: st.State, MS: st.DurationMS, StartedAt: st.StartedAt, Reason: st.Reason})
+				}
+			}
+		}
+	}
 }
 
 // envOverrides are the instance's overrides; a masked value never leaves

@@ -463,7 +463,7 @@
     var mine = st;
     if (!mine || mine.inflight) return;
     mine.inflight = true;
-    getJSON("/api/project?" + queryName()).then(function (p) {
+    getJSON("/api/project?" + queryName() + (st.checkout ? "&checkout=" + encodeURIComponent(st.checkout) : "")).then(function (p) {
       if (st !== mine) return;
       mine.data = p; mine.status = "ready"; mine.error = "";
     }, function (e) {
@@ -507,6 +507,7 @@
     if (c && c.last_run && p.modes.indexOf(c.last_run.mode) >= 0) st.mode = c.last_run.mode;
     syncHash();
     paint();
+    load(); // the step panel's recent runs follow the selected checkout
   }
   // Retry from the step panel: start the selected checkout again, like the row's Retry.
   function retrySelected() {

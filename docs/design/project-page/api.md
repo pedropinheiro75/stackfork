@@ -11,6 +11,8 @@ the parts can be built in parallel. Field names are snake_case. Times are RFC 33
 | `GET /api/project?name=NAME` | B | `Project` (below) |
 | `GET /api/project/resources?name=NAME&range=15m\|1h\|6h` | A | `Resources` (below) |
 
+`GET /api/project` also takes `checkout=KEY` (default `main`): the checkout whose run history fills `recent_runs`.
+
 `NAME` is the repo name as the Repos list shows it (`repos.Repo.Name`); when two
 repos share a name, `path=` (the main checkout path) disambiguates. Unknown
 project: 404 `{"error": "..."}`. Both routes are read-only GETs with the
@@ -48,7 +50,8 @@ The page view is `#project/NAME` (query part after `?`: `mode=container|hybrid`,
  "open_url": "http://…",                  // Open App target, "" when none
  "last_run": {"id": 44, "command": "start-env", "outcome": "succeeded|failed|running", "mode": "hybrid",
               "failed_step": "", "started_at": "…", "duration_ms": 52000,
-              "steps": {"<step id>": {"state": "succeeded|failed|skipped|running|pending", "ms": 4200, "reason": ""}}}}
+              "steps": {"<step id>": {"state": "succeeded|failed|skipped|running|pending", "ms": 4200, "reason": "",
+                          "log_tail": "last 30 lines, failed steps only (logs are redacted when written)"}}}}
 ```
 
 `Graph` (one per mode; built by `lifecycle.PlanGraph(plan, mode)` from the same
@@ -68,6 +71,9 @@ when no knowledge):
            {"from": "mode", "to": "up", "label": "container"}],
  "parallel": [["api","app"]]}
 ```
+A step node also carries `"recent_runs": [{"id": 44, "state": "failed", "ms": 4200, "started_at": "…", "reason": ""}]`,
+the last 3 runs that ran that step (newest first) for the `checkout=` checkout, omitted when none.
+
 Every step node has `in_mode` (false = shown dimmed on the inactive branch).
 
 ## Resources
