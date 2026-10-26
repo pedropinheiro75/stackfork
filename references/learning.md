@@ -74,8 +74,8 @@ stackfork learn record step --id api --kind host --name api --dir apps/api --mod
   --cmd "env UI_URL={{app.url}} bun run dev --port {{port}}"
 stackfork learn record step --id app --kind host --name app --dir apps/web --modes hybrid \
   --cmd "env VITE_GRAPHQL_API_URL={{api.url}} vite --port {{port}} --strictPort"
-stackfork learn record step --id studio --kind exec --on host --dir apps/api --modes hybrid \
-  --cmd "prisma studio --port {{studio.port}}"
+stackfork learn record step --id studio --kind host --name studio --dir apps/api --modes hybrid \
+  --cmd "prisma studio --port {{port}}"
 ```
 
 After the first Start, check that the host command used this instance's database: a tool that reads its own `.env` file can ignore `DATABASE_URL`.
