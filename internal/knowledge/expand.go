@@ -27,15 +27,14 @@ type Scope struct {
 var (
 	placeholderRE = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}`)
 	hostnameRE    = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.localhost$`)
-	safeValueRE   = regexp.MustCompile(`^[A-Za-z0-9:/._@\[\]-]+$`)
 )
 
 // Expand replaces the placeholders in each argument: {{port}}, {{url}},
 // {{hostname}}, {{APP.port}}, {{APP.url}}, {{service.NAME.port}} and
 // {{service.NAME.url}}. It runs on an argument vector, after SplitArgv, and
 // no shell sees the result. One pass: a substituted value is never scanned
-// again. Every value is checked against a conservative charset, so none can
-// carry shell syntax or quotes. An unknown placeholder, or an app with no
+// again, and a value stays one argument whatever characters it has. The
+// hostname is checked against the .localhost label charset. An unknown placeholder, or an app with no
 // port, is an error that names it; then nothing is returned.
 func (s Scope) Expand(argv []string) ([]string, error) {
 	out := make([]string, len(argv))
@@ -46,12 +45,6 @@ func (s Scope) Expand(argv []string) ([]string, error) {
 			if e != nil {
 				if err == nil {
 					err = fmt.Errorf("%s: %w", m, e)
-				}
-				return m
-			}
-			if !safeValueRE.MatchString(v) {
-				if err == nil {
-					err = fmt.Errorf("%s: the value has characters a command argument must not get from a placeholder", m)
 				}
 				return m
 			}

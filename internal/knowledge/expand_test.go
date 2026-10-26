@@ -62,15 +62,19 @@ func TestExpandErrorsNameThePlaceholder(t *testing.T) {
 	}
 }
 
-func TestExpandValuesAreVerbatimAndChecked(t *testing.T) {
+func TestExpandValuesStayLiteralArguments(t *testing.T) {
 	s := testScope()
-	s.Services = map[string]ServiceAddr{"db": {URL: "x://a;$(id)", Port: 1}}
-	if _, err := s.Expand([]string{"{{service.db.url}}"}); err == nil {
-		t.Error("a url with shell characters must be refused")
+	s.Services = map[string]ServiceAddr{"db": {URL: "x://a;$(id) {{port}}", Port: 1}}
+	got, err := s.Expand([]string{"echo", "{{service.db.url}}"})
+	if err != nil || !reflect.DeepEqual(got, []string{"echo", "x://a;$(id) {{port}}"}) {
+		t.Fatalf("got %q err %v", got, err)
 	}
 	s.Hostname = "evil.localhost;rm"
 	if _, err := s.Expand([]string{"{{hostname}}"}); err == nil {
 		t.Error("a hostname outside the DNS label charset must be refused")
+	}
+	if _, err := s.Expand([]string{"{{url}}"}); err == nil {
+		t.Error("{{url}} must check the hostname too")
 	}
 }
 
