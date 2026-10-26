@@ -31,6 +31,10 @@ type PlanStep struct {
 	Step    knowledge.Step `json:"-"` // the original, for StepBlock
 	Trust   string         `json:"trust"`
 	Source  string         `json:"source,omitempty"` // a derived step: where it comes from
+	// Expanded is cmd with its placeholders replaced for the current
+	// checkout; ExpandError says why that is not possible (no port yet).
+	Expanded    string `json:"expanded,omitempty"`
+	ExpandError string `json:"expand_error,omitempty"`
 }
 
 // NewPlanStep is the view of one step in the given state.
