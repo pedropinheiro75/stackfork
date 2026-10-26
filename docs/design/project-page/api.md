@@ -76,6 +76,8 @@ the last 3 runs that ran that step (newest first) for the `checkout=` checkout, 
 
 When the plan has two modes, each mode branch ends on its own terminal: `ready` (first mode) and `ready-<mode>` (the others), each `in_mode` only in its mode.
 
+Host apps that start together are listed in `parallel`. An unlabelled predecessor links to every member with the label "start together". A decision (Mode, New data volume) links to the group through its first member only, with the decision's own branch label (`yes`, `no`, a mode name); the rest of the group follows from `parallel`.
+
 Every step node has `in_mode` (false = shown dimmed on the inactive branch).
 
 ## Resources

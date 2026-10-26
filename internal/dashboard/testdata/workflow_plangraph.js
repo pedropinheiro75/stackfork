@@ -28,4 +28,22 @@ assert.ok(par.indexOf('data-node="api"') > 0 && par.indexOf('data-node="app"') >
 const run = { id: 7, outcome: "failed", failed_step: "api", steps: { prepare: { state: "succeeded" }, "up-deps": { state: "succeeded" }, "seed-host": { state: "succeeded" }, "migrate-host": { state: "succeeded" }, api: { state: "failed" } } };
 const fr = wf._canvas(p.workflow.hybrid, "hybrid", modes, run).html;
 assert.ok(fr.includes("not reached: run #7 stopped at api"));
+// the seed decision of the hybrid branch: yes/no only, the group is after the split, not in it
+function splitOf(html, label) {
+  const start = html.indexOf('<div class="pw-split' + (label === "Mode?" ? " pw-modes" : "") + '" role="group" aria-label="' + label + '">', label === "Mode?" ? 0 : html.indexOf("pw-mode-branch\" data-on=\"0\"") > 0 ? html.lastIndexOf('data-mode="hybrid"') : 0);
+  assert.ok(start >= 0, label + " split exists");
+  let depth = 0;
+  for (const m of html.slice(start).matchAll(/<div\b|<\/div>/g)) {
+    depth += m[0] === "</div>" ? -1 : 1;
+    if (depth === 0) return html.slice(start, start + m.index + 6);
+  }
+  throw new Error("unbalanced");
+}
+const seedSplit = splitOf(hy, "New data volume?");
+assert.equal(JSON.stringify(Array.from(seedSplit.matchAll(/pw-edge-label">(\w+)</g), (m) => m[1])), '["yes","no"]', "branch labels are yes and no");
+assert.ok(seedSplit.includes("seed-host"), "it is the hybrid branch decision");
+assert.ok(!seedSplit.includes("pw-parallel"), "the parallel group is not inside the decision's split");
+assert.ok(hy.indexOf("pw-parallel") > hy.indexOf(seedSplit) + seedSplit.length, "the group follows the decision");
+const modeSplit = splitOf(hy, "Mode?");
+assert.equal(JSON.stringify(Array.from(modeSplit.matchAll(/data-mode-to="(\w+)"|data-mode="(\w+)"/g), (m) => m[1] || m[2]).filter((v, i, a) => a.indexOf(v) === i)), '["container","hybrid"]');
 console.log("ok");

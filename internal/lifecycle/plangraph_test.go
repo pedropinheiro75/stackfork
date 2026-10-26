@@ -74,7 +74,7 @@ func TestPlanGraphContainerVsHybrid(t *testing.T) {
 		// an exec step between compose-up and the data step: the seed runs at its recorded place, after it
 		{"up", "migrate", ""}, {"migrate", "new-volume", ""}, {"new-volume", "seed", "yes"}, {"new-volume", "ready", "no"}, {"seed", "ready", ""},
 		{"up-deps", "migrate-host", ""}, {"migrate-host", "new-volume-hybrid", ""}, {"new-volume-hybrid", "seed-host", "yes"},
-		{"seed-host", "api", "start together"}, {"seed-host", "app", "start together"}, {"new-volume-hybrid", "api", "start together"}, {"new-volume-hybrid", "app", "start together"},
+		{"seed-host", "api", "start together"}, {"seed-host", "app", "start together"}, {"new-volume-hybrid", "api", "no"},
 		{"api", "ready-hybrid", ""}, {"app", "ready-hybrid", ""},
 	} {
 		if !hasEdge(c, e[0], e[1], e[2]) {
@@ -214,4 +214,44 @@ func TestPlanGraphDecisionFollowsTheSeedPosition(t *testing.T) {
 		prev = s.ID
 	}
 	t.Fatalf("no seed in %v", order)
+}
+
+// A decision followed by host apps that start together keeps its own branch
+// labels; the group hangs off one branch and the decision never links to
+// every member.
+func TestPlanGraphDecisionBeforeParallelGroup(t *testing.T) {
+	plan := hybridPlan()
+	g := PlanGraph(plan, knowledge.ModeHybrid, graphEnv(t, plan, knowledge.StatusVerified))
+	labels := []string{}
+	for _, e := range g.Edges {
+		if e.From == "new-volume-hybrid" {
+			labels = append(labels, e.Label+"->"+e.To)
+		}
+	}
+	if want := []string{"yes->seed-host", "no->api"}; !reflect.DeepEqual(labels, want) {
+		t.Errorf("seed decision edges = %v, want %v", labels, want)
+	}
+	if !hasEdge(g, "seed-host", "api", "start together") || !hasEdge(g, "seed-host", "app", "start together") {
+		t.Errorf("an unlabelled frontier still links every member: %v", g.Edges)
+	}
+}
+
+// The Mode decision keeps container and hybrid when the modes split on a group.
+func TestPlanGraphModeSplitsOnParallelGroup(t *testing.T) {
+	h := []string{knowledge.ModeHybrid}
+	plan := knowledge.Plan{Status: knowledge.PlanRecorded, AppService: "app", Steps: []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "api", Kind: knowledge.KindHost, Modes: h, Name: "api", Cmd: "npm run dev -w api", Port: 4000},
+		{ID: "web", Kind: knowledge.KindHost, Modes: h, Name: "web", Cmd: "npm run dev -w web", Port: 5173},
+	}}
+	g := PlanGraph(plan, knowledge.ModeHybrid, graphEnv(t, plan, knowledge.StatusVerified))
+	var out []string
+	for _, e := range g.Edges {
+		if e.From == "mode" {
+			out = append(out, e.Label+"->"+e.To)
+		}
+	}
+	if want := []string{"container->ready", "hybrid->api"}; !reflect.DeepEqual(out, want) {
+		t.Errorf("mode edges = %v, want %v", out, want)
+	}
 }

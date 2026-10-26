@@ -210,8 +210,8 @@ func (b *graphBuilder) walk(items []gItem, mode string, split int, modes []strin
 	cur := []gFront{{knowledge.KindSecrets, ""}}
 	link := func(to, label string) {
 		for _, f := range cur {
-			l := f.label
-			if label != "" {
+			l := f.label // a decision's branch label always wins
+			if l == "" {
 				l = label
 			}
 			b.edge(f.id, to, l)
@@ -230,9 +230,21 @@ func (b *graphBuilder) walk(items []gItem, mode string, split int, modes []strin
 		it := items[i]
 		if len(it.steps) > 1 { // host apps that start together
 			ids := []string{}
-			for _, s := range it.steps {
+			for j, s := range it.steps {
 				b.node(b.stepNode(s), mode)
-				link(s.ID, "start together")
+				if j == 0 {
+					link(s.ID, "start together")
+				} else { // a decision's branch reaches the group through its first member only
+					rest := cur
+					cur = nil
+					for _, f := range rest {
+						if f.label == "" {
+							cur = append(cur, f)
+						}
+					}
+					link(s.ID, "start together")
+					cur = rest
+				}
 				ids = append(ids, s.ID)
 			}
 			b.addParallel(ids)
