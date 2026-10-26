@@ -182,7 +182,7 @@ func liveOnCheck(main, newBase, legacyBase string) (hasOP bool, code int, err er
 		return false, 1, errors.New(why)
 	}
 	// Secrets: the dashboard has no shell environment (add-secret-vault D4).
-	rows, err := lifecycle.SecretRows(main, false, nil, nil, newBase, legacyBase)
+	rows, err := lifecycle.SecretRows(main, main, false, nil, nil, newBase, legacyBase)
 	if err != nil {
 		return false, 0, err
 	}

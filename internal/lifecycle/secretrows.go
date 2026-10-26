@@ -39,8 +39,10 @@ type RefStatus struct {
 // prepared instance in another worktree (source sibling), then declared names
 // with no reference at all. check reads every
 // value (and drops it); otherwise nothing that would prompt is read, and a
-// reference in known keeps the status an earlier check gave it.
-func SecretRows(repo string, check bool, known map[string]RefStatus, flags map[string]string, newBase, legacyBase string) ([]SecretRow, error) {
+// reference in known keeps the status an earlier check gave it. root is the
+// checkout asked about (its own knowledge declares names, as LoadFor finds
+// it); repo is its main checkout, which keys the machine map.
+func SecretRows(root, repo string, check bool, known map[string]RefStatus, flags map[string]string, newBase, legacyBase string) ([]SecretRow, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
@@ -57,7 +59,7 @@ func SecretRows(repo string, check bool, known map[string]RefStatus, flags map[s
 		Layer{Source: SourceMap, Refs: cfg.SecretsFor(repo)},
 		Layer{Source: SourceFlag, Refs: flags})
 	hints := map[string]string{}
-	for _, d := range DeclaredSecrets(repo, repo) {
+	for _, d := range DeclaredSecrets(root, repo) {
 		hints[d.Name] = d.Hint
 		if _, ok := refs[d.Name]; !ok {
 			refs[d.Name], source[d.Name] = "", "declared"

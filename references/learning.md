@@ -102,7 +102,7 @@ Record, change or remove a step:
 ```sh
 stackfork learn record step --id web --kind host --name web --cmd "bun run dev" --port-env VITE_PORT --modes hybrid
 stackfork learn record step --id migrate --kind exec --on host --cmd "bun run db:migrate" --once schema
-stackfork learn record step --id web --remove
+stackfork learn record step --remove web
 ```
 
 `learn verify` needs a recorded plan with a `compose-up` step.

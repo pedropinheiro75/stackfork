@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -280,5 +281,28 @@ func TestSecretCheckDropsToolOutputOfAFailingTool(t *testing.T) {
 	out, e, code := runCLI(t, append(base, "secret", "check", repo)...)
 	if code != 1 || !strings.Contains(out, "locked") || strings.Contains(out+e, secretCanary) {
 		t.Fatalf("%d\n%s\n%s", code, out, e)
+	}
+}
+
+func TestSecretLsUsesTheWorktreesOwnDeclarations(t *testing.T) {
+	repo, base, _ := secretCmdFixture(t)
+	if out, err := exec.Command("git", "-C", repo, "-c", "user.email=t@e.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i").CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	wt := filepath.Join(repo, ".worktrees", "own")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "own", wt, "HEAD").CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified,
+		Secrets: []knowledge.SecretDecl{{Name: "WT_ONLY_SECRET", Hint: "worktree hint"}}}
+	if err := k.Save(filepath.Join(wt, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	out, e, code := runCLI(t, append(base, "secret", "ls", wt)...)
+	if code != 0 {
+		t.Fatalf("%d %s", code, e)
+	}
+	if !strings.Contains(out, "WT_ONLY_SECRET") || strings.Contains(out, "SENTRY_DSN") {
+		t.Fatalf("not the worktree's declarations:\n%s", out)
 	}
 }
