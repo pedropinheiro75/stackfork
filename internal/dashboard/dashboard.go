@@ -177,6 +177,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /api/instances", s.handleInstances)
 	mux.HandleFunc("GET /api/repos", s.handleRepos)
+	mux.HandleFunc("GET /api/project", s.handleProject)
+	mux.HandleFunc("GET /api/project/resources", s.handleProjectResources)
 	mux.HandleFunc("GET /fragments/repos", s.handleReposFragment)
 	mux.HandleFunc("GET /fragments/settings", s.handleSettingsFragment)
 	mux.HandleFunc("POST /api/config", s.handleConfig)

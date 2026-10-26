@@ -9,6 +9,9 @@
 <script src="/static/theme-init.js"></script>
 <link rel="stylesheet" href="/static/tokens.css">
 <link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/project.css">
+<link rel="stylesheet" href="/static/project-workflow.css">
+<link rel="stylesheet" href="/static/project-resources.css">
 <meta name="stackfork-token" content="{{.Token}}">
 </head>
 <body>
@@ -95,6 +98,10 @@
     <thead><tr><th scope="col" class="micro">Target</th><th scope="col" class="micro num">Instances</th><th scope="col" class="micro">Command</th><th scope="col" class="micro"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody id="cleanup-list"><tr><td colspan="4" class="muted">loading...</td></tr></tbody>
   </table>
+</main>
+
+<main id="view-project" class="view" hidden aria-live="polite">
+  <div id="project-body"></div>
 </main>
 
 <main id="view-settings" class="view" hidden>
@@ -193,5 +200,8 @@
 </aside>
 
 <script src="/static/app.js"></script>
+<script src="/static/project-workflow.js"></script>
+<script src="/static/project-resources.js"></script>
+<script src="/static/project.js"></script>
 </body>
 </html>
