@@ -231,9 +231,9 @@ func (b *graphBuilder) walk(items []gItem, mode string, split int, modes []strin
 		if len(it.steps) > 1 { // host apps that start together
 			ids := []string{}
 			for j, s := range it.steps {
-				b.node(b.stepNode(s), mode)
+				sid := b.place(s, mode)
 				if j == 0 {
-					link(s.ID, "start together")
+					link(sid, "start together")
 				} else { // a decision's branch reaches the group through its first member only
 					rest := cur
 					cur = nil
@@ -242,10 +242,10 @@ func (b *graphBuilder) walk(items []gItem, mode string, split int, modes []strin
 							cur = append(cur, f)
 						}
 					}
-					link(s.ID, "start together")
+					link(sid, "start together")
 					cur = rest
 				}
-				ids = append(ids, s.ID)
+				ids = append(ids, sid)
 			}
 			b.addParallel(ids)
 			cur = cur[:0:0]
@@ -257,24 +257,24 @@ func (b *graphBuilder) walk(items []gItem, mode string, split int, modes []strin
 		s := it.steps[0]
 		isSeed := s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData
 		if isSeed && firstUp != "" { // drawn where RunOrder puts the seed; the choice itself is made at compose-up
-			d := b.decisionOf[s.ID]
+			sid := b.place(s, mode)
+			d := b.decisionOf[sid]
 			if d == "" {
 				d = "new-volume"
 				if _, taken := b.seen[d]; taken {
 					d += "-" + mode
 				}
-				b.decisionOf[s.ID] = d
+				b.decisionOf[sid] = d
 			}
 			b.node(GraphNode{ID: d, Kind: "decision", Label: "New data volume?", Branches: []string{"yes", "no"}}, mode)
 			link(d, "")
-			b.node(b.stepNode(s), mode)
-			b.edge(d, s.ID, "yes")
-			cur = []gFront{{s.ID, ""}, {d, "no"}}
+			b.edge(d, sid, "yes")
+			cur = []gFront{{sid, ""}, {d, "no"}}
 			continue
 		}
-		b.node(b.stepNode(s), mode)
-		link(s.ID, "")
-		cur = []gFront{{s.ID, ""}}
+		sid := b.place(s, mode)
+		link(sid, "")
+		cur = []gFront{{sid, ""}}
 		if s.Kind == knowledge.KindComposeUp && firstUp == "" {
 			firstUp = s.ID
 		}
@@ -288,6 +288,18 @@ func (b *graphBuilder) walk(items []gItem, mode string, split int, modes []strin
 			b.ends = append(b.ends, f)
 		}
 	}
+}
+
+// place adds the step's card and returns its node id. A step the other mode
+// also has under the same id but with another command (the seed can differ per
+// mode) gets its own node, id-MODE, so each branch shows what it runs.
+func (b *graphBuilder) place(s knowledge.Step, mode string) string {
+	n := b.stepNode(s)
+	if i, ok := b.seen[n.ID]; ok && b.g.Nodes[i].Command != n.Command {
+		n.ID += "-" + mode
+	}
+	b.node(n, mode)
+	return n.ID
 }
 
 func (b *graphBuilder) addParallel(ids []string) {

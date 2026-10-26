@@ -255,3 +255,18 @@ func TestPlanGraphModeSplitsOnParallelGroup(t *testing.T) {
 		t.Errorf("mode edges = %v, want %v", out, want)
 	}
 }
+
+// A step the modes share by id but not by command gets one node per mode
+// (the seed entry can differ per mode).
+func TestPlanGraphPlaceSplitsDifferentCommands(t *testing.T) {
+	b := &graphBuilder{seen: map[string]int{}, inMode: map[string]map[string]bool{}, inPlan: map[string]bool{"seed": true}}
+	seed := func(cmd string) knowledge.Step {
+		return knowledge.Step{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Service: "app", Cmd: cmd}
+	}
+	if a, c := b.place(seed("npm run seed:docker"), "container"), b.place(seed("npm run seed:docker"), "hybrid"); a != "seed" || c != "seed" {
+		t.Errorf("same command shares a node: %s %s", a, c)
+	}
+	if id := b.place(seed("npm run seed:host"), "hybrid"); id != "seed-hybrid" {
+		t.Errorf("another command gets its own node: %s", id)
+	}
+}
