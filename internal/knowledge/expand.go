@@ -1,10 +1,12 @@
 package knowledge
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // ServiceAddr is a Compose service's host-published address: the URL and
@@ -25,8 +27,12 @@ type Scope struct {
 }
 
 var (
-	placeholderRE = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}`)
-	hostnameRE    = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.localhost$`)
+	// placeholderRE is the whole grammar. Anything else in braces (a Go
+	// template, Helm, docker --format) is not ours and stays as written.
+	placeholderRE = regexp.MustCompile(`\{\{\s*(port|url|hostname|service\.[A-Za-z0-9_-]+\.(?:port|url)|[a-z0-9][a-z0-9-]*\.(?:port|url))\s*\}\}`)
+	// anyNameRE is a bare word in braces: a typo of the grammar, or not ours.
+	anyNameRE  = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_][A-Za-z0-9_.-]*)\s*\}\}`)
+	hostnameRE = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.localhost$`)
 )
 
 // Expand replaces the placeholders in each argument: {{port}}, {{url}},
@@ -42,6 +48,9 @@ func (s Scope) Expand(argv []string) ([]string, error) {
 	for i, a := range argv {
 		out[i] = placeholderRE.ReplaceAllStringFunc(a, func(m string) string {
 			v, e := s.value(placeholderRE.FindStringSubmatch(m)[1])
+			if e == nil && strings.IndexFunc(v, unsafeRune) >= 0 || strings.HasPrefix(v, "-") {
+				e = errors.New("the value has whitespace, a control character or a leading '-', which a command argument must not get from a placeholder")
+			}
 			if e != nil {
 				if err == nil {
 					err = fmt.Errorf("%s: %w", m, e)
@@ -56,6 +65,8 @@ func (s Scope) Expand(argv []string) ([]string, error) {
 	}
 	return out, nil
 }
+
+func unsafeRune(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }
 
 func (s Scope) value(name string) (string, error) {
 	host := func() (string, error) {
@@ -107,6 +118,18 @@ func (s Scope) value(name string) (string, error) {
 	return "", fmt.Errorf("unknown placeholder")
 }
 
+// nearMisses lists the bare-word placeholders in cmd the grammar does not
+// know ({{prot}}, {{app.prot}}): they stay literal, so a typo is worth a warning.
+func nearMisses(cmd string) []string {
+	var out []string
+	for _, m := range anyNameRE.FindAllString(cmd, -1) {
+		if !placeholderRE.MatchString(m) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // HasPlaceholder reports whether cmd has a {{...}} placeholder.
 func HasPlaceholder(cmd string) bool { return placeholderRE.MatchString(cmd) }
 
@@ -130,8 +153,12 @@ func HostLiteralWarnings(s Step, hostname string) []string {
 	if hostname != "" && strings.Contains(s.Cmd, hostname) {
 		found = append(found, "the hostname "+hostname+" in cmd")
 	}
-	if len(found) == 0 {
-		return nil
+	var out []string
+	for _, m := range nearMisses(s.Cmd) {
+		out = append(out, fmt.Sprintf("step %s: %s does not expand (not a placeholder: port, url, hostname, APP.port, APP.url, service.NAME.port, service.NAME.url); it stays as written", s.ID, m))
 	}
-	return []string{fmt.Sprintf("step %s fixes %s; another worktree would collide or differ. Use {{port}}, {{url}}, {{hostname}}, {{APP.port}} or {{APP.url}} (see references/learning.md)", s.ID, strings.Join(found, ", "))}
+	if len(found) == 0 {
+		return out
+	}
+	return append(out, fmt.Sprintf("step %s fixes %s; another worktree would collide or differ. Use {{port}}, {{url}}, {{hostname}}, {{APP.port}} or {{APP.url}} (see references/learning.md)", s.ID, strings.Join(found, ", ")))
 }

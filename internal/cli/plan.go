@@ -77,7 +77,9 @@ func cmdPlan(stdout, stderr io.Writer, subArgs []string, root, stateBase, legacy
 		return 1, fmt.Errorf("unknown mode %q (%s or %s)", mode, knowledge.ModeContainer, knowledge.ModeHybrid)
 	}
 	res := lifecycle.PlanView(stateBase, main, k, mode)
-	expandPlanView(&res, root, stateBase, legacyStateBase)
+	if *expandFlag || *jsonFlag { // plain plan never reads docker or the inventory
+		expandPlanView(&res, root, stateBase, legacyStateBase)
+	}
 	if *jsonFlag {
 		return 0, printJSON(stdout, res)
 	}

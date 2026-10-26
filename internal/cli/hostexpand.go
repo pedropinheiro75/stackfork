@@ -25,11 +25,15 @@ import (
 // comes back untouched and touches nothing. Otherwise every host app of the
 // plan gets its port now, persisted in the manifest's host_ports, so
 // {{other.port}} works before other starts.
-func expandHostCommand(argv []string, name string, selfPort int, root, project, instanceDir, newBase, legacyBase string) ([]string, error) {
+//
+// allocate says whether it may give the apps ports, which takes the instance
+// lock. A host exec step runs with that lock already held (up, seed), so it
+// must not allocate: an app with no port is an error that names it.
+func expandHostCommand(argv []string, name string, selfPort int, allocate bool, root, project, instanceDir, newBase, legacyBase string) ([]string, error) {
 	if !hasPlaceholder(argv) {
 		return argv, nil
 	}
-	sc, err := hostScope(name, selfPort, true, argv, root, project, instanceDir, newBase, legacyBase)
+	sc, err := hostScope(name, selfPort, allocate, argv, root, project, instanceDir, newBase, legacyBase)
 	if err != nil {
 		return nil, err
 	}
@@ -63,14 +67,7 @@ func hostScope(self string, selfPort int, allocate bool, argv []string, root, pr
 	if err != nil {
 		return knowledge.Scope{}, err
 	}
-	literal := map[string]int{} // every host app of the plan -> its fixed port, if the step has one
-	if k, _ := knowledge.LoadForCheckout(root); k != nil {
-		for _, s := range k.Plan.HostSteps() {
-			if s.Name != "" {
-				literal[s.Name] = s.Port
-			}
-		}
-	}
+	literal := planHostApps(root) // every host app of the plan -> its fixed port, if the step has one
 	if m != nil {
 		for n := range m.HostPorts {
 			if _, ok := literal[n]; !ok {
@@ -79,12 +76,9 @@ func hostScope(self string, selfPort int, allocate bool, argv []string, root, pr
 		}
 	}
 	if self != "" {
-		if _, ok := literal[self]; !ok {
-			literal[self] = 0
-		}
-		if selfPort != 0 {
-			literal[self] = selfPort
-		}
+		// the port registerHostRoute will use: the flag, else the remembered
+		// or allocated one; the plan's port: only reaches it as a flag
+		literal[self] = selfPort
 	}
 	if allocate {
 		if m, err = allocateHostPorts(literal, project, instanceDir, newBase, legacyBase); err != nil {
@@ -104,6 +98,39 @@ func hostScope(self string, selfPort int, allocate bool, argv []string, root, pr
 		}
 	}
 	return sc, nil
+}
+
+// planHostApps maps each host step of the checkout's plan to its literal port (0: none).
+func planHostApps(root string) map[string]int {
+	apps := map[string]int{}
+	if k, _ := knowledge.LoadForCheckout(root); k != nil {
+		for _, s := range k.Plan.HostSteps() {
+			if s.Name != "" {
+				apps[s.Name] = s.Port
+			}
+		}
+	}
+	return apps
+}
+
+// allocatePlanHostPorts gives every host app of the plan its port now, when
+// a host-run step of the plan uses a placeholder, so {{APP.port}} works in a
+// host exec step before APP starts. Call it where the instance lock is not
+// held. It is best effort: a step that needs a port reports the miss itself.
+func allocatePlanHostPorts(plan knowledge.Plan, root, project, instanceDir, newBase, legacyBase string) {
+	uses := false
+	for _, s := range plan.HostRunSteps() {
+		if argv, err := knowledge.SplitArgv(s.Cmd); err == nil && hasPlaceholder(argv) {
+			uses = true
+		}
+	}
+	if !uses {
+		return
+	}
+	apps := planHostApps(root)
+	if len(apps) > 0 {
+		allocateHostPorts(apps, project, instanceDir, newBase, legacyBase) //nolint:errcheck // see above
+	}
 }
 
 func wantsService(argv []string) bool {

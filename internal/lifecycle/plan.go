@@ -42,7 +42,10 @@ type PlanRunner struct {
 	Prepare                                                             func(w io.Writer, args []string) error     // the CLI's prepare path; decides itself whether it is needed
 	Up                                                                  func(w io.Writer, services []string) error // the CLI's `up --in-run` path
 	Host                                                                func(w io.Writer, step knowledge.Step) error
-	FreshData                                                           bool // a reset deleted the data: the seed runs whatever the volume check says
+	// AllocHostPorts gives the plan's host apps their ports; it runs before
+	// the first compose-up, where the instance lock is not held yet.
+	AllocHostPorts func()
+	FreshData      bool // a reset deleted the data: the seed runs whatever the volume check says
 	// Exact runs Plan's steps for the mode as they are: no check, no implicit
 	// prepare, no implicit compose-up. A live run sets it with a plan it cut
 	// from the full plan; its caller checked and trusted the full one.
@@ -129,6 +132,10 @@ func (r PlanRunner) Execute() error {
 				err = r.step(s, func(w io.Writer) (int, error) { return 0, r.prepare(w, s.Args) })
 			}
 		case knowledge.KindComposeUp:
+			if r.AllocHostPorts != nil {
+				r.AllocHostPorts()
+				r.AllocHostPorts = nil
+			}
 			var sd bool
 			sd, err = r.composeUp(s)
 			seeded = seeded || sd

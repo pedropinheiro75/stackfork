@@ -59,10 +59,15 @@ Do not write a port or a hostname into a `host` step or a host `exec` step. A se
 | `{{url}}` | `http://<hostname>:<port>` of this host app (host steps only). |
 | `{{hostname}}` | The hostname of this instance. |
 | `{{APP.port}}`, `{{APP.url}}` | The same for the host app `APP` (its step `name`) of this plan. |
-| `{{service.NAME.port}}`, `{{service.NAME.url}}` | The host-published port and URL of the Compose service `NAME`, as `urls` shows them. |
+| `{{service.NAME.port}}`, `{{service.NAME.url}}` | The host-published port and URL of the Compose service `NAME`, as `urls` shows them. A service that is not HTTP has no scheme: the URL is `127.0.0.1:PORT`. |
 
 - A host step with no `port:` keeps the stable port of the instance. Every host app of the plan gets its port before the first command that names it runs, so `{{api.port}}` works before `api` starts.
-- An unknown placeholder, or an app with no port, fails the step and names the placeholder. Nothing runs.
+- Only the names in the table expand. Other `{{...}}` text (Go templates such as `{{.State.Health.Status}}`, Helm, `{{json .}}`) stays as written. A typo such as `{{prot}}` also stays as written, and `learn record step` and `learn verify` warn about it.
+- A name in the table that cannot resolve (an app that is not in the plan, an app with no port, a service that is not published) fails the step and names the placeholder. Nothing runs.
+- A value with whitespace, a control character or a leading `-` is refused.
+- A host exec step runs under the instance lock, so it cannot allocate ports. `up` and `start-env` allocate them before the first step. A host exec step that names an app with no port fails with that app's name.
+- `{{port}}` is the port the route uses: `--port`, else the remembered or allocated port. A literal `port:` in the step reaches it only as the `--port` flag of a plan start.
+- A running app keeps the peer URL it started with. If the peer's port changes, restart the app (`host restart NAME`) to pick up the new one.
 - The trust hash covers the text with the placeholders as written. Trust the plan once for each machine. It works in every worktree.
 - `stackfork plan --expand` shows the values for the current checkout. `plan --json` has them in `expanded`.
 - `learn record step` and `learn verify` warn when a host step has a literal `port:`, a `--port N` or `:N` in `cmd`, or the instance hostname.

@@ -108,7 +108,7 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	fs.Visit(func(f *flag.Flag) { waitSet = waitSet || f.Name == "wait-timeout" })
 	dir := relDir(root, workDir, *dirFlag)
 	if detach {
-		if _, err := expandHostCommand(command, name, *portFlag, root, project, instanceDir, newStateBase, legacyStateBase); err != nil {
+		if _, err := expandHostCommand(command, name, *portFlag, true, root, project, instanceDir, newStateBase, legacyStateBase); err != nil {
 			return 0, err // an unknown placeholder fails here, not in a supervisor nobody watches
 		}
 		flagArgs := hostFlagArgs(*portFlag, dir, *portEnvFlag)
@@ -126,7 +126,7 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	// The placeholders expand here, once, before anything is registered: the
 	// plan (and the restart command kept below) holds the text as written.
-	expanded, err := expandHostCommand(command, name, *portFlag, root, project, instanceDir, newStateBase, legacyStateBase)
+	expanded, err := expandHostCommand(command, name, *portFlag, true, root, project, instanceDir, newStateBase, legacyStateBase)
 	if err != nil {
 		return 0, err
 	}
