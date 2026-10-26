@@ -1,0 +1,700 @@
+{
+ "name": "acme-web",
+ "default_mode": "container",
+ "modes": [
+  "container",
+  "hybrid"
+ ],
+ "checkouts": [
+  {
+   "key": "main",
+   "branch": "main",
+   "mode": "container",
+   "last_run": {
+    "id": 44,
+    "command": "start-env",
+    "outcome": "succeeded",
+    "mode": "container",
+    "failed_step": "",
+    "started_at": "2026-01-01T00:00:00Z",
+    "duration_ms": 52000,
+    "steps": {
+     "secrets": {
+      "state": "succeeded",
+      "ms": 20
+     },
+     "prepare": {
+      "state": "succeeded",
+      "ms": 900
+     },
+     "up": {
+      "state": "succeeded",
+      "ms": 12000
+     },
+     "seed": {
+      "state": "succeeded",
+      "ms": 4200
+     },
+     "migrate": {
+      "state": "succeeded",
+      "ms": 3100
+     }
+    }
+   }
+  },
+  {
+   "key": "login",
+   "branch": "fix/login",
+   "mode": "hybrid",
+   "last_run": {
+    "id": 38,
+    "command": "start-env",
+    "outcome": "failed",
+    "mode": "hybrid",
+    "failed_step": "migrate-host",
+    "started_at": "2026-01-01T00:00:00Z",
+    "duration_ms": 51000,
+    "steps": {
+     "secrets": {
+      "state": "succeeded",
+      "ms": 20
+     },
+     "prepare": {
+      "state": "skipped",
+      "reason": "already prepared"
+     },
+     "up-deps": {
+      "state": "succeeded",
+      "ms": 9000
+     },
+     "seed-host": {
+      "state": "skipped",
+      "reason": "setup is a draft"
+     },
+     "migrate-host": {
+      "state": "failed",
+      "ms": 1400,
+      "reason": "exit 1",
+      "log_tail": "Error: <\"'&> connection refused\nat db:migrate"
+     },
+     "api": {
+      "state": "pending"
+     },
+     "app": {
+      "state": "pending"
+     }
+    }
+   }
+  }
+ ],
+ "workflow": {
+  "container": {
+   "nodes": [
+    {
+     "id": "start",
+     "kind": "terminal"
+    },
+    {
+     "id": "secrets",
+     "kind": "step",
+     "step_kind": "secrets",
+     "where": "stackfork",
+     "service": "",
+     "title": "secrets",
+     "subtitle": "preflight",
+     "command": "resolve secrets",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "at-start",
+     "skip_reason": "",
+     "in_mode": true
+    },
+    {
+     "id": "prepare",
+     "kind": "step",
+     "step_kind": "prepare",
+     "where": "stackfork",
+     "service": "",
+     "title": "prepare",
+     "subtitle": "prepare",
+     "command": "prepare --profile dev",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "verified",
+     "skip_reason": "",
+     "in_mode": true
+    },
+    {
+     "id": "mode",
+     "kind": "decision",
+     "label": "Mode?",
+     "branches": [
+      "container",
+      "hybrid"
+     ]
+    },
+    {
+     "id": "up",
+     "kind": "step",
+     "step_kind": "compose-up",
+     "where": "docker",
+     "service": "app, db, nginx, mailpit",
+     "title": "up",
+     "subtitle": "compose up",
+     "command": "compose up",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "verified",
+     "skip_reason": "",
+     "in_mode": true
+    },
+    {
+     "id": "new-volume",
+     "kind": "decision",
+     "label": "New data volume?",
+     "branches": [
+      "yes",
+      "no"
+     ]
+    },
+    {
+     "id": "seed",
+     "kind": "step",
+     "step_kind": "exec",
+     "where": "docker",
+     "service": "app",
+     "title": "seed",
+     "subtitle": "exec",
+     "command": "npm run db:seed",
+     "command_expanded": "",
+     "once": "data",
+     "plan_state": "verified",
+     "skip_reason": "",
+     "in_mode": true
+    },
+    {
+     "id": "migrate",
+     "kind": "step",
+     "step_kind": "exec",
+     "where": "docker",
+     "service": "app",
+     "title": "migrate",
+     "subtitle": "exec",
+     "command": "npm run db:migrate",
+     "command_expanded": "",
+     "once": "schema",
+     "plan_state": "verified",
+     "skip_reason": "",
+     "in_mode": true
+    },
+    {
+     "id": "ready",
+     "kind": "terminal",
+     "entry_url": "nginx:80/"
+    },
+    {
+     "id": "up-deps",
+     "kind": "step",
+     "step_kind": "compose-up",
+     "where": "docker",
+     "service": "db, mailpit",
+     "title": "up-deps",
+     "subtitle": "compose up",
+     "command": "compose up without app, nginx",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "verified",
+     "skip_reason": "",
+     "in_mode": false
+    },
+    {
+     "id": "new-volume-host",
+     "kind": "decision",
+     "label": "New data volume?",
+     "branches": [
+      "yes",
+      "no"
+     ]
+    },
+    {
+     "id": "seed-host",
+     "kind": "step",
+     "step_kind": "exec",
+     "where": "host",
+     "service": "",
+     "title": "seed-host",
+     "subtitle": "exec",
+     "command": "npm run db:seed",
+     "command_expanded": "",
+     "once": "data",
+     "plan_state": "draft",
+     "skip_reason": "",
+     "in_mode": false
+    },
+    {
+     "id": "migrate-host",
+     "kind": "step",
+     "step_kind": "exec",
+     "where": "host",
+     "service": "",
+     "title": "migrate-host",
+     "subtitle": "exec",
+     "command": "npm run db:migrate \"x\" && echo <\"'&>",
+     "command_expanded": "cd . && npm run db:migrate",
+     "once": "schema",
+     "plan_state": "trusted",
+     "skip_reason": "",
+     "in_mode": false
+    },
+    {
+     "id": "api",
+     "kind": "step",
+     "step_kind": "host",
+     "where": "host",
+     "service": "",
+     "title": "api",
+     "subtitle": "host app",
+     "command": "npm run api",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "trusted",
+     "skip_reason": "",
+     "in_mode": false
+    },
+    {
+     "id": "app",
+     "kind": "step",
+     "step_kind": "host",
+     "where": "host",
+     "service": "",
+     "title": "app",
+     "subtitle": "host app",
+     "command": "npm run dev -- --port $PORT",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "trusted",
+     "skip_reason": "",
+     "in_mode": false
+    },
+    {
+     "id": "ready-host",
+     "kind": "terminal",
+     "entry_url": "app:5173 on host"
+    }
+   ],
+   "edges": [
+    {
+     "from": "start",
+     "to": "secrets",
+     "label": ""
+    },
+    {
+     "from": "secrets",
+     "to": "prepare",
+     "label": ""
+    },
+    {
+     "from": "prepare",
+     "to": "mode",
+     "label": ""
+    },
+    {
+     "from": "mode",
+     "to": "up",
+     "label": "container"
+    },
+    {
+     "from": "up",
+     "to": "new-volume",
+     "label": ""
+    },
+    {
+     "from": "new-volume",
+     "to": "seed",
+     "label": "yes"
+    },
+    {
+     "from": "new-volume",
+     "to": "migrate",
+     "label": "no"
+    },
+    {
+     "from": "seed",
+     "to": "migrate",
+     "label": ""
+    },
+    {
+     "from": "migrate",
+     "to": "ready",
+     "label": ""
+    },
+    {
+     "from": "mode",
+     "to": "up-deps",
+     "label": "hybrid"
+    },
+    {
+     "from": "up-deps",
+     "to": "new-volume-host",
+     "label": ""
+    },
+    {
+     "from": "new-volume-host",
+     "to": "seed-host",
+     "label": "yes"
+    },
+    {
+     "from": "new-volume-host",
+     "to": "migrate-host",
+     "label": "no"
+    },
+    {
+     "from": "seed-host",
+     "to": "migrate-host",
+     "label": ""
+    },
+    {
+     "from": "migrate-host",
+     "to": "api",
+     "label": ""
+    },
+    {
+     "from": "migrate-host",
+     "to": "app",
+     "label": ""
+    },
+    {
+     "from": "api",
+     "to": "ready-host",
+     "label": ""
+    },
+    {
+     "from": "app",
+     "to": "ready-host",
+     "label": ""
+    }
+   ],
+   "parallel": [
+    [
+     "api",
+     "app"
+    ]
+   ]
+  },
+  "hybrid": {
+   "nodes": [
+    {
+     "id": "start",
+     "kind": "terminal"
+    },
+    {
+     "id": "secrets",
+     "kind": "step",
+     "step_kind": "secrets",
+     "where": "stackfork",
+     "service": "",
+     "title": "secrets",
+     "subtitle": "preflight",
+     "command": "resolve secrets",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "at-start",
+     "skip_reason": "",
+     "in_mode": true
+    },
+    {
+     "id": "prepare",
+     "kind": "step",
+     "step_kind": "prepare",
+     "where": "stackfork",
+     "service": "",
+     "title": "prepare",
+     "subtitle": "prepare",
+     "command": "prepare --profile dev",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "verified",
+     "skip_reason": "",
+     "in_mode": true
+    },
+    {
+     "id": "mode",
+     "kind": "decision",
+     "label": "Mode?",
+     "branches": [
+      "container",
+      "hybrid"
+     ]
+    },
+    {
+     "id": "up",
+     "kind": "step",
+     "step_kind": "compose-up",
+     "where": "docker",
+     "service": "app, db, nginx, mailpit",
+     "title": "up",
+     "subtitle": "compose up",
+     "command": "compose up",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "verified",
+     "skip_reason": "",
+     "in_mode": false
+    },
+    {
+     "id": "new-volume",
+     "kind": "decision",
+     "label": "New data volume?",
+     "branches": [
+      "yes",
+      "no"
+     ]
+    },
+    {
+     "id": "seed",
+     "kind": "step",
+     "step_kind": "exec",
+     "where": "docker",
+     "service": "app",
+     "title": "seed",
+     "subtitle": "exec",
+     "command": "npm run db:seed",
+     "command_expanded": "",
+     "once": "data",
+     "plan_state": "verified",
+     "skip_reason": "",
+     "in_mode": false
+    },
+    {
+     "id": "migrate",
+     "kind": "step",
+     "step_kind": "exec",
+     "where": "docker",
+     "service": "app",
+     "title": "migrate",
+     "subtitle": "exec",
+     "command": "npm run db:migrate",
+     "command_expanded": "",
+     "once": "schema",
+     "plan_state": "verified",
+     "skip_reason": "",
+     "in_mode": false
+    },
+    {
+     "id": "ready",
+     "kind": "terminal",
+     "entry_url": "nginx:80/"
+    },
+    {
+     "id": "up-deps",
+     "kind": "step",
+     "step_kind": "compose-up",
+     "where": "docker",
+     "service": "db, mailpit",
+     "title": "up-deps",
+     "subtitle": "compose up",
+     "command": "compose up without app, nginx",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "verified",
+     "skip_reason": "",
+     "in_mode": true
+    },
+    {
+     "id": "new-volume-host",
+     "kind": "decision",
+     "label": "New data volume?",
+     "branches": [
+      "yes",
+      "no"
+     ]
+    },
+    {
+     "id": "seed-host",
+     "kind": "step",
+     "step_kind": "exec",
+     "where": "host",
+     "service": "",
+     "title": "seed-host",
+     "subtitle": "exec",
+     "command": "npm run db:seed",
+     "command_expanded": "",
+     "once": "data",
+     "plan_state": "draft",
+     "skip_reason": "",
+     "in_mode": true
+    },
+    {
+     "id": "migrate-host",
+     "kind": "step",
+     "step_kind": "exec",
+     "where": "host",
+     "service": "",
+     "title": "migrate-host",
+     "subtitle": "exec",
+     "command": "npm run db:migrate \"x\" && echo <\"'&>",
+     "command_expanded": "cd . && npm run db:migrate",
+     "once": "schema",
+     "plan_state": "trusted",
+     "skip_reason": "",
+     "in_mode": true,
+     "recent_runs": [
+      {
+       "id": 38,
+       "state": "failed",
+       "ms": 1400
+      },
+      {
+       "id": 30,
+       "state": "succeeded",
+       "ms": 2100
+      },
+      {
+       "id": 22,
+       "state": "succeeded",
+       "ms": 2000
+      },
+      {
+       "id": 10,
+       "state": "succeeded",
+       "ms": 1
+      }
+     ]
+    },
+    {
+     "id": "api",
+     "kind": "step",
+     "step_kind": "host",
+     "where": "host",
+     "service": "",
+     "title": "api",
+     "subtitle": "host app",
+     "command": "npm run api",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "trusted",
+     "skip_reason": "",
+     "in_mode": true
+    },
+    {
+     "id": "app",
+     "kind": "step",
+     "step_kind": "host",
+     "where": "host",
+     "service": "",
+     "title": "app",
+     "subtitle": "host app",
+     "command": "npm run dev -- --port $PORT",
+     "command_expanded": "",
+     "once": "",
+     "plan_state": "trusted",
+     "skip_reason": "",
+     "in_mode": true
+    },
+    {
+     "id": "ready-host",
+     "kind": "terminal",
+     "entry_url": "app:5173 on host"
+    }
+   ],
+   "edges": [
+    {
+     "from": "start",
+     "to": "secrets",
+     "label": ""
+    },
+    {
+     "from": "secrets",
+     "to": "prepare",
+     "label": ""
+    },
+    {
+     "from": "prepare",
+     "to": "mode",
+     "label": ""
+    },
+    {
+     "from": "mode",
+     "to": "up",
+     "label": "container"
+    },
+    {
+     "from": "up",
+     "to": "new-volume",
+     "label": ""
+    },
+    {
+     "from": "new-volume",
+     "to": "seed",
+     "label": "yes"
+    },
+    {
+     "from": "new-volume",
+     "to": "migrate",
+     "label": "no"
+    },
+    {
+     "from": "seed",
+     "to": "migrate",
+     "label": ""
+    },
+    {
+     "from": "migrate",
+     "to": "ready",
+     "label": ""
+    },
+    {
+     "from": "mode",
+     "to": "up-deps",
+     "label": "hybrid"
+    },
+    {
+     "from": "up-deps",
+     "to": "new-volume-host",
+     "label": ""
+    },
+    {
+     "from": "new-volume-host",
+     "to": "seed-host",
+     "label": "yes"
+    },
+    {
+     "from": "new-volume-host",
+     "to": "migrate-host",
+     "label": "no"
+    },
+    {
+     "from": "seed-host",
+     "to": "migrate-host",
+     "label": ""
+    },
+    {
+     "from": "migrate-host",
+     "to": "api",
+     "label": ""
+    },
+    {
+     "from": "migrate-host",
+     "to": "app",
+     "label": ""
+    },
+    {
+     "from": "api",
+     "to": "ready-host",
+     "label": ""
+    },
+    {
+     "from": "app",
+     "to": "ready-host",
+     "label": ""
+    }
+   ],
+   "parallel": [
+    [
+     "api",
+     "app"
+    ]
+   ]
+  }
+ }
+}
