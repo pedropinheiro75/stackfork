@@ -43,6 +43,11 @@ func probeEntryAndLinks(root, newStateBase, legacyStateBase string, k *knowledge
 	if err != nil {
 		return "", nil, nil, err
 	}
+	if name := k.Entry.Service; isHostApp(k, info, model, name) {
+		if _, up := info.Routes[name]; !up {
+			return "", nil, nil, fmt.Errorf("the entry names the host app %s, which is not running; start the instance with stackfork up (or stackfork host start), then verify", name)
+		}
+	}
 	r := knowledge.ResolveEntryFor(k, model, info)
 	where := knowledge.Where{Hostname: hostname, Rows: rows}
 	label := fmt.Sprintf("%s:%d", k.Entry.Service, k.Entry.Port)
@@ -81,6 +86,26 @@ func probeEntryAndLinks(root, newStateBase, legacyStateBase string, k *knowledge
 		links = append(links, check)
 	}
 	return label, links, warnings, nil
+}
+
+// isHostApp: name is a host step of the plan or a recorded host app of the
+// instance, and no Compose service of that name exists.
+func isHostApp(k *knowledge.Knowledge, info *state.Manifest, model interface{}, name string) bool {
+	if _, ok := compose.ServiceTargets(model)[name]; ok {
+		return false
+	}
+	if _, ok := info.HostPorts[name]; ok {
+		return true
+	}
+	if _, ok := info.HostProcs[name]; ok {
+		return true
+	}
+	for _, s := range k.Plan.HostSteps() {
+		if s.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func probeWhy(status int, err error) string {

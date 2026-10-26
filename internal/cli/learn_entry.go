@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	entryUsage = "learn record entry --service S --port N [--path P] | learn record entry --none | learn record entry --remove"
-	linkUsage  = "learn record link NAME --path P | learn record link NAME --service S --port N [--path P] | learn record link --remove NAME"
+	entryUsage = "learn record entry --service S [--port N] [--path P] | learn record entry --none | learn record entry --remove"
+	linkUsage  = "learn record link NAME --path P | learn record link NAME --service S [--port N] [--path P] | learn record link --remove NAME"
 )
 
 // stackView is what `learn record entry|link` checks a target against: the
@@ -27,10 +27,33 @@ type stackView struct {
 	targets map[string][]int
 	known   bool
 	note    string
+	// hosts are the host apps a target may name: the plan's host steps and
+	// the instance's recorded host apps, with their allocated port (0 when
+	// none is known yet).
+	hosts map[string]int
 }
 
 // learnStack reads the checkout's prepared instance, when it has one.
 func learnStack(root, newStateBase, legacyStateBase string, k *knowledge.Knowledge) stackView {
+	v := learnCompose(root, newStateBase, legacyStateBase, k)
+	v.hosts = map[string]int{}
+	for _, s := range k.Plan.HostSteps() {
+		if s.Name != "" {
+			v.hosts[s.Name] = 0
+		}
+	}
+	if _, _, _, info, err := checkoutManifest(root, newStateBase, legacyStateBase); err == nil && info != nil {
+		for n, p := range info.HostProcs {
+			v.hosts[n] = p.Port
+		}
+		for n, p := range info.HostPorts {
+			v.hosts[n] = p
+		}
+	}
+	return v
+}
+
+func learnCompose(root, newStateBase, legacyStateBase string, k *knowledge.Knowledge) stackView {
 	if model := preparedModel(root, newStateBase, legacyStateBase); model != nil {
 		return stackView{targets: compose.ServiceTargets(model), known: true}
 	}
@@ -83,13 +106,27 @@ func preparedModel(root, newStateBase, legacyStateBase string) interface{} {
 	return model
 }
 
-func (v stackView) check(what, service string, port int) error {
+// check validates a target and returns its port: a host app takes its
+// allocated port when port is 0; a Compose service must publish port.
+func (v stackView) check(what, service string, port int) (int, error) {
+	if hp, ok := v.hosts[service]; ok {
+		if port == 0 {
+			port = hp
+		}
+		if port == 0 {
+			return 0, fmt.Errorf("%s %s is a host app with no allocated port yet; pass --port", what, service)
+		}
+		return port, nil
+	}
+	if port == 0 {
+		return 0, errors.New("--port is required for a Compose service")
+	}
 	if !v.known {
-		return nil
+		return port, nil
 	}
 	for _, p := range v.targets[service] {
 		if p == port {
-			return nil
+			return port, nil
 		}
 	}
 	names := make([]string, 0, len(v.targets))
@@ -111,7 +148,15 @@ func (v stackView) check(what, service string, port int) error {
 		}
 		have = append(have, fmt.Sprintf("%s (%s)", n, ports))
 	}
-	return fmt.Errorf("%s %s:%d is not in the stack; the stack has: %s", what, service, port, strings.Join(have, ", "))
+	hostNames := make([]string, 0, len(v.hosts))
+	for n := range v.hosts {
+		hostNames = append(hostNames, n)
+	}
+	sort.Strings(hostNames)
+	if len(hostNames) == 0 {
+		hostNames = []string{"none"}
+	}
+	return 0, fmt.Errorf("%s %s:%d is not in the stack; valid names are Compose services: %s; host apps: %s", what, service, port, strings.Join(have, ", "), strings.Join(hostNames, ", "))
 }
 
 // parseNamed parses flags with NAME positionals in any order (as
@@ -163,15 +208,19 @@ func recordEntry(k *knowledge.Knowledge, rest []string, stack func() stackView) 
 		k.Entry = &knowledge.Entry{None: true}
 		return orphanLinksNote(k), knowledge.ValidateEntryLinks(k.Entry, k.Links)
 	}
-	if *service == "" || *port == 0 {
+	if *service == "" {
 		return "", usage
 	}
-	e := &knowledge.Entry{Service: *service, Port: *port, Path: *path}
-	if err := knowledge.ValidateEntryLinks(e, k.Links); err != nil {
+	v := stack()
+	if _, host := v.hosts[*service]; *port == 0 && !host {
+		return "", usage
+	}
+	p, err := v.check("the entry", *service, *port)
+	if err != nil {
 		return "", err
 	}
-	v := stack()
-	if err := v.check("the entry", e.Service, e.Port); err != nil {
+	e := &knowledge.Entry{Service: *service, Port: p, Path: *path}
+	if err := knowledge.ValidateEntryLinks(e, k.Links); err != nil {
 		return "", err
 	}
 	k.Entry = e
@@ -218,7 +267,19 @@ func recordLink(k *knowledge.Knowledge, rest []string, stack func() stackView) (
 		return "", usage
 	}
 	l := knowledge.Link{Name: names[0], Service: *service, Port: *port, Path: *path}
-	if l.Service == "" && l.Port == 0 && l.Path == "" || l.Service != "" && l.Port == 0 {
+	var v stackView
+	if l.Service != "" && l.Port == 0 { // only a host app may leave the port out
+		v = stack()
+		if _, host := v.hosts[l.Service]; !host {
+			return "", usage
+		}
+		p, err := v.check("link "+l.Name+" targets", l.Service, 0)
+		if err != nil {
+			return "", err
+		}
+		l.Port = p
+	}
+	if l.Service == "" && l.Port == 0 && l.Path == "" {
 		return "", usage
 	}
 	// A path (or a bare port) hangs off the entry, so an entry must exist.
@@ -236,8 +297,8 @@ func recordLink(k *knowledge.Knowledge, rest []string, stack func() stackView) (
 		target = k.Entry.Service
 	}
 	if l.Port != 0 {
-		v := stack()
-		if err := v.check("link "+l.Name+" targets", target, l.Port); err != nil {
+		v = stack()
+		if _, err := v.check("link "+l.Name+" targets", target, l.Port); err != nil {
 			return "", err
 		}
 		note = v.note

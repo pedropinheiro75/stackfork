@@ -37,6 +37,8 @@ type Resolved struct {
 	OK      bool
 	Warning string
 	Links   []ResolvedLink
+
+	hostRoutes map[string]int
 }
 
 // ResolvedLink is one link with its target filled in. OnEntry marks a path
@@ -49,6 +51,7 @@ type ResolvedLink struct {
 	HTTPS   bool
 	HostApp string // for a host route: the name of the host app it points to
 	Path    string
+	Host    bool // the link names a host app: Port is its host port
 	OnEntry bool
 	OK      bool
 	Warning string
@@ -75,7 +78,7 @@ func resolveEntry(k *Knowledge, model interface{}, hostRoutes map[string]int, ho
 		return compose.SchemeForTarget(port, "tcp", httpPorts, httpsPorts) == "https"
 	}
 
-	r := Resolved{Path: "/"}
+	r := Resolved{Path: "/", hostRoutes: hostRoutes}
 	if e != nil && !e.None && e.Path != "" {
 		r.Path = e.Path
 	}
@@ -120,6 +123,10 @@ func (r Resolved) resolveLink(l Link, e *Entry, targets map[string][]int, https 
 		rl.Path = "/"
 	}
 	fix := "record the right one with stackfork learn record link"
+	if hp, ok := r.hostRoutes[l.Service]; ok && l.Service != "" { // a link to a running host app
+		rl.HostApp, rl.Port, rl.Host, rl.OK = l.Service, hp, true, true
+		return rl
+	}
 	switch {
 	case l.Service == "" && l.Port == 0: // a path on the entry
 		rl.OnEntry = true
@@ -309,5 +316,5 @@ func (r Resolved) LinkURL(l ResolvedLink, w Where) (url, direct string) {
 		}
 		return direct, ""
 	}
-	return r.direct(w, l.Service, l.Port, l.HTTPS, l.Path, false), ""
+	return r.direct(w, l.Service, l.Port, l.HTTPS, l.Path, l.Host), ""
 }

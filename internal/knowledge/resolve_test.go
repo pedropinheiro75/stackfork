@@ -212,3 +212,27 @@ func TestURLBuilder(t *testing.T) {
 }
 
 func jsonNum(n int) json.Number { return json.Number(strconv.Itoa(n)) }
+
+// A recorded entry that names a host app resolves to that app's URL, and a
+// link to a host app does too.
+func TestResolveHostAppEntry(t *testing.T) {
+	model := modelOf(t, acmeModel)
+	k := &Knowledge{
+		Entry: &Entry{Service: "app", Port: 3000, Path: "/home"},
+		Links: []Link{{Name: "API", Service: "api", Port: 4000}},
+	}
+	r := ResolveEntry(k, model, map[string]int{"api": 41001, "app": 41000})
+	if r.Source != SourceHostRoute || r.HostApp != "app" || r.Port != 41000 || !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	w := Where{Hostname: "x.localhost"}
+	if u, _ := r.AppURL(w); u != "http://x.localhost:41000/home" {
+		t.Fatal(u)
+	}
+	if len(r.Links) != 1 || !r.Links[0].OK {
+		t.Fatalf("%+v", r.Links)
+	}
+	if u, _ := r.LinkURL(r.Links[0], w); u != "http://x.localhost:41001" {
+		t.Fatal(u)
+	}
+}
