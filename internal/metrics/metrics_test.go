@@ -9,7 +9,7 @@ import (
 
 var mib, gib = float64(1 << 20), float64(1 << 30)
 
-func TestParseStats(t *testing.T) {
+func TestSamplerParseStats(t *testing.T) {
 	out := `{"CPUPerc":"0.00%","MemUsage":"24.24MiB / 7.817GiB","Name":"sf-a-postgres-1"}
 {"CPUPerc":"6.25%","MemUsage":"1.2GiB / 2GiB","Name":"sf-a-app-1"}
 not json
@@ -26,7 +26,7 @@ not json
 	}
 }
 
-func TestParseDF(t *testing.T) {
+func TestSamplerParseDF(t *testing.T) {
 	out := `{"Images":[{"Repository":"postgres","Tag":"17","Size":"459.3MB"},{"Repository":"<none>","Tag":"<none>","Size":"1MB"}],
 "Volumes":[{"Name":"sf-a_pgdata","Size":"854.6MB"},{"Name":"other","Size":"N/A"}]}`
 	df, err := parseDF(out)
@@ -44,7 +44,7 @@ func TestParseDF(t *testing.T) {
 	}
 }
 
-func TestRingRetentionAndRange(t *testing.T) {
+func TestSamplerRingRetentionAndRange(t *testing.T) {
 	var r ring
 	t0 := time.Unix(1_000_000, 0)
 	for i := 0; i < 8*360; i++ { // 8 h at 10 s
@@ -83,7 +83,7 @@ func fixture(t *testing.T) (*Sampler, *time.Time, *string) {
 	return s, &now, &stats
 }
 
-func TestTickSamplesAndGap(t *testing.T) {
+func TestSamplerTickSamplesAndGap(t *testing.T) {
 	s, now, stats := fixture(t)
 	s.Tick()
 	*now = now.Add(10 * time.Second)
@@ -106,7 +106,7 @@ func TestTickSamplesAndGap(t *testing.T) {
 	}
 }
 
-func TestStatsErrorKeepsHostSamples(t *testing.T) {
+func TestSamplerStatsErrorKeepsHostSamples(t *testing.T) {
 	s, _, stats := fixture(t)
 	*stats = "ERR"
 	s.Tick()
@@ -115,7 +115,7 @@ func TestStatsErrorKeepsHostSamples(t *testing.T) {
 	}
 }
 
-func TestIntervalSwitch(t *testing.T) {
+func TestSamplerIntervalSwitch(t *testing.T) {
 	s, now, _ := fixture(t)
 	if s.Interval() != 60*time.Second {
 		t.Error("idle should be 60s")
@@ -130,7 +130,7 @@ func TestIntervalSwitch(t *testing.T) {
 	}
 }
 
-func TestSnapshotShape(t *testing.T) {
+func TestSamplerSnapshotShape(t *testing.T) {
 	s, now, _ := fixture(t)
 	s.Tick()
 	s.RefreshDF()

@@ -78,7 +78,7 @@ func (s *Sampler) Snapshot(targets []Target, rng time.Duration) Resources {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	res := Resources{
-		Range: rngName(rng), Since: s.started, ShortHistory: s.started.IsZero() || now.Sub(s.started) < rng,
+		Range: rngName(rng), Since: s.started.UTC(), ShortHistory: s.started.IsZero() || now.Sub(s.started) < rng,
 		StatsError: s.statsErr,
 		Machine:    machine(),
 		Series:     []Series{}, Services: []Svc{}, Disk: []Disk{}, Images: []Image{},
@@ -110,7 +110,7 @@ func (s *Sampler) Snapshot(targets []Target, rng time.Duration) Resources {
 			res.Totals.MemBytes += l.mem
 		}
 		if !t.StartedAt.IsZero() && t.State != "stopped" {
-			sv.UptimeS = int64(now.Sub(t.StartedAt).Seconds())
+			sv.UptimeS = max(int64(now.Sub(t.StartedAt).Seconds()), 0)
 		}
 		res.Services = append(res.Services, sv)
 		if _, ok := projectCheckout[t.Project]; !ok {
