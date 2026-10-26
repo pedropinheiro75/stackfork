@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -207,6 +208,14 @@ func (r *SiblingRecipe) Apply(target string) (SiblingReport, error) {
 			}
 			c, s := copyTree(filepath.Join(r.Source, filepath.FromSlash(x)), dst, x)
 			rep.Copied, rep.Skipped = append(rep.Copied, c...), append(rep.Skipped, s...)
+			if len(c) == 1 && (strings.HasSuffix(x, ".yml") || strings.HasSuffix(x, ".yaml")) {
+				// An adapter compose file with absolute paths (env_file,
+				// build context) would point the new stack at the source
+				// checkout's files.
+				if err := rewriteFilePaths(dst, sourceRoots(r.Source), target); err != nil {
+					return rep, err
+				}
+			}
 		}
 	}
 	if r.EnvFile == "" || !r.isUntracked(r.EnvFile) {
@@ -220,11 +229,7 @@ func (r *SiblingRecipe) Apply(target string) (SiblingReport, error) {
 	if err != nil {
 		return rep, err
 	}
-	froms := []string{r.Source}
-	if alt := strings.TrimPrefix(r.Source, "/private"); alt != r.Source {
-		froms = append(froms, alt) // macOS spells /var, /tmp without the /private prefix
-	}
-	out, keys := rewriteEnv(b, froms, target, dst)
+	out, keys := rewriteEnv(b, sourceRoots(r.Source), target, dst)
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return rep, err
 	}
@@ -243,6 +248,83 @@ func (r *SiblingRecipe) isUntracked(x string) bool {
 		}
 	}
 	return false
+}
+
+func sourceRoots(src string) []string {
+	froms := []string{src}
+	if alt := strings.TrimPrefix(src, "/private"); alt != src {
+		froms = append(froms, alt) // macOS spells /var, /tmp without the /private prefix
+	}
+	return froms
+}
+
+// rewriteFilePaths replaces, in the file at path, every absolute path that is
+// one of froms or under it with the same path under to. A longer sibling name
+// (from + "-2") is not a match. One pass, longest root first, with to itself
+// in the set: a main checkout's path is a prefix of its .worktrees/ paths.
+func rewriteFilePaths(path string, froms []string, to string) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	roots := append(slices.Clone(froms), to)
+	sort.Slice(roots, func(i, j int) bool { return len(roots[i]) > len(roots[j]) })
+	alts := make([]string, len(roots))
+	for i, r := range roots {
+		alts[i] = regexp.QuoteMeta(r)
+	}
+	re := regexp.MustCompile(`(?m)(?:` + strings.Join(alts, "|") + `)([/"'\s,\]}]|$)`)
+	out := re.ReplaceAllFunc(b, func(m []byte) []byte {
+		tail := re.FindSubmatch(m)[1]
+		return append([]byte(to), tail...)
+	})
+	if string(out) == string(b) {
+		return nil
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, fi.Mode().Perm())
+}
+
+// RepointAdapterCompose fixes adapter compose files (-f under .agent-dev/ or
+// .stackfork/, untracked) that an older stackfork copied into root with
+// another checkout's absolute paths still in them. It returns the files it
+// changed.
+func RepointAdapterCompose(main, root string, args []string) ([]string, error) {
+	var others []string
+	for _, c := range Checkouts(main) {
+		if !sameDir(c, root) {
+			others = append(others, sourceRoots(c)...)
+		}
+	}
+	var fixed []string
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] != "-f" && args[i] != "--file" {
+			continue
+		}
+		x := filepath.ToSlash(args[i+1])
+		d := filepath.Dir(x)
+		if filepath.IsAbs(x) || (d != ".agent-dev" && d != ".stackfork") {
+			continue
+		}
+		if _, err := gitRun(root, "ls-files", "--error-unmatch", "--", x); err == nil {
+			continue // tracked: the project's own file, never edited
+		}
+		p := filepath.Join(root, filepath.FromSlash(x))
+		before, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		if err := rewriteFilePaths(p, others, root); err != nil {
+			return fixed, err
+		}
+		if after, _ := os.ReadFile(p); string(after) != string(before) {
+			fixed = append(fixed, x)
+		}
+	}
+	return fixed, nil
 }
 
 // rewriteEnv points checkout-specific values of a KEY=VALUE env file at the

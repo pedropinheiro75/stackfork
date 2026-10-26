@@ -747,6 +747,13 @@ func copyAdapterFromMain(out io.Writer, root, main string, args []string) error 
 	if _, from, _ := knowledge.LoadFor(root, main); from != "" && from != root && from != main {
 		src, label = from, " from "+from
 	}
+	fixed, err := repos.RepointAdapterCompose(main, root, args)
+	if err != nil {
+		return err
+	}
+	for _, x := range fixed {
+		fmt.Fprintf(out, "rewrote %s to point at %s\n", x, root)
+	}
 	r, err := repos.AdapterRecipeFromMain(src, root, args)
 	if err != nil || r == nil {
 		return err
