@@ -93,3 +93,27 @@ func TestPlanViewDraftProposedStepsShowTheSkipReason(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+func TestRunOrderPutsTheSeedAtItsRecordedPosition(t *testing.T) {
+	ids := func(in []knowledge.Step) string {
+		var o []string
+		for _, s := range in {
+			o = append(o, s.ID)
+		}
+		return strings.Join(o, ",")
+	}
+	ex := func(id, once string) knowledge.Step {
+		return knowledge.Step{ID: id, Kind: knowledge.KindExec, On: knowledge.OnHost, Once: once, Cmd: id}
+	}
+	up := knowledge.Step{ID: "up", Kind: knowledge.KindComposeUp}
+	seed := ex("seed", knowledge.OnceData)
+	if got := ids(RunOrder([]knowledge.Step{up, ex("install", ""), ex("migrate", knowledge.OnceSchema), seed, {ID: "login", Kind: knowledge.KindNote}}, seed, true)); got != "up,install,migrate,seed,login" {
+		t.Fatal(got)
+	}
+	if got := ids(RunOrder([]knowledge.Step{up, seed, ex("install", "")}, seed, true)); got != "up,seed,install" {
+		t.Fatal(got)
+	}
+	if got := ids(RunOrder([]knowledge.Step{ex("install", ""), up}, seed, true)); got != "install,up,seed" {
+		t.Fatal(got)
+	}
+}

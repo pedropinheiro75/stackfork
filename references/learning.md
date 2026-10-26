@@ -49,6 +49,8 @@ An `exec` step with `on: host` runs `cmd` on the host, in the checkout or in `di
 
 When the `once: data` seed and the first `once: schema` step are both `on: host` with the same `dir`, the seed entry runs the migrate first and the seed second, as two commands, and stops at the first failure. The migrate step then shows as skipped (`ran with the seed`). A migrate and a seed that do not both run on the host each run at their own place in the plan. An auto-detected seed always runs in a container.
 
+The seed runs where it is recorded. The decision "is this a new data volume?" is made at `compose-up`, where the volume is created, but the seed executes at the place of the `once: data` step. Record `install`, `build` and `migrate` steps before it and they run first (the migrate prefix still applies, and the separate migrate step shows as skipped when the seed runs it). Only a data step that comes right after `compose-up`, or a seed nobody recorded (auto-detected or from an adapter), seeds right after the `compose-up`, as before. `stackfork up` alone has no later steps, so it seeds right after the `compose-up`. `stackfork plan` shows the seed at the place it runs.
+
 #### Placeholders in host commands
 
 Do not write a port or a hostname into a `host` step or a host `exec` step. A second worktree would collide with the first, and the hostname differs for each instance. Write a placeholder in `cmd` instead. Each argument is expanded right before the command runs, after `cmd` is split into arguments. No shell reads the result, so a value stays one argument. This includes the `KEY=VALUE` arguments after `env`.

@@ -52,7 +52,7 @@ func TestResetRecordsTheStepsInOrder(t *testing.T) {
 	if err != nil || r.Command != "reset" || r.Outcome != runs.Succeeded {
 		t.Fatalf("%+v %v", r, err)
 	}
-	want := "sync=succeeded: secrets=skipped:no secrets down=succeeded: prepare=succeeded: up=succeeded: seed=succeeded: migrate=skipped:ran with the seed"
+	want := "sync=succeeded: secrets=skipped:no secrets down=succeeded: prepare=succeeded: up=succeeded: migrate=skipped:ran with the seed seed=succeeded:"
 	if got := stepStates(r); got != want {
 		t.Fatalf("%s\nwant %s", got, want)
 	}

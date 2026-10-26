@@ -50,6 +50,15 @@
     },
     {
       "ended_at": "TIME",
+      "id": "migrate",
+      "kind": "exec",
+      "reason": "ran with the seed",
+      "started_at": "TIME",
+      "state": "skipped",
+      "text": "m  in db"
+    },
+    {
+      "ended_at": "TIME",
       "exit_code": 1,
       "id": "seed",
       "kind": "exec",
@@ -57,12 +66,6 @@
       "started_at": "TIME",
       "state": "failed",
       "text": "m \u0026\u0026 s  in db"
-    },
-    {
-      "id": "migrate",
-      "kind": "exec",
-      "state": "pending",
-      "text": "m  in db"
     }
   ],
   "trigger": "cli"

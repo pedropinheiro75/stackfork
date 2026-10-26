@@ -24,6 +24,10 @@ type UpSeed struct {
 	// FreshData: the data was just deleted (a reset), so the seed runs whenever
 	// there is a seed command, even when the volume check cannot tell.
 	FreshData bool
+	// DeferSeed: decide the seed at the up (that is where the volume is
+	// created) but leave running it to the caller (RunDueSeed), at the data
+	// step's place in the plan.
+	DeferSeed bool
 }
 
 // UpOutcome is the result of UpAndSeed. A failed seed is SeedErr: Code and Err
@@ -33,6 +37,7 @@ type UpOutcome struct {
 	Err     error
 	SeedErr error
 	Seeded  bool // this call ran the seed and it succeeded
+	SeedDue bool // DeferSeed: the seed must run at its place
 }
 
 // SeedEntry is the plan's `exec once: data` step for mode or, when the seed is
@@ -60,11 +65,22 @@ func SeedEntry(root, main, instanceDir string, plan knowledge.Plan, mode string)
 	return e, true
 }
 
-// RunOrder is the order a Start runs and shows steps in: the data step is
-// not at its place in the plan but right after the first compose-up (design.md
-// D9), or last when the plan has none. seed is SeedEntry's result.
+// RunOrder is the order a Start runs and shows steps in. The data step runs
+// right after the first compose-up (design.md D9), or last when the plan has
+// none, unless exec steps sit between the compose-up and the recorded data
+// step (install, build, migrate): then it stays at its recorded place, since
+// it needs what they prepare. seed is SeedEntry's result.
 func RunOrder(steps []knowledge.Step, seed knowledge.Step, hasSeed bool) []knowledge.Step {
 	out := make([]knowledge.Step, 0, len(steps)+1)
+	if hasSeed && seedDeferredIn(steps) {
+		for _, s := range steps {
+			if s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData {
+				s = seed
+			}
+			out = append(out, s)
+		}
+		return out
+	}
 	for _, s := range steps {
 		if s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData {
 			continue
@@ -78,6 +94,30 @@ func RunOrder(steps []knowledge.Step, seed knowledge.Step, hasSeed bool) []knowl
 		out = append(out, seed)
 	}
 	return out
+}
+
+// seedDeferredIn: steps has a data step after the first compose-up with an
+// exec step between them, so the seed runs at that place, not with the up.
+func seedDeferredIn(steps []knowledge.Step) bool {
+	up, between := false, false
+	for _, s := range steps {
+		switch {
+		case s.Kind == knowledge.KindComposeUp:
+			up = true
+		case s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData:
+			return up && between
+		case up && s.Kind == knowledge.KindExec:
+			between = true
+		}
+	}
+	return false
+}
+
+// SeedDeferred reports whether a Start of plan in mode runs the seed at its
+// recorded place, after the exec steps that follow the compose-up.
+func SeedDeferred(plan knowledge.Plan, mode string) bool {
+	run, _ := plan.ForMode(mode)
+	return seedDeferredIn(run)
 }
 
 func withLock(do bool, instanceDir string, fn func()) {
@@ -141,6 +181,10 @@ func UpAndSeed(out, errOut io.Writer, a UpSeed) UpOutcome {
 	if failed != nil || !hasSeed {
 		return res
 	}
+	if a.DeferSeed {
+		res.SeedDue = seedNow
+		return res
+	}
 	if !seedNow {
 		if seedS != nil && seedS.State == runs.Pending {
 			reason := "data already exists"
@@ -151,6 +195,35 @@ func UpAndSeed(out, errOut io.Writer, a UpSeed) UpOutcome {
 		}
 		return res
 	}
+	res.SeedErr, res.Seeded = runDueSeed(out, errOut, a, seedS)
+	return res
+}
+
+// RunError is the error the run of an `up` ends with. It also sets the run's
+// retry command: a failed seed is retried by `seed`, anything else by `up`.
+func (o UpOutcome) RunError(rec *runs.Run, project string) error {
+	cmd := "stackfork --instance " + project + " "
+	switch {
+	case o.Err != nil:
+		rec.SetRetry(cmd + "up")
+		return o.Err
+	case o.Code != 0:
+		rec.SetRetry(cmd + "up")
+		return fmt.Errorf("up exited with status %d", o.Code)
+	case o.SeedErr != nil:
+		rec.SetRetry(cmd + "seed")
+		return fmt.Errorf("seed failed: %v; retry with stackfork seed", o.SeedErr)
+	}
+	return nil
+}
+
+// RunDueSeed runs the seed UpAndSeed decided with DeferSeed, at the data step's
+// place. seedS is the step's run entry (nil: not recorded).
+func RunDueSeed(out, errOut io.Writer, a UpSeed, seedS *runs.Step) (seedErr error, seeded bool) {
+	return runDueSeed(out, errOut, a, seedS)
+}
+
+func runDueSeed(out, errOut io.Writer, a UpSeed, seedS *runs.Step) (seedErr error, seeded bool) {
 	skipped := false
 	withLock(a.Lock, a.InstanceDir, func() {
 		cmd, svc := SeedRecipeIn(a.Root, a.Main, a.InstanceDir, a.Mode)
@@ -174,26 +247,7 @@ func UpAndSeed(out, errOut io.Writer, a UpSeed) UpOutcome {
 			skipped = true
 			return
 		}
-		res.SeedErr = RunSeed(out, errOut, a.Root, a.Main, a.Branch, a.Project, a.InstanceDir, a.NewBase, a.LegacyBase, cmd, svc, a.Plan, seedS)
+		seedErr = RunSeed(out, errOut, a.Root, a.Main, a.Branch, a.Project, a.InstanceDir, a.NewBase, a.LegacyBase, cmd, svc, a.Plan, seedS)
 	})
-	res.Seeded = res.SeedErr == nil && !skipped
-	return res
-}
-
-// RunError is the error the run of an `up` ends with. It also sets the run's
-// retry command: a failed seed is retried by `seed`, anything else by `up`.
-func (o UpOutcome) RunError(rec *runs.Run, project string) error {
-	cmd := "stackfork --instance " + project + " "
-	switch {
-	case o.Err != nil:
-		rec.SetRetry(cmd + "up")
-		return o.Err
-	case o.Code != 0:
-		rec.SetRetry(cmd + "up")
-		return fmt.Errorf("up exited with status %d", o.Code)
-	case o.SeedErr != nil:
-		rec.SetRetry(cmd + "seed")
-		return fmt.Errorf("seed failed: %v; retry with stackfork seed", o.SeedErr)
-	}
-	return nil
+	return seedErr, seedErr == nil && !skipped
 }
