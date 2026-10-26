@@ -122,7 +122,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		return 0, cmdLearn(stdout, subArgs, root, newStateBase, legacyStateBase)
+		return 0, cmdLearn(stdout, stderr, subArgs, root, newStateBase, legacyStateBase)
 	}
 	if action == "plan" {
 		root, err := identity.ResolvePath(rootArg)
@@ -539,6 +539,9 @@ func recordedPorts(newStateBase, legacyStateBase, skipProject string) (map[int]b
 			}
 			for _, p := range info.Ports {
 				taken[p.Host] = true
+			}
+			for _, p := range info.HostPorts { // reserved for apps that may never have run
+				taken[p] = true
 			}
 		}
 	}
@@ -1085,6 +1088,10 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 	// person, or two agents) can't interleave writes. run/exec don't mutate
 	// instance state the same way (a one-off container or an exec into the
 	// existing one) and are left unlocked.
+	if action == "up" && !inRun {
+		// a host seed runs under the lock below and cannot allocate then
+		allocatePlanHostPorts(upPlan, root, project, instanceDir, newStateBase, legacyStateBase)
+	}
 	switch action {
 	case "up", "down", "restart", "start", "stop":
 		if err := os.MkdirAll(instanceDir, 0o700); err != nil {

@@ -380,6 +380,9 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 
 	runner.Out, runner.Err, runner.Root, runner.Branch, runner.Project = out, errOut, root, branch, project
 	runner.InstanceDir, runner.LegacyBase, runner.Prepare, runner.Up = instanceDir, o.LegacyStateBase, prepare, up
+	runner.AllocHostPorts = func() {
+		allocatePlanHostPorts(runner.Plan, root, project, instanceDir, o.NewStateBase, o.LegacyStateBase)
+	}
 	runner.Host = func(w io.Writer, step knowledge.Step) error {
 		return lifecycle.HostStart(w, w, base, root, instanceDir, step)
 	}

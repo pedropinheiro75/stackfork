@@ -43,6 +43,9 @@ type Manifest struct {
 	// each name, so a host-run app keeps its port across runs (Routes only
 	// holds it while the app runs).
 	HostPorts map[string]int `json:"host_ports,omitempty"`
+	// DepsHashes is, per `exec once: deps` step id, the lockfile hash of its
+	// last successful run.
+	DepsHashes map[string]string `json:"deps_hashes,omitempty"`
 	// HostProcs are the live host processes (`host start`, or a foreground
 	// `host`), keyed by name. Never trust an entry on its PID alone: see HostStatus.
 	HostProcs    map[string]HostProc `json:"host_procs,omitempty"`

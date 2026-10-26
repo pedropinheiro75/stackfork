@@ -39,15 +39,59 @@ The recipe is a startup plan: an ordered list of steps in `.stackfork/knowledge.
 |---|---|
 | `prepare` | Runs `prepare` with the recorded arguments. |
 | `compose-up` | Starts the stack. `exclude` lists services to leave out. |
-| `exec` | Runs `cmd` in `service`. `once` is `data` (seed, new database only) or `schema` (migrate). With `on: host` it runs on the host instead (see below). |
+| `exec` | Runs `cmd` in `service`. `once` is `data` (seed, new database only), `schema` (migrate) or `deps` (install dependencies, see below). With `on: host` it runs on the host instead (see below). |
 | `host` | Runs `cmd` on the host. `cmd` is an argument vector: no shell, so no pipes, redirects or `&&`. |
 | `note` | Shows `text` to the person. Runs nothing. |
 
-A `host` step has a `name`, an optional `dir` and `port` (`--port N`, 1 to 65535), and `port_env`. A `prepare` step takes `args` (`--args -f,compose.yaml`). The step always sets `PORT`, plus each name in `port_env`. `no_seed` records the answer "never seed".
+A `host` step has a `name`, an optional `dir` and `port` (`--port N`, 1 to 65535; leave it out and use `{{port}}`, see below), and `port_env`. A `prepare` step takes `args` (`--args -f,compose.yaml`). The step always sets `PORT`, plus each name in `port_env`. `no_seed` records the answer "never seed".
 
 An `exec` step with `on: host` runs `cmd` on the host, in the checkout or in `dir` (relative, inside the checkout), with the instance's environment: the `DATABASE_URL`, `REDIS_URL`, `SMTP_HOST` and `<SERVICE>_URL` values that `stackfork env --with-passwords` prints, plus `STACKFORK_HOST_RUN=1`. Use it when no container can run the project's migrate or seed, for example when only the database runs in Compose. `cmd` is an argument vector like a `host` step: no shell, so no `&&`. A host exec step takes `cmd`, `once`, `modes` and `dir`, and no `service`, `name`, `port` or `port_env`. Put it after the `compose-up` step: it needs a running instance. It runs in `container` mode and in `hybrid` mode, and does not make `hybrid` available by itself.
 
 When the `once: data` seed and the first `once: schema` step are both `on: host` with the same `dir`, the seed entry runs the migrate first and the seed second, as two commands, and stops at the first failure. The migrate step then shows as skipped (`ran with the seed`). A migrate and a seed that do not both run on the host each run at their own place in the plan. An auto-detected seed always runs in a container.
+
+#### Placeholders in host commands
+
+Do not write a port or a hostname into a `host` step or a host `exec` step. A second worktree would collide with the first, and the hostname differs for each instance. Write a placeholder in `cmd` instead. Each argument is expanded right before the command runs, after `cmd` is split into arguments. No shell reads the result, so a value stays one argument. This includes the `KEY=VALUE` arguments after `env`.
+
+| Placeholder | Value |
+|---|---|
+| `{{port}}` | The port of this host app (host steps only). |
+| `{{url}}` | `http://<hostname>:<port>` of this host app (host steps only). |
+| `{{hostname}}` | The hostname of this instance. |
+| `{{APP.port}}`, `{{APP.url}}` | The same for the host app `APP` (its step `name`) of this plan. |
+| `{{service.NAME.port}}`, `{{service.NAME.url}}` | The host-published port and URL of the Compose service `NAME`, as `urls` shows them. A service that is not HTTP has no scheme: the URL is `127.0.0.1:PORT`. |
+
+- A host step with no `port:` keeps the stable port of the instance. Every host app of the plan gets its port before the first command that names it runs, so `{{api.port}}` works before `api` starts.
+- Only the names in the table expand. Other `{{...}}` text (Go templates such as `{{.State.Health.Status}}`, Helm, `{{json .}}`) stays as written. A typo such as `{{prot}}` also stays as written, and `learn record step` and `learn verify` warn about it.
+- A name in the table that cannot resolve (an app that is not in the plan, an app with no port, a service that is not published) fails the step and names the placeholder. Nothing runs.
+- A value with whitespace, a control character or a leading `-` is refused.
+- A host exec step runs under the instance lock, so it cannot allocate ports. `up` and `start-env` allocate them before the first step. A host exec step that names an app with no port fails with that app's name.
+- `{{port}}` is the port the route uses: `--port`, else the remembered or allocated port. A literal `port:` in the step reaches it only as the `--port` flag of a plan start.
+- A running app keeps the peer URL it started with. If the peer's port changes, restart the app (`host restart NAME`) to pick up the new one.
+- The trust hash covers the text with the placeholders as written. Trust the plan once for each machine. It works in every worktree.
+- `stackfork plan --expand` shows the values for the current checkout. `plan --json` has them in `expanded`.
+- `learn record step` and `learn verify` warn when a host step has a literal `port:`, a `--port N` or `:N` in `cmd`, or the instance hostname.
+
+Example: a project with an API, a web app and a database browser, with no fixed port:
+
+```sh
+stackfork learn record step --id api --kind host --name api --dir apps/api --modes hybrid \
+  --cmd "env UI_URL={{app.url}} bun run dev --port {{port}}"
+stackfork learn record step --id app --kind host --name app --dir apps/web --modes hybrid \
+  --cmd "env VITE_GRAPHQL_API_URL={{api.url}} vite --port {{port}} --strictPort"
+stackfork learn record step --id studio --kind host --name studio --dir apps/api --modes hybrid \
+  --cmd "prisma studio --port {{port}}"
+```
+
+#### Dependencies after a sync
+
+`start-env` fast-forwards the checkout, so a new commit can add a dependency. Record the install command as an `exec` step with `once: deps`, on the host (`--on host`) or in a container, before the build and migrate steps. Use `yarn install --frozen-lockfile`, `npm ci`, `pnpm install --frozen-lockfile` or `bun install`.
+
+```sh
+stackfork learn record step --id install --kind exec --on host --once deps --dir apps/api --cmd "yarn install --frozen-lockfile" --before migrate
+```
+
+The step runs on the first start, and again when the hash of the lockfiles changed since its last successful run for this instance. The lockfiles are `yarn.lock`, `package-lock.json`, `pnpm-lock.yaml`, `bun.lockb`, `bun.lock`, `go.sum`, `Gemfile.lock`, `poetry.lock`, `uv.lock`, `requirements*.txt`, `composer.lock` and `Cargo.lock`, at the checkout root and in the step's `dir`. The hash is stored in the manifest only when the step succeeds, so a failed install runs again. An unchanged step shows as skipped (`lockfiles unchanged`). The step is part of the trusted plan text like any other step.
 
 After the first Start, check that the host command used this instance's database: a tool that reads its own `.env` file can ignore `DATABASE_URL`.
 

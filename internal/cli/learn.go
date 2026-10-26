@@ -32,7 +32,7 @@ type learnOutput struct {
 
 // cmdLearn dispatches the bare scan and the record/verify subcommands
 // (task 13.5/13.6) added on top of it.
-func cmdLearn(stdout io.Writer, subArgs []string, root, newStateBase, legacyStateBase string) error {
+func cmdLearn(stdout, stderr io.Writer, subArgs []string, root, newStateBase, legacyStateBase string) error {
 	if isHelpRequest(subArgs) {
 		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe|step|secret|entry|link|live-watch|live-ignore|fact ... | learn verify --check ... --confirm ...")
 		return nil
@@ -42,7 +42,7 @@ func cmdLearn(stdout io.Writer, subArgs []string, root, newStateBase, legacyStat
 	}
 	switch subArgs[0] {
 	case "record":
-		return cmdLearnRecord(stdout, subArgs[1:], root, newStateBase, legacyStateBase)
+		return cmdLearnRecord(stdout, stderr, subArgs[1:], root, newStateBase, legacyStateBase)
 	case "verify":
 		return cmdLearnVerify(stdout, subArgs[1:], root, newStateBase, legacyStateBase)
 	default:
@@ -118,7 +118,7 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 // cmdLearnRecord appends one answer/gotcha, or sets recipe fields, into an
 // existing draft (task 13.5). There is nothing to resume into without a
 // prior `stackfork learn`.
-func cmdLearnRecord(stdout io.Writer, subArgs []string, root, newStateBase, legacyStateBase string) error {
+func cmdLearnRecord(stdout, stderr io.Writer, subArgs []string, root, newStateBase, legacyStateBase string) error {
 	if len(subArgs) == 0 {
 		return errors.New("learn record requires a kind (answer, gotcha, recipe, step, secret, entry, link, live-watch, live-ignore, fact)")
 	}
@@ -162,7 +162,7 @@ func cmdLearnRecord(stdout io.Writer, subArgs []string, root, newStateBase, lega
 		}
 		applyRecipeFlags(&k.Plan, *prepare, *up, *migrate, *seedOnce, *seedService, login)
 	case "step":
-		return cmdLearnRecordStep(stdout, rest, root)
+		return cmdLearnRecordStep(stdout, stderr, rest, root, newStateBase, legacyStateBase)
 	case "secret":
 		if isHelpRequest(rest) {
 			printFlaglessUsage(stdout, "learn record secret", "learn record secret NAME [--hint TEXT] | learn record secret --remove NAME")
@@ -258,7 +258,7 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 		return errors.New("plan has no compose-up step; record one with `learn record step --id up --kind compose-up` before verifying")
 	}
 
-	top, _, _, manifest, err := checkoutManifest(root, newStateBase, legacyStateBase)
+	top, project, _, manifest, err := checkoutManifest(root, newStateBase, legacyStateBase)
 	if err != nil || manifest == nil {
 		if k.Entry != nil && k.Entry.None {
 			return errors.New("no prepared instance for this checkout; prepare it, then verify")
@@ -270,6 +270,9 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 		return err
 	}
 	hash := knowledge.PlanHash(k.Plan.Steps)
+	for _, st := range k.Plan.HostRunSteps() {
+		warnings = append(warnings, knowledge.HostLiteralWarnings(st, hostnameOf(project, manifest))...)
+	}
 	prepare, warn := recordPrepareRecipe(&k.Plan, top, manifest)
 	if warn != "" {
 		warnings = append(warnings, warn)
@@ -365,7 +368,7 @@ func applyRecipeFlags(p *knowledge.Plan, prepare, up, migrate, seedOnce, seedSer
 
 // cmdLearnRecordStep is `learn record step`: upsert one step by id (or
 // remove one with --remove) and mark the plan recorded.
-func cmdLearnRecordStep(stdout io.Writer, rest []string, root string) error {
+func cmdLearnRecordStep(stdout, stderr io.Writer, rest []string, root, newStateBase, legacyStateBase string) error {
 	fs := newFlagSet(stdout, "learn record step")
 	id := fs.String("id", "", "")
 	kind := fs.String("kind", "", "")
@@ -397,7 +400,7 @@ func cmdLearnRecordStep(stdout io.Writer, rest []string, root string) error {
 		}
 	} else {
 		if *id == "" || *kind == "" {
-			return errors.New("usage: learn record step --id ID --kind K [--cmd C] [--service S] [--once data|schema|none] [--on host|container] [--modes a,b] [--exclude a,b] [--name N] [--dir D] [--port-env A,B] [--port N] [--args A,B] [--text T] [--before ID] | --remove ID")
+			return errors.New("usage: learn record step --id ID --kind K [--cmd C] [--service S] [--once data|schema|deps|none] [--on host|container] [--modes a,b] [--exclude a,b] [--name N] [--dir D] [--port-env A,B] [--port N] [--args A,B] [--text T] [--before ID] | --remove ID")
 		}
 		st := knowledge.Step{ID: *id, Kind: *kind, Cmd: *cmd, Service: *service, Once: *once,
 			Modes: splitList(*modes), Exclude: splitList(*exclude), Name: *name, Dir: *dir,
@@ -439,6 +442,13 @@ func cmdLearnRecordStep(stdout io.Writer, rest []string, root string) error {
 	}
 	if err := learn.WriteKnowledge(root, k); err != nil {
 		return err
+	}
+	if *remove == "" {
+		if st := stepByID(k.Plan, *id); st != nil {
+			for _, w := range knowledge.HostLiteralWarnings(*st, checkoutHostname(root, newStateBase, legacyStateBase)) {
+				fmt.Fprintln(stderr, "warning: "+w)
+			}
+		}
 	}
 	return printJSON(stdout, map[string]interface{}{"recorded": "step", "plan": k.Plan})
 }
