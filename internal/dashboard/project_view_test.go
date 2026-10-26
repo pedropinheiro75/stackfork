@@ -37,7 +37,7 @@ func TestProjectRepoNameLinksToThePage(t *testing.T) {
 	e := newBrowserEnv(t)
 	e.readyRepo("ready")
 	body := e.get("/fragments/repos").Body.String()
-	for _, want := range []string{`<a class="repo-name" href="#project/ready"`, `class="btn btn-ghost repo-open-project" href="#project/ready"`, `aria-label="Worktrees of ready"`} {
+	for _, want := range []string{`<a class="repo-name" href="#project/ready?path=`, `class="btn btn-ghost repo-open-project" href="#project/ready?path=`, `aria-label="Worktrees of ready"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("repos fragment is missing %s", want)
 		}

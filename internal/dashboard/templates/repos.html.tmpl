@@ -32,7 +32,7 @@
     <div class="repo-row">
       <div class="repo-lead">
         <button type="button" class="repo-toggle" data-key="{{$r.Path}}/toggle" data-toggle-repo aria-expanded="false" aria-controls="repo-panel-{{$i}}" aria-label="Worktrees of {{$r.Name}}" title="{{$r.Path}}"><span class="chevron-glyph" aria-hidden="true"></span></button>
-        <span class="repo-id"><span><a class="repo-name" href="#project/{{$r.Name}}" data-key="{{$r.Path}}/project" title="Open the {{$r.Name}} project page">{{$r.Name}}</a>{{if and $row.Live.Show $row.Live.Enabled}}<span class="live-tag{{if eq $row.Live.State "paused"}} live-tag-attention{{end}}" title="Live mode: {{$row.Live.Chip.Label}}">Live</span>{{end}}</span>{{if $r.Group}}<span class="repo-folder">{{$r.Group}}</span>{{end}}</span>
+        <span class="repo-id"><span><a class="repo-name" href="{{projectHref $r.Name $r.Path}}" data-key="{{$r.Path}}/project" title="Open the {{$r.Name}} project page">{{$r.Name}}</a>{{if and $row.Live.Show $row.Live.Enabled}}<span class="live-tag{{if eq $row.Live.State "paused"}} live-tag-attention{{end}}" title="Live mode: {{$row.Live.Chip.Label}}">Live</span>{{end}}</span>{{if $r.Group}}<span class="repo-folder">{{$r.Group}}</span>{{end}}</span>
       </div>
       <span class="repo-status"><span class="chip chip-{{$c.Class}}" title="{{if $c.Title}}{{$c.Title}}{{else}}{{$r.ReadinessReason}}{{end}}"><span class="chip-glyph" aria-hidden="true">{{$c.Glyph}}</span>{{$c.Label}}</span></span>
       <span class="repo-counts">
@@ -53,7 +53,7 @@
     </div>
     <div class="repo-panel" id="repo-panel-{{$i}}" hidden>
       <div class="repo-errors" data-repo-errors></div>
-      <p class="repo-meta"><span class="mono" title="{{$r.Path}}">{{tilde $r.Path}}</span><span class="dot" aria-hidden="true">&middot;</span><span>default <code class="mono">{{$r.DefaultBranch}}</code></span><a class="btn btn-ghost repo-open-project" href="#project/{{$r.Name}}" data-key="{{$r.Path}}/open-project">Open project</a></p>
+      <p class="repo-meta"><span class="mono" title="{{$r.Path}}">{{tilde $r.Path}}</span><span class="dot" aria-hidden="true">&middot;</span><span>default <code class="mono">{{$r.DefaultBranch}}</code></span><a class="btn btn-ghost repo-open-project" href="{{projectHref $r.Name $r.Path}}" data-key="{{$r.Path}}/open-project">Open project</a></p>
       {{with $row.Live}}{{if .Show}}
       <div class="live-bar" data-live="{{.State}}" data-live-repo="{{$r.Path}}">
         <button type="button" role="switch" class="switch" aria-checked="{{.Enabled}}" data-live-op="{{if .Enabled}}off{{else}}on{{end}}" data-repo="{{$r.Path}}" data-key="{{$r.Path}}/live"{{if eq .State "elsewhere"}} disabled title="Another dashboard runs live mode"{{end}} aria-label="Live mode for {{$r.Name}}"><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span><span class="switch-label">Live</span></button>

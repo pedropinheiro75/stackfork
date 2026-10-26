@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -202,5 +203,29 @@ func TestProjectRecentRunsAndLogTail(t *testing.T) {
 	}
 	if got := recent(get("/api/project?name=acme&checkout=feature/x"), "migrate"); got != "failed" {
 		t.Errorf("feature recent run of migrate = %q", got)
+	}
+}
+
+// The Repos list links to the project by an encoded name and the repo path, so
+// two repos with one name, and names with % or ?, open the right page.
+func TestReposLinkEncodesNameAndPath(t *testing.T) {
+	e := newBrowserEnv(t)
+	odd := e.readyRepo("50%?odd")
+	frag := e.get("/fragments/repos").Body.String()
+	want := `#project/50%25%3Fodd?path=` + url.QueryEscape(odd)
+	if n := strings.Count(frag, `href="`+want+`"`); n != 2 {
+		t.Errorf("want 2 links (name and Open project) to %s, got %d", want, n)
+	}
+}
+
+// A name two repos share is ambiguous for both routes.
+func TestProjectResourcesAmbiguousIs409(t *testing.T) {
+	e := newBrowserEnv(t)
+	e.readyRepo("dup")
+	e.readyRepo("a/dup")
+	for _, u := range []string{"/api/project?name=dup", "/api/project/resources?name=dup&range=1h"} {
+		if rec := e.get(u); rec.Code != 409 {
+			t.Errorf("%s: %d %s", u, rec.Code, rec.Body.String())
+		}
 	}
 }

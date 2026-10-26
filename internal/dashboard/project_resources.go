@@ -10,7 +10,6 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/metrics"
-	"github.com/pedropinheiro75/stackfork/internal/repos"
 )
 
 // samplers holds one metrics sampler per Server, created on first use.
@@ -85,16 +84,8 @@ func (s *Server) handleProjectResources(w http.ResponseWriter, r *http.Request) 
 		resourcesError(w, http.StatusBadRequest, "range must be 15m, 1h or 6h")
 		return
 	}
-	res, _ := s.currentRepos()
-	var repo *repos.Repo
-	for i := range res.Repos {
-		if res.Repos[i].Name == q.Get("name") && (q.Get("path") == "" || res.Repos[i].Path == q.Get("path")) {
-			repo = &res.Repos[i]
-			break
-		}
-	}
-	if repo == nil {
-		resourcesError(w, http.StatusNotFound, "unknown project "+q.Get("name"))
+	repo, ok := s.projectRepo(w, r)
+	if !ok {
 		return
 	}
 	inv, _ := s.collect() //nolint:errcheck // partial inventory is still shown

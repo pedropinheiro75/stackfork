@@ -121,10 +121,9 @@ func projectError(w http.ResponseWriter, code int, msg string) {
 	json.NewEncoder(w).Encode(map[string]string{"error": msg}) //nolint:errcheck // client gone
 }
 
-// handleProject is the Project page's read model (docs/design/project-page/api.md):
-// one response from the scan, inventory, runs, knowledge and config the
-// dashboard already reads. Read-only.
-func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
+// projectRepo finds the repo of ?name= (and ?path= when two share a name).
+// It answers 404 for none and 409 for an ambiguous name.
+func (s *Server) projectRepo(w http.ResponseWriter, r *http.Request) (*repos.Repo, bool) {
 	name, path := r.URL.Query().Get("name"), r.URL.Query().Get("path")
 	res, _ := s.currentRepos()
 	var repo *repos.Repo
@@ -132,13 +131,24 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 		if res.Repos[i].Name == name && name != "" && (path == "" || res.Repos[i].Path == path) {
 			if repo != nil {
 				projectError(w, http.StatusConflict, fmt.Sprintf("more than one repository is named %q; pass path=", name))
-				return
+				return nil, false
 			}
 			repo = &res.Repos[i]
 		}
 	}
 	if repo == nil {
 		projectError(w, http.StatusNotFound, fmt.Sprintf("no repository named %q", name))
+		return nil, false
+	}
+	return repo, true
+}
+
+// handleProject is the Project page's read model (docs/design/project-page/api.md):
+// one response from the scan, inventory, runs, knowledge and config the
+// dashboard already reads. Read-only.
+func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
+	repo, ok := s.projectRepo(w, r)
+	if !ok {
 		return
 	}
 	cfg, err := config.Load()
