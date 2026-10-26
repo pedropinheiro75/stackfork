@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/pedropinheiro75/stackfork/internal/config"
+	"github.com/pedropinheiro75/stackfork/internal/repos"
 )
 
 // cmdConfig is `stackfork config [get|add-root|remove-root|add-exclude|
@@ -63,7 +64,7 @@ func cmdConfig(stdout io.Writer, subArgs []string) (int, error) {
 		if len(subArgs) != 2 {
 			return 2, errors.New("config set-mode REPO MODE")
 		}
-		if err := c.SetRepoMode(subArgs[0], subArgs[1]); err != nil {
+		if err := c.SetRepoMode(repos.MainOrSelf(subArgs[0]), subArgs[1]); err != nil {
 			return 0, err
 		}
 	case "set":
