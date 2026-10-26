@@ -7,6 +7,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Project page: clicking a workflow step with a run overlay no longer fires the document's run-a-command handler. The node carried `data-run="failed"`, which posted `failed` to `/api/run` (toast "failed: not a command the page runs") and rewrote the node's text into one run-together line. The node now uses `data-state`. The step panel's failure log opens scrolled to its tail with whole lines, and its Retry does nothing while the Start button is disabled.
 - A secret reference borrowed from a sibling worktree no longer fails a Start when it does not resolve here (`step secrets failed: NAME (env:VAR) missing` in a new worktree). The reference is skipped with a note naming the secret and the `secret map` command. A `--secret` flag and the instance's own reference still win.
 - `learn record step --modes hybrid` on a plan whose `modes` lack `hybrid` (a scan with no app service writes `container` only) now adds the mode, so `start-env --mode hybrid` no longer fails with "mode hybrid is not supported by this plan". Record the step, then `plan --trust` again.
 - `secret ls` and `secret check` in a linked worktree list the names that worktree's own knowledge declares (own, then main, then the newest verified sibling), not only the main checkout's.

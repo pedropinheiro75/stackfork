@@ -518,7 +518,7 @@
   // Retry from the step panel: start the selected checkout again, like the row's Retry.
   function retrySelected() {
     var c = selectedCheckout(), btn = c && body && body.querySelector('[data-repo-action="start"][data-path=' + cssq(c.path) + "]");
-    if (btn && window.sfDash) track(window.sfDash.runRepoAction(btn));
+    if (btn && !btn.disabled && window.sfDash) track(window.sfDash.runRepoAction(btn));
   }
   function setMode(m) { st.mode = m; syncHash(); paint(); }
   function setRange(r) {

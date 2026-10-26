@@ -42,8 +42,7 @@ assert.match(html, /pw-mode-branch" data-on="0" data-mode="hybrid" data-mode-to=
 assert.match(html, /pw-mode-branch" data-on="1" data-mode="container"/);
 assert.ok(html.includes("New data volume?") && html.includes(">yes<") && html.includes(">no<"));
 assert.ok(html.includes("skip") && html.includes("pw-branch-skip"), "the no branch is a skip note");
-assert.ok(!html.includes('data-run="failed"'));
-assert.equal(count(html, /pw-terminal pw-ready/g), 2, "one Ready pill per mode branch");
+assert.ok(!html.includes('data-state="failed"'));
 assert.ok(html.includes("nginx:80/"));
 assert.equal(el.regions.panel.hidden, true, "panel closed by default");
 assert.equal(el.regions.palette.hidden, true, "palette closed by default");
@@ -59,8 +58,9 @@ const hy = { mode: "hybrid", checkout: "login", onSelect: (id) => sel.push(id), 
 wf.render(el, fx, hy);
 html = el.regions.canvas.innerHTML;
 assert.deepStrictEqual(liveIds(html), ["secrets", "prepare", "up-deps", "seed-host", "migrate-host", "api", "app"], "focus order = flow order");
-assert.match(html, /data-node="migrate-host"[^>]*data-run="failed"/);
-assert.match(html, /data-node="api"[^>]*data-run="pending"/);
+assert.match(html, /data-node="migrate-host"[^>]*data-state="failed"/);
+assert.match(html, /data-node="api"[^>]*data-state="pending"/);
+assert.ok(!/ data-run=/.test(html), "data-run is the document's run-a-command hook; a node must not carry it");
 assert.ok(html.includes("not reached: run #38 stopped at migrate-host"));
 assert.match(html, /pw-ready" data-on="0"/);
 assert.ok(html.includes("Skipped") && html.includes("already prepared"));
@@ -70,7 +70,7 @@ assert.ok(el.regions.drafts.innerHTML.includes("seed-host is a draft"));
 assert.ok(el.regions.list.innerHTML.includes("migrate-host") && !el.regions.list.innerHTML.includes("&gt;up&lt;"));
 // run of the other mode is not drawn on this plan
 const wrong = stubEl(); wf.render(wrong, fx, { mode: "container", checkout: "login" });
-assert.ok(!wrong.regions.canvas.innerHTML.includes("data-run=\"failed\""), "no overlay when the run used the other mode");
+assert.ok(!wrong.regions.canvas.innerHTML.includes("data-state=\"failed\""), "no overlay when the run used the other mode");
 
 // -- keyboard
 const order = liveIds(html);

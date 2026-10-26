@@ -49,8 +49,8 @@
 }
 @media (hover: hover) and (pointer: fine) { .pw-node:hover { border-color: var(--fg-subtle); } }
 .pw-node[aria-pressed="true"] { border-color: var(--focus); background: var(--accent-soft); }
-.pw-node[data-run="failed"] { border-color: var(--failed-line); }
-.pw-node[data-run="running"] { border-color: var(--busy-line); }
+.pw-node[data-state="failed"] { border-color: var(--failed-line); }
+.pw-node[data-state="running"] { border-color: var(--busy-line); }
 .pw-mode-branch[data-on="0"], .pw-mode-branch[data-on="0"] .pw-node { cursor: pointer; }
 .pw-node-head { display: flex; align-items: flex-start; gap: var(--space-2); }
 .pw-node-icon { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--fg-muted); }
@@ -120,3 +120,5 @@
 [data-region="drafts"] > .callout { margin-top: var(--space-3); }
 .pw-node:focus-visible, .pw-branch-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .pw-panel-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-xs); }
+/* The log opens scrolled to its tail: 8px of bottom padding plus whole lines, so the top line is never cut. */
+.pw-panel .mono-log { max-height: calc(6 * 17px + 8px); }

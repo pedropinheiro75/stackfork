@@ -136,7 +136,7 @@
       var sub = subOf(n), word = rs ? (RUN[rs.state] || RUN.pending)[2] : p[2];
       if (live) ids.push(n.id);
       var cmd = n.command_expanded || n.command || "";
-      return '<button type="button" class="pw-node" data-node="' + esc(n.id) + '" data-where="' + whereOf(n) + '" data-run="' + (rs ? esc(rs.state) : "") + '"' +
+      return '<button type="button" class="pw-node" data-node="' + esc(n.id) + '" data-where="' + whereOf(n) + '" data-state="' + (rs ? esc(rs.state) : "") + '"' +
         (live ? ' data-fk="n:' + esc(n.id) + '"' : ' tabindex="-1" aria-hidden="true"') + ' aria-pressed="false"' +
         ' aria-label="' + esc(n.id + ", " + sub + ", " + word + ". Open details") + '">' +
         '<span class="pw-node-head"><span class="pw-node-icon">' + ICON[whereOf(n)] + '</span><span class="pw-node-id"><span class="pw-node-title">' + esc(n.title || n.id) +
@@ -366,18 +366,19 @@
 
   function paint(st) {
     var el = st.el, sel = st.sel, p = region(el, "panel"), body = el.querySelector(".pw-body");
-    var cards = el.querySelectorAll(".pw-node");
+    var cards = el.querySelectorAll(".pw-node"), changed = false;
     for (var i = 0; i < cards.length; i++) {
       cards[i].setAttribute("aria-pressed", String(!!sel && cards[i].dataset.node === sel && cards[i].tabIndex !== -1));
     }
     var open = !!(sel && st.nodes[sel]);
     if (p) {
       var top = p.scrollTop;
-      var changed = setRegion(st, "panel", open ? panel(st.nodes[sel], st.runs && st.runs[sel], st.run, typeof st.opts.onRetry === "function") : "");
+      changed = setRegion(st, "panel", open ? panel(st.nodes[sel], st.runs && st.runs[sel], st.run, typeof st.opts.onRetry === "function") : "");
       p.hidden = !open;
       if (!changed) p.scrollTop = top;
     }
     if (body) { body.dataset.panel = open ? "1" : "0"; body.dataset.palette = st.palette ? "1" : "0"; }
+    if (p && changed) { var lg = p.querySelector(".mono-log"); if (lg) lg.scrollTop = lg.scrollHeight; } // the failure is at the tail; after the grid settled
     var pal = region(el, "palette");
     if (pal) pal.hidden = !st.palette;
     var tg = el.querySelector("[data-toggle-palette]");
