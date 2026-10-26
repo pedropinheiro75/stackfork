@@ -1,7 +1,21 @@
 # Project page: design
 
 Status: proposal for approval. Prototype: `prototype/index.html`. Screenshots: `shots/`.
+Figma (for comments): [stackfork: Project page](https://www.figma.com/design/dXsrbi4Q1c8kR1MYd5ZHnN).
 Read `critique.md` first for the problems this page solves.
+
+To run the prototype, serve the repository root with any static server and open
+`docs/design/project-page/prototype/index.html` (it links the real `tokens.css` and
+`app.css`). Opening the file directly also works. Deep links:
+`#project/acme-web?mode=container&checkout=login` shows the failed run.
+
+The Figma file holds the Berth tokens as variables (color with Dark and Light modes,
+spacing, radius), the components (Chip, Button, Branch pill, Workflow node,
+Meter, Checkout row) and five frames: the page at 1440 in dark and light, the
+page at 400, the workflow in container and hybrid side by side, and a selected
+checkout with its failed run. Figma renders the system sans with Inter, because
+SF Pro is a local font that the Figma renderer cannot use; the product keeps
+`system-ui`.
 
 ## Goal
 
