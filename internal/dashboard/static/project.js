@@ -46,9 +46,12 @@
     var d = window.sfDash;
     return d && d.stackColorIndex ? d.stackColorIndex(name) + 1 : 1;
   }
+  // A quoted CSS attribute value: backslash, quote and newline escaped (a Windows path has backslashes).
+  function cssq(v) { return '"' + String(v).replace(/[\\"]/g, "\\$&").replace(/\n/g, "\\a ") + '"'; }
   function relPath(root, p) {
     if (p === root) return "main checkout";
-    return p.indexOf(root + "/") === 0 ? p.slice(root.length + 1) : p;
+    var sep = p.indexOf(root + "/") === 0 ? "/" : p.indexOf(root + "\\") === 0 ? "\\" : "";
+    return sep ? p.slice(root.length + 1) : p;
   }
   function isWeb(u) { return /^https?:\/\//.test(u || ""); }
   function byKey(list, key) { for (var i = 0; i < (list || []).length; i++) if (list[i].key === key) return list[i]; return null; }
@@ -390,7 +393,7 @@
     el.innerHTML = html;
     el.__html = html;
     if (fk) {
-      var again = el.querySelector('[data-key="' + fk.replace(/"/g, '\\"') + '"]');
+      var again = el.querySelector("[data-key=" + cssq(fk) + "]");
       if (again && again.focus) again.focus({ preventScroll: true });
     }
   }
@@ -514,7 +517,7 @@
   }
   // Retry from the step panel: start the selected checkout again, like the row's Retry.
   function retrySelected() {
-    var c = selectedCheckout(), btn = c && body && body.querySelector('[data-repo-action="start"][data-path="' + c.path.replace(/"/g, "") + '"]');
+    var c = selectedCheckout(), btn = c && body && body.querySelector('[data-repo-action="start"][data-path=' + cssq(c.path) + "]");
     if (btn && window.sfDash) track(window.sfDash.runRepoAction(btn));
   }
   function setMode(m) { st.mode = m; syncHash(); paint(); }
@@ -639,6 +642,6 @@
   window.sfProject = api;
   if (typeof window.__sfProjectExport === "function") {
     window.__sfProjectExport({ api: api, open: open, setState: function (s) { st = s; }, getState: function () { return st; }, selectedCheckout: selectedCheckout, viewMode: viewMode, page: page, header: header,
-      checkoutsBody: checkoutsBody, workflowTools: workflowTools, configBody: configBody, skeleton: skeleton, notFound: notFound });
+      checkoutsBody: checkoutsBody, workflowTools: workflowTools, configBody: configBody, skeleton: skeleton, notFound: notFound, cssq: cssq, relPath: relPath });
   }
 })();

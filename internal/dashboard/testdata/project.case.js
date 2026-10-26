@@ -154,5 +154,10 @@ module.exports = function (_ex, t) {
     assert.match(body.innerHTML, /No repository named ghost/);
     P.leave();
     assert.equal(title.attrs.role, undefined, "leaving gives the toolbar title back");
+
+    // selectors quote a Windows path, and relPath reads either separator
+    assert.equal(exported.cssq('C:\\work\\a"b'), '"C:\\\\work\\\\a\\"b"');
+    assert.equal(exported.relPath("C:\\repo", "C:\\repo\\.worktrees\\x"), ".worktrees\\x");
+    assert.equal(exported.relPath("/r", "/r/.worktrees/x"), ".worktrees/x");
   });
 };
