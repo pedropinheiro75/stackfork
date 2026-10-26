@@ -19,8 +19,8 @@ import (
 var samplers sync.Map // *Server -> *metrics.Sampler
 
 // sampler returns the server's sampler and, on first use, starts it. It
-// samples every instance, whichever repo asks. The goroutine ends with the
-// process; tests never start it (they store a fake in samplers).
+// samples every instance, whichever repo asks. The goroutine ends on Close;
+// tests never start it (they store a fake in samplers).
 func (s *Server) sampler() *metrics.Sampler {
 	if v, ok := samplers.Load(s); ok {
 		return v.(*metrics.Sampler)
@@ -37,7 +37,7 @@ func (s *Server) sampler() *metrics.Sampler {
 		return v.(*metrics.Sampler)
 	}
 	if !testing.Testing() {
-		go m.Run(nil) // nil channel: runs until the process exits
+		go m.Run(s.done)
 	}
 	return m
 }

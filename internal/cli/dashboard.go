@@ -236,6 +236,7 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 		fmt.Fprintf(stdout, "stackfork dashboard listening on http://%s\n", addr)
 		go startRegistration()
 	}
+	defer srv.Close()
 	go srv.Warm() // first collection and repo scan, off the request path
 	loop, stopLoop, loopDone := startLiveLoop(newStateBase, legacyStateBase, profiles, srv)
 	liveLoop.Store(loop)
