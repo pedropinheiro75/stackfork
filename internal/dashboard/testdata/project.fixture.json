@@ -1,0 +1,42 @@
+{
+  "name": "acme-web", "path": "/work/clients/acme/acme-web", "default_branch": "main",
+  "default_mode": "container", "modes": ["container", "hybrid"],
+  "knowledge": {"state": "verified", "from": "", "verified_at": "2026-10-20T10:00:00Z"},
+  "live": {"on": true, "state": "on", "reason": ""},
+  "entry": {"state": "recorded", "target": "nginx:80/", "url": "http://acme-web-9b21e07d4c3a.localhost"},
+  "checkouts": [
+    {"key": "main", "branch": "main", "path": "/work/clients/acme/acme-web", "main": true, "changes": false, "ahead": 0, "behind": 0, "upstream": "origin/main",
+     "mode": "container", "state": "running", "project": "sf-acme-web-main", "open_url": "http://acme-web-9b21e07d4c3a.localhost",
+     "last_run": {"id": 41, "command": "start-env", "outcome": "succeeded", "mode": "container", "failed_step": "", "started_at": "2026-10-26T08:00:00Z", "duration_ms": 72000,
+                  "steps": {"secrets": {"state": "succeeded", "ms": 400}, "up": {"state": "succeeded", "ms": 38000}}}},
+    {"key": "feature/invoices", "branch": "feature/invoices", "path": "/work/clients/acme/acme-web/.worktrees/feature-invoices", "main": false, "changes": true, "ahead": 3, "behind": 12, "upstream": "origin/feature/invoices",
+     "mode": "hybrid", "state": "running", "project": "sf-acme-web-invoices", "open_url": "http://acme-web-2ffa6841c75d.localhost",
+     "last_run": {"id": 44, "command": "start-env", "outcome": "succeeded", "mode": "hybrid", "failed_step": "", "started_at": "2026-10-26T09:00:00Z", "duration_ms": 52000, "steps": {}}},
+    {"key": "fix/login", "branch": "fix/login", "path": "/work/clients/acme/acme-web/.worktrees/fix-login", "main": false, "changes": false, "ahead": 1, "behind": 0, "upstream": "origin/fix/login",
+     "mode": "container", "state": "stopped", "project": "sf-acme-web-login", "open_url": "",
+     "last_run": {"id": 38, "command": "start-env", "outcome": "failed", "mode": "container", "failed_step": "migrate", "started_at": "2026-10-26T08:10:00Z", "duration_ms": 51000,
+                  "steps": {"migrate": {"state": "failed", "ms": 3400, "reason": "exit 1"}}}},
+    {"key": "spike/search", "branch": "spike/search", "path": "/work/clients/acme/acme-web/.worktrees/spike-search", "main": false, "changes": false, "ahead": 0, "behind": 0, "upstream": "",
+     "mode": "container", "state": "starting", "project": "sf-acme-web-search", "open_url": "",
+     "last_run": {"id": 45, "command": "start-env", "outcome": "running", "mode": "container", "failed_step": "", "started_at": "2026-10-26T10:59:00Z", "duration_ms": 47000, "steps": {}}},
+    {"key": "docs", "branch": "docs/readme", "path": "/work/clients/acme/acme-web/.worktrees/docs-readme", "main": false, "changes": false, "ahead": 0, "behind": 2, "upstream": "origin/docs/readme",
+     "mode": "container", "state": "no-stack", "project": "", "open_url": "", "last_run": null}
+  ],
+  "branches_not_checked_out": [{"branch": "backup/old-checkout", "upstream": "none"}, {"branch": "release/2026-09", "upstream": "ahead 0 behind 14"}],
+  "workflow": {
+    "container": {"nodes": [{"id": "start", "kind": "terminal"}, {"id": "secrets", "kind": "step", "step_kind": "secrets", "where": "stackfork", "title": "secrets", "plan_state": "at-start", "in_mode": true},
+                            {"id": "up", "kind": "step", "step_kind": "compose-up", "where": "docker", "title": "up", "plan_state": "verified", "in_mode": true},
+                            {"id": "ready", "kind": "terminal", "entry_url": "http://acme-web.localhost"}],
+                  "edges": [{"from": "start", "to": "secrets", "label": ""}, {"from": "secrets", "to": "up", "label": ""}, {"from": "up", "to": "ready", "label": ""}], "parallel": []},
+    "hybrid": {"nodes": [{"id": "start", "kind": "terminal"}, {"id": "seed-host", "kind": "step", "step_kind": "exec", "where": "host", "title": "seed-host", "plan_state": "draft", "in_mode": true}, {"id": "ready", "kind": "terminal"}],
+               "edges": [{"from": "start", "to": "seed-host", "label": ""}, {"from": "seed-host", "to": "ready", "label": ""}], "parallel": []}
+  },
+  "config": {
+    "secrets": [
+      {"name": "STRIPE_KEY", "reference": "op://Dev/stripe/key", "status": "resolves", "source": "repo", "from": "", "hint": "Billing sandbox"},
+      {"name": "SENTRY_DSN", "reference": "", "status": "unmapped", "source": "", "from": "", "hint": ""}
+    ],
+    "env_overrides": [{"service": "app", "name": "FEATURE_X", "value": "true", "masked": false, "checkout": "feature/invoices"}, {"service": "api", "name": "TOKEN", "value": "", "masked": true, "checkout": "feature/invoices"}],
+    "branch_cleanup": "suggest"
+  }
+}
