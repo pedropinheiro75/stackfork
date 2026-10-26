@@ -221,3 +221,22 @@ func expandedText(cmd, self string, root, project, instanceDir, newBase, legacyB
 	}
 	return strings.Join(out, " "), nil
 }
+
+// hostnameOf is the instance hostname for a manifest, or "" when none is valid.
+func hostnameOf(project string, m *state.Manifest) string {
+	h := ""
+	if m != nil {
+		h = m.Hostname
+	}
+	h, _ = identity.BrowserHostname(project, h)
+	return h
+}
+
+// checkoutHostname is the hostname of root's instance, "" outside a checkout.
+func checkoutHostname(root, newBase, legacyBase string) string {
+	_, project, _, m, err := checkoutManifest(root, newBase, legacyBase)
+	if err != nil {
+		return ""
+	}
+	return hostnameOf(project, m)
+}

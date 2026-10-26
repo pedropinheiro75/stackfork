@@ -122,7 +122,7 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		return 0, cmdLearn(stdout, subArgs, root, newStateBase, legacyStateBase)
+		return 0, cmdLearn(stdout, stderr, subArgs, root, newStateBase, legacyStateBase)
 	}
 	if action == "plan" {
 		root, err := identity.ResolvePath(rootArg)
