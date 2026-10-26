@@ -82,6 +82,10 @@ func PlanGraph(plan knowledge.Plan, mode string, o GraphOpts) Graph {
 	}
 	b := &graphBuilder{plan: plan, o: o, seen: map[string]int{}, inMode: map[string]map[string]bool{},
 		edgeSet: map[GraphEdge]bool{}, decisionOf: map[string]string{}}
+	b.inPlan = map[string]bool{}
+	for _, st := range plan.Steps {
+		b.inPlan[st.ID] = true
+	}
 	trusted := false
 	if o.StateBase != "" {
 		trusted, _ = HashTrusted(o.StateBase, o.Main, plan)
@@ -123,6 +127,9 @@ func PlanGraph(plan knowledge.Plan, mode string, o GraphOpts) Graph {
 		n := &b.g.Nodes[i]
 		n.InMode = len(b.inMode[n.ID]) == 0 || b.inMode[n.ID][mode]
 	}
+	if b.g.Parallel == nil {
+		b.g.Parallel = [][]string{}
+	}
 	return b.g
 }
 
@@ -149,6 +156,7 @@ type graphBuilder struct {
 	edgeSet    map[GraphEdge]bool
 	decisionOf map[string]string // compose-up id -> its New data volume decision
 	ends       []gFront
+	inPlan     map[string]bool
 	endSet     map[gFront]bool
 }
 
@@ -290,6 +298,9 @@ func (b *graphBuilder) stepNode(s knowledge.Step) GraphNode {
 		n.PlanState = knowledge.StatusVerified
 	default:
 		n.PlanState = knowledge.StatusDraft
+	}
+	if !b.inPlan[s.ID] { // the runner adds it: nobody recorded it, and trust does not cover it
+		n.PlanState = StateDerived
 	}
 	if n.PlanState != StateDerived && (s.Kind == knowledge.KindHost || s.Kind == knowledge.KindPrepare || s.IsHostExec()) {
 		n.PlanState = "untrusted"
