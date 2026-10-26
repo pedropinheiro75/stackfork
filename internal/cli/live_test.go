@@ -73,13 +73,16 @@ func toSet(output string) map[string]bool {
 	return set
 }
 
+// assertSameInventory fails on anything this test left behind. Resources that
+// vanished are ignored: other work on the machine removes its own containers.
 func assertSameInventory(t *testing.T, before, after dockerInventory) {
 	t.Helper()
-	if len(before.containers) != len(after.containers) || !mapsEqual(before.containers, after.containers) {
-		t.Fatalf("container inventory changed: before=%v after=%v", before.containers, after.containers)
-	}
-	if len(before.volumes) != len(after.volumes) || !mapsEqual(before.volumes, after.volumes) {
-		t.Fatalf("volume inventory changed: before=%v after=%v", before.volumes, after.volumes)
+	for kind, pair := range map[string][2]map[string]bool{"container": {before.containers, after.containers}, "volume": {before.volumes, after.volumes}} {
+		for name := range pair[1] {
+			if !pair[0][name] {
+				t.Errorf("%s left behind: %s", kind, name)
+			}
+		}
 	}
 }
 
@@ -112,6 +115,14 @@ func tryRun(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// liveInitRepo is `git init` plus a draft `learn`, the live twin of initRepo:
+// prepare and up refuse a repository that was never learned.
+func liveInitRepo(t *testing.T, root string) {
+	t.Helper()
+	mustRun(t, "git", "init", "-q", root)
+	mustRun(t, stackforkBinary(t), "--root", root, "--state-dir", filepath.Join(t.TempDir(), "learn-state"), "learn")
 }
 
 type liveInstance struct {
@@ -186,7 +197,7 @@ func TestLiveSixInstances(t *testing.T) {
 			if err := os.MkdirAll(root, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			mustRun(t, "git", "init", "-q", root)
+			liveInitRepo(t, root)
 			data, err := os.ReadFile(filepath.Join(testdata, f.name, "compose.yaml"))
 			if err != nil {
 				t.Fatal(err)

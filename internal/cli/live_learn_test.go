@@ -45,6 +45,7 @@ func TestLiveLearnReusePath(t *testing.T) {
 	// Worktree A: scan, record a recipe, verify.
 	sf(repo1, "learn")
 	sf(repo1, "learn", "record", "recipe", "--prepare", "stackfork prepare -f compose.yaml", "--up", "stackfork up")
+	sf(repo1, "learn", "record", "entry", "--none")
 	sf(repo1, "prepare", "-f", "compose.yaml")
 	sf(repo1, "learn", "verify", "--check", "db up", "--confirm", "yes, pg_isready passes")
 

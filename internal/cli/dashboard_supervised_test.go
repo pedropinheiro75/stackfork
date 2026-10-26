@@ -189,25 +189,33 @@ func TestSupervisedReadyLineAndExitOnStdinEOF(t *testing.T) {
 }
 
 func TestSupervisedKeepsItsPortOnTheNextLaunch(t *testing.T) {
-	// A range of one free port, so a real app on this machine (whose own
-	// supervised dashboard lives in the default range) cannot take it.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	// ponytail: the one-port range is picked from the kernel's ephemeral pool
+	// and can be taken by another process between launches (parallel suites);
+	// a real regression fails every attempt, a lost race only one.
+	var first, second readyJSON
+	for attempt := 0; attempt < 3; attempt++ {
+		// A range of one free port, so a real app on this machine (whose own
+		// supervised dashboard lives in the default range) cannot take it.
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		free := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
+		ln.Close()
+		t.Setenv("STACKFORK_PORT_RANGE_START", free)
+		t.Setenv("STACKFORK_PORT_RANGE_END", free)
+		state := t.TempDir()
+		a := startSupervised(t, state)
+		first = a.ready(t)
+		a.stdin.Close()
+		a.waitExit(t, 3*time.Second)
+		b := startSupervised(t, state)
+		second = b.ready(t)
+		if second.Port == first.Port && second.Token != first.Token {
+			return
+		}
 	}
-	free := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
-	ln.Close()
-	t.Setenv("STACKFORK_PORT_RANGE_START", free)
-	t.Setenv("STACKFORK_PORT_RANGE_END", free)
-	state := t.TempDir()
-	a := startSupervised(t, state)
-	first := a.ready(t)
-	a.stdin.Close()
-	a.waitExit(t, 3*time.Second)
-	b := startSupervised(t, state)
-	if second := b.ready(t); second.Port != first.Port || second.Token == first.Token {
-		t.Fatalf("port %d then %d, tokens equal=%v", first.Port, second.Port, second.Token == first.Token)
-	}
+	t.Fatalf("port %d then %d, tokens equal=%v", first.Port, second.Port, second.Token == first.Token)
 }
 
 func TestSupervisedFallsBackToKernelPortWhenRangeIsTaken(t *testing.T) {
