@@ -108,6 +108,9 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	fs.Visit(func(f *flag.Flag) { waitSet = waitSet || f.Name == "wait-timeout" })
 	dir := relDir(root, workDir, *dirFlag)
 	if detach {
+		if _, err := expandHostCommand(command, name, *portFlag, root, project, instanceDir, newStateBase, legacyStateBase); err != nil {
+			return 0, err // an unknown placeholder fails here, not in a supervisor nobody watches
+		}
 		flagArgs := hostFlagArgs(*portFlag, dir, *portEnvFlag)
 		wait := hostWaitTimeout(0, false)
 		if waitSet { // an explicit value, 0 included, is remembered for restart and up
@@ -118,6 +121,12 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 
 	block, err := envBlock(project, instanceDir, newStateBase, legacyStateBase, true)
+	if err != nil {
+		return 0, err
+	}
+	// The placeholders expand here, once, before anything is registered: the
+	// plan (and the restart command kept below) holds the text as written.
+	expanded, err := expandHostCommand(command, name, *portFlag, root, project, instanceDir, newStateBase, legacyStateBase)
 	if err != nil {
 		return 0, err
 	}
@@ -142,10 +151,10 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 	}
 	env := hostChildEnv(instanceDir, name, block, extra...)
 
-	if err := checkHostArgv(command); err != nil {
+	if err := checkHostArgv(expanded); err != nil {
 		return 0, err
 	}
-	cmd := exec.Command(command[0], command[1:]...)
+	cmd := exec.Command(expanded[0], expanded[1:]...)
 	cmd.Env = env
 	cmd.Dir = workDir
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, stdout, stderr
@@ -156,10 +165,10 @@ func cmdHost(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 
 	fmt.Fprintf(stderr, "stackfork: running %q on port %d for %s (routed while it runs)\n", name, port, project)
 	if err := cmd.Start(); err != nil {
-		return 0, fmt.Errorf("could not start %q: %w", command[0], err)
+		return 0, fmt.Errorf("could not start %q: %w", expanded[0], err)
 	}
 	started, _ := state.ProcStart(cmd.Process.Pid) // unreaped yet, so the pid is still ours
-	rec := state.HostRecord{Name: name, PID: cmd.Process.Pid, SupervisorPID: os.Getpid(), Argv: redactedArgv(instanceDir, command),
+	rec := state.HostRecord{Name: name, PID: cmd.Process.Pid, SupervisorPID: os.Getpid(), Argv: redactedArgv(instanceDir, expanded),
 		Cwd: workDir, Port: port, StartedAt: started}
 	var recMu sync.Mutex // the poller and the exit both write the record
 	if err := state.WriteHostRecord(instanceDir, rec); err != nil {
@@ -339,21 +348,8 @@ func registerHostRoute(name string, requested int, supervise bool, restart []str
 	case info.HostPorts[name] != 0:
 		port = info.HostPorts[name]
 	default:
-		taken, err := recordedPorts(newStateBase, legacyStateBase, project)
-		if err != nil {
-			lock.Release()
-			return 0, err
-		}
-		for _, a := range info.Ports {
-			taken[a.Host] = true
-		}
-		for _, p := range info.HostPorts {
-			taken[p] = true
-		}
-		port, err = ports.Allocate(project, "host/"+name, 0, ports.RangeFromEnv(), func(p int) bool {
-			return taken[p] || ports.Bound(p)
-		})
-		if err != nil {
+		var err error
+		if port, err = pickHostPort(info, name, project, newStateBase, legacyStateBase); err != nil {
 			lock.Release()
 			return 0, err
 		}

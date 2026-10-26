@@ -36,6 +36,9 @@ func runHostExec(w io.Writer, project, root, instanceDir, newBase, legacyBase st
 			return 0, err
 		}
 	}
+	if argv, err = expandHostCommand(argv, "", 0, root, project, instanceDir, newBase, legacyBase); err != nil {
+		return 0, fmt.Errorf("exec step %s on host: %w", step.ID, err)
+	}
 	if err := checkHostArgv(argv); err != nil {
 		return 0, err
 	}
