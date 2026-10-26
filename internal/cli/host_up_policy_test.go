@@ -21,7 +21,7 @@ func upRestarts(t *testing.T, g []string) []string {
 	var restarted []string
 	old := lifecycle.HostRestart
 	lifecycle.HostRestart = func(_ io.Writer, _, _, name, _, _ string) error { restarted = append(restarted, name); return nil }
-	t.Cleanup(func() { lifecycle.HostRestart = old })
+	defer func() { lifecycle.HostRestart = old }() // a later `host restart` in the test needs the real one
 	if _, stderr, code := runCLI(t, append(g, "up", "--mode", "hybrid", "--wait-timeout", "5")...); code != 0 {
 		t.Fatalf("up: %d %s", code, stderr)
 	}
