@@ -26,13 +26,18 @@ func TestResumableSelection(t *testing.T) {
 		{Project: "running", WantRunning: true, State: inventory.StateRunning, Services: []inventory.Service{run(false)}},
 		{Project: "one-died", WantRunning: true, State: inventory.StatePartial, Services: []inventory.Service{run(false), {State: "exited"}}},
 		{Project: "gone", WantRunning: true, State: inventory.StateMissingCheckout},
+		// a resume that was cut off (dashboard quit twice) left half a stack: finish it
+		{Project: "cut-off", WantRunning: true, State: inventory.StatePartial, Used: now.Add(-time.Hour), Services: []inventory.Service{run(false), {State: "created"}},
+			LastRun: &inventory.LastRun{Trigger: TriggerResume, Outcome: "interrupted"}},
+		{Project: "cut-off-by-person", WantRunning: true, State: inventory.StatePartial, Services: []inventory.Service{run(false), {State: "created"}},
+			LastRun: &inventory.LastRun{Trigger: "dashboard", Outcome: "interrupted"}},
 	}
 	var got []string
 	for _, in := range resumable(insts) {
 		got = append(got, in.Project)
 	}
-	if len(got) != 2 || got[0] != "new" || got[1] != "old" {
-		t.Fatalf("got %v, want [new old]", got)
+	if len(got) != 3 || got[0] != "new" || got[1] != "cut-off" || got[2] != "old" {
+		t.Fatalf("got %v, want [new cut-off old]", got)
 	}
 }
 

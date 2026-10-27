@@ -24,7 +24,8 @@ const TriggerResume = "resume"
 
 // resumable picks the instances Resume starts, most recently used first: the
 // person wanted them running and none of their Compose containers is. One that
-// is partly up (a single container died) or whose checkout is gone is left alone.
+// is partly up (a single container died) or whose checkout is gone is left
+// alone, unless the last run was a resume that got cut off.
 func resumable(insts []inventory.Instance) []inventory.Instance {
 	var out []inventory.Instance
 	for _, in := range insts {
@@ -35,7 +36,10 @@ func resumable(insts []inventory.Instance) []inventory.Instance {
 		for _, svc := range in.Services {
 			up = up || (svc.Host == nil && svc.State == inventory.StateRunning)
 		}
-		if !up {
+		// a resume cut off in the middle (the dashboard quit twice) left a partial
+		// stack that nobody else will finish
+		cutOff := in.LastRun != nil && in.LastRun.Trigger == TriggerResume && in.LastRun.Outcome == runs.Interrupted
+		if !up || cutOff {
 			out = append(out, in)
 		}
 	}
