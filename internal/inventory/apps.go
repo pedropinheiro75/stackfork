@@ -136,10 +136,19 @@ func appendRouteAndKnowledgeApps(apps []AppLink, info *state.Manifest, hostname 
 				}
 				label = "App"
 			}
-			apps = append(apps, AppLink{
-				Label: label, URL: fmt.Sprintf("http://%s:%d", hostOr(hostname), info.Routes[name]),
-				Source: "route", Running: true,
-			})
+			url := fmt.Sprintf("http://%s:%d", hostOr(hostname), info.Routes[name])
+			// A recorded link to a host app names it as its service: the route
+			// is that app running, and the link chip already shows it.
+			linked := false
+			for i := range apps {
+				if apps[i].Service == name || (apps[i].URL != "" && apps[i].URL == url) {
+					apps[i].Running, linked = true, true
+				}
+			}
+			if linked {
+				continue
+			}
+			apps = append(apps, AppLink{Label: label, URL: url, Source: "route", Running: true})
 		}
 	}
 

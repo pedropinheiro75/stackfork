@@ -250,3 +250,40 @@ func TestAppsBrokenKnowledgeWarns(t *testing.T) {
 	}
 	t.Fatal("instance not found")
 }
+
+// A link to a host app (hybrid) is running while its route is, and the route
+// does not add a second chip for it.
+func TestAppsLinkToHostAppRunsWithItsRoute(t *testing.T) {
+	installFakeDocker(t)
+	newBase := t.TempDir()
+	root := gitRepo(t, "main")
+	project := "sf-hostlink-1"
+	writeAppsFixture(t, newBase, project, root, &state.Manifest{Routes: map[string]int{"app": 41000, "api": 41001}}, entryConfig())
+	k := &knowledge.Knowledge{Entry: &knowledge.Entry{Service: "nginx", Port: 80}, Links: []knowledge.Link{{Name: "API", Service: "api", Port: 3001}}}
+	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	inv, err := Collect(Options{NewStateBase: newBase, LegacyStateBase: t.TempDir(), Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range inv.Instances {
+		if i.Project != project {
+			continue
+		}
+		var api *AppLink
+		for j, a := range i.Apps {
+			if a.Source == "route" && a.Label == "api" {
+				t.Fatalf("duplicate route chip: %+v", i.Apps)
+			}
+			if a.Label == "API" {
+				api = &i.Apps[j]
+			}
+		}
+		if api == nil || !api.Running {
+			t.Fatalf("API link must be running with its host route: %+v", i.Apps)
+		}
+		return
+	}
+	t.Fatal("instance not found")
+}
