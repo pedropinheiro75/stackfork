@@ -42,6 +42,8 @@ type Options struct {
 	// Locked says the caller holds the instance lock. A stop that cascades to
 	// host apps needs it to stop them, and takes it itself when this is false.
 	Locked bool
+	// Cascaded, when set, receives the dependents a cascading stop also stopped.
+	Cascaded *[]string
 	// Secrets are the values the run's preflight resolved, by manifest name,
 	// with their references. Non-nil means a run: Execute then refuses any
 	// effective reference the set lacks or holds with another reference. Nil
@@ -324,6 +326,9 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 				if dependents := append(stopped, svcs...); len(dependents) > 0 {
 					sort.Strings(dependents)
 					cascadeNote = cascadeLine(targets, dependents)
+					if opts.Cascaded != nil {
+						*opts.Cascaded = dependents
+					}
 				}
 				targets = append(append([]string(nil), targets...), svcs...)
 			}

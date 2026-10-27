@@ -142,6 +142,9 @@ func TestStopCascadesToDependentsFirst(t *testing.T) {
 	if len(m.HostProcs) != 4 {
 		t.Fatalf("rows stay so Start can respawn them: %v", m.HostProcs)
 	}
+	if r, _ := state.ReadHostRecord(filepath.Dir(ms[0]), "api"); r != nil && r.StoppedByPerson {
+		t.Fatal("a cascaded host app is not stopped by a person: Start must bring it back")
+	}
 
 	// nothing depends on cache: unchanged
 	os.Truncate(log, 0)

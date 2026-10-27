@@ -17,10 +17,6 @@ import (
 // and in a host step's depends_on; a Compose service name has no colon.
 const hostPrefix = "host:"
 
-// CascadeMarker is in the line a cascading stop prints, so a caller that
-// shows only a summary (the dashboard) can pick that line out.
-const CascadeMarker = "dependents: "
-
 // composeDeps maps each service of the instance snapshot to the services its
 // Compose depends_on names; nil when the snapshot cannot be read.
 func composeDeps(instanceDir string) map[string][]string {
@@ -129,7 +125,7 @@ func stopRunningHosts(stderr io.Writer, instanceDir string, names []string) (sto
 		if proc, ok := m.HostProcs[n]; !ok || !state.HostIdentity(proc) {
 			continue
 		}
-		if err := StopHost(stderr, instanceDir, n, HostStopTimeout(), true); err != nil {
+		if err := stopHost(stderr, instanceDir, n, HostStopTimeout(), true, false); err != nil {
 			return stopped, err
 		}
 		stopped = append(stopped, n)
@@ -143,7 +139,7 @@ func cascadeLine(targets, dependents []string) string {
 	if len(targets) > 1 {
 		what = "their"
 	}
-	return fmt.Sprintf("stopped %s and %s %s%s", strings.Join(targets, ", "), what, CascadeMarker, strings.Join(dependents, ", "))
+	return fmt.Sprintf("stopped %s and %s %s%s", strings.Join(targets, ", "), what, "dependents: ", strings.Join(dependents, ", "))
 }
 
 // StopHostCascadeLocked is StopHostLocked that, with stop_cascade on, first

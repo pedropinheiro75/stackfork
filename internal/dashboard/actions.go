@@ -126,7 +126,8 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 			return actionResponse{Message: req.Service + " is not a host app"}
 		}
 		var out bytes.Buffer
-		opts := lifecycle.Options{}
+		var cascaded []string
+		opts := lifecycle.Options{Cascaded: &cascaded}
 		// service-start/service-stop (fix 5) are distinct action names
 		// from the stack-level up/down since they act on one container,
 		// not the whole instance; they run through lifecycle.Execute's
@@ -189,12 +190,8 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 			code, err = compose(&out, &out)
 		}
 		resp := execResult(lifecycleAction, code, err, out.String())
-		if resp.OK && lifecycleAction == "stop" { // a cascading stop says what else it stopped
-			for _, l := range strings.Split(out.String(), "\n") {
-				if strings.Contains(l, lifecycle.CascadeMarker) {
-					resp.Message = l
-				}
-			}
+		if resp.OK && len(cascaded) > 0 { // a cascading stop says what else it stopped
+			resp.Message = fmt.Sprintf("stopped %s and its dependents: %s", req.Service, strings.Join(cascaded, ", "))
 		}
 		return resp
 	case "proxy-up":
@@ -264,7 +261,7 @@ func (s *Server) hostAction(req actionRequest, name, instanceDir, root string) a
 		var dependents []string
 		dependents, err = lifecycle.StopHostCascadeLocked(&errBuf, root, instanceDir, name, s.NewStateBase, s.LegacyStateBase)
 		if err == nil && len(dependents) > 0 {
-			return actionResponse{OK: true, Message: fmt.Sprintf("stopped %s and its %s%s", name, lifecycle.CascadeMarker, strings.Join(dependents, ", "))}
+			return actionResponse{OK: true, Message: fmt.Sprintf("stopped %s and its dependents: %s", name, strings.Join(dependents, ", "))}
 		}
 	case "host-remove":
 		err = lifecycle.ForgetHostLocked(&errBuf, instanceDir, name, s.NewStateBase, s.LegacyStateBase)

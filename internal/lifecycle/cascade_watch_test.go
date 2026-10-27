@@ -5,9 +5,11 @@ package lifecycle
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -63,32 +65,47 @@ func cascadeInstance(t *testing.T, cascade bool) (dir string, procs map[string]s
 	return dir, procs
 }
 
-// watcher answers from running (nil error) and counts the Docker calls.
-func watcher(dir string, running *map[string]bool, dockerErr *error) *CascadeWatcher {
+// stack is what Docker reports, by service; err makes Docker not answer.
+type stack struct {
+	states map[string]string
+	err    error
+}
+
+func (st *stack) watcher(dir string) *CascadeWatcher {
 	return &CascadeWatcher{
 		Instances: func() []string { return []string{dir} },
-		Running: func(string) (map[string]bool, error) {
-			if *dockerErr != nil {
-				return nil, *dockerErr
+		States: func(string) (map[string]string, error) {
+			if st.err != nil {
+				return nil, st.err
 			}
-			return *running, nil
+			return st.states, nil
 		},
+	}
+}
+
+func ticks(w *CascadeWatcher, n int) {
+	for i := 0; i < n; i++ {
+		w.Tick()
 	}
 }
 
 func alive(p state.HostProc) bool { return state.HostIdentity(p) }
 
-func TestWatcherStopsDependentsAfterTwoTicksAndRecordsIt(t *testing.T) {
+var both = map[string]string{"postgres": "running", "worker": "running"}
+
+func TestWatcherStopsDependentsOfAServiceSeenUpThenGoneAndRecordsIt(t *testing.T) {
 	dir, procs := cascadeInstance(t, true)
-	running, dockerErr := map[string]bool{"worker": true}, error(nil) // postgres is gone
-	w := watcher(dir, &running, &dockerErr)
+	st := &stack{states: both}
+	w := st.watcher(dir)
+	w.Tick() // seen up
+	st.states = map[string]string{"worker": "running"}
 	w.Tick()
 	if !alive(procs["api"]) || !alive(procs["app"]) {
 		t.Fatal("one sighting must not stop anything")
 	}
 	w.Tick()
 	if alive(procs["api"]) || alive(procs["app"]) {
-		t.Fatal("api and app (through api) must be stopped after the second tick")
+		t.Fatal("api and app (through api) must be stopped after the second sighting")
 	}
 	if !alive(procs["other"]) {
 		t.Fatal("a host app that does not depend on postgres stays")
@@ -97,78 +114,166 @@ func TestWatcherStopsDependentsAfterTwoTicksAndRecordsIt(t *testing.T) {
 	if _, ok := m.HostProcs["api"]; !ok {
 		t.Fatal("the row stays, so Start can respawn it")
 	}
+	if r, _ := state.ReadHostRecord(dir, "api"); r != nil && r.StoppedByPerson {
+		t.Fatal("a cascade is not a person's stop: Start must bring api back")
+	}
 	r, err := runs.Get(dir, 1)
 	if err != nil || r.Trigger != CascadeTrigger || r.Outcome != runs.Succeeded || len(r.Steps) != 2 {
 		t.Fatalf("%+v %v", r, err)
 	}
 }
 
-func TestWatcherSeesTheServiceBackBetweenTicks(t *testing.T) {
+func TestStartBringsCascadedHostsBack(t *testing.T) {
 	dir, procs := cascadeInstance(t, true)
-	running, dockerErr := map[string]bool{}, error(nil)
-	w := watcher(dir, &running, &dockerErr)
+	st := &stack{states: both}
+	w := st.watcher(dir)
 	w.Tick()
-	running["postgres"] = true
-	w.Tick()
-	delete(running, "postgres")
-	w.Tick() // the count started again
-	if !alive(procs["api"]) {
-		t.Fatal("two sightings must be consecutive")
+	st.states = map[string]string{"worker": "running"}
+	ticks(w, 2)
+	if alive(procs["api"]) {
+		t.Fatal("api must be stopped")
+	}
+	var started []string
+	old := HostStart
+	HostStart = func(_, _ io.Writer, _ []string, _, _ string, s knowledge.Step) error {
+		started = append(started, s.Name)
+		return nil
+	}
+	t.Cleanup(func() { HostStart = old })
+	plan := knowledge.Plan{Steps: []knowledge.Step{hostStep("api", "postgres"), hostStep("app", "api"), hostStep("other")}}
+	base, main := t.TempDir(), t.TempDir()
+	if _, err := TrustHere(base, main, plan); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := runs.Begin(dir, runs.Meta{Command: "up", Trigger: "cli", Mode: knowledge.ModeHybrid, Project: "p", Branch: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rec.Finish(nil)
+	if err := StartHostApps(rec, io.Discard, nil, "/r", main, dir, base, "", knowledge.ModeHybrid, plan); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(started, ",") != "api,app,other" { // other is running: HostStart answers "already running"
+		t.Fatalf("started %v", started)
 	}
 }
 
-func TestWatcherNeverActsOnADockerError(t *testing.T) {
+func TestWatcherDoesNotKillOnDoubt(t *testing.T) {
+	cases := map[string]func(st *stack, w *CascadeWatcher){
+		"a dependency never seen running (one-shot, profile)": func(st *stack, w *CascadeWatcher) {
+			st.states = map[string]string{"worker": "running"}
+			ticks(w, 6)
+		},
+		"a finished one-shot that was never seen up": func(st *stack, w *CascadeWatcher) {
+			st.states = map[string]string{"postgres": "exited", "worker": "running"}
+			ticks(w, 6)
+		},
+		"a container in created state after being seen up": func(st *stack, w *CascadeWatcher) {
+			w.Tick()
+			st.states = map[string]string{"postgres": "created", "worker": "running"}
+			ticks(w, 6)
+		},
+		"Docker erroring between sightings": func(st *stack, w *CascadeWatcher) {
+			w.Tick()
+			st.states = map[string]string{"worker": "running"}
+			w.Tick()
+			st.err = errors.New("Cannot connect to the Docker daemon")
+			w.Tick()
+			st.err = nil
+			w.Tick() // seen-up memory went with the error: nothing to lose yet
+			w.Tick()
+		},
+		"Docker unreachable": func(st *stack, w *CascadeWatcher) {
+			w.Tick()
+			st.err = errors.New("daemon unreachable")
+			ticks(w, 6)
+		},
+		"back between sightings": func(st *stack, w *CascadeWatcher) {
+			w.Tick()
+			st.states = map[string]string{"worker": "running"}
+			w.Tick()
+			st.states = both
+			w.Tick()
+			st.states = map[string]string{"worker": "running"}
+			w.Tick()
+		},
+	}
+	for name, run := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir, procs := cascadeInstance(t, true)
+			st := &stack{states: both}
+			run(st, st.watcher(dir))
+			if !alive(procs["api"]) || !alive(procs["app"]) {
+				t.Fatal("nothing may be stopped")
+			}
+			if _, err := runs.Get(dir, 1); err == nil {
+				t.Fatal("no run is recorded when nothing was stopped")
+			}
+		})
+	}
+}
+
+func TestWatcherStopsAnExitedDependencySeenUp(t *testing.T) {
 	dir, procs := cascadeInstance(t, true)
-	running, dockerErr := map[string]bool{}, error(nil)
-	w := watcher(dir, &running, &dockerErr)
+	st := &stack{states: both}
+	w := st.watcher(dir)
 	w.Tick()
-	dockerErr = errors.New("Cannot connect to the Docker daemon")
+	st.states = map[string]string{"postgres": "exited", "worker": "running"}
+	ticks(w, 2)
+	if alive(procs["api"]) {
+		t.Fatal("a database that was up and exited takes its apps down")
+	}
+}
+
+// With no container of the project running the stack may be gone for good or
+// Docker may be restarting: it takes 4 sightings, not 2.
+func TestWatcherWholeStackGoneNeedsTheLongerWait(t *testing.T) {
+	dir, procs := cascadeInstance(t, true)
+	st := &stack{states: both}
+	w := st.watcher(dir)
 	w.Tick()
-	dockerErr = nil
-	w.Tick() // the error broke the run of sightings: this is the first again
-	if !alive(procs["api"]) || !alive(procs["app"]) {
-		t.Fatal("a Docker error between two sightings must not count")
-	}
-	dockerErr = errors.New("daemon unreachable")
-	for i := 0; i < 5; i++ {
-		w.Tick()
-	}
+	st.states = map[string]string{}
+	ticks(w, 3)
 	if !alive(procs["api"]) {
-		t.Fatal("an unreachable Docker never stops anything")
+		t.Fatal("3 sightings of an empty project are not enough")
 	}
-	if _, err := runs.Get(dir, 1); err == nil {
-		t.Fatal("no run is recorded when nothing was stopped")
+	w.Tick()
+	if alive(procs["api"]) || alive(procs["app"]) {
+		t.Fatal("the 4th stops them")
 	}
 }
 
 func TestWatcherSkipsWhenOffOrBusy(t *testing.T) {
-	missing := map[string]bool{}
-	var noErr error
+	// seenUp first, then the service goes: only the guard under test can save the app
+	gone := map[string]string{"worker": "running"}
+	drive := func(w *CascadeWatcher, st *stack, n int) {
+		st.states = both
+		w.Tick()
+		st.states = gone
+		ticks(w, n)
+	}
 
 	dir, procs := cascadeInstance(t, false)
-	w := watcher(dir, &missing, &noErr)
-	w.Tick()
-	w.Tick()
+	st := &stack{}
+	drive(st.watcher(dir), st, 3)
 	if !alive(procs["api"]) {
 		t.Fatal("stop_cascade off: the watcher does nothing")
 	}
 
 	dir, procs = cascadeInstance(t, true)
-	w = watcher(dir, &missing, &noErr)
+	w := st.watcher(dir)
 	w.ActionLocked = func(string) bool { return true }
-	w.Tick()
-	w.Tick()
+	drive(w, st, 3)
 	if !alive(procs["api"]) {
 		t.Fatal("an action in flight: nothing is stopped")
 	}
 
-	w = watcher(dir, &missing, &noErr)
+	w = st.watcher(dir)
 	lock, err := state.TryLock(filepath.Join(dir, ".lock"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.Tick()
-	w.Tick()
+	drive(w, st, 3)
 	lock.Release()
 	if !alive(procs["api"]) {
 		t.Fatal("the instance lock held: nothing is stopped")
@@ -178,31 +283,32 @@ func TestWatcherSkipsWhenOffOrBusy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.Tick()
-	w.Tick()
+	drive(st.watcher(dir), st, 3)
 	rec.Finish(nil)
 	if !alive(procs["api"]) {
 		t.Fatal("a run in flight (a Start): nothing is stopped")
 	}
-	// the busy ticks counted for nothing: it takes two fresh ones
-	w.Tick()
-	if !alive(procs["api"]) {
-		t.Fatal("the first free tick is the first sighting")
-	}
-	w.Tick()
-	if alive(procs["api"]) {
-		t.Fatal("two free ticks stop it")
-	}
 }
 
-func TestWatcherLeavesAHostThatDoesNotNeedTheMissingService(t *testing.T) {
+// An action that starts while the watcher waits for Docker is seen again
+// under the lock, and the service that came back is not lost.
+func TestWatcherRechecksBeforeStopping(t *testing.T) {
 	dir, procs := cascadeInstance(t, true)
-	running, noErr := map[string]bool{"postgres": true}, error(nil)
-	w := watcher(dir, &running, &noErr)
+	st := &stack{states: both}
+	w := st.watcher(dir)
 	w.Tick()
+	st.states = map[string]string{"worker": "running"}
 	w.Tick()
-	// worker is not a dependency of any host app, so it being down is not ours
-	if !alive(procs["api"]) || !alive(procs["app"]) || !alive(procs["other"]) {
-		t.Fatal("nothing was lost")
+	calls := 0
+	w.States = func(string) (map[string]string, error) {
+		calls++
+		if calls == 2 { // the recheck under the lock: it is back
+			return both, nil
+		}
+		return st.states, nil
+	}
+	w.Tick()
+	if calls < 2 || !alive(procs["api"]) {
+		t.Fatalf("calls %d, api alive %v: a service back at the recheck must not stop its apps", calls, alive(procs["api"]))
 	}
 }
