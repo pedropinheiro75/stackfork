@@ -30,7 +30,7 @@ const fr = wf._canvas(p.workflow.hybrid, "hybrid", modes, run).html;
 assert.ok(fr.includes("not reached: run #7 stopped at api"));
 // the seed decision of the hybrid branch: yes/no only, the group is after the split, not in it
 function splitOf(html, label) {
-  const start = html.indexOf('<div class="pw-split' + (label === "Mode?" ? " pw-modes" : "") + '" role="group" aria-label="' + label + '">', label === "Mode?" ? 0 : html.indexOf("pw-mode-branch\" data-on=\"0\"") > 0 ? html.lastIndexOf('data-mode="hybrid"') : 0);
+  const start = html.indexOf('<div class="pw-split' + (label === "Mode?" ? " pw-modes" : " pw-bypass") + '" role="group" aria-label="' + label + '">', label === "Mode?" ? 0 : html.indexOf("pw-mode-branch\" data-on=\"0\"") > 0 ? html.lastIndexOf('data-mode="hybrid"') : 0);
   assert.ok(start >= 0, label + " split exists");
   let depth = 0;
   for (const m of html.slice(start).matchAll(/<div\b|<\/div>/g)) {
@@ -42,6 +42,7 @@ function splitOf(html, label) {
 const seedSplit = splitOf(hy, "New data volume?");
 assert.equal(JSON.stringify(Array.from(seedSplit.matchAll(/pw-edge-label">(\w+)</g), (m) => m[1])), '["yes","no"]', "branch labels are yes and no");
 assert.ok(seedSplit.includes("seed-host"), "it is the hybrid branch decision");
+assert.ok(seedSplit.indexOf("pw-branch-skip") > seedSplit.indexOf("seed-host"), "the real branch is the spine, the skip branch comes last");
 assert.ok(!seedSplit.includes("pw-parallel"), "the parallel group is not inside the decision's split");
 assert.ok(hy.indexOf("pw-parallel") > hy.indexOf(seedSplit) + seedSplit.length, "the group follows the decision");
 const modeSplit = splitOf(hy, "Mode?");

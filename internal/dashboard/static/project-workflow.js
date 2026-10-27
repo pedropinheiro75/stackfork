@@ -204,7 +204,10 @@
             var w = walk(e.to, stopHere, active, on, true);
             return '<div class="pw-branch" data-on="' + (on ? 1 : 0) + '">' + edge(on, esc(lbl), "pw-edge-tall") + w.html + edge(on, "", "pw-edge-grow") + "</div>";
           });
-          html += '<div class="pw-split' + (isMode ? " pw-modes" : "") + '" role="group" aria-label="' + esc(n.label || n.id) + '">' + branches.join("") + "</div>";
+          // one real branch plus one skip: the real branch is the spine and the skip goes around it
+          var bypass = !isMode && join && edges.length === 2 && edges.some(function (e) { return e.to === join; }) && edges.some(function (e) { return e.to !== join; });
+          if (bypass) branches.sort(function (a, b) { return (a.indexOf("pw-branch-skip") > 0) - (b.indexOf("pw-branch-skip") > 0); });
+          html += '<div class="pw-split' + (isMode ? " pw-modes" : "") + (bypass ? " pw-bypass" : "") + '" role="group" aria-label="' + esc(n.label || n.id) + '">' + branches.join("") + "</div>";
           if (join) {
             reached = active && reached && (!run || afterJoin);
             cur = join; continue;

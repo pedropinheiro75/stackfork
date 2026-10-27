@@ -40,10 +40,18 @@
 .pw-branch[data-on="0"]::before, .pw-branch[data-on="0"]::after { background: repeating-linear-gradient(to right, var(--line-strong) 0 3px, transparent 3px 6px); }
 .pw-mode-branch[data-on="0"] { opacity: .5; }
 .pw-branch-skip { min-width: 120px; }
+/* Decision with one real branch and one skip: the real branch is the straight spine under the pill; the skip
+   goes down a line 32px right of it and rejoins. The split shrink-wraps the spine branch, so 50% is the spine. */
+.pw-bypass { position: relative; justify-content: center; }
+.pw-bypass > .pw-branch::before, .pw-bypass > .pw-branch::after { display: none; }
+.pw-bypass > .pw-branch-skip { position: absolute; top: 0; bottom: 0; left: 50%; right: calc(-1 * var(--space-8)); min-width: 0; align-items: flex-end; }
+.pw-bypass > .pw-branch-skip::before, .pw-bypass > .pw-branch-skip::after { display: block; left: 0; right: 0; }
+.pw-bypass > .pw-branch-skip > .pw-skip-note { align-self: flex-end; transform: translateX(50%); }
+.pw-bypass > .pw-branch-skip > .pw-edge { margin-right: -1px; }
 .pw-branch-more { display: none; }
 .pw-skip-note { margin: var(--space-1) 0; font-size: 12px; color: var(--fg-muted); white-space: nowrap; }
 .pw-node {
-  display: flex; flex-direction: column; gap: 6px; width: 264px; padding: 10px var(--space-3); text-align: left;
+  display: flex; flex-direction: column; gap: 6px; width: 264px; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 10px var(--space-3); text-align: left;
   border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: var(--surface-1); color: var(--fg); font: inherit; cursor: pointer;
   transition: border-color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
 }
@@ -58,7 +66,8 @@
 .pw-node-id { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .pw-node-title { font: 500 12px/18px var(--font-mono); }
 .pw-node-sub { font-size: 12px; line-height: 16px; color: var(--fg-muted); overflow-wrap: anywhere; }
-.pw-node-cmd { display: block; padding: 2px var(--space-2); border-radius: var(--radius-xs); background: var(--surface-2); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.pw-node > * { min-width: 0; }
+.pw-node-cmd { display: block; max-width: 100%; box-sizing: border-box; padding: 2px var(--space-2); border-radius: var(--radius-xs); background: var(--surface-2); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .pw-node-run { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--space-2); }
 .pw-node-reason { font-size: 12px; line-height: 16px; color: var(--fg-muted); }
 .pw-palette { padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-1); }
@@ -97,6 +106,8 @@
   .pw-split, .pw-modes { flex-direction: column; align-items: center; gap: var(--space-2); }
   .pw-branch::before, .pw-branch::after { display: none; }
   .pw-branch { width: 100%; }
+  .pw-bypass > .pw-branch-skip { position: relative; right: auto; left: auto; align-items: center; }
+  .pw-bypass > .pw-branch-skip > .pw-skip-note, .pw-bypass > .pw-branch-skip > .pw-edge { align-self: center; transform: none; margin-right: 0; }
   .pw-node { width: min(100%, 320px); }
   .pw-edge-grow { flex: none; height: 12px; }
   .pw-mode-branch { padding-top: var(--space-2); border-top: 1px dashed var(--line-strong); }
