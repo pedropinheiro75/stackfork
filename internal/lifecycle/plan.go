@@ -294,7 +294,7 @@ func (r PlanRunner) upSeed(s knowledge.Step, deferred bool) UpSeed {
 					continue
 				}
 				fmt.Fprintf(stdout, "hybrid: stopping %s (excluded from this plan)\n", x)
-				if _, err := Execute(stdout, stdout, "stop", r.Root, r.Branch, r.Project, r.InstanceDir, r.NewBase, r.LegacyBase, Options{Service: x}); err != nil {
+				if _, err := Execute(stdout, stdout, "stop", r.Root, r.Branch, r.Project, r.InstanceDir, r.NewBase, r.LegacyBase, Options{Service: x, KeepWant: true}); err != nil {
 					return 0, err
 				}
 			}

@@ -52,6 +52,12 @@ type Options struct {
 	// LockWant: take the instance lock around the want_running write (the
 	// dashboard calls Execute without it; the CLI already holds it).
 	LockWant bool
+	// WholeStack: this up starts what the mode starts even though it names
+	// Services (start-env's own up), so it records want_running.
+	WholeStack bool
+	// KeepWant: a stop stackfork itself decides (a plan stopping the service
+	// it excludes) leaves want_running alone.
+	KeepWant bool
 }
 
 // ProjectNameForInstance recomputes the expected project name for root and
@@ -549,10 +555,10 @@ func ForgetInstance(stderr io.Writer, instanceDir, newStateBase, legacyStateBase
 func recordWant(action, instanceDir, project, root string, opts Options) {
 	var want bool
 	switch {
-	case action == "up" && len(opts.Services) == 0:
+	case action == "up" && (len(opts.Services) == 0 || opts.WholeStack):
 		want = true
 	case action == "down":
-	case action == "stop" && !composeRunning(instanceDir, project, root):
+	case action == "stop" && !opts.KeepWant && !composeRunning(instanceDir, project, root):
 	default:
 		return
 	}

@@ -1011,6 +1011,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 		if inRun { // the enclosing Start's preflight already resolved them
 			opts.Secrets = startValues(instanceDir)
+			opts.WholeStack = true // the mode's whole stack, even when it names services
 		}
 		if err := fs.Parse(subArgs); err != nil {
 			return parseFailure(fs, err)

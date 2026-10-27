@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -91,5 +93,27 @@ func TestUpOfOneServiceDoesNotSetWantRunning(t *testing.T) {
 	}
 	if wantRunning(t, dir) {
 		t.Fatal("up SERVICE says nothing about the rest")
+	}
+}
+
+// start-env's own up names the services a plan's exclude leaves (hybrid
+// does this too); it is still a whole start and records want_running, and
+// the plan stopping the excluded service does not clear it.
+func TestStartEnvWithAnExcludeSetsWantRunning(t *testing.T) {
+	flog := installFakeDocker(t)
+	root := initRepo(t)
+	os.WriteFile(filepath.Join(root, "compose.yaml"), []byte("services:\n  db:\n    image: postgres:17\n  app:\n    image: busybox\n"), 0o600)
+	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Plan: knowledge.Plan{Status: knowledge.PlanRecorded, NoSeed: true,
+		Steps: []knowledge.Step{{ID: "prep", Kind: knowledge.KindPrepare, Args: []string{"-f", "compose.yaml"}}, {ID: "up", Kind: knowledge.KindComposeUp, Exclude: []string{"app"}}}}}
+	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(t.TempDir(), "state")
+	if out, stderr, code := runCLI(t, "--state-dir", stateDir, "start-env", root); code != 0 {
+		t.Fatalf("start-env: %s %s", out, stderr)
+	}
+	ms, _ := filepath.Glob(filepath.Join(stateDir, "*", "manifest.json"))
+	if len(ms) != 1 || !wantRunning(t, filepath.Dir(ms[0])) {
+		t.Fatalf("start-env must set want_running (%v)\n%s", ms, fakeLog(flog))
 	}
 }
