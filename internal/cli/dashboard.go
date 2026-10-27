@@ -243,6 +243,14 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	loop, stopLoop, loopDone := startLiveLoop(newStateBase, legacyStateBase, profiles, srv)
 	liveLoop.Store(loop)
 	defer func() { stopLoop(); <-loopDone }()
+	// Stops the host apps whose Compose dependency was lost behind our back
+	// (plan.stop_cascade); idle for a project that has not turned it on.
+	cascade := &lifecycle.CascadeWatcher{NewBase: newStateBase, LegacyBase: legacyStateBase, ActionLocked: srv.ActionLocked,
+		Instances: func() []string { return lifecycle.InstanceDirs(newStateBase, legacyStateBase) }}
+	cascadeCtx, stopCascade := context.WithCancel(context.Background())
+	cascadeDone := make(chan struct{})
+	go func() { defer close(cascadeDone); cascade.Run(cascadeCtx) }()
+	defer func() { stopCascade(); <-cascadeDone }()
 	if *openFlag {
 		openBrowser("http://" + addr)
 	}
@@ -266,6 +274,7 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	// signal forces it.
 	wait := 5 * time.Second
 	stopLoop() // a live run in progress finishes first
+	stopCascade()
 	if n := srv.Running() + loop.Running(); n > 0 {
 		fmt.Fprintf(stdout, "waiting for %d running action(s) to finish (signal again to stop now)\n", n)
 		wait = 15 * time.Minute

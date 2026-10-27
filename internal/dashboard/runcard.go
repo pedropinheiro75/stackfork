@@ -52,6 +52,8 @@ func runVerb(command, trigger string) string {
 	switch {
 	case trigger == "live":
 		return "Live run"
+	case trigger == "cascade":
+		return "Cascade stop"
 	case command == "reset":
 		return "Reset"
 	case command == "env":
