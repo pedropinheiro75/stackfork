@@ -422,6 +422,16 @@ func TestSeedWarningOnlyWhenASeedFailed(t *testing.T) {
 	if i := set("", &f); i.SeedCommand != run || i.SeedForce != run+" --force" {
 		t.Errorf("failed (auto): %+v", i)
 	}
+	// a run in progress has not reached (or finished) its seed yet
+	if l, err := state.AcquireLock(filepath.Join(base, "sf-seed-1", ".run.lock")); err == nil {
+		i := set("", &f)
+		l.Release()
+		if i.SeedCommand != "" {
+			t.Errorf("a seed of a run in progress did not fail: %+v", i)
+		}
+	} else {
+		t.Fatal(err)
+	}
 	os.WriteFile(filepath.Join(base, "sf-seed-1", state.SeedLog), []byte("$ seed\nerror: duplicate key\n    at x (y.js:1)\n"), 0o600)
 	if i := set("", &f); i.SeedDone != run+" --mark-done" || i.SeedError != "$ seed\nerror: duplicate key" {
 		t.Errorf("failed with log: %+v", i)
