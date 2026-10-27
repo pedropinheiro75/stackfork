@@ -1,8 +1,11 @@
 package dashboard
 
 import (
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,13 +29,18 @@ func TestResumableSelection(t *testing.T) {
 		{Project: "running", WantRunning: true, State: inventory.StateRunning, Services: []inventory.Service{run(false)}},
 		{Project: "one-died", WantRunning: true, State: inventory.StatePartial, Services: []inventory.Service{run(false), {State: "exited"}}},
 		{Project: "gone", WantRunning: true, State: inventory.StateMissingCheckout},
+		// a resume that was cut off (dashboard quit twice) left half a stack: finish it
+		{Project: "cut-off", WantRunning: true, State: inventory.StatePartial, Used: now.Add(-time.Hour), Services: []inventory.Service{run(false), {State: "created"}},
+			LastRun: &inventory.LastRun{Trigger: TriggerResume, Outcome: "interrupted"}},
+		{Project: "cut-off-by-person", WantRunning: true, State: inventory.StatePartial, Services: []inventory.Service{run(false), {State: "created"}},
+			LastRun: &inventory.LastRun{Trigger: "dashboard", Outcome: "interrupted"}},
 	}
 	var got []string
 	for _, in := range resumable(insts) {
 		got = append(got, in.Project)
 	}
-	if len(got) != 2 || got[0] != "new" || got[1] != "old" {
-		t.Fatalf("got %v, want [new old]", got)
+	if len(got) != 3 || got[0] != "new" || got[1] != "cut-off" || got[2] != "old" {
+		t.Fatalf("got %v, want [new cut-off old]", got)
 	}
 }
 
@@ -121,5 +129,58 @@ func TestWatchTickResumesFirstAndCascadesOnlyAfter(t *testing.T) {
 	}
 	if !tick("0", true) || cw.ticks != 2 {
 		t.Fatalf("after the resume tick: %+v", cw)
+	}
+}
+
+// An instance skipped only because its lock was busy waits in the retry set
+// and is retried when the lock is free; one skipped for its branch never is.
+func TestResumeRetriesABusyInstanceButNotABranchMismatch(t *testing.T) {
+	fake := t.TempDir()
+	os.WriteFile(filepath.Join(fake, "docker"), []byte("#!/bin/sh\nexit 0\n"), 0o755) //nolint:errcheck
+	t.Setenv("PATH", fake+string(os.PathListSeparator)+os.Getenv("PATH"))
+	base := t.TempDir()
+	srv, _ := New(base, t.TempDir(), "t", 1)
+	mk := func(project, branch string) string {
+		root := t.TempDir()
+		for _, a := range [][]string{{"init", "-q", "-b", "main"}, {"-c", "user.email=a@b", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"}} {
+			if out, err := exec.Command("git", append([]string{"-C", root}, a...)...).CombinedOutput(); err != nil {
+				t.Fatalf("%v %s", err, out)
+			}
+		}
+		dir := filepath.Join(base, project)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		m := &state.Manifest{Project: project, Root: root, Branch: branch, Hostname: project + ".localhost", WantRunning: true,
+			Files: []string{"compose.yaml"}, Inputs: map[string]string{}}
+		if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(dir, "compose.json"), []byte(`{"services":{"db":{"image":"postgres"}}}`), 0o600) //nolint:errcheck
+		return dir
+	}
+	busy := mk("sf-busy-1", "main")
+	mk("sf-branch-1", "other")
+	lock, err := state.TryLock(filepath.Join(busy, ".lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.cache = &inventoryCache{}
+	var out strings.Builder
+	srv.Resume(&out) //nolint:errcheck
+	got := srv.retrying()
+	if !got["sf-busy-1"] || got["sf-branch-1"] || len(got) != 1 {
+		t.Fatalf("retry set %v\n%s", got, out.String())
+	}
+	srv.cache = &inventoryCache{}
+	srv.resume(io.Discard, true) //nolint:errcheck
+	if !srv.retrying()["sf-busy-1"] {
+		t.Fatal("still busy: stays in the set")
+	}
+	lock.Release()
+	srv.cache = &inventoryCache{}
+	srv.resume(io.Discard, true) //nolint:errcheck
+	if len(srv.retrying()) != 0 {
+		t.Fatalf("free again: retried and dropped, got %v", srv.retrying())
 	}
 }

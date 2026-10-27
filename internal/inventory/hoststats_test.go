@@ -313,3 +313,27 @@ func TestStoppedContainersWithALiveHostAppArePartial(t *testing.T) {
 		t.Errorf("warnings %q", inst.Warnings)
 	}
 }
+
+// A migrate job that finished (exited 0) does not make the stack partial, so
+// a host app can still read the instance's env; a server that exited 0 does.
+func TestFinishedJobDoesNotMakeStackPartial(t *testing.T) {
+	installFakeDocker(t)
+	base := t.TempDir()
+	root := gitRepo(t, "main")
+	writeInstance(t, base, "sf-job-1", root, "main", []string{"db", "migrate"}, nil)
+	t.Setenv("DOCKER_FAKE_PS", psLine(t, "sf-job-1", "db", "running", "Up 5 minutes", "")+"\n"+
+		psLine(t, "sf-job-1", "migrate", "exited", "Exited (0) 5 minutes ago", "")+"\n")
+	inv, err := Collect(Options{NewStateBase: base, LegacyStateBase: t.TempDir(), Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := inv.Instances[0]; got.State != StateRunning || !got.ComposeRunning() || len(got.Warnings) != 0 {
+		t.Errorf("state %q, warnings %v, services %+v", got.State, got.Warnings, got.Services)
+	}
+	t.Setenv("DOCKER_FAKE_PS", psLine(t, "sf-job-1", "db", "running", "Up 5 minutes", "")+"\n"+
+		psLine(t, "sf-job-1", "migrate", "exited", "Exited (1) 5 minutes ago", "")+"\n")
+	inv, _ = Collect(Options{NewStateBase: base, LegacyStateBase: t.TempDir(), Version: "test"})
+	if got := inv.Instances[0]; got.State != StatePartial || got.ComposeRunning() {
+		t.Errorf("a failed job must stay partial: %q", got.State)
+	}
+}

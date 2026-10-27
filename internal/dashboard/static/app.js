@@ -409,7 +409,7 @@
     var lr = inst.last_run, p = inst.project;
     if (!lr || (lr.outcome !== "failed" && lr.outcome !== "interrupted") || seedCovers(inst) || runDismissed(inst)) return "";
     var interrupted = lr.outcome === "interrupted", step = lr.failed_step || "";
-    var verb = lr.trigger === "live" ? "Live run" : { reset: "Reset", env: "Env change", seed: "Seed" }[lr.command] || "Start";
+    var verb = lr.trigger === "live" ? "Live run" : lr.trigger === "resume" ? "Resume" : lr.trigger === "cascade" ? "Cascade stop" : { reset: "Reset", env: "Env change", seed: "Seed" }[lr.command] || "Start";
     var title = verb + (interrupted ? " interrupted" : " failed") + (step ? ' at step <code class="mono">' + escapeHtml(step) + "</code>" : "");
     var retry = "";
     if (lr.trigger === "live") {
@@ -435,7 +435,7 @@
   function lastRunItem(inst) {
     var lr = inst.last_run;
     if (!lr || lr.outcome !== "succeeded") return "";
-    var text = (lr.trigger === "live" ? "live \u00B7 " : "") + "succeeded \u00B7 " + fmtDur(Date.parse(lr.ended_at) - Date.parse(lr.started_at)) + " \u00B7 " + agoText(lr.started_at);
+    var text = ({ live: "live \u00B7 ", resume: "resume \u00B7 ", cascade: "cascade \u00B7 " }[lr.trigger] || "") + "succeeded \u00B7 " + fmtDur(Date.parse(lr.ended_at) - Date.parse(lr.started_at)) + " \u00B7 " + agoText(lr.started_at);
     return menuItem(inst.project + "/menu/lastrun", "Last run", text, runLogAttrs(inst.project, lr.id, ""));
   }
 

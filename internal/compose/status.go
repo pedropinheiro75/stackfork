@@ -29,6 +29,9 @@ type StatusRow struct {
 	// Reload is how an edit reaches the service (hot, restart, rebuild), set
 	// by `status` from the learned knowledge; absent when unknown.
 	Reload string `json:"reload,omitempty"`
+	// ExitCode is the exit status of a stopped container, nil when unknown. It
+	// is set by the inventory only and stays out of the `status` output.
+	ExitCode *int `json:"-"`
 }
 
 // RestartHint says how to recover a service that is unhealthy or no longer

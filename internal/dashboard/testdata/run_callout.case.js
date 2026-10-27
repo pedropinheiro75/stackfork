@@ -11,4 +11,6 @@ module.exports = function (ex, t) {
   const cmd = ex.runCalloutHtml(inst({ outcome: "interrupted", retry: "stackfork --instance sf-a up" }), "a");
   assert.match(cmd, /data-run-outcome="interrupted"/);
   assert.deepEqual(runAttrs(cmd), ["stackfork --instance sf-a up"], "only the Retry command runs");
+  assert.match(ex.runCalloutHtml(inst({ trigger: "resume", command: "up" }), "a"), /Resume failed at step/);
+  assert.match(ex.runCalloutHtml(inst({ trigger: "cascade", command: "cascade" }), "a"), /Cascade stop failed/);
 };
