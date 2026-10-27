@@ -567,7 +567,7 @@
     var meta = '<div class="stack-meta mono"><span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.rel_root || inst.root) + "</span>" +
       (inst.hostname ? '<span class="stack-sep" aria-hidden="true"> · </span><span class="stack-host" title="' + escapeHtml(inst.hostname) + '">' + escapeHtml(inst.hostname) + "</span>" : "") + "</div>";
     var actions =
-      (!live ? '<button type="button" class="btn" data-action="up" data-project="' + p + '" data-key="' + p + '/up">Start</button>' : "") +
+      (!live || inst.state === "partial" ? '<button type="button" class="btn" data-action="up" data-project="' + p + '" data-key="' + p + '/up"' + (live ? ' title="Start the stopped services"' : "") + ">Start</button>" : "") +
       (live && openApp && isWebUrl(openApp.url) ? '<a class="btn" href="' + escapeHtml(openApp.url) + '" target="_blank" rel="noopener" data-key="' + p + '/open" title="' + escapeHtml(openApp.url) + '">Open App</a>' : "") +
       (live ? '<button type="button" class="btn btn-ghost mobile-hide" data-action="down" data-project="' + p + '" data-key="' + p + '/down" title="Stop (keeps volumes)">Stop</button>' : "") +
       menuHtml(inst.project + "/menu", "More actions for " + name, "More actions", items);
