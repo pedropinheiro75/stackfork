@@ -52,6 +52,7 @@ func TrustSteps(steps []Step) []Step {
 		s.Args = append([]string(nil), s.Args...) // arg order is meaningful: kept
 		s.Exclude = sortedCopy(s.Exclude)
 		s.PortEnv = sortedCopy(s.PortEnv)
+		s.DependsOn = nil // only decides what a stop also stops: it runs nothing
 		out = append(out, s)
 	}
 	return out

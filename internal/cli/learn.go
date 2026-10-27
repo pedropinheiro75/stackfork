@@ -121,7 +121,7 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 // prior `stackfork learn`.
 func cmdLearnRecord(stdout, stderr io.Writer, subArgs []string, root, newStateBase, legacyStateBase string) error {
 	if len(subArgs) == 0 {
-		return errors.New("learn record requires a kind (answer, gotcha, recipe, step, secret, entry, link, live-watch, live-ignore, fact)")
+		return errors.New("learn record requires a kind (answer, gotcha, recipe, step, stop-cascade, secret, entry, link, live-watch, live-ignore, fact)")
 	}
 	path := knowledgePath(root)
 	k, err := knowledge.Load(path)
@@ -164,6 +164,15 @@ func cmdLearnRecord(stdout, stderr io.Writer, subArgs []string, root, newStateBa
 		applyRecipeFlags(&k.Plan, *prepare, *up, *migrate, *seedOnce, *seedService, login)
 	case "step":
 		return cmdLearnRecordStep(stdout, stderr, rest, root, newStateBase, legacyStateBase)
+	case "stop-cascade":
+		if isHelpRequest(rest) {
+			printFlaglessUsage(stdout, "learn record stop-cascade", "learn record stop-cascade on|off")
+			return nil
+		}
+		if len(rest) != 1 || (rest[0] != "on" && rest[0] != "off") {
+			return errors.New("usage: learn record stop-cascade on|off")
+		}
+		k.Plan.StopCascade = rest[0] == "on"
 	case "secret":
 		if isHelpRequest(rest) {
 			printFlaglessUsage(stdout, "learn record secret", "learn record secret NAME [--hint TEXT] | learn record secret --remove NAME")
@@ -212,7 +221,7 @@ func cmdLearnRecord(stdout, stderr io.Writer, subArgs []string, root, newStateBa
 		}
 		return printJSON(stdout, map[string]interface{}{"recorded": kind, "live": k.Live, "migration_dirs": k.Facts.MigrationDirs})
 	default:
-		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha, recipe, step, secret, entry, link, live-watch, live-ignore or fact)", kind)
+		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha, recipe, step, stop-cascade, secret, entry, link, live-watch, live-ignore or fact)", kind)
 	}
 
 	if err := learn.WriteKnowledge(root, k); err != nil {
@@ -383,6 +392,7 @@ func cmdLearnRecordStep(stdout, stderr io.Writer, rest []string, root, newStateB
 	name := fs.String("name", "", "")
 	dir := fs.String("dir", "", "")
 	portEnv := fs.String("port-env", "", "")
+	dependsOn := fs.String("depends-on", "", "")
 	port := fs.Int("port", 0, "")
 	args := fs.String("args", "", "")
 	text := fs.String("text", "", "")
@@ -402,11 +412,11 @@ func cmdLearnRecordStep(stdout, stderr io.Writer, rest []string, root, newStateB
 		}
 	} else {
 		if *id == "" || *kind == "" {
-			return errors.New("usage: learn record step --id ID --kind K [--cmd C] [--service S] [--once data|schema|deps|none] [--on host|container] [--modes a,b] [--exclude a,b] [--name N] [--dir D] [--port-env A,B] [--port N] [--args A,B] [--text T] [--before ID] | --remove ID")
+			return errors.New("usage: learn record step --id ID --kind K [--cmd C] [--service S] [--once data|schema|deps|none] [--on host|container] [--modes a,b] [--exclude a,b] [--name N] [--dir D] [--port-env A,B] [--depends-on A,B] [--port N] [--args A,B] [--text T] [--before ID] | --remove ID")
 		}
 		st := knowledge.Step{ID: *id, Kind: *kind, Cmd: *cmd, Service: *service, Once: *once,
 			Modes: splitList(*modes), Exclude: splitList(*exclude), Name: *name, Dir: *dir,
-			PortEnv: splitList(*portEnv), Port: *port, Args: splitList(*args), Text: *text}
+			PortEnv: splitList(*portEnv), DependsOn: splitList(*dependsOn), Port: *port, Args: splitList(*args), Text: *text}
 		if len(st.Args) > 0 && st.Kind != knowledge.KindPrepare {
 			return errors.New("--args is for prepare steps only")
 		}
