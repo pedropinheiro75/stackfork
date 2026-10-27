@@ -1191,6 +1191,7 @@ func serviceWarnings(project string, services []Service) []string {
 	}
 	for _, s := range services {
 		switch {
+		case s.Finished: // a job that did its work is no problem
 		case s.Health == "unhealthy":
 			add(&unhealthy, s.Name, healthReason(s.HealthDetail))
 		case s.State == "exited" || s.State == "dead" || s.State == "restarting":

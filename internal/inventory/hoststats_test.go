@@ -327,8 +327,8 @@ func TestFinishedJobDoesNotMakeStackPartial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := inv.Instances[0]; got.State != StateRunning || !got.ComposeRunning() {
-		t.Errorf("state %q, services %+v", got.State, got.Services)
+	if got := inv.Instances[0]; got.State != StateRunning || !got.ComposeRunning() || len(got.Warnings) != 0 {
+		t.Errorf("state %q, warnings %v, services %+v", got.State, got.Warnings, got.Services)
 	}
 	t.Setenv("DOCKER_FAKE_PS", psLine(t, "sf-job-1", "db", "running", "Up 5 minutes", "")+"\n"+
 		psLine(t, "sf-job-1", "migrate", "exited", "Exited (1) 5 minutes ago", "")+"\n")
