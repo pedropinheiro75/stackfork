@@ -406,3 +406,14 @@ func TestSeedNotFoundInTheOnlyDatabaseSuggestsTheHost(t *testing.T) {
 		t.Fatalf("no host hint:\n%s", stderr)
 	}
 }
+
+// A plan that records its seed and removed the migrate step gets no migrate
+// prefix from a detected script (the app's own start migrates).
+func TestRecordedSeedWithoutSchemaStepGetsNoPrefix(t *testing.T) {
+	root := seedScriptRoot(t)
+	writeKnowledgeJSON(t, root, `{"schema":2,"plan":{"steps":[{"id":"up","kind":"compose-up"},{"id":"seed","kind":"exec","service":"app","cmd":"npm run db:seed","once":"data"}]}}`)
+	cmd, _ := lifecycle.SeedRecipe(root, root, t.TempDir())
+	if cmd != "npm run db:seed" {
+		t.Fatalf("no migrate prefix expected, got %q", cmd)
+	}
+}

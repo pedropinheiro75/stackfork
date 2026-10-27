@@ -146,6 +146,7 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 			return nil, err
 		}
 		k.Facts.Services = servicesFromRendered(rendered)
+		annotateStartup(root, rendered, composeFiles, k.Facts.Services)
 		buildContexts = buildContextsUnderRoot(rendered, root)
 		// A project's real env_file (e.g. .env) is typically gitignored, so
 		// a fresh checkout commonly declares one that doesn't exist yet;
