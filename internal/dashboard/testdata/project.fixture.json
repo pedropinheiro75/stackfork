@@ -37,6 +37,7 @@
       {"name": "SENTRY_DSN", "reference": "", "status": "unmapped", "source": "", "from": "", "hint": ""}
     ],
     "env_overrides": [{"service": "app", "name": "FEATURE_X", "value": "true", "masked": false, "checkout": "feature/invoices"}, {"service": "api", "name": "TOKEN", "value": "", "masked": true, "checkout": "feature/invoices"}],
-    "branch_cleanup": "suggest"
+    "branch_cleanup": "suggest",
+    "reload": [{"service": "app", "mode": "hot", "label": "hot reload", "hint": "Edits are picked up live. No restart needed.", "proposed": true, "note": ""}]
   }
 }

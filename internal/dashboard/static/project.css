@@ -87,6 +87,7 @@
 .pp-config .secret-list, .pp-config .pp-env { min-width: 0; }
 .pp-env-row { display: grid; grid-template-columns: minmax(140px, 200px) minmax(60px, 1fr) minmax(0, 1.4fr) auto; align-items: center; column-gap: var(--space-3); min-height: 40px; border-bottom: 1px solid var(--line); }
 .pp-env-row:last-child { border-bottom: 0; }
+.pp-reload-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-height: 32px; }
 .pp-env-where { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
 
 .pp-skel-lg { height: 160px; }

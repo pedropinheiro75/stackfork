@@ -2,6 +2,7 @@ package learn
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -136,5 +137,71 @@ func TestStepWarnings(t *testing.T) {
 	}
 	if w := StepWarnings(k, knowledge.Step{ID: "deps", Kind: knowledge.KindExec, Cmd: "bun install", Once: knowledge.OnceDeps}); len(w) != 0 {
 		t.Fatalf("got %v", w)
+	}
+}
+
+func reloadOf(t *testing.T, root string) []knowledge.Reload {
+	t.Helper()
+	k, err := Scan(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k.Reload
+}
+
+func TestReloadInference(t *testing.T) {
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker is not installed")
+	}
+	cases := []struct {
+		name  string
+		files map[string]string
+		want  map[string]string
+	}{
+		{"host vite dev is hot", map[string]string{
+			"package.json": "{\n  \"scripts\": {\n    \"dev\": \"vite\"\n  }\n}\n",
+			"compose.yaml": "services:\n  app:\n    image: nginx\n    ports: [\"8080:80\"]\n",
+		}, map[string]string{"app": "hot"}},
+		{"bind mount plus nodemon is hot", map[string]string{
+			"compose.yaml": "services:\n  web:\n    image: node:22\n    command: npx nodemon server.js\n    volumes:\n      - .:/app\n    ports: [\"3000:3000\"]\n",
+		}, map[string]string{"web": "hot"}},
+		{"image COPY only is rebuild", map[string]string{
+			"compose.yaml": "services:\n  web:\n    build: .\n    ports: [\"3000:3000\"]\n",
+			"Dockerfile":   "FROM node:22\nCOPY . /app\nCMD [\"node\", \"server.js\"]\n",
+		}, map[string]string{"web": "rebuild"}},
+		{"mounted plain node is restart", map[string]string{
+			"compose.yaml": "services:\n  web:\n    image: node:22\n    command: node server.js\n    volumes:\n      - .:/app\n    ports: [\"3000:3000\"]\n  db:\n    image: postgres:16\n",
+		}, map[string]string{"web": "restart"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := map[string]knowledge.Reload{}
+			for _, r := range reloadOf(t, writeTree(t, c.files)) {
+				got[r.Service] = r
+			}
+			for svc, mode := range c.want {
+				if r := got[svc]; r.Mode != mode || !r.Proposed || r.Evidence == "" {
+					t.Errorf("%s = %+v, want proposed %s with evidence", svc, r, mode)
+				}
+			}
+			if _, ok := got["db"]; ok {
+				t.Errorf("a database image has no reload entry: %+v", got["db"])
+			}
+		})
+	}
+}
+
+func TestHostReload(t *testing.T) {
+	root := writeTree(t, map[string]string{"package.json": "{\n  \"scripts\": {\n    \"dev\": \"vite\",\n    \"start\": \"node server.js\"\n  }\n}\n"})
+	k := &knowledge.Knowledge{
+		Facts: knowledge.Facts{Scripts: []knowledge.Script{{Role: "dev", Name: "dev", Source: "package.json", Command: "vite"}, {Name: "start", Source: "package.json", Command: "node server.js"}}},
+		Plan: knowledge.Plan{Steps: []knowledge.Step{
+			{ID: "app", Kind: knowledge.KindHost, Name: "app", Cmd: "npm run dev"},
+			{ID: "api", Kind: knowledge.KindHost, Name: "api", Cmd: "npm start"},
+		}},
+	}
+	got := proposeHostReload(root, k)
+	if len(got) != 2 || got[0].Mode != "hot" || got[0].Evidence != "package.json:3" || got[1].Mode != "restart" {
+		t.Fatalf("got %+v", got)
 	}
 }

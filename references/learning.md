@@ -167,6 +167,25 @@ stackfork learn record link --remove Email
 - `learn verify` refuses until the entry is recorded (or `none`), needs the instance running (and, always, a prepared instance: see "The recipe that verify records"), and sends one GET to the entry (`Host` is the instance hostname; no redirect is followed). Any status below 500 counts as answering, so a login redirect or a `401` passes; a refused connection or a `5xx` fails verify. Each link is probed too and a link that does not answer is a warning in the output, not a failure. The probe result is stored in `verification.entry` and `verification.links`.
 - `entry` and `links` are not part of the trust hash: a change needs no `plan --trust`.
 
+## How code changes reach the app
+
+Each app (a Compose service or a host app) has one `reload` mode. The dashboard shows it as a small chip on the service row and on the Project page.
+
+- `hot`: edits are picked up live (a dev server or watcher on the host, or in a container with the source bind-mounted: vite, next dev, nodemon, tsx watch, uvicorn --reload, air ...).
+- `restart`: the code is mounted or on the host, but the process must restart after an edit.
+- `rebuild`: the code is baked into the image. After an edit, run Start or `stackfork up --build`.
+
+`learn` proposes a mode per app service and host step from the Compose bind mounts, the command and entrypoint, the `package.json` scripts and the Dockerfile `COPY`, and stores it with `evidence` (file:line) and `"proposed": true`. A service with none of these signs (a database image) has no entry, and the mode is `unknown`. Confirm it in the running app: edit a visible string, check that it changes without a restart, then revert the edit. Record the result:
+
+```sh
+stackfork learn record reload web hot [--note "vite in the container"]
+stackfork learn record reload api rebuild
+```
+
+- The name is a Compose service or a host app of the plan. A recorded mode replaces the proposal; a re-scan keeps it.
+- `learn verify` warns when the entry app's mode is unknown or still only proposed. It does not refuse.
+- `reload` is not part of the trust hash. `stackfork status` adds `reload` to a row when the mode is known.
+
 ## Verifying
 
 Step 7 only, never on your own initiative — `learn verify` refuses if the recipe's `--prepare`/`--up` were never recorded (recording the steps is what step 3 means by "try it") or the app's entry was not recorded (see "Entry and quick links"; the instance has to run):

@@ -917,9 +917,13 @@ func cmdStatusURLs(stdout, stderr io.Writer, action string, subArgs []string, ro
 		}
 		return nil
 	}
+	k, _ := knowledge.LoadForCheckout(root)
 	for _, row := range rows {
 		if row.Publishers == nil {
 			row.Publishers = []map[string]interface{}{}
+		}
+		if r := k.ReloadFor(row.Service); r != nil {
+			row.Reload = r.Mode
 		}
 		if row.Hint = compose.RestartHint(row.Service, row.State, row.Health); row.Hint != "" {
 			fmt.Fprintf(stderr, "stackfork: %s\n", row.Hint)

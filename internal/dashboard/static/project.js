@@ -328,7 +328,11 @@
 
   // ----- configuration -----
   function configBody(p) {
-    var c = p.config || {}, e = p.entry || { state: "none" }, secrets = c.secrets || [], envs = c.env_overrides || [];
+    var c = p.config || {}, e = p.entry || { state: "none" }, secrets = c.secrets || [], envs = c.env_overrides || [], reloads = c.reload || [];
+    var reload = reloads.length ? reloads.map(function (r) {
+      return '<div class="pp-reload-row"><code class="mono">' + esc(r.service) + '</code><span class="reload-chip" title="' + esc(r.hint) + '">' + esc(r.label) + "</span>" +
+        (r.proposed ? '<span class="small muted">inferred</span>' : "") + (r.note ? '<span class="small muted">' + esc(r.note) + "</span>" : "") + "</div>";
+    }).join("") : '<p class="small muted">Not learned yet. Run <code class="mono">stackfork learn</code>, or record it with <code class="mono">learn record reload</code>.</p>';
     var entry = e.state === "none" ? '<span class="small muted">No web entry</span>' :
       '<span class="micro">App</span><span aria-hidden="true">&rarr;</span>' + (e.target ? "<code class=\"mono\">" + esc(e.target) + "</code>" : '<span class="small muted">no entry recorded</span>') +
       (e.state === "recorded" ? chip("ok", "\u25CF", "recorded") : chip("attention", "\u25CF", e.target ? "entry guessed" : "no entry"));
@@ -351,6 +355,7 @@
       ["off", "suggest", "auto"].map(function (m) { return '<option value="' + m + '"' + (m === cur ? " selected" : "") + ">" + m + "</option>"; }).join("") + "</select></label></span>" +
       (live ? "" : '<p class="pp-note pp-cleanup-note">Turn Live on to change this.</p>') + "</div>";
     return '<div class="pp-config"><div><h3>Entry</h3><p>Where Open App goes.</p></div><div class="entry-line" data-entry="' + esc(e.state) + '">' + entry + "</div>" +
+      "<div><h3>Code changes</h3><p>How an edit reaches each running app.</p></div><div>" + reload + "</div>" +
       "<div><h3>Secrets</h3><p>Names and status only. A value never reaches this page.</p></div><div>" + sec + "</div>" +
       "<div><h3>Env overrides</h3><p>Replace the project value until you reset them.</p></div><div>" + env + "</div>" +
       "<div><h3>Branch cleanup</h3><p>Used while Live is on.</p></div>" + cleanup + "</div>";

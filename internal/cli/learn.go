@@ -35,7 +35,7 @@ type learnOutput struct {
 // (task 13.5/13.6) added on top of it.
 func cmdLearn(stdout, stderr io.Writer, subArgs []string, root, newStateBase, legacyStateBase string) error {
 	if isHelpRequest(subArgs) {
-		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe|step|secret|entry|link|live-watch|live-ignore|fact ... | learn verify --check ... --confirm ...")
+		printFlaglessUsage(stdout, "learn", "learn | learn record answer|gotcha|recipe|step|secret|entry|link|reload|live-watch|live-ignore|fact ... | learn verify --check ... --confirm ...")
 		return nil
 	}
 	if len(subArgs) == 0 {
@@ -107,6 +107,19 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 		fresh.Entry = existing.Entry
 	}
 	fresh.Links = existing.Links
+	// Recorded reload modes are decisions; proposed ones come from the fresh scan.
+	var kept []knowledge.Reload
+	for _, r := range existing.Reload {
+		if !r.Proposed {
+			kept = append(kept, r)
+		}
+	}
+	for _, r := range fresh.Reload {
+		if !hasReload(kept, r.Service) {
+			kept = append(kept, r)
+		}
+	}
+	fresh.Reload = kept
 	fresh.Live = existing.Live
 	// A migration directory recorded by hand survives a re-scan.
 	fresh.Facts.MigrationDirs = unionSorted(fresh.Facts.MigrationDirs, existing.Facts.MigrationDirs)
@@ -121,7 +134,7 @@ func mergeKnowledgeFile(root, path string, fresh *knowledge.Knowledge) (changedI
 // prior `stackfork learn`.
 func cmdLearnRecord(stdout, stderr io.Writer, subArgs []string, root, newStateBase, legacyStateBase string) error {
 	if len(subArgs) == 0 {
-		return errors.New("learn record requires a kind (answer, gotcha, recipe, step, stop-cascade, secret, entry, link, live-watch, live-ignore, fact)")
+		return errors.New("learn record requires a kind (answer, gotcha, recipe, step, stop-cascade, secret, entry, link, reload, live-watch, live-ignore, fact)")
 	}
 	path := knowledgePath(root)
 	k, err := knowledge.Load(path)
@@ -208,6 +221,19 @@ func cmdLearnRecord(stdout, stderr io.Writer, subArgs []string, root, newStateBa
 			out["note"] = note
 		}
 		return printJSON(stdout, out)
+	case "reload":
+		if isHelpRequest(rest) {
+			printFlaglessUsage(stdout, "learn record reload", reloadUsage)
+			return nil
+		}
+		stack := learnStack(root, newStateBase, legacyStateBase, k)
+		if err := recordReload(k, rest, stack); err != nil {
+			return err
+		}
+		if err := learn.WriteKnowledge(root, k); err != nil {
+			return err
+		}
+		return printJSON(stdout, map[string]interface{}{"recorded": kind, "reload": k.Reload})
 	case "live-watch", "live-ignore", "fact":
 		if isHelpRequest(rest) {
 			printFlaglessUsage(stdout, "learn record "+kind, liveRecordUsage[kind])
@@ -221,7 +247,7 @@ func cmdLearnRecord(stdout, stderr io.Writer, subArgs []string, root, newStateBa
 		}
 		return printJSON(stdout, map[string]interface{}{"recorded": kind, "live": k.Live, "migration_dirs": k.Facts.MigrationDirs})
 	default:
-		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha, recipe, step, stop-cascade, secret, entry, link, live-watch, live-ignore or fact)", kind)
+		return fmt.Errorf("unknown learn record kind %q (expected answer, gotcha, recipe, step, stop-cascade, secret, entry, link, reload, live-watch, live-ignore or fact)", kind)
 	}
 
 	if err := learn.WriteKnowledge(root, k); err != nil {
@@ -284,6 +310,7 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 		warnings = append(warnings, knowledge.HostLiteralWarnings(st, hostnameOf(project, manifest))...)
 	}
 	warnings = append(warnings, learn.PlanWarnings(k)...)
+	warnings = append(warnings, reloadWarning(k)...)
 	prepare, warn := recordPrepareRecipe(&k.Plan, top, manifest)
 	if warn != "" {
 		warnings = append(warnings, warn)

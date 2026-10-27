@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 )
 
 func runInst(lr *inventory.LastRun, mutate func(*inventory.Instance)) inventory.Instance {
@@ -32,6 +33,13 @@ var runCardCases = []struct {
 	want []string // fragments of the card
 	not  []string
 }{
+	{"reload chip per service", runInst(nil, func(i *inventory.Instance) {
+		hl, hh := knowledge.ReloadText(knowledge.ReloadRebuild, false)
+		i.Services = []inventory.Service{
+			{Name: "web", State: "running", Reload: "rebuild", ReloadLabel: hl, ReloadHint: hh},
+			{Name: "db", State: "running"},
+		}
+	}), []string{`<span class="reload-chip" title="The code is baked into the image: after an edit, run Start or stackfork up --build.">rebuild on change</span>`}, []string{"hot reload"}},
 	{"host apps show their summary line", runInst(nil, func(i *inventory.Instance) {
 		code := 1
 		i.State = "partial"

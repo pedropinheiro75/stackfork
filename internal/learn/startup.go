@@ -146,10 +146,10 @@ func composeText(v interface{}) string {
 
 var dockerfileJSONPunct = strings.NewReplacer("[", " ", "]", " ", `"`, " ", ",", " ")
 
-// dockerfileStart returns the ENTRYPOINT and CMD of the last stage of the
-// Dockerfile a Compose build names, nil for each that it does not set.
-func dockerfileStart(root string, build interface{}) (entry, cmd *startupUnit) {
-	var ctx, df string
+// dockerfilePath resolves the Dockerfile a Compose build names (absolute, and
+// relative to root) when it is a plain file inside the checkout.
+func dockerfilePath(root string, build interface{}) (df, rel string, ok bool) {
+	var ctx string
 	switch b := build.(type) {
 	case string:
 		ctx = b
@@ -157,7 +157,7 @@ func dockerfileStart(root string, build interface{}) (entry, cmd *startupUnit) {
 		ctx, _ = b["context"].(string)
 		df, _ = b["dockerfile"].(string)
 	default:
-		return nil, nil
+		return "", "", false
 	}
 	if !filepath.IsAbs(ctx) {
 		ctx = filepath.Join(root, ctx)
@@ -170,6 +170,16 @@ func dockerfileStart(root string, build interface{}) (entry, cmd *startupUnit) {
 	}
 	rel, err := filepath.Rel(root, df)
 	if err != nil || !filepath.IsLocal(rel) {
+		return "", "", false
+	}
+	return df, rel, true
+}
+
+// dockerfileStart returns the ENTRYPOINT and CMD of the last stage of the
+// Dockerfile a Compose build names, nil for each that it does not set.
+func dockerfileStart(root string, build interface{}) (entry, cmd *startupUnit) {
+	df, rel, ok := dockerfilePath(root, build)
+	if !ok {
 		return nil, nil
 	}
 	data, ok := readFileNoSymlink(df)

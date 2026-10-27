@@ -130,6 +130,7 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 
 	var envFilePaths []string
 	var buildContexts []string
+	var renderedModel interface{}
 	if len(composeFiles) > 0 {
 		abs := make([]string, len(composeFiles))
 		for i, f := range composeFiles {
@@ -145,6 +146,7 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 		if err != nil {
 			return nil, err
 		}
+		renderedModel = rendered
 		k.Facts.Services = servicesFromRendered(rendered)
 		annotateStartup(root, rendered, composeFiles, k.Facts.Services)
 		buildContexts = buildContextsUnderRoot(rendered, root)
@@ -197,6 +199,12 @@ func Scan(root string) (*knowledge.Knowledge, error) {
 
 	k.Plan = ProposePlan(root, k)
 	k.Entry = ProposeEntry(k)
+	k.Reload = proposeReload(root, renderedModel, composeFiles, k)
+	for _, r := range proposeHostReload(root, k) {
+		if k.ReloadFor(r.Service) == nil { // a host app named like a service shares its entry
+			k.Reload = append(k.Reload, r)
+		}
+	}
 
 	k.Risks = detectRisks(root)
 	for _, rel := range findByPredicate(root, isEntrypointName) {

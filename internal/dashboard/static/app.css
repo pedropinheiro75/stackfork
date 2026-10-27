@@ -285,6 +285,7 @@ a.app-chip-link::after { content: none; }
 .service-name { padding: 0; border: 0; background: none; color: var(--fg); font: 600 13px/18px var(--font-sans); cursor: pointer; }
 .service-name:hover { text-decoration: underline; }
 .service-meta { max-width: 100%; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reload-chip { margin-top: 2px; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; color: var(--fg-muted); font-size: 11px; line-height: 16px; white-space: nowrap; }
 .service-image { max-width: 100%; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .endpoints { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
 .endpoint-link, .endpoint-copy {

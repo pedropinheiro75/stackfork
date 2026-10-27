@@ -102,6 +102,7 @@ module.exports = function (_ex, t) {
 
   const cfg = exported.configBody(fixture);
   assert.match(cfg, /data-secret-add data-repo="\/work\/clients\/acme\/acme-web"/);
+  assert.match(cfg, /<span class="reload-chip" title="Edits are picked up live\. No restart needed\.">hot reload<\/span><span class="small muted">inferred/);
   assert.match(cfg, /Resolves/);
   assert.match(cfg, /Missing/);
   assert.match(cfg, /data-env-reset data-project="sf-acme-web-invoices" data-count="2"/);

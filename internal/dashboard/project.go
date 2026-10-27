@@ -96,6 +96,17 @@ type projectConfigJSON struct {
 	Secrets       []projectSecret `json:"secrets"`
 	EnvOverrides  []projectEnv    `json:"env_overrides"`
 	BranchCleanup string          `json:"branch_cleanup"`
+	// Reload is how code changes reach each app, from the learned knowledge.
+	Reload []projectReload `json:"reload"`
+}
+
+type projectReload struct {
+	Service  string `json:"service"`
+	Mode     string `json:"mode"`
+	Label    string `json:"label"`
+	Hint     string `json:"hint"`
+	Proposed bool   `json:"proposed"`
+	Note     string `json:"note"`
 }
 
 type projectSecret struct {
@@ -170,7 +181,7 @@ func (s *Server) projectFor(repo repos.Repo, cfg *config.Config, history string)
 	historyDir := ""
 	out := projectJSON{Name: repo.Name, Path: repo.Path, DefaultBranch: repo.DefaultBranch, Modes: []string{},
 		Checkouts: []projectCheckout{}, Branches: []projectBranch{}, Workflow: map[string]any{},
-		Config: projectConfigJSON{Secrets: []projectSecret{}, EnvOverrides: []projectEnv{}, BranchCleanup: string(cfg.CleanupFor(repo.Path).Mode)}}
+		Config: projectConfigJSON{Secrets: []projectSecret{}, EnvOverrides: []projectEnv{}, Reload: []projectReload{}, BranchCleanup: string(cfg.CleanupFor(repo.Path).Mode)}}
 
 	k, from, kerr := knowledge.LoadFor(repo.Path, repo.Path)
 	if kerr != nil {
@@ -187,6 +198,13 @@ func (s *Server) projectFor(repo repos.Repo, cfg *config.Config, history string)
 		}
 		if from != repo.Path {
 			out.Knowledge.State, out.Knowledge.From = "borrowed", filepath.Base(from)
+		}
+	}
+
+	if k != nil {
+		for _, r := range k.Reload {
+			label, hint := knowledge.ReloadText(r.Mode, r.Proposed)
+			out.Config.Reload = append(out.Config.Reload, projectReload{Service: r.Service, Mode: r.Mode, Label: label, Hint: hint, Proposed: r.Proposed, Note: r.Note})
 		}
 	}
 

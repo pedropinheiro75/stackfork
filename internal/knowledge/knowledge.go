@@ -93,6 +93,9 @@ type Knowledge struct {
 	Entry *Entry `json:"entry,omitempty"`
 	Links []Link `json:"links,omitempty"`
 
+	// Reload is how code changes reach each app; not part of the trust hash.
+	Reload []Reload `json:"reload,omitempty"`
+
 	// Verification is set only once the user confirms the app works (task
 	// 13.6); nil while Status is draft.
 	Verification *Verification `json:"verification,omitempty"`
@@ -274,6 +277,9 @@ func Load(path string) (*Knowledge, error) {
 	if err := ValidateEntryLinks(k.Entry, k.Links); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	if err := ValidateReload(k.Reload); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	switch k.Schema {
 	case 1:
 		k.Plan = FromRecipe(raw.Legacy)
@@ -326,6 +332,9 @@ func (k *Knowledge) Save(path string) error {
 		return err
 	}
 	if err := ValidateEntryLinks(k.Entry, k.Links); err != nil {
+		return err
+	}
+	if err := ValidateReload(k.Reload); err != nil {
 		return err
 	}
 	b, err := json.MarshalIndent(k, "", "  ")
@@ -479,6 +488,24 @@ func (k *Knowledge) Markdown() string {
 	}
 
 	k.entrySection(&b)
+
+	if len(k.Reload) > 0 {
+		fmt.Fprintf(&b, "## How code changes reach the app\n\n")
+		for _, r := range k.Reload {
+			line := fmt.Sprintf("- %s: %s", r.Service, r.Mode)
+			if r.Proposed {
+				line += " (proposed)"
+			}
+			if r.Evidence != "" {
+				line += " [" + r.Evidence + "]"
+			}
+			if r.Note != "" {
+				line += " " + r.Note
+			}
+			fmt.Fprintf(&b, "%s\n", line)
+		}
+		b.WriteString("\n")
+	}
 
 	if len(k.Secrets) > 0 {
 		fmt.Fprintf(&b, "## Secrets (names only)\n\n")

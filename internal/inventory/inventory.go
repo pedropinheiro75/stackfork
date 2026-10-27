@@ -136,6 +136,11 @@ type Service struct {
 	// even reads a password-shaped key. Empty when the kind isn't a known
 	// database or its host port isn't known yet.
 	ConnectionURL string `json:"connection_url,omitempty"`
+	// Reload is how an edit reaches the app (hot, restart, rebuild) from the
+	// learned knowledge, with the chip text and tooltip; empty when unknown.
+	Reload      string `json:"reload,omitempty"`
+	ReloadLabel string `json:"reload_label,omitempty"`
+	ReloadHint  string `json:"reload_hint,omitempty"`
 	// UseCommands are the extra copy-ready client commands/values D3b §3
 	// wants (a psql/mysql/redis-cli invocation, a stackfork exec form, or a
 	// mail catcher's SMTP_HOST/SMTP_PORT) - same placeholder-safety
@@ -390,6 +395,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 		services, serviceState, apps, appWarnings := servicesForInstance(manifestPath, statusRows, hostname, info, proxyStatus)
 		hosts := hostServices(info, hostname, filepath.Dir(manifestPath), snap)
 		inst.Services = append(append([]Service{}, services...), hosts...)
+		fillReload(inst.Services, info.Root)
 		inst.State = serviceState
 		inst.Warnings = append(inst.Warnings, serviceWarnings(project, services)...)
 		if serviceState == StateRunning {
@@ -1342,4 +1348,23 @@ func hostServices(info *state.Manifest, hostname, instanceDir string, snap *psSn
 		out = append(out, svc)
 	}
 	return out
+}
+
+// fillReload sets each service's reload mode from the checkout's knowledge;
+// a host app row is keyed by its label.
+func fillReload(services []Service, root string) {
+	k, _ := knowledge.LoadForCheckout(root)
+	if k == nil || len(k.Reload) == 0 {
+		return
+	}
+	for i := range services {
+		name := services[i].Name
+		if services[i].Label != "" {
+			name = services[i].Label
+		}
+		if r := k.ReloadFor(name); r != nil {
+			services[i].Reload = r.Mode
+			services[i].ReloadLabel, services[i].ReloadHint = knowledge.ReloadText(r.Mode, r.Proposed)
+		}
+	}
 }

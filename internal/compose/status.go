@@ -26,6 +26,9 @@ type StatusRow struct {
 	// set by the inventory for an unhealthy container; never read from
 	// `compose ps`.
 	HealthDetail string `json:"health_detail,omitempty"`
+	// Reload is how an edit reaches the service (hot, restart, rebuild), set
+	// by `status` from the learned knowledge; absent when unknown.
+	Reload string `json:"reload,omitempty"`
 }
 
 // RestartHint says how to recover a service that is unhealthy or no longer

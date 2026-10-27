@@ -498,7 +498,8 @@
       '<td class="cell-service"><span class="service-logo" data-kind="' + escapeHtml(svc.kind || "") + '"></span>' +
       '<div class="service-text"><button type="button" class="service-name" data-toggle-settings data-key="' + escapeHtml(key) +
       '/settings" aria-expanded="' + settingsOpen + '">' + escapeHtml(svc.label || svc.name) + "</button>" + image +
-      (svc.meta && svc.state !== "finished" ? '<span class="service-meta mono">' + escapeHtml(svc.meta) + "</span>" : "") + "</div></td>" +
+      (svc.meta && svc.state !== "finished" ? '<span class="service-meta mono">' + escapeHtml(svc.meta) + "</span>" : "") +
+      (svc.reload_label ? '<span class="reload-chip" title="' + escapeHtml(svc.reload_hint || "") + '">' + escapeHtml(svc.reload_label) + "</span>" : "") + "</div></td>" +
       '<td class="cell-state">' + chipHtml(serviceChip(svc)) + "</td>" +
       '<td class="cell-endpoints">' + endpoints + "</td>" +
       '<td class="cell-actions"><div class="row-actions"><button type="button" class="btn btn-ghost logs-button mobile-hide"' + pa +
