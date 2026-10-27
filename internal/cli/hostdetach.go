@@ -296,7 +296,7 @@ func spawnSupervisor(stderr io.Writer, name string, args []string, workDir, inst
 	}
 }
 
-// cmdHostManage runs host stop|restart|logs NAME.
+// cmdHostManage runs host stop|restart|rm|logs NAME.
 func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, branch, project, instanceDir, newBase, legacyBase string) (int, error) {
 	if sub == "ls" {
 		return hostLs(stdout, args, instanceDir)
@@ -332,6 +332,13 @@ func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, br
 	}
 	if !ok {
 		return 0, fmt.Errorf("no host process %s", name)
+	}
+	if sub == "rm" {
+		if err := lifecycle.ForgetHostLocked(stderr, instanceDir, name, newBase, legacyBase); err != nil {
+			return 0, err
+		}
+		fmt.Fprintf(stdout, "removed %s\n", name)
+		return 0, nil
 	}
 	if sub == "restart" && proc.RestartArgs() == nil {
 		return 0, fmt.Errorf("%s was not started with `host start`; start it again", name)

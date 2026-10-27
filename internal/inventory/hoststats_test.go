@@ -170,9 +170,10 @@ func TestAliveHostAppThatDoesNotListenYetIsStarting(t *testing.T) {
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close() // a port nothing listens on
-	base, _ := hostInstance(t, map[string]state.HostProc{
+	base, dir := hostInstance(t, map[string]state.HostProc{
 		"app": {PID: os.Getpid(), StartedAt: start, Cmdline: os.Args, Port: port},
 	})
+	state.WriteHostRecord(dir, state.HostRecord{Name: "app", PID: os.Getpid(), SupervisorPID: os.Getpid(), StartedAt: time.Now().UTC().Format(time.RFC3339), Port: port}) //nolint:errcheck // test
 	inst := collectOne(t, base)
 	for _, s := range inst.Services {
 		if s.Name == "host:app" {
@@ -224,6 +225,66 @@ func TestHostRecordOfAnotherSupervisorIsUnknown(t *testing.T) {
 	for _, s := range collectOne(t, base).Services {
 		if s.Name == "host:api" && (s.Meta != "exited (details unknown)" || s.Host.ExitCode != nil) {
 			t.Errorf("api: meta=%q host=%+v", s.Meta, s.Host)
+		}
+	}
+}
+
+// A pid that lives past the grace period while its port does not answer is
+// "running" with Listening false: the chip says it is not answering.
+func TestAliveHostAppNotAnsweringAfterGraceIsRunningNotListening(t *testing.T) {
+	start, err := state.ProcStart(os.Getpid())
+	if err != nil {
+		t.Skip("no process start time on this platform")
+	}
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	base, dir := hostInstance(t, map[string]state.HostProc{
+		"app": {PID: os.Getpid(), StartedAt: start, Cmdline: os.Args, Port: port},
+	})
+	began := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	state.WriteHostRecord(dir, state.HostRecord{Name: "app", PID: os.Getpid(), SupervisorPID: os.Getpid(), StartedAt: began, Port: port}) //nolint:errcheck // test
+	inst := collectOne(t, base)
+	for _, s := range inst.Services {
+		if s.Name == "host:app" && (s.State != "running" || s.Host == nil || s.Host.Listening || s.Host.Port != port) {
+			t.Errorf("alive, not answering, past the grace period: %+v", s)
+		}
+	}
+}
+
+func finishedInstance(t *testing.T, code int, listened bool) Instance {
+	t.Helper()
+	base, dir := hostInstance(t, map[string]state.HostProc{
+		"review-checks": {PID: 999999, StartedAt: "1970-01-01T00:00:00Z", Cmdline: []string{"x"}, Port: 40999},
+	})
+	exited := time.Date(2026, 10, 23, 18, 10, 0, 0, time.Local)
+	if err := state.WriteHostRecord(dir, state.HostRecord{Name: "review-checks", PID: 999999, SupervisorPID: 999999, StartedAt: "1970-01-01T00:00:00Z",
+		ExitedAt: exited.UTC().Format(time.RFC3339), ExitCode: &code, Listened: listened}); err != nil {
+		t.Fatal(err)
+	}
+	return collectOne(t, base)
+}
+
+func TestOneoffHostAppThatExitedZeroIsFinishedWithoutWarning(t *testing.T) {
+	inst := finishedInstance(t, 0, false)
+	for _, s := range inst.Services {
+		if s.Name == "host:review-checks" && (s.State != "finished" || s.Meta != "exit 0 at 18:10") {
+			t.Errorf("one-shot: state=%s meta=%q", s.State, s.Meta)
+		}
+	}
+	if inst.State != StateRunning || len(inst.Warnings) != 0 {
+		t.Errorf("a finished one-shot is no attention: state=%s warnings=%q", inst.State, inst.Warnings)
+	}
+}
+
+func TestServerOrFailedHostAppKeepsExitedWarning(t *testing.T) {
+	for _, c := range []struct {
+		code     int
+		listened bool
+	}{{0, true}, {2, false}} {
+		inst := finishedInstance(t, c.code, c.listened)
+		if inst.State != StatePartial || len(inst.Warnings) == 0 {
+			t.Errorf("code %d listened %v: state=%s warnings=%q", c.code, c.listened, inst.State, inst.Warnings)
 		}
 	}
 }

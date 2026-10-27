@@ -46,14 +46,18 @@ func isResetFromMainRetry(cmd string) bool {
 	return strings.HasPrefix(cmd, "stackfork --root ") && strings.HasSuffix(cmd, " reset --yes --from-main")
 }
 
-// runVerb names a run to a person: Start, Reset for a reset, or Live run for
-// one that live mode started.
+// runVerb names a run to a person: Start, Reset for a reset, Env change for an
+// env apply, Seed for a seed, or Live run for one that live mode started.
 func runVerb(command, trigger string) string {
 	switch {
 	case trigger == "live":
 		return "Live run"
 	case command == "reset":
 		return "Reset"
+	case command == "env":
+		return "Env change"
+	case command == "seed":
+		return "Seed"
 	}
 	return "Start"
 }

@@ -54,7 +54,7 @@ type actionResponse struct {
 // --volumes - lifecycle.Options{} always leaves Volumes false.
 var validActions = map[string]bool{
 	"up": true, "down": true, "restart": true,
-	"service-start": true, "service-stop": true,
+	"service-start": true, "service-stop": true, "host-remove": true,
 	"proxy-up": true, "proxy-down": true, "proxy-reload": true,
 	"free-space": true,
 }
@@ -113,13 +113,17 @@ func (s *Server) handleActions(w http.ResponseWriter, r *http.Request) {
 // runAction dispatches one already-locked, already-validated action.
 func (s *Server) runAction(req actionRequest) actionResponse {
 	switch req.Action {
-	case "up", "down", "restart", "service-start", "service-stop":
+	case "up", "down", "restart", "service-start", "service-stop", "host-remove":
 		instanceDir, root, branch, info, err := s.resolveInstance(req.Project)
 		if err != nil {
 			return actionResponse{Message: err.Error()}
 		}
-		if name, ok := hostName(info, req.Service); ok && req.Action != "up" && req.Action != "down" {
+		name, isHost := hostName(info, req.Service)
+		if isHost && req.Action != "up" && req.Action != "down" {
 			return s.hostAction(req, name, instanceDir, root)
+		}
+		if req.Action == "host-remove" {
+			return actionResponse{Message: req.Service + " is not a host app"}
 		}
 		var out bytes.Buffer
 		opts := lifecycle.Options{}
@@ -247,9 +251,12 @@ func hostName(info *state.Manifest, service string) (string, bool) {
 func (s *Server) hostAction(req actionRequest, name, instanceDir, root string) actionResponse {
 	var errBuf bytes.Buffer
 	var err error
-	if req.Action == "service-stop" {
+	switch req.Action {
+	case "service-stop":
 		err = lifecycle.StopHostLocked(&errBuf, instanceDir, name, s.NewStateBase, s.LegacyStateBase)
-	} else {
+	case "host-remove":
+		err = lifecycle.ForgetHostLocked(&errBuf, instanceDir, name, s.NewStateBase, s.LegacyStateBase)
+	default:
 		err = lifecycle.HostRestart(&errBuf, root, instanceDir, name, s.NewStateBase, s.LegacyStateBase)
 	}
 	if err != nil {

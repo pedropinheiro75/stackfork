@@ -161,6 +161,36 @@ func StopHostLocked(stderr io.Writer, instanceDir, name, newBase, legacyBase str
 	return err
 }
 
+// ForgetHostLocked drops a host app that is not running: its HostProcs entry,
+// route and record. A running one is refused (stop it first).
+func ForgetHostLocked(stderr io.Writer, instanceDir, name, newBase, legacyBase string) error {
+	lock, err := state.AcquireLock(filepath.Join(instanceDir, ".lock"))
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	m, err := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
+	if err != nil {
+		return err
+	}
+	proc, ok := state.HostProc{}, false
+	if m != nil {
+		proc, ok = m.HostProcs[name]
+	}
+	if !ok {
+		return fmt.Errorf("no host process %s", name)
+	}
+	if state.HostIdentity(proc) {
+		return fmt.Errorf("host process %s is running; stop it first (stackfork host stop %s)", name, name)
+	}
+	if err := StopHost(stderr, instanceDir, name, HostStopTimeout(), false); err != nil {
+		return err
+	}
+	os.Remove(state.HostRecordPath(instanceDir, name)) //nolint:errcheck // best effort
+	ReloadProxyIfRunning(stderr, newBase, legacyBase)
+	return nil
+}
+
 // HostRestart stops and respawns one recorded host process. The cli package
 // sets the real one (it owns the supervisor spawn).
 var HostRestart = func(stderr io.Writer, root, instanceDir, name, newBase, legacyBase string) error {

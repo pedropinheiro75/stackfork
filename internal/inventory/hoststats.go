@@ -20,6 +20,7 @@ type HostInfo struct {
 	ExitedAt  string `json:"exited_at,omitempty"`
 	ExitCode  *int   `json:"exit_code,omitempty"`
 	Listening bool   `json:"listening"`
+	Port      int    `json:"port,omitempty"`
 	// Measured is false when ps is not available (Windows) or does not list
 	// the process: RSSBytes and CPUPercent are then unknown, not zero.
 	Measured   bool    `json:"measured"`
@@ -109,11 +110,16 @@ func (s *psSnapshot) usage(pid int) (int64, float64, bool) {
 }
 
 // hostInspect builds the state, HostInfo and meta line of one host app. It is
-// running only when the recorded identity (pid and start time) holds and the
-// port answers; a recycled pid never counts.
+// running only when the recorded identity (pid and start time) holds; a
+// recycled pid never counts. A host app with a port whose port does not answer
+// is "starting" for hostGrace after its start, then "running" with
+// Listening false (the pid lives, the server does not answer). A process that
+// never listened and exited 0 is "finished": a one-shot task, not a server.
+const hostGrace = 30 * time.Second
+
 func hostInspect(instanceDir, name string, proc state.HostProc, snap *psSnapshot, now time.Time) (st string, info *HostInfo, meta string) {
 	rec, _ := state.ReadHostRecord(instanceDir, name)
-	info = &HostInfo{StartedAt: proc.StartedAt}
+	info = &HostInfo{StartedAt: proc.StartedAt, Port: proc.Port}
 	alive := proc.PID != 0 && state.HostIdentity(proc)
 	info.Listening = alive && ports.Listening(proc.Port)
 	if alive {
@@ -133,17 +139,21 @@ func hostInspect(instanceDir, name string, proc state.HostProc, snap *psSnapshot
 		return "exited", info, "exited (details unknown)"
 	}
 	if alive {
-		st = "starting" // up, but nothing answers on the port yet
-		if info.Listening {
-			st = "running"
+		st = "running"
+		if t, err := time.Parse(time.RFC3339, info.StartedAt); proc.Port != 0 && !info.Listening && (err != nil || now.Sub(t) < hostGrace) {
+			st = "starting" // up, but nothing answers on the port yet
 		}
 		return st, info, hostMeta(info, now)
 	}
 	meta = "exited"
+	at := ""
+	if t, err := time.Parse(time.RFC3339, info.ExitedAt); err == nil {
+		at = " at " + t.Local().Format("15:04")
+	}
 	if info.ExitCode != nil {
-		meta = fmt.Sprintf("exited %d", *info.ExitCode)
-		if t, err := time.Parse(time.RFC3339, info.ExitedAt); err == nil {
-			meta += " at " + t.Local().Format("15:04")
+		meta = fmt.Sprintf("exited %d", *info.ExitCode) + at
+		if *info.ExitCode == 0 && rec != nil && !rec.Listened && !rec.StoppedByPerson {
+			return "finished", info, fmt.Sprintf("exit 0%s", at)
 		}
 	}
 	return "exited", info, meta

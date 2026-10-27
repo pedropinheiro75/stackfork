@@ -90,6 +90,9 @@ var runCardCases = []struct {
 		Retry: "stackfork --root /src/acme-web/.worktrees/feature-login reset --yes", Tail: "no space left"}, nil),
 		[]string{`Reset failed at step <code class="mono">up</code>`, `data-repo-action="reset" data-repo="/src/acme-web" data-path="/src/acme-web/.worktrees/feature-login" data-key="sf-acme-web-2ffa6841c75d/run/retry" title="Reset again"`, "no space left"},
 		[]string{"Start failed", `data-repo-action="start"`, `data-run="stackfork --root`}},
+	{"failed env change", runInst(&inventory.LastRun{ID: 14, Command: "env", Trigger: "dashboard", Outcome: "failed", FailedStep: "restart-api", StartedAt: ago5(), EndedAt: ago5(),
+		Retry: "stackfork --instance sf-acme-web-2ffa6841c75d host restart api", Tail: "Error: boom"}, nil),
+		[]string{`Env change failed at step <code class="mono">restart-api</code>`, `data-dismiss-run="14"`, ">Dismiss<"}, []string{"Start failed"}},
 	{"running", runInst(&inventory.LastRun{ID: 3, Command: "start-env", Trigger: "cli", Outcome: "running", Step: "seed", StepN: 3, StepTotal: 6, StartedAt: ago5()}, nil),
 		[]string{`title="step 3 of 6: seed"`, "Starting…"}, []string{">Stopped<", "callout"}},
 	{"failed start-env", runInst(&inventory.LastRun{ID: 4, Command: "start-env", Trigger: "dashboard", Outcome: "failed", FailedStep: "app", StartedAt: ago5(), EndedAt: ago5(),
@@ -209,4 +212,17 @@ func normalizeCard(s string) string {
 	s = html.UnescapeString(s)
 	s = strings.ReplaceAll(s, "\n<", "<")
 	return strings.TrimSpace(s)
+}
+
+func TestServiceChipHostNotAnswering(t *testing.T) {
+	c := serviceChip(inventory.Service{State: "running", Host: &inventory.HostInfo{Port: 3000}})
+	if c.Class != "attention" || c.Label != "Running · not answering on :3000" {
+		t.Errorf("%+v", c)
+	}
+	if c := serviceChip(inventory.Service{State: "running", Host: &inventory.HostInfo{Port: 3000, Listening: true}}); c.Label != "Running" {
+		t.Errorf("%+v", c)
+	}
+	if c := serviceChip(inventory.Service{State: "finished", Meta: "exit 0 at 18:10"}); c.Class != "off" || c.Label != "Finished · exit 0 at 18:10" {
+		t.Errorf("%+v", c)
+	}
 }

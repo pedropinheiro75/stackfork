@@ -47,8 +47,12 @@ func serviceChip(s inventory.Service) chipView {
 		c.Class, c.Glyph, c.Label = "attention", glyphAttention, "Unhealthy"
 	case s.State == "running" && s.Health == "health: starting":
 		c.Class, c.Glyph, c.Label = "busy", glyphBusy, "Starting…"
+	case s.State == "running" && s.Host != nil && s.Host.Port != 0 && !s.Host.Listening:
+		c.Class, c.Glyph, c.Label = "attention", glyphAttention, fmt.Sprintf("Running · not answering on :%d", s.Host.Port)
 	case s.State == "running":
 		c.Class, c.Glyph, c.Label = "ok", glyphOK, "Running"
+	case s.State == "finished":
+		c.Label = "Finished · " + s.Meta
 	case s.State == "starting":
 		c.Class, c.Glyph, c.Label = "busy", glyphBusy, "Starting…"
 	case s.State == "dead":

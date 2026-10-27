@@ -168,8 +168,10 @@
     var health = svc.health;
     if (svc.state === "running" && health === "unhealthy") { r.cls = "attention"; r.glyph = GLYPH.attention; r.label = "Unhealthy"; }
     else if (svc.state === "running" && health === "health: starting") { r.cls = "busy"; r.glyph = GLYPH.busy; r.label = "Starting…"; }
+    else if (svc.state === "running" && svc.host && svc.host.port && !svc.host.listening) { r.cls = "attention"; r.glyph = GLYPH.attention; r.label = "Running \u00B7 not answering on :" + svc.host.port; }
     else if (svc.state === "running") { r.cls = "ok"; r.glyph = GLYPH.ok; r.label = "Running"; }
     else if (svc.state === "starting") { r.cls = "busy"; r.glyph = GLYPH.busy; r.label = "Starting…"; }
+    else if (svc.state === "finished") r.label = "Finished \u00B7 " + (svc.meta || "");
     else if (svc.state === "dead") { r.cls = "failed"; r.glyph = GLYPH.failed; r.label = "Dead"; }
     else if (svc.state === "restarting") { r.cls = "attention"; r.glyph = GLYPH.attention; r.label = "Restarting"; }
     else if (svc.state === "waiting") { r.cls = "busy"; r.glyph = GLYPH.busy; r.label = "Waiting"; }
@@ -391,11 +393,23 @@
     return ' data-run-log data-project="' + escapeHtml(project) + '" data-run-id="' + run + '" data-step="' + escapeHtml(step || "") + '"';
   }
 
+  // Dismiss hides a failed run's card for good (this browser); a newer run
+  // has a new id and shows again.
+  function dismissedRuns() {
+    try { return JSON.parse(localStorage.getItem("sf-dismissed-runs") || "{}"); } catch (e) { return {}; }
+  }
+  function runDismissed(inst) { return dismissedRuns()[inst.project] === inst.last_run.id; }
+  function dismissRun(project, id) {
+    var d = dismissedRuns();
+    d[project] = id;
+    try { localStorage.setItem("sf-dismissed-runs", JSON.stringify(d)); } catch (e) { /* memory-only */ }
+  }
+
   function runCalloutHtml(inst, name) {
     var lr = inst.last_run, p = inst.project;
-    if (!lr || (lr.outcome !== "failed" && lr.outcome !== "interrupted") || seedCovers(inst)) return "";
+    if (!lr || (lr.outcome !== "failed" && lr.outcome !== "interrupted") || seedCovers(inst) || runDismissed(inst)) return "";
     var interrupted = lr.outcome === "interrupted", step = lr.failed_step || "";
-    var verb = lr.trigger === "live" ? "Live run" : lr.command === "reset" ? "Reset" : "Start";
+    var verb = lr.trigger === "live" ? "Live run" : { reset: "Reset", env: "Env change", seed: "Seed" }[lr.command] || "Start";
     var title = verb + (interrupted ? " interrupted" : " failed") + (step ? ' at step <code class="mono">' + escapeHtml(step) + "</code>" : "");
     var retry = "";
     if (lr.trigger === "live") {
@@ -410,10 +424,11 @@
     }
     var more = step ? menuHtml(p + "/run/menu", "More run actions for " + name, "More run actions",
       menuItem(p + "/run/viewlog", "View log", "", runLogAttrs(p, lr.id, step))) : "";
+    var dismiss = '<button type="button" class="btn btn-ghost" data-dismiss-run="' + lr.id + '" data-project="' + escapeHtml(p) + '" data-key="' + escapeHtml(p) + '/run/dismiss">Dismiss</button>';
     return '<div class="callout callout-' + (interrupted ? "attention" : "failed") + '" data-run-outcome="' + escapeHtml(lr.outcome) + '"><span class="callout-glyph" aria-hidden="true">' +
       (interrupted ? GLYPH.attention : GLYPH.failed) + '</span><div class="callout-body"><p class="callout-title">' + title + "</p>" +
       (lr.tail ? '<pre class="mono-log" tabindex="0" data-key="' + escapeHtml(p) + '/run/log" aria-label="Output of step ' + escapeHtml(step) + '">' + escapeHtml(lr.tail) + "</pre>" : "") +
-      '</div><div class="callout-actions">' + retry + more + "</div></div>";
+      '</div><div class="callout-actions">' + retry + more + dismiss + "</div></div>";
   }
 
   // The version menu's Last run item, for a run that succeeded.
@@ -483,7 +498,7 @@
       '<td class="cell-service"><span class="service-logo" data-kind="' + escapeHtml(svc.kind || "") + '"></span>' +
       '<div class="service-text"><button type="button" class="service-name" data-toggle-settings data-key="' + escapeHtml(key) +
       '/settings" aria-expanded="' + settingsOpen + '">' + escapeHtml(svc.label || svc.name) + "</button>" + image +
-      (svc.meta ? '<span class="service-meta mono">' + escapeHtml(svc.meta) + "</span>" : "") + "</div></td>" +
+      (svc.meta && svc.state !== "finished" ? '<span class="service-meta mono">' + escapeHtml(svc.meta) + "</span>" : "") + "</div></td>" +
       '<td class="cell-state">' + chipHtml(serviceChip(svc)) + "</td>" +
       '<td class="cell-endpoints">' + endpoints + "</td>" +
       '<td class="cell-actions"><div class="row-actions"><button type="button" class="btn btn-ghost logs-button mobile-hide"' + pa +
@@ -493,6 +508,7 @@
           ? menuItem(key + "/menu/stop", "Stop", "", ' data-action="service-stop"' + pa)
           : menuItem(key + "/menu/start", "Start", "", ' data-action="service-start"' + pa)) +
         menuItem(key + "/menu/restart", "Restart", "", ' data-action="restart"' + pa) +
+        (svc.kind === "host" && (svc.state === "exited" || svc.state === "finished") ? menuItem(key + "/menu/remove", "Remove", "", ' data-action="host-remove"' + pa) : "") +
         menuItem(key + "/menu/env", "Environment…", "", " data-env-open" + pa) +
         menuItem(key + "/menu/logs", "Logs", "", pa, "logs-button mobile-only")) +
       "</div></td></tr>" +
@@ -1172,6 +1188,8 @@
         openSettings[toggleSettings.dataset.key.replace(/\/settings$/, "")] = openNow;
         return;
       }
+      var dis = e.target.closest("[data-dismiss-run]");
+      if (dis) { dismissRun(dis.dataset.project, Number(dis.dataset.dismissRun)); dis.closest(".callout").remove(); return; }
       var runLog = e.target.closest("[data-run-log]");
       if (runLog) { openRunLog(runLog.dataset.project, Number(runLog.dataset.runId), runLog.dataset.step, runLog); return; }
       var startAgain = e.target.closest("button[data-repo-action]"); // Retry of a failed Start

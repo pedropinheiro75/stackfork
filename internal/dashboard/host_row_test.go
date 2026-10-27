@@ -268,3 +268,42 @@ func TestUpStartsRecordedHostAppThatIsDown(t *testing.T) {
 		t.Errorf("steps %+v", r.Steps)
 	}
 }
+
+func TestFinishedOneoffHostRowShowsFinishedAndRemoveForgetsIt(t *testing.T) {
+	installFakeDocker(t)
+	srv, project, dir := hostFixture(t, false)
+	code := 0
+	if err := state.WriteHostRecord(dir, state.HostRecord{Name: "db", PID: 999999, SupervisorPID: 999999, StartedAt: "1970-01-01T00:00:00Z", ExitedAt: "2026-10-23T18:10:00Z", ExitCode: &code}); err != nil {
+		t.Fatal(err)
+	}
+	body := getPage(srv)
+	row := rowOf(t, body, "host:db")
+	for _, w := range []string{"Finished · exit 0 at", `data-action="host-remove"`} {
+		if !strings.Contains(row, w) {
+			t.Errorf("finished row lacks %q:\n%s", w, row)
+		}
+	}
+	if strings.Contains(body, "host app db is not running") {
+		t.Errorf("a finished one-shot must not warn")
+	}
+	if code, resp := postAction(t, srv, "127.0.0.1:55903", actionRequestFixture{Action: "host-remove", Project: project, Service: "host:db"}); code != 200 || !resp.OK {
+		t.Fatalf("host-remove: %d %+v", code, resp)
+	}
+	if m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json")); len(m.HostProcs) != 0 {
+		t.Errorf("host-remove left the entry: %+v", m.HostProcs)
+	}
+	if r, _ := state.ReadHostRecord(dir, "db"); r != nil {
+		t.Errorf("host-remove left the record")
+	}
+}
+
+func TestHostRemoveRefusesARunningApp(t *testing.T) {
+	installFakeDocker(t)
+	srv, project, dir := hostFixture(t, true)
+	if _, resp := postAction(t, srv, "127.0.0.1:55903", actionRequestFixture{Action: "host-remove", Project: project, Service: "host:db"}); resp.OK {
+		t.Fatalf("a running app must not be removed")
+	}
+	if m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json")); len(m.HostProcs) != 1 {
+		t.Errorf("entry gone")
+	}
+}
