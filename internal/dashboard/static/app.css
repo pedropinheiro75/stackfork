@@ -834,14 +834,28 @@ button.env-chip:focus-visible { outline: 2px solid var(--focus); outline-offset:
 .env-ov-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--space-3); padding: var(--space-2); border-bottom: 1px solid var(--line); font-size: 12px; }
 .env-ov-val { min-width: 0; overflow-wrap: anywhere; }
 .env-rows { list-style: none; margin: 0 0 var(--space-3); padding: 0; max-height: 52vh; overflow: auto; border-top: 1px solid var(--line); }
-.env-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.5fr) 88px 132px; align-items: center; gap: var(--space-1) var(--space-3); min-height: 44px; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--line); }
-.env-name { min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
-.env-control { min-width: 0; }
-.env-value { width: 100%; }
+.env-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(0, 1.5fr) 64px; align-items: start; gap: var(--space-1) var(--space-3); min-height: 44px; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--line); }
+.env-head { min-height: 0; padding-block: var(--space-1); font-size: 12px; color: var(--fg-subtle); align-items: center; }
+.env-name { min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; padding-top: 6px; }
+.env-proj { min-width: 0; overflow-wrap: anywhere; font-size: 12px; color: var(--fg-muted); padding-top: 6px; max-height: 6em; overflow: auto; }
+.env-control { min-width: 0; display: flex; align-items: center; gap: var(--space-2); padding-top: 4px; }
+.env-control .env-struck { font-size: 12px; color: var(--fg-subtle); overflow-wrap: anywhere; }
+textarea.env-value { padding: 6px var(--space-3); border: 1px solid var(--line-control); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--fg); display: block; box-sizing: border-box; }
+textarea.env-value:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.env-value { width: 100%; min-height: 32px; resize: none; overflow: hidden; overflow-wrap: anywhere; line-height: 18px; font-size: 12px; }
+.env-bool { font-size: 12px; color: var(--fg-muted); }
 .env-masked { color: var(--fg-subtle); letter-spacing: 0.2em; }
-.env-origin { justify-self: start; }
-.env-note { grid-column: 2 / -1; font-size: 12px; line-height: 16px; color: var(--attention); }
-.env-remove { justify-self: end; }
+.env-from { justify-self: end; grid-column: 3 / -1; font-size: 12px; padding-top: 6px; }
+.env-row-ro { min-height: 0; }
+.env-note { grid-column: 3 / -1; font-size: 12px; line-height: 16px; color: var(--attention); }
+.env-pending .env-name, .env-pending .env-proj { opacity: .75; }
+.env-reset { justify-self: end; min-width: 32px; padding-inline: var(--space-2); }
+.env-all { padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--line); }
+.env-all summary { cursor: pointer; font-size: 12px; color: var(--fg-muted); min-height: 32px; display: flex; align-items: center; }
+.env-all summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.env-rows-ro { max-height: none; overflow: visible; margin: 0; }
+.env-rows-ro .env-row:last-child { border-bottom: 0; }
+.env-helper { margin-right: auto; align-self: center; }
 .env-empty { padding: var(--space-3) var(--space-2); border-bottom: 0; }
 .env-switch { appearance: none; -webkit-appearance: none; position: relative; width: 36px; height: 20px; margin: 0; border: 1px solid var(--line-control); border-radius: var(--radius-full); background: var(--surface-2); cursor: pointer; transition: background-color var(--duration-fast) linear, border-color var(--duration-fast) linear; }
 .env-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--fg-muted); transition: transform var(--duration-fast) var(--ease-out), background-color var(--duration-fast) linear; }
@@ -855,7 +869,11 @@ button.env-chip:focus-visible { outline: 2px solid var(--focus); outline-offset:
 .env-chip + .btn { margin-left: var(--space-1); }
 @media (prefers-reduced-motion: reduce) { .env-switch, .env-switch::after { transition: none; } }
 @media (max-width: 719px) {
-  .env-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name chip" "control control" "note note" "remove remove"; padding: var(--space-2); }
-  .env-name { grid-area: name; } .env-origin { grid-area: chip; justify-self: end; } .env-control { grid-area: control; } .env-note { grid-area: note; grid-column: auto; } .env-remove { grid-area: remove; justify-self: start; }
+  .env-row { grid-template-columns: minmax(0, 1fr) auto; padding: var(--space-2); }
+  .env-head { display: none; }
+  .env-name, .env-proj { padding-top: 0; }
+  .env-proj::before { content: "Project: "; color: var(--fg-subtle); }
+  .env-proj { grid-column: 1 / -1; }
+  .env-control { grid-column: 1; } .env-reset { grid-column: 2; grid-row: 1; } .env-note, .env-from { grid-column: 1 / -1; justify-self: start; }
   .env-add { grid-template-columns: minmax(0, 1fr); }
 }

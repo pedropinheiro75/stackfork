@@ -1744,27 +1744,49 @@
   function envRowsOf(svc) {
     return (svc.vars || []).map(function (v) {
       return { name: v.name, value: v.value, masked: !!v.masked, origin: v.origin, has_default: !!v.has_default, def: v.default === undefined ? null : v.default,
-        orig: { origin: v.origin, value: v.value }, gone: false };
+        orig: { origin: v.origin, value: v.value }, gone: false, reset: false };
     });
   }
 
+  var MASK = '<span class="env-masked mono" title="Hidden: this page never receives the value">••••</span>';
+
+  // A value as text: bullets for a hidden one (the page never has it), (empty), or the escaped value with its full text in a tooltip.
+  function envShown(v, hidden) {
+    if (hidden) return MASK;
+    if (v === "") return '<span class="muted">(empty)</span>';
+    return '<span class="mono" title="' + escapeHtml(v) + '">' + escapeHtml(v) + "</span>";
+  }
+
+  function envProjectHtml(r) {
+    if (!r.has_default) return '<span class="muted">not in project</span>';
+    return envShown(r.def, r.def === null);
+  }
+
+  // Only the rows whose value is an override are editable; the rest are read-only context.
   function envRowHtml(r, i, svc) {
     if (r.gone) return "";
-    var n = escapeHtml(r.name), control;
-    if (r.masked) {
-      control = '<span class="env-masked mono" title="Hidden: this page never receives the value">••••</span>';
-    } else if (isFlagLike(r.name, r.value)) {
-      control = '<input type="checkbox" role="switch" class="env-switch" data-env-toggle="' + i + '" aria-label="' + n + '"' + (r.value === "true" || r.value === "1" ? " checked" : "") + ">";
-    } else {
-      control = '<input type="text" class="env-value mono" data-env-value="' + i + '" value="' + escapeHtml(r.value) + '" aria-label="Value of ' + n + '" spellcheck="false" autocapitalize="off" autocomplete="off">';
+    var n = escapeHtml(r.name);
+    if (r.origin !== "override") {
+      return '<li class="env-row env-row-ro" data-i="' + i + '" data-origin="' + escapeHtml(r.origin) + '"><span class="env-name mono">' + n + "</span>" +
+        '<span class="env-proj">' + envShown(r.value, r.masked) + '</span><span class="env-from muted">' + escapeHtml(r.origin) + "</span></li>";
     }
-    var chip = '<span class="chip ' + (r.origin === "override" ? "chip-busy" : "chip-off") + ' env-origin">' + escapeHtml(r.origin) + "</span>";
-    var note = svc.build && /^VITE_/.test(r.name) ? '<span class="env-note">applies at next build</span>' : "";
-    var remove = r.origin === "override"
-      ? '<button type="button" class="btn btn-ghost env-remove" data-env-remove="' + i + '" aria-label="' + (r.has_default ? "Restore default of " : "Remove ") + n + '">' + (r.has_default ? "Restore default" : "Remove") + "</button>"
-      : "";
-    return '<li class="env-row" data-i="' + i + '" data-origin="' + escapeHtml(r.origin) + '"><span class="env-name mono">' + n + "</span>" +
-      '<span class="env-control">' + control + "</span>" + chip + note + remove + "</li>";
+    var control, note = "";
+    if (r.reset) {
+      control = '<s class="env-struck">' + envShown(r.value, r.masked) + "</s>";
+      note = '<span class="env-note env-pending-note">' + (r.has_default ? "will reset on save" : "will be removed on save") + "</span>";
+    } else if (r.masked) {
+      control = MASK;
+    } else if (isFlagLike(r.name, r.value)) {
+      var on = r.value === "true" || r.value === "1";
+      control = '<input type="checkbox" role="switch" class="env-switch" data-env-toggle="' + i + '" aria-label="' + n + '"' + (on ? " checked" : "") + '><span class="env-bool mono" aria-hidden="true">' + (on ? "true" : "false") + "</span>";
+    } else {
+      control = '<textarea class="env-value mono" rows="1" data-env-value="' + i + '" title="' + escapeHtml(r.value) + '" aria-label="Value of ' + n + '" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="soft">' + escapeHtml(r.value) + "</textarea>";
+    }
+    if (!note && svc.build && /^VITE_/.test(r.name)) note = '<span class="env-note">applies at next build</span>';
+    var label = r.reset ? "Keep the override of " + n : r.has_default ? "Reset " + n + " to the project value" : "Remove " + n;
+    var btn = '<button type="button" class="btn btn-ghost env-reset" data-env-undo="' + i + '" aria-label="' + label + '" title="' + label + '">' + (r.reset ? "Undo" : "&#8634;") + "</button>";
+    return '<li class="env-row' + (r.reset ? " env-pending" : "") + '" data-i="' + i + '" data-origin="override"><span class="env-name mono">' + n + "</span>" +
+      '<span class="env-proj">' + envProjectHtml(r) + '</span><span class="env-control">' + control + "</span>" + btn + note + "</li>";
   }
 
   function envEdit(rows, i, value) {
@@ -1773,12 +1795,14 @@
     r.origin = r.orig && value === r.orig.value ? r.orig.origin : "override";
   }
 
-  function envRestore(rows, i) {
+  // Reset is pending until Save and can be undone; a row added in this session is just dropped.
+  function envToggleReset(rows, i) {
     var r = rows[i];
-    if (r.has_default) { r.value = r.def; r.origin = "project"; } else r.gone = true;
+    if (!r.orig || r.orig.origin !== "override") { r.gone = true; return; }
+    r.reset = !r.reset;
   }
 
-  // envAdd returns "" or what is wrong with the name.
+  // envAdd returns "" or what is wrong with the name. An existing name edits its row.
   function envAdd(rows, name, value) {
     name = (name || "").trim();
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return "Use letters, digits and underscores in the name; it cannot start with a digit.";
@@ -1786,9 +1810,9 @@
     if (/[\n\0]/.test(value)) return "A value cannot contain a newline.";
     if (value === "" && FLAG_NAME.test(name)) value = "true";
     var at = rows.findIndex(function (r) { return r.name === name; });
-    if (at >= 0 && !rows[at].gone) return name + " is already listed; change its value there.";
-    if (at >= 0) { rows[at].gone = false; envEdit(rows, at, value); return ""; }
-    rows.push({ name: name, value: value, masked: false, origin: "override", has_default: false, def: null, orig: null, gone: false });
+    if (at >= 0 && rows[at].masked) return name + " holds a hidden value; reset it before setting a new one.";
+    if (at >= 0) { rows[at].gone = false; rows[at].reset = false; envEdit(rows, at, value); return ""; }
+    rows.push({ name: name, value: value, masked: false, origin: "override", has_default: false, def: null, orig: null, gone: false, reset: false });
     return "";
   }
 
@@ -1797,22 +1821,50 @@
     var set = {}, unset = [];
     rows.forEach(function (r) {
       var was = r.orig && r.orig.origin === "override";
-      if (was && (r.gone || r.origin !== "override")) unset.push(r.name);
-      else if (!r.gone && r.origin === "override" && (!was || r.value !== r.orig.value)) set[r.name] = r.value;
+      if (was && (r.gone || r.reset || r.origin !== "override")) unset.push(r.name);
+      else if (!r.gone && !r.reset && r.origin === "override" && (!was || r.value !== r.orig.value)) set[r.name] = r.value;
     });
     return { set: set, unset: unset };
   }
 
   var envSt = null;
 
+  // Save stays disabled with "No changes" beside it; nothing is sent before Save.
+  function envPaintSave() {
+    var c = envChanges(envSt.rows), n = Object.keys(c.set).length + c.unset.length;
+    document.getElementById("env-save").disabled = !n;
+    document.getElementById("env-helper").textContent = n ? plural(n, "change") + " pending" : "No changes";
+  }
+
+  function envHeadHtml() {
+    return '<li class="env-row env-head" aria-hidden="true"><span>Variable</span><span>Project value</span><span>Your value</span><span></span></li>';
+  }
+
+  // The overridden rows first, then a disclosure with every other variable, read-only.
+  function envRowsHtml(rows, svc, open) {
+    var top = [], rest = [];
+    rows.forEach(function (r, i) {
+      var h = envRowHtml(r, i, svc);
+      if (h) (r.origin === "override" ? top : rest).push(h);
+    });
+    var out = top.length ? envHeadHtml() + top.join("") : '<li class="muted env-empty">No overrides yet. Add one below.</li>';
+    if (rest.length) {
+      out += '<li class="env-all"><details' + (open ? " open" : "") + "><summary>" + (top.length ? "Show " + rest.length + " other variable" + (rest.length === 1 ? "" : "s") : "Show all " + rest.length + " variables") +
+        '</summary><ul class="env-rows env-rows-ro">' + rest.join("") + "</ul></details></li>";
+    }
+    return out;
+  }
+
+  function envFit(el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
+
   function envPaint(keepFocus) {
     var list = document.getElementById("env-rows"), svc = envSt.svc;
-    var html = envSt.rows.map(function (r, i) { return envRowHtml(r, i, svc); }).join("");
-    list.innerHTML = html || '<li class="muted env-empty">No variables yet.</li>';
-    var c = envChanges(envSt.rows);
-    document.getElementById("env-save").disabled = !Object.keys(c.set).length && !c.unset.length;
+    list.innerHTML = envRowsHtml(envSt.rows, svc, envSt.allOpen);
+    document.getElementById("env-names").innerHTML = envSt.rows.filter(function (r) { return !r.masked; }).map(function (r) { return '<option value="' + escapeHtml(r.name) + '">'; }).join("");
+    Array.prototype.forEach.call(list.querySelectorAll(".env-value"), envFit);
+    envPaintSave();
     if (keepFocus) {
-      var again = list.querySelector('[data-env-remove="' + keepFocus + '"], [data-env-toggle="' + keepFocus + '"], [data-env-value="' + keepFocus + '"]');
+      var again = list.querySelector('[data-env-undo="' + keepFocus + '"], [data-env-toggle="' + keepFocus + '"], [data-env-value="' + keepFocus + '"]');
       if (again) again.focus();
     }
   }
@@ -1855,11 +1907,13 @@
   function openEnv(btn) {
     var $ = function (id) { return document.getElementById(id); };
     var project = btn.dataset.project, service = btn.dataset.service, name = service.replace(/^host:/, "");
-    envSt = { project: project, service: name, opener: btn, svc: { name: name, vars: [] }, rows: [] };
+    envSt = { project: project, service: name, opener: btn, svc: { name: name, vars: [] }, rows: [], allOpen: false };
     $("env-title").textContent = "Environment · " + name;
-    $("env-lede").textContent = "Overrides replace the project's value for " + name + " only. Save applies just this service.";
+    $("env-lede").textContent = "Overrides for " + name + " in this worktree. Saving applies only " + name + ".";
     $("env-rows").innerHTML = '<li class="muted env-empty" role="status">loading…</li>';
     $("env-save").disabled = true;
+    $("env-save").textContent = "Save and restart " + name;
+    $("env-helper").textContent = "No changes";
     $("env-add-form").hidden = true;
     $("env-new-name").value = ""; $("env-new-value").value = "";
     envShowError("");
@@ -1870,6 +1924,8 @@
         if (!envSt || envSt.project !== project || envSt.service !== name) return;
         envSt.svc = (body.services || []).filter(function (s) { return s.name === name; })[0] || { name: name, vars: [] };
         envSt.rows = envRowsOf(envSt.svc);
+        var host = envSt.svc.kind === "host";
+        $("env-lede").textContent = "Overrides for " + name + " in this worktree. Saving " + (host ? "restarts " + name + "." : "recreates its container.");
         $("env-add-form").hidden = false;
         envPaint();
       })
@@ -1935,17 +1991,20 @@
         envEdit(envSt.rows, i, flagNext(envSt.rows[i].value));
         envPaint(String(i));
       } else if (tgt.dataset.envValue !== undefined) {
-        var j = Number(tgt.dataset.envValue);
-        envEdit(envSt.rows, j, tgt.value);
-        envPaint();
+        envEdit(envSt.rows, Number(tgt.dataset.envValue), tgt.value);
+        envPaintSave(); // the row stays where it is, so focus is not lost
       }
     });
+    $("env-rows").addEventListener("input", function (e) { if (e.target.dataset.envValue !== undefined) envFit(e.target); });
+    // a value has no newline: Enter in the field does nothing instead of saving
+    $("env-rows").addEventListener("keydown", function (e) { if (e.key === "Enter" && e.target.dataset.envValue !== undefined) e.preventDefault(); });
+    $("env-rows").addEventListener("toggle", function (e) { if (envSt && e.target.tagName === "DETAILS") envSt.allOpen = e.target.open; }, true);
     $("env-rows").addEventListener("click", function (e) {
-      var rm = e.target.closest("[data-env-remove]");
+      var rm = e.target.closest("[data-env-undo]");
       if (!rm) return;
-      envRestore(envSt.rows, Number(rm.dataset.envRemove));
-      envPaint();
-      $("env-new-name").focus();
+      var i = Number(rm.dataset.envUndo);
+      envToggleReset(envSt.rows, i);
+      envPaint(envSt.rows[i].gone ? "" : String(i));
     });
     function add() {
       var err = envAdd(envSt.rows, $("env-new-name").value, $("env-new-value").value);
@@ -2643,7 +2702,7 @@
     openLearn: openLearn, checkSecrets: checkSecrets, postCleanup: postCleanup, stackColorIndex: stackColorIndex };
 
   if (typeof window.__sfExport === "function") {
-    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, cleanupNoteHtml: cleanupNoteHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, noteLiveRuns: noteLiveRuns, liveOp: liveOp, paintLive: paintLive, loadRepos: loadRepos, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip, pickOpenApp: pickOpenApp, isFlagLike: isFlagLike, flagNext: flagNext, envRowsOf: envRowsOf, envRowHtml: envRowHtml, envOverridesHtml: envOverridesHtml, envEdit: envEdit, envRestore: envRestore, envAdd: envAdd, envChanges: envChanges });
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, cleanupNoteHtml: cleanupNoteHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, noteLiveRuns: noteLiveRuns, liveOp: liveOp, paintLive: paintLive, loadRepos: loadRepos, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip, pickOpenApp: pickOpenApp, isFlagLike: isFlagLike, flagNext: flagNext, envRowsOf: envRowsOf, envRowHtml: envRowHtml, envOverridesHtml: envOverridesHtml, envEdit: envEdit, envToggleReset: envToggleReset, envRowsHtml: envRowsHtml, envAdd: envAdd, envChanges: envChanges });
   }
 
   if (document.readyState === "loading") {

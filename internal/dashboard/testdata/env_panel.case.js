@@ -27,38 +27,76 @@ module.exports = function (ex, t) {
   };
   const rows = ex.envRowsOf(svc);
   const html = rows.map((r, i) => ex.envRowHtml(r, i, svc));
-  assert.match(html[0], /<input type="checkbox" role="switch" class="env-switch" data-env-toggle="0" aria-label="ENABLE_GUEST_ACCESS" checked>/);
-  assert.match(html[0], /env-origin[^>]*>project</);
-  assert.doesNotMatch(html[0], /data-env-remove/, "a project name is overridden, never deleted");
-  assert.match(html[1], /<input type="text" class="env-value mono" data-env-value="1" value="debug"/);
-  assert.match(html[1], /data-env-remove="1"[^>]*>Restore default</);
-  assert.match(html[4], /data-env-remove="4"[^>]*>Remove</);
+  // project rows are read-only context: project value, origin text, no field, no badge
+  assert.match(html[0], /env-row-ro/);
+  assert.doesNotMatch(html[0] + html[3], /<input|<textarea|env-reset/, "a project variable has no control");
+  assert.match(html[0], /env-from[^>]*>project</);
+  assert.match(html[3], /title="http:\/\/x"/, "the full value is in a tooltip");
+  assert.doesNotMatch(html.join(""), />override<|env-origin|class="chip/i, "no OVERRIDE badge");
 
+  // an override row: project value, your value, reset button
+  assert.match(html[1], /env-proj[^>]*><span class="mono" title="info">info</);
+  assert.match(html[1], /<textarea class="env-value mono" rows="1" data-env-value="1" title="debug"[^>]*>debug<\/textarea>/);
+  assert.match(html[1], /data-env-undo="1" aria-label="Reset LOG_LEVEL to the project value"[^>]*>&#8634;</);
+  assert.match(html[4], /not in project/);
+  assert.match(html[4], /aria-label="Remove ONLY_MINE"/, "no project value: reset removes it");
+
+  // a boolean shows the toggle, visible true/false text and the project value
+  const bsvc = { name: "api", kind: "container", vars: [{ name: "ENABLE_X", value: "false", masked: false, origin: "override", has_default: true, default: "true" }] };
+  const brows = ex.envRowsOf(bsvc);
+  const bh = ex.envRowHtml(brows[0], 0, bsvc);
+  assert.match(bh, /<input type="checkbox" role="switch" class="env-switch" data-env-toggle="0" aria-label="ENABLE_X"><span class="env-bool mono" aria-hidden="true">false</);
+  assert.match(bh, /env-proj[^>]*><span class="mono" title="true">true</);
+  ex.envEdit(brows, 0, "true");
+  assert.match(ex.envRowHtml(brows[0], 0, bsvc), /checked><span class="env-bool mono" aria-hidden="true">true</);
+
+  // masked rows: bullets, no field, no value
   assert.match(html[2], /env-masked[^>]*>••••</);
   assert.match(html[5], /env-masked[^>]*>••••</);
-  assert.doesNotMatch(html[2] + html[5], /<input|value=|null/, "a masked row has no field and no value");
-  assert.match(html[2], /env-origin[^>]*>vault</);
+  assert.doesNotMatch(html[2] + html[5], /<input|<textarea|value=|null/, "a masked row has no field and no value");
+  assert.match(html[2], /env-from[^>]*>vault</);
+  const mo = ex.envRowsOf({ name: "web", vars: [{ name: "API_KEY", value: null, masked: true, origin: "override", has_default: true, default: null }] });
+  const moh = ex.envRowHtml(mo[0], 0, svc);
+  assert.match(moh, /env-proj[^>]*><span class="env-masked/, "a hidden project value shows bullets");
+  assert.match(moh, /env-control[^>]*><span class="env-masked/);
+  assert.doesNotMatch(moh, /<textarea|<input/);
 
-  assert.match(html[3], /applies at next build/);
-  assert.equal(html.filter((h) => /applies at next build/.test(h)).length, 1, "only VITE_* names");
-  const noBuild = Object.assign({}, svc, { build: false });
-  assert.doesNotMatch(ex.envRowHtml(rows[3], 3, noBuild), /applies at next build/, "an image-only service has no build");
+  assert.match(ex.envRowHtml(ex.envRowsOf({ vars: [{ name: "VITE_A", value: "1", masked: false, origin: "override", has_default: true, default: "0" }] })[0], 0, svc), /applies at next build/);
+  assert.doesNotMatch(ex.envRowHtml(rows[3], 3, svc), /applies at next build/, "only an editable VITE_* row carries the note");
+
+  // overridden rows come first, the rest sit in a disclosure
+  const all = ex.envRowsHtml(rows, svc, false);
+  assert.ok(all.indexOf("LOG_LEVEL") < all.indexOf("<details"), "overrides first");
+  assert.ok(all.indexOf("<details") < all.indexOf("ENABLE_GUEST_ACCESS"), "project variables inside the disclosure");
+  assert.match(all, /Show 4 other variables/);
+  assert.match(all, /Variable<\/span><span>Project value<\/span><span>Your value/);
+  assert.doesNotMatch(all, /<details open/);
+  assert.match(ex.envRowsHtml(rows, svc, true), /<details open/);
+  assert.match(ex.envRowsHtml(ex.envRowsOf({ vars: [{ name: "A", value: "1", masked: false, origin: "project", has_default: true, default: "1" }, { name: "B", value: "2", masked: false, origin: "project", has_default: true, default: "2" }] }), svc, false), /No overrides yet[\s\S]*Show all 2 variables/);
 
   // Save sends only what changed
   assert.deepEqual(ex.envChanges(rows), { set: {}, unset: [] });
-  ex.envEdit(rows, 0, "false");
-  assert.equal(rows[0].origin, "override");
-  ex.envEdit(rows, 3, "http://y");
-  assert.deepEqual(ex.envChanges(rows), { set: { ENABLE_GUEST_ACCESS: "false", VITE_API_URL: "http://y" }, unset: [] });
-  ex.envEdit(rows, 3, "http://x");
-  assert.equal(rows[3].origin, "project", "typing the project value back is no override");
-  ex.envRestore(rows, 1);
-  assert.equal(rows[1].value, "info");
-  assert.equal(rows[1].origin, "project");
-  ex.envRestore(rows, 4);
-  assert.equal(rows[4].gone, true);
-  assert.deepEqual(ex.envChanges(rows), { set: { ENABLE_GUEST_ACCESS: "false" }, unset: ["LOG_LEVEL", "ONLY_MINE"] });
-  assert.equal(ex.envRowHtml(rows[4], 4, svc), "", "a removed row is not drawn");
+  ex.envEdit(rows, 1, "trace");
+  assert.deepEqual(ex.envChanges(rows), { set: { LOG_LEVEL: "trace" }, unset: [] });
+  ex.envEdit(rows, 1, "debug");
+  assert.deepEqual(ex.envChanges(rows), { set: {}, unset: [] }, "typing the stored value back is no change");
+
+  // reset is pending, undoable, and sent only as unset
+  ex.envToggleReset(rows, 1);
+  assert.equal(rows[1].reset, true);
+  assert.deepEqual(ex.envChanges(rows), { set: {}, unset: ["LOG_LEVEL"] });
+  const pend = ex.envRowHtml(rows[1], 1, svc);
+  assert.match(pend, /env-pending/);
+  assert.match(pend, /<s class="env-struck">[^]*debug[^]*<\/s>/, "your value is struck through");
+  assert.match(pend, /will reset on save/);
+  assert.match(pend, /data-env-undo="1" aria-label="Keep the override of LOG_LEVEL"[^>]*>Undo</);
+  assert.doesNotMatch(pend, /<textarea/);
+  ex.envToggleReset(rows, 1);
+  assert.deepEqual(ex.envChanges(rows), { set: {}, unset: [] }, "undo restores the override");
+  ex.envToggleReset(rows, 4);
+  assert.match(ex.envRowHtml(rows[4], 4, svc), /will be removed on save/);
+  assert.deepEqual(ex.envChanges(rows), { set: {}, unset: ["ONLY_MINE"] });
+  ex.envToggleReset(rows, 4);
 
   // adding
   assert.equal(ex.envAdd(rows, "ENABLE_NEW", "true"), "");
@@ -66,7 +104,15 @@ module.exports = function (ex, t) {
   assert.match(ex.envAdd(rows, "1BAD", "x"), /name/i);
   assert.match(ex.envAdd(rows, "API_TOKEN", "x"), /Settings → Secrets/, "a secret-like name points to Settings → Secrets");
   assert.match(ex.envAdd(rows, "npm_password", "x"), /Settings → Secrets/);
-  assert.match(ex.envAdd(rows, "LOG_LEVEL", "x"), /already/);
+  // an existing name edits its row instead of duplicating it
+  assert.equal(ex.envAdd(rows, "LOG_LEVEL", "x"), "");
+  assert.equal(rows.filter((r) => r.name === "LOG_LEVEL").length, 1);
+  assert.equal(rows[1].value, "x");
+  assert.equal(ex.envAdd(rows, "VITE_API_URL", "http://z"), "");
+  assert.equal(rows[3].origin, "override", "naming a project variable overrides it");
+  assert.equal(ex.envChanges(rows).set.VITE_API_URL, "http://z");
+  assert.match(ex.envAdd(rows, "DB_PASSWORD", "x"), /Settings → Secrets/);
+  assert.match(ex.envAdd(rows, "NPM_TOKEN", "x"), /Settings → Secrets/);
   assert.equal(rows.some((r) => r.name === "API_TOKEN"), false);
 
   // hostile names and values are escaped in the markup (never raw `<"'&`)

@@ -165,13 +165,14 @@
     <p class="muted modal-lede" id="env-lede"></p>
     <ul id="env-rows" class="env-rows"></ul>
     <div id="env-add-form" class="env-add" role="group" aria-label="Add a variable" hidden>
-      <label class="sr-only" for="env-new-name">Name</label><input type="text" id="env-new-name" placeholder="ENABLE_GUEST_ACCESS" spellcheck="false" autocapitalize="off" class="mono">
+      <label class="sr-only" for="env-new-name">Name</label><input type="text" id="env-new-name" placeholder="NAME" list="env-names" spellcheck="false" autocapitalize="off" class="mono">
       <label class="sr-only" for="env-new-value">Value</label><input type="text" id="env-new-value" placeholder="value" spellcheck="false" autocapitalize="off" class="mono">
       <button type="button" id="env-add" class="btn">Add</button>
+      <datalist id="env-names"></datalist>
     </div>
     <p class="small muted env-hint">Secrets stay out of here: map them under Settings &rarr; Secrets.</p>
     <p id="env-error" class="form-error" role="alert"></p>
-    <div class="modal-foot"><button type="button" id="env-cancel" class="btn btn-ghost">Cancel</button><button type="submit" id="env-save" class="btn btn-primary" disabled>Save</button></div>
+    <div class="modal-foot"><span id="env-helper" class="small muted env-helper" aria-live="polite">No changes</span><button type="button" id="env-cancel" class="btn btn-ghost">Cancel</button><button type="submit" id="env-save" class="btn btn-primary" aria-describedby="env-helper" disabled>Save</button></div>
   </form>
 </dialog>
 

@@ -5,6 +5,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard's "Environment · SERVICE" dialog is easier to read. It lists the service's overrides first, as Variable, Project value and Your value, with a reset button per row; the other variables sit under "Show all N variables", read-only, with their origin (secret-like values stay hidden). A boolean shows "true" or "false" beside its toggle. The "OVERRIDE" badge is gone. Reset is pending until Save, with an Undo. The button reads "Save and restart SERVICE" and a "No changes" note explains why it is disabled. A long value wraps in full. The name field suggests the service's variables, and adding a name that exists edits its row.
+
 ### Added
 
 - The "N env overrides" chip on the Instances page is a button that lists each override by service and name, with its value (hidden for secret-like names) and a button to that service's Environment dialog.
