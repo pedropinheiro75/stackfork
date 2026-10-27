@@ -63,6 +63,24 @@ type Manifest struct {
 	SeedService string `json:"seed_service,omitempty"`
 	Seeded      *bool  `json:"seeded,omitempty"`
 	SeedPending bool   `json:"seed_pending,omitempty"`
+	// WantRunning is the person's last word on the instance: set by an up,
+	// cleared by a down. Resume starts the ones that want to run after a
+	// reboot took the containers away.
+	WantRunning bool `json:"want_running,omitempty"`
+}
+
+// SetWantRunning records whether the person wants the instance running. It
+// writes only a change, so the manifest's mtime (the "last used" order) moves
+// only when something did. Callers hold the instance lock or write atomically
+// like the seed marker does; a missing manifest is left alone.
+func SetWantRunning(instanceDir string, v bool) {
+	path := filepath.Join(instanceDir, "manifest.json")
+	m, err := ReadManifest(path)
+	if err != nil || m == nil || m.WantRunning == v {
+		return
+	}
+	m.WantRunning = v
+	_ = WritePrivate(path, m)
 }
 
 // HostProc identifies a supervised host process. PID is the supervisor's.

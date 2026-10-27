@@ -800,6 +800,7 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 
 	if previous != nil {
 		info.SeedOnce, info.SeedService, info.Seeded, info.SeedPending = previous.SeedOnce, previous.SeedService, previous.Seeded, previous.SeedPending
+		info.WantRunning = previous.WantRunning
 	}
 	if err := state.WritePrivate(configPath, model); err != nil {
 		return err

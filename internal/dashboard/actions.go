@@ -127,7 +127,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 		}
 		var out bytes.Buffer
 		var cascaded []string
-		opts := lifecycle.Options{Cascaded: &cascaded}
+		opts := lifecycle.Options{Cascaded: &cascaded, LockWant: true}
 		// service-start/service-stop (fix 5) are distinct action names
 		// from the stack-level up/down since they act on one container,
 		// not the whole instance; they run through lifecycle.Execute's

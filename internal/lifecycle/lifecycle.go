@@ -49,6 +49,9 @@ type Options struct {
 	// effective reference the set lacks or holds with another reference. Nil
 	// (a bare `run`) resolves the references itself.
 	Secrets SecretValues
+	// LockWant: take the instance lock around the want_running write (the
+	// dashboard calls Execute without it; the CLI already holds it).
+	LockWant bool
 }
 
 // ProjectNameForInstance recomputes the expected project name for root and
@@ -411,6 +414,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		if cascadeNote != "" {
 			fmt.Fprintln(stdout, cascadeNote)
 		}
+		recordWant(action, instanceDir, project, root, opts)
 		return 0, nil
 	}
 	var exitErr *exec.ExitError
@@ -537,4 +541,33 @@ func ForgetInstance(stderr io.Writer, instanceDir, newStateBase, legacyStateBase
 	}
 	ReloadProxyIfRunning(stderr, newStateBase, legacyStateBase)
 	return nil
+}
+
+// recordWant keeps the person's last word on the instance: a whole-stack up
+// wants it running, down does not, and a stop that leaves nothing running
+// does not either. up SERVICE says nothing about the rest.
+func recordWant(action, instanceDir, project, root string, opts Options) {
+	var want bool
+	switch {
+	case action == "up" && len(opts.Services) == 0:
+		want = true
+	case action == "down":
+	case action == "stop" && !composeRunning(instanceDir, project, root):
+	default:
+		return
+	}
+	if opts.LockWant {
+		if l, err := state.AcquireLock(filepath.Join(instanceDir, ".lock")); err == nil {
+			defer l.Release()
+		}
+	}
+	state.SetWantRunning(instanceDir, want)
+}
+
+// composeRunning reports whether Compose still has a running container (true
+// when it cannot tell).
+func composeRunning(instanceDir, project, root string) bool {
+	out, err := exec.Command("docker", "compose", "-p", project, "--project-directory", root, "--env-file", os.DevNull,
+		"-f", filepath.Join(instanceDir, "compose.json"), "--profile", "*", "ps", "-q", "--status", "running").Output()
+	return err != nil || strings.TrimSpace(string(out)) != ""
 }

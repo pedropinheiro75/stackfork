@@ -126,8 +126,11 @@ func TestMapOverridesManifestAtUpWithoutPrepare(t *testing.T) {
 		t.Fatal("compose must receive the keychain value, not the shell one")
 	}
 	after, _ := os.ReadFile(filepath.Join(inst, "manifest.json"))
-	if string(before) != string(after) {
-		t.Fatal("up must not rewrite the manifest")
+	// the one thing up records is that the person wants it running
+	want := strings.Replace(string(after), "  \"want_running\": true\n", "", 1)
+	want = strings.Replace(want, ",\n}", "\n}", 1)
+	if string(before) != want {
+		t.Fatal("up must not rewrite the manifest (but want_running)")
 	}
 }
 
