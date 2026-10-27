@@ -38,6 +38,29 @@ func composeDeps(instanceDir string) map[string][]string {
 	return out
 }
 
+// oneShots are the services of the instance snapshot that finish by design:
+// one another service awaits with condition service_completed_successfully,
+// or one with no ports and no healthcheck (a migrate or init job). A server
+// (ports or a healthcheck) that exited 0 was stopped, so it is not here.
+func oneShots(instanceDir string) map[string]bool {
+	top, _ := snapshotModel(instanceDir).(map[string]interface{})
+	svcs, _ := top["services"].(map[string]interface{})
+	out := map[string]bool{}
+	for name, raw := range svcs {
+		m, _ := raw.(map[string]interface{})
+		if ports, _ := m["ports"].([]interface{}); len(ports) == 0 && m["healthcheck"] == nil {
+			out[name] = true
+		}
+		cond, _ := m["depends_on"].(map[string]interface{})
+		for d, v := range cond {
+			if c, _ := v.(map[string]interface{}); c != nil && c["condition"] == "service_completed_successfully" {
+				out[d] = true
+			}
+		}
+	}
+	return out
+}
+
 // Dependents returns everything that needs one of targets, directly or not:
 // Compose services (from their depends_on) and host apps (from the plan's
 // depends_on), each sorted. A target is a service name or "host:NAME" and is

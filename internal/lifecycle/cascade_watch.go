@@ -39,7 +39,9 @@ const (
 // again) means no stop. A service counts as lost only after this process saw
 // it running and then found its container exited, dead or gone, so a finished
 // one-shot, a profile-gated service nobody started and a container still in
-// created state are never "lost".
+// created state are never "lost". Neither is a job that exited 0 after it was
+// seen running, nor a service the mode's plan does not start (one a hybrid
+// host app replaces).
 type CascadeWatcher struct {
 	Instances    func() []string                                 // instance directories
 	States       func(project string) (map[string]string, error) // container state by service; nil: DockerStates
@@ -64,22 +66,30 @@ func InstanceDirs(newBase, legacyBase string) []string {
 	return dirs
 }
 
+// ExitedZero is DockerStates' state for a container that exited with status 0.
+const ExitedZero = "exited (0)"
+
 // DockerStates maps each service of project to the state of its container
 // (running wins over the others), from `docker ps -a`; a service with no
-// container is absent. An error means Docker did not answer, which is never
-// "the service is gone".
+// container is absent, and one that exited 0 reads ExitedZero. An error
+// means Docker did not answer, which is never "the service is gone".
 func DockerStates(project string) (map[string]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "docker", "ps", "-a", "--filter", "label=com.docker.compose.project="+project,
-		"--format", `{{.Label "com.docker.compose.service"}} {{.State}}`).Output()
+		"--format", `{{.Label "com.docker.compose.service"}} {{.State}} {{.Status}}`).Output()
 	if err != nil {
 		return nil, err
 	}
 	st := map[string]string{}
 	for _, l := range strings.Split(string(out), "\n") {
-		if f := strings.Fields(l); len(f) == 2 && st[f[0]] != "running" {
-			st[f[0]] = f[1]
+		f := strings.Fields(l)
+		if len(f) < 2 || st[f[0]] == "running" {
+			continue
+		}
+		st[f[0]] = f[1]
+		if f[1] == "exited" && strings.HasPrefix(strings.Join(f[2:], " "), "Exited (0)") {
+			st[f[0]] = ExitedZero
 		}
 	}
 	return st, nil
@@ -149,11 +159,29 @@ func anyRunning(states map[string]string) bool {
 	return false
 }
 
-func (w *CascadeWatcher) states(project string) (map[string]string, error) {
-	if w.States != nil {
-		return w.States(project)
+// states is Docker's view of project. A job (oneShots) that exited 0 is
+// "completed", never lost; any other service that exited 0, such as postgres
+// after `docker stop`, is "exited".
+func (w *CascadeWatcher) states(project string, jobs map[string]bool) (map[string]string, error) {
+	get := w.States
+	if get == nil {
+		get = DockerStates
 	}
-	return DockerStates(project)
+	raw, err := get(project)
+	if err != nil {
+		return nil, err
+	}
+	st := make(map[string]string, len(raw))
+	for svc, s := range raw {
+		if s == ExitedZero {
+			s = "exited"
+			if jobs[svc] {
+				s = "completed"
+			}
+		}
+		st[svc] = s
+	}
+	return st, nil
 }
 
 func (w *CascadeWatcher) watch(dir string) {
@@ -164,8 +192,16 @@ func (w *CascadeWatcher) watch(dir string) {
 	}
 	// LoadFirst, not LoadFor: no `git worktree list` every tick for an
 	// instance whose project has no knowledge file.
-	k, err := knowledge.LoadFirst(m.Root, identity.MainRepoOf(m.Root))
+	main := identity.MainRepoOf(m.Root)
+	k, err := knowledge.LoadFirst(m.Root, main)
 	if err != nil || k == nil || !k.Plan.StopCascade {
+		w.forget(dir)
+		return
+	}
+	// a service the mode's plan does not start (a hybrid host app replaces
+	// it) is not the stack's: its container stopping takes nothing down
+	started, all, err := StartedServices(dir, k.Plan, PlanMode(m.Root, main))
+	if err != nil {
 		w.forget(dir)
 		return
 	}
@@ -177,7 +213,7 @@ func (w *CascadeWatcher) watch(dir string) {
 			continue
 		}
 		for _, d := range s.DependsOn {
-			if _, ok := deps[d]; ok {
+			if _, ok := deps[d]; ok && (all || contains(started, d)) {
 				wanted[d] = true
 			}
 		}
@@ -188,7 +224,8 @@ func (w *CascadeWatcher) watch(dir string) {
 		w.forget(dir)
 		return
 	}
-	states, err := w.states(m.Project)
+	jobs := oneShots(dir)
+	states, err := w.states(m.Project, jobs)
 	if err != nil {
 		w.forget(dir) // Docker did not answer: what was seen before is in doubt
 		return
@@ -204,6 +241,9 @@ func (w *CascadeWatcher) watch(dir string) {
 		case states[svc] == "running":
 			w.seenUp[key] = true
 			delete(w.missing, key)
+		case states[svc] == "completed": // a job that finished: its container going later is no loss either
+			delete(w.seenUp, key)
+			delete(w.missing, key)
 		case !w.isLost(key, states, svc):
 			delete(w.missing, key)
 		default:
@@ -216,7 +256,7 @@ func (w *CascadeWatcher) watch(dir string) {
 		return
 	}
 	_, hosts := Dependents(k.Plan, deps, lost)
-	w.stop(dir, m, lost, hosts)
+	w.stop(dir, m, lost, hosts, jobs)
 	w.forget(dir)
 }
 
@@ -227,7 +267,7 @@ func (w *CascadeWatcher) busy(dir, project string) bool {
 // stop takes the instance lock, then looks again (the check above is up to a
 // `docker ps` old): only a service still lost, with nothing in flight, takes
 // its dependents down. It records a run and keeps the rows of the host apps.
-func (w *CascadeWatcher) stop(dir string, m *state.Manifest, lost, hosts []string) {
+func (w *CascadeWatcher) stop(dir string, m *state.Manifest, lost, hosts []string, jobs map[string]bool) {
 	lock, err := state.TryLock(filepath.Join(dir, ".lock"))
 	if err != nil {
 		return
@@ -236,7 +276,7 @@ func (w *CascadeWatcher) stop(dir string, m *state.Manifest, lost, hosts []strin
 	if w.ActionLocked != nil && w.ActionLocked(m.Project) {
 		return
 	}
-	states, err := w.states(m.Project)
+	states, err := w.states(m.Project, jobs)
 	if err != nil {
 		return
 	}

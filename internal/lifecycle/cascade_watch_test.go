@@ -312,3 +312,95 @@ func TestWatcherRechecksBeforeStopping(t *testing.T) {
 		t.Fatalf("calls %d, api alive %v: a service back at the recheck must not stop its apps", calls, alive(procs["api"]))
 	}
 }
+
+// rewrite gives the cascadeInstance a new plan (api's depends_on, and the
+// steps before it) and a new snapshot.
+func rewrite(t *testing.T, dir string, apiDeps []string, before []knowledge.Step, services map[string]any) {
+	t.Helper()
+	m, _ := state.ReadManifest(filepath.Join(dir, "manifest.json"))
+	steps := append(before, hostStep("api", apiDeps...), hostStep("app", "api"), hostStep("other"))
+	k := knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusDraft,
+		Plan: knowledge.Plan{Status: knowledge.PlanRecorded, StopCascade: true, Steps: steps}}
+	b, _ := json.Marshal(k)
+	if err := os.WriteFile(filepath.Join(m.Root, ".stackfork", "knowledge.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = json.Marshal(map[string]any{"services": services})
+	if err := os.WriteFile(filepath.Join(dir, "compose.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A job (no ports, no healthcheck) that exited 0 finished; a server (ports)
+// that exited 0, like postgres after `docker stop`, is down.
+func TestWatcherJobThatExitedZeroIsFinishedButAServerIsDown(t *testing.T) {
+	svcs := map[string]any{
+		"postgres": map[string]any{"image": "postgres", "ports": []any{map[string]any{"target": 5432}}},
+		"migrate":  map[string]any{"image": "m"},
+	}
+	up := map[string]string{"postgres": "running", "migrate": "running"}
+
+	dir, procs := cascadeInstance(t, true)
+	rewrite(t, dir, []string{"postgres", "migrate"}, nil, svcs)
+	st := &stack{states: up}
+	w := st.watcher(dir)
+	w.Tick()
+	st.states = map[string]string{"postgres": "running", "migrate": ExitedZero}
+	ticks(w, 3)
+	st.states = map[string]string{"postgres": "running"} // the finished job's container removed later
+	ticks(w, 6)
+	if !alive(procs["api"]) {
+		t.Fatal("a finished job is not down")
+	}
+
+	st.states = up
+	w.Tick()
+	st.states = map[string]string{"postgres": ExitedZero, "migrate": ExitedZero}
+	ticks(w, stackGoneTicks) // nothing runs: the longer wait
+	if alive(procs["api"]) {
+		t.Fatal("a server that exited 0 was stopped: its apps go too")
+	}
+}
+
+// A service awaited with service_completed_successfully is a job even with ports.
+func TestOneShots(t *testing.T) {
+	dir := t.TempDir()
+	b, _ := json.Marshal(map[string]any{"services": map[string]any{
+		"seed": map[string]any{"ports": []any{"1"}},
+		"api":  map[string]any{"ports": []any{"2"}, "depends_on": map[string]any{"seed": map[string]any{"condition": "service_completed_successfully"}}},
+		"db":   map[string]any{"healthcheck": map[string]any{"test": "x"}},
+		"init": map[string]any{},
+	}})
+	os.WriteFile(filepath.Join(dir, "compose.json"), b, 0o600) //nolint:errcheck // checked below
+	got := oneShots(dir)
+	if !got["seed"] || !got["init"] || got["api"] || got["db"] {
+		t.Fatalf("oneShots = %v", got)
+	}
+}
+
+// The service a mode's plan leaves out (a hybrid host app replaces it) is not
+// watched: its container stopping takes nothing down.
+func TestWatcherIgnoresAServiceThePlanDoesNotStart(t *testing.T) {
+	dir, procs := cascadeInstance(t, true)
+	rewrite(t, dir, []string{"postgres", "web"}, []knowledge.Step{{ID: "deps", Kind: knowledge.KindComposeUp, Exclude: []string{"web"}}},
+		map[string]any{"postgres": map[string]any{"image": "postgres"}, "web": map[string]any{"image": "w"}})
+	st := &stack{states: map[string]string{"postgres": "running", "web": "running"}}
+	w := st.watcher(dir)
+	w.Tick()
+	st.states = map[string]string{"postgres": "running", "web": "exited"}
+	ticks(w, 6)
+	if !alive(procs["api"]) {
+		t.Fatal("a service the plan does not start is not the stack's")
+	}
+}
+
+func TestDockerStatesMarksACleanExit(t *testing.T) {
+	bin := t.TempDir()
+	out := "migrate exited Exited (0) 3 minutes ago\npg exited Exited (137) 1 minute ago\napi running Up 2 minutes\napi exited Exited (1) 1 hour ago\n"
+	os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\nprintf '"+out+"'\n"), 0o755) //nolint:errcheck // the call below fails
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	st, err := DockerStates("p")
+	if err != nil || st["migrate"] != ExitedZero || st["pg"] != "exited" || st["api"] != "running" {
+		t.Fatalf("%v %v", st, err)
+	}
+}
