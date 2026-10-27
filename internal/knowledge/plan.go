@@ -61,6 +61,9 @@ type Step struct {
 	Dir     string   `json:"dir,omitempty"`
 	PortEnv []string `json:"port_env,omitempty"`
 	Port    int      `json:"port,omitempty"` // host: the dev server port, when known
+	// DependsOn names the Compose services or host apps (by Name) this app
+	// needs. Stopping one of them stops this app when Plan.StopCascade is on.
+	DependsOn []string `json:"depends_on,omitempty"` // host
 
 	Text string `json:"text,omitempty"` // note
 }
@@ -72,8 +75,11 @@ type Plan struct {
 	Status     string   `json:"status,omitempty"`
 	// NoSeed records the explicit answer "never seed". A recorded plan with
 	// neither a data step nor NoSeed leaves seeding undecided (auto-detect).
-	NoSeed bool   `json:"no_seed,omitempty"`
-	Steps  []Step `json:"steps,omitempty"`
+	NoSeed bool `json:"no_seed,omitempty"`
+	// StopCascade makes stopping (or losing) a service stop the host apps and
+	// services that depend on it. Off: a stop touches only what was asked.
+	StopCascade bool   `json:"stop_cascade,omitempty"`
+	Steps       []Step `json:"steps,omitempty"`
 }
 
 func (s Step) inMode(mode string) bool {
@@ -246,6 +252,12 @@ func ValidatePlan(p Plan) error {
 		return fmt.Errorf("plan has no_seed and an exec once data step %q; pick one", p.SeedStep().ID)
 	}
 	seen := map[string]bool{}
+	hostApps := map[string]bool{}
+	for _, s := range p.Steps {
+		if s.Kind == KindHost {
+			hostApps[s.Name] = true
+		}
+	}
 	for i, s := range p.Steps {
 		if s.ID == "" {
 			return fmt.Errorf("step %d has no id", i+1)
@@ -304,6 +316,22 @@ func ValidatePlan(p Plan) error {
 			}
 			if filepath.IsAbs(s.Dir) || strings.HasPrefix(s.Dir, "/") || strings.HasPrefix(s.Dir, `\`) {
 				return fmt.Errorf("step %q: the dir of a host exec step is relative to the checkout, not %q", s.ID, s.Dir)
+			}
+		}
+		if len(s.DependsOn) > 0 && s.Kind != KindHost {
+			return fmt.Errorf("step %q: depends_on is for host steps only", s.ID)
+		}
+		for _, d := range s.DependsOn {
+			// A Compose service name cannot be checked without the snapshot;
+			// a host app name can.
+			if strings.TrimSpace(d) == "" {
+				return fmt.Errorf("step %q: depends_on has an empty entry", s.ID)
+			}
+			if strings.HasPrefix(d, "host:") && !hostApps[strings.TrimPrefix(d, "host:")] {
+				return fmt.Errorf("step %q: depends_on names the host app %q, which the plan does not declare", s.ID, d)
+			}
+			if d == s.Name || d == "host:"+s.Name {
+				return fmt.Errorf("step %q: depends_on names the step itself", s.ID)
 			}
 		}
 		if s.Kind == KindHost || s.IsHostExec() {

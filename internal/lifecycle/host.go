@@ -56,6 +56,12 @@ func HostStopperActive(instanceDir, name string) bool {
 // (dead process, or a recycled PID) is cleaned without signalling anything.
 // The caller must hold the instance lock, or be the only writer.
 func StopHost(stderr io.Writer, instanceDir, name string, timeout time.Duration, keep bool) error {
+	return stopHost(stderr, instanceDir, name, timeout, keep, keep)
+}
+
+// stopHost is StopHost with byPerson apart from keep: a cascade keeps the row
+// but is not a person's decision, so `up` and Start bring the app back.
+func stopHost(stderr io.Writer, instanceDir, name string, timeout time.Duration, keep, byPerson bool) error {
 	manifestPath := filepath.Join(instanceDir, "manifest.json")
 	m, err := state.ReadManifest(manifestPath)
 	if err != nil {
@@ -95,7 +101,7 @@ func StopHost(stderr io.Writer, instanceDir, name string, timeout time.Duration,
 	} else if keep {
 		fmt.Fprintf(stderr, "stackfork: host process %s is not running\n", name)
 	}
-	if keep { // a person stopped it: `up` leaves it down (only host start or restart clears this)
+	if byPerson { // a person stopped it: `up` leaves it down (only host start or restart clears this)
 		r, _ := state.ReadHostRecord(instanceDir, name)
 		if r == nil {
 			r = &state.HostRecord{Name: name}

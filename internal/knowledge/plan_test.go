@@ -217,3 +217,43 @@ func TestValidatePlanHostExec(t *testing.T) {
 		t.Fatalf("on must be omitempty: %s", b)
 	}
 }
+
+func TestValidatePlanDependsOn(t *testing.T) {
+	host := func(name string, deps ...string) Step {
+		return Step{ID: name, Kind: KindHost, Name: name, Cmd: "bun run dev", DependsOn: deps}
+	}
+	ok := Plan{StopCascade: true, Steps: []Step{host("api", "postgres"), host("app", "api", "host:api")}}
+	if err := ValidatePlan(ok); err != nil {
+		t.Fatalf("valid plan refused: %v", err)
+	}
+	for name, p := range map[string]Plan{
+		"empty entry":      {Steps: []Step{host("api", " ")}},
+		"unknown host app": {Steps: []Step{host("api", "host:nope")}},
+		"self":             {Steps: []Step{host("api", "api")}},
+		"not a host step":  {Steps: []Step{{ID: "m", Kind: KindExec, Cmd: "x", DependsOn: []string{"db"}}}},
+	} {
+		if err := ValidatePlan(p); err == nil || !strings.Contains(err.Error(), "depends_on") {
+			t.Errorf("%s: err %v", name, err)
+		}
+	}
+}
+
+func TestDependsOnAndStopCascadeRoundTripAndStayOutOfTrust(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "knowledge.json")
+	k := &Knowledge{Schema: CurrentSchema, Status: StatusDraft, Plan: Plan{Status: PlanRecorded, StopCascade: true,
+		Steps: []Step{{ID: "api", Kind: KindHost, Name: "api", Cmd: "bun run dev", DependsOn: []string{"postgres"}}}}}
+	b, _ := json.Marshal(k)
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil || !got.Plan.StopCascade || !reflect.DeepEqual(got.Plan.Steps[0].DependsOn, []string{"postgres"}) {
+		t.Fatalf("%+v %v", got, err)
+	}
+	bare := got.Plan.Steps
+	bare[0].DependsOn = nil
+	if PlanHash(got.Plan.Steps) != PlanHash(bare) {
+		t.Fatal("depends_on must not change the trust hash")
+	}
+}

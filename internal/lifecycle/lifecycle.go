@@ -39,6 +39,11 @@ type Options struct {
 	NoStart     bool     // apply only: recreate the service without starting it
 	Targets     []string // restart/start/stop: several services at once (Service is the first)
 	Command     []string // run/exec
+	// Locked says the caller holds the instance lock. A stop that cascades to
+	// host apps needs it to stop them, and takes it itself when this is false.
+	Locked bool
+	// Cascaded, when set, receives the dependents a cascading stop also stopped.
+	Cascaded *[]string
 	// Secrets are the values the run's preflight resolved, by manifest name,
 	// with their references. Non-nil means a run: Execute then refuses any
 	// effective reference the set lacks or holds with another reference. Nil
@@ -257,6 +262,7 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		}
 	}
 
+	var cascadeNote string // stop only: the line that names what was stopped with the target
 	switch action {
 	case "up":
 		for _, p := range opts.Profiles {
@@ -306,6 +312,25 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 			}
 			if t == "" || !hasService {
 				return 0, errors.New("Specify a service in this snapshot")
+			}
+		}
+		if action == "stop" {
+			// stop_cascade: what depends on the targets goes first (host apps),
+			// or with them (services). Off, or nothing depends: unchanged.
+			svcs, hosts := CascadeFor(root, instanceDir, targets)
+			if len(svcs)+len(hosts) > 0 {
+				stopped, err := stopCascadeHosts(stderr, instanceDir, hosts, opts.Locked)
+				if err != nil {
+					return 0, err
+				}
+				if dependents := append(stopped, svcs...); len(dependents) > 0 {
+					sort.Strings(dependents)
+					cascadeNote = cascadeLine(targets, dependents)
+					if opts.Cascaded != nil {
+						*opts.Cascaded = dependents
+					}
+				}
+				targets = append(append([]string(nil), targets...), svcs...)
 			}
 		}
 		dockerCommand = append(dockerCommand, action)
@@ -383,6 +408,9 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 	}
 
 	if runErr == nil {
+		if cascadeNote != "" {
+			fmt.Fprintln(stdout, cascadeNote)
+		}
 		return 0, nil
 	}
 	var exitErr *exec.ExitError
