@@ -113,6 +113,9 @@ type Service struct {
 	Health string    `json:"health,omitempty"`
 	// HealthDetail is the last health-check line of an unhealthy service.
 	HealthDetail string `json:"health_detail,omitempty"`
+	// Finished is a one-shot job (lifecycle.OneShotServices) that exited 0: it
+	// did its work, so it does not make the stack partial.
+	Finished bool `json:"finished,omitempty"`
 	// WaitingFor lists the dependencies a StateWaiting service waits for.
 	WaitingFor []string   `json:"waiting_for,omitempty"`
 	Endpoints  []Endpoint `json:"endpoints,omitempty"`
@@ -537,6 +540,7 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 		primaryService, primaryTarget, primaryHTTPS, hasPrimary = entry.Service, entry.Port, entry.HTTPS, entry.OK
 	}
 
+	jobs := lifecycle.OneShotServices(svcMap)
 	var services []Service
 	running, total := 0, len(names)
 	for _, name := range names {
@@ -557,6 +561,9 @@ func servicesForInstance(manifestPath string, rows []compose.StatusRow, hostname
 			svc.Health = row.Health
 			if svc.State == "running" {
 				running++
+			} else if svc.State == "exited" && row.ExitCode != nil && *row.ExitCode == 0 && jobs[name] {
+				svc.Finished = true
+				total--
 			}
 		}
 		raw, hasRaw := svcMap[name].(map[string]interface{})
@@ -807,7 +814,10 @@ type containerRow struct {
 	Publishers                      []map[string]interface{}
 	ID, Name, HealthDetail          string
 	OneOff                          bool // a `compose run` container, not a service replica
+	ExitCode                        *int // from "Exited (N) ..."; nil while it runs
 }
+
+var exitedPattern = regexp.MustCompile(`^Exited \((\d+)\)`)
 
 var healthPattern = regexp.MustCompile(`\((healthy|unhealthy|health: starting)\)`)
 
@@ -868,6 +878,10 @@ func listContainers() ([]containerRow, error) {
 		}
 		if m := healthPattern.FindStringSubmatch(raw.Status); m != nil {
 			row.Health = m[1]
+		}
+		if m := exitedPattern.FindStringSubmatch(raw.Status); m != nil {
+			code, _ := strconv.Atoi(m[1])
+			row.ExitCode = &code
 		}
 		row.Publishers = parsePorts(raw.Ports)
 		rows = append(rows, row)
@@ -991,7 +1005,7 @@ func toStatusRows(rows []containerRow) []compose.StatusRow {
 			continue
 		}
 		out = append(out, compose.StatusRow{
-			Service: r.Service, State: r.State, Health: r.Health, Publishers: r.Publishers, HealthDetail: r.HealthDetail,
+			Service: r.Service, State: r.State, Health: r.Health, Publishers: r.Publishers, HealthDetail: r.HealthDetail, ExitCode: r.ExitCode,
 		})
 	}
 	return out

@@ -199,7 +199,7 @@ func (i Instance) ComposeRunning() bool {
 		return false
 	}
 	for _, s := range i.Services {
-		if s.Kind != "host" && s.State != "running" && s.State != ServiceOptional {
+		if s.Kind != "host" && s.State != "running" && s.State != ServiceOptional && !s.Finished {
 			return false
 		}
 	}

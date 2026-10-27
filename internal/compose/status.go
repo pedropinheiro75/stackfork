@@ -26,6 +26,9 @@ type StatusRow struct {
 	// set by the inventory for an unhealthy container; never read from
 	// `compose ps`.
 	HealthDetail string `json:"health_detail,omitempty"`
+	// ExitCode is the exit status of a stopped container, nil when unknown. It
+	// is set by the inventory only and stays out of the `status` output.
+	ExitCode *int `json:"-"`
 }
 
 // RestartHint says how to recover a service that is unhealthy or no longer

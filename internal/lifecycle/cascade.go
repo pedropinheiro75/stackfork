@@ -45,6 +45,11 @@ func composeDeps(instanceDir string) map[string][]string {
 func oneShots(instanceDir string) map[string]bool {
 	top, _ := snapshotModel(instanceDir).(map[string]interface{})
 	svcs, _ := top["services"].(map[string]interface{})
+	return OneShotServices(svcs)
+}
+
+// OneShotServices is oneShots for the services map of a Compose model.
+func OneShotServices(svcs map[string]interface{}) map[string]bool {
 	out := map[string]bool{}
 	for name, raw := range svcs {
 		m, _ := raw.(map[string]interface{})
