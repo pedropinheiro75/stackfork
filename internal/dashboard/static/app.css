@@ -155,7 +155,7 @@ main.stale { opacity: 0.6; }
 
 .project-list { display: flex; flex-direction: column; gap: var(--space-3); }
 
-#proxy-start[hidden] { display: none; }
+#proxy-start[hidden], #proxy-stop[hidden] { display: none; }
 
 /* --- ProjectCard and VersionCard (DESIGN.md "Instances: grouped by project") --- */
 .lane-1 { --lane: var(--lane-1); } .lane-2 { --lane: var(--lane-2); } .lane-3 { --lane: var(--lane-3); } .lane-4 { --lane: var(--lane-4); }

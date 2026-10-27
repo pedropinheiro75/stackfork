@@ -24,6 +24,11 @@ type Scope struct {
 	Hostname string
 	Apps     map[string]int
 	Services map[string]ServiceAddr
+	// ProxyApp is the host app the running proxy serves portless, with its
+	// ProxyURL: {{url}} and {{ProxyApp.url}} expand to that, as the links
+	// the dashboard shows do. "" while the proxy is off.
+	ProxyApp string
+	ProxyURL string
 }
 
 var (
@@ -88,6 +93,9 @@ func (s Scope) value(name string) (string, error) {
 			return strconv.Itoa(port), nil
 		}
 		h, err := host()
+		if app == s.ProxyApp && s.ProxyURL != "" {
+			return s.ProxyURL, err
+		}
 		return "http://" + h + ":" + strconv.Itoa(port), err
 	}
 	switch name {

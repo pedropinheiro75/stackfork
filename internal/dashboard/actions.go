@@ -219,12 +219,13 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 		if err != nil {
 			return actionResponse{Message: err.Error()}
 		}
-		return actionResponse{OK: true, Message: fmt.Sprintf("proxy running on port %d", info.Port)}
+		msg := fmt.Sprintf("proxy running on port %d", info.Port)
+		return actionResponse{OK: true, Message: msg + s.restartForProxy("proxy up")}
 	case "proxy-down":
 		if _, err := lifecycle.ProxyDown(); err != nil {
 			return actionResponse{Message: err.Error()}
 		}
-		return actionResponse{OK: true, Message: "proxy stopped"}
+		return actionResponse{OK: true, Message: "proxy stopped" + s.restartForProxy("proxy down")}
 	case "proxy-reload":
 		if err := lifecycle.ProxyReload(s.NewStateBase, s.LegacyStateBase); err != nil {
 			return actionResponse{Message: err.Error()}
@@ -235,6 +236,22 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 	default:
 		return actionResponse{Message: "unknown action"}
 	}
+}
+
+// restartForProxy restarts the host apps the proxy change moved, under each
+// project's action lock, and says what went wrong (empty when nothing did).
+func (s *Server) restartForProxy(what string) string {
+	var out bytes.Buffer
+	err := lifecycle.RestartHostAppsForProxy(&out, what, s.NewStateBase, s.LegacyStateBase, func(project string) (func(), bool) {
+		if !s.tryLockProject(project) {
+			return nil, false
+		}
+		return func() { s.unlockProject(project) }, true
+	})
+	if err != nil {
+		return "; host apps did not all restart: " + err.Error()
+	}
+	return ""
 }
 
 // planRunsHost reports whether the checkout's plan, in this machine's mode

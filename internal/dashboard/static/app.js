@@ -795,6 +795,7 @@
     setStatus("docker-status", inv.docker.reachable ? "ok" : "failed", "Docker", inv.docker.reachable ? "ok" : "unreachable");
     setStatus("proxy-status", inv.proxy.running ? "ok" : "off", "Proxy", inv.proxy.running ? ":" + inv.proxy.port : "stopped");
     document.getElementById("proxy-start").hidden = inv.proxy.running;
+    document.getElementById("proxy-stop").hidden = !inv.proxy.running;
 
     document.getElementById("docker-banner").hidden = inv.docker.reachable;
     var proxyBanner = document.getElementById("proxy-banner");
@@ -1076,6 +1077,9 @@
     // own listener rather than the delegated one in wireActions.
     document.getElementById("proxy-start").addEventListener("click", function () {
       runAction("proxy-up", "");
+    });
+    document.getElementById("proxy-stop").addEventListener("click", function () {
+      runAction("proxy-down", "");
     });
     document.getElementById("proxy-banner-dismiss").addEventListener("click", function () {
       proxyHintDismissed = document.getElementById("proxy-banner-text").textContent;

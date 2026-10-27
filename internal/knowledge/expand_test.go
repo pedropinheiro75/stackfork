@@ -136,3 +136,39 @@ func TestNearMissPlaceholders(t *testing.T) {
 		}
 	}
 }
+
+func TestExpandUsesProxyURLForTheServedApp(t *testing.T) {
+	sc := testScope()
+	sc.ProxyApp, sc.ProxyURL = "app", ProxyURL("feat-1.localhost", false, 80)
+	for in, want := range map[string]string{
+		"{{url}}": "http://feat-1.localhost", "{{app.url}}": "http://feat-1.localhost",
+		"{{api.url}}": "http://feat-1.localhost:14003", "{{app.port}}": "13003", "{{hostname}}": "feat-1.localhost",
+	} {
+		if got, err := sc.Expand([]string{in}); err != nil || got[0] != want {
+			t.Errorf("%s: got %q err %v, want %q", in, got, err, want)
+		}
+	}
+	sc.ProxyURL = ProxyURL("feat-1.localhost", false, 8080)
+	if got, _ := sc.Expand([]string{"{{app.url}}"}); got[0] != "http://feat-1.localhost:8080" {
+		t.Errorf("proxy port: %q", got[0])
+	}
+}
+
+func TestUsesProxyURL(t *testing.T) {
+	for _, c := range []struct {
+		cmd, self string
+		want      bool
+	}{
+		{"env UI_URL={{app.url}} node", "api", true},
+		{"env V={{api.url}} vite", "app", false},
+		{"vite --origin {{url}}", "app", true},
+		{"node --origin {{url}}", "api", false},
+		{"node {{service.db.url}}", "api", true},
+		{"node --port {{port}} {{app.port}}", "api", false},
+	} {
+		argv, _ := SplitArgv(c.cmd)
+		if got := UsesProxyURL(argv, c.self, "app"); got != c.want {
+			t.Errorf("%q (%s): got %v", c.cmd, c.self, got)
+		}
+	}
+}

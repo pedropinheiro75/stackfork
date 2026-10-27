@@ -16,6 +16,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/ports"
+	"github.com/pedropinheiro75/stackfork/internal/proxy"
 	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
@@ -92,6 +93,12 @@ func hostScope(self string, selfPort int, allocate bool, argv []string, root, pr
 		}
 		sc.Apps[n] = p
 	}
+	if wantsURL(argv) {
+		if info, perr := proxy.Status(newBase); perr == nil && info.Running {
+			k, _ := knowledge.LoadForCheckout(root)
+			sc.ProxyApp, sc.ProxyURL = knowledge.ProxyEntryApp(k, m), knowledge.ProxyURL(hostname, false, info.Port)
+		}
+	}
 	if wantsService(argv) {
 		if sc.Services, err = serviceAddrs(project, newBase, legacyBase); err != nil {
 			return knowledge.Scope{}, err
@@ -131,6 +138,17 @@ func allocatePlanHostPorts(plan knowledge.Plan, root, project, instanceDir, newB
 	if len(apps) > 0 {
 		allocateHostPorts(apps, project, instanceDir, newBase, legacyBase) //nolint:errcheck // see above
 	}
+}
+
+// wantsURL reports whether argv has a url placeholder, the only kind that
+// depends on whether the proxy runs (it costs a docker call to find out).
+func wantsURL(argv []string) bool {
+	for _, a := range argv {
+		if strings.Contains(a, "url") && knowledge.HasPlaceholder(a) {
+			return true
+		}
+	}
+	return false
 }
 
 func wantsService(argv []string) bool {
@@ -200,7 +218,8 @@ func pickHostPort(info *state.Manifest, name, project, newBase, legacyBase strin
 var portInURL = regexp.MustCompile(`:(\d+)(?:/|$)`)
 
 // serviceAddrs is, per Compose service, the first published address the way
-// `urls` shows it (the direct one, not the proxied one).
+// `urls` shows it: the proxied URL when the proxy routes the service (the one
+// the dashboard link opens), else the direct one. The port stays the direct one.
 func serviceAddrs(project, newBase, legacyBase string) (map[string]knowledge.ServiceAddr, error) {
 	inv, err := inventory.Collect(inventory.Options{NewStateBase: newBase, LegacyStateBase: legacyBase, Version: Version})
 	if err != nil {
@@ -216,15 +235,19 @@ func serviceAddrs(project, newBase, legacyBase string) (map[string]knowledge.Ser
 				continue
 			}
 			for _, e := range s.Endpoints {
-				if !e.Known || e.Proxied || e.URL == "" {
+				if !e.Known || e.URL == "" {
 					continue
 				}
-				a := knowledge.ServiceAddr{URL: e.URL}
-				if m := portInURL.FindStringSubmatch(e.URL); m != nil {
-					a.Port, _ = strconv.Atoi(m[1])
+				a, seen := out[s.Name]
+				if e.Proxied { // the URL the dashboard link opens
+					a.URL = e.URL
+				} else if !seen {
+					a.URL = e.URL
+					if m := portInURL.FindStringSubmatch(e.URL); m != nil {
+						a.Port, _ = strconv.Atoi(m[1])
+					}
 				}
 				out[s.Name] = a
-				break
 			}
 		}
 	}

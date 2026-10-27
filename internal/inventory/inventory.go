@@ -415,6 +415,9 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 			}
 		}
 		inst.Warnings = append(inst.Warnings, appWarnings...)
+		if stale := state.ProxyStaleApps(filepath.Dir(manifestPath), info.HostProcs); len(stale) > 0 {
+			inst.Warnings = append(inst.Warnings, fmt.Sprintf("proxy changed the app URL; restart host apps to apply (%s)", strings.Join(stale, ", ")))
+		}
 		fillOneOffs(&inst, rows)
 		inst.Apps = appendRouteAndKnowledgeApps(apps, info, hostname)
 		if k, _ := knowledge.LoadForCheckout(info.Root); k != nil && k.Entry != nil && k.Entry.None {
@@ -707,11 +710,7 @@ func proxyEndpoint(hostname string, https bool, proxyPort, target int) Endpoint 
 	if https {
 		scheme = "https"
 	}
-	url := fmt.Sprintf("%s://%s", scheme, hostname)
-	if proxyPort != 80 {
-		url = fmt.Sprintf("%s:%d", url, proxyPort)
-	}
-	return Endpoint{Scheme: scheme, URL: url, Container: target, Known: true, Proxied: true}
+	return Endpoint{Scheme: scheme, URL: knowledge.ProxyURL(hostname, https, proxyPort), Container: target, Known: true, Proxied: true}
 }
 
 // busyPortWarnings flags a recorded stable port (design.md D7 layer 2) that

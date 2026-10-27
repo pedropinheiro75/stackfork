@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -303,11 +302,7 @@ func (r Resolved) direct(w Where, service string, port int, https bool, path str
 }
 
 func (r Resolved) proxied(w Where, https bool, path string) string {
-	u := fmt.Sprintf("%s://%s", scheme(https), w.Hostname)
-	if w.ProxyPort != 80 {
-		u += ":" + strconv.Itoa(w.ProxyPort)
-	}
-	return u + suffix(path)
+	return ProxyURL(w.Hostname, https, w.ProxyPort) + suffix(path)
 }
 
 // AppURL is the entry's address: the proxy's portless URL when the proxy

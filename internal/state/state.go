@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 )
 
 // Manifest mirrors the Python `info` dict written to manifest.json.
@@ -314,4 +316,35 @@ func SHA256File(path string) (string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// proxyStalePath lists host apps the proxy toggle could not restart (the
+// plan is not trusted here): their env has the old URL.
+func proxyStalePath(instanceDir string) string { return filepath.Join(instanceDir, "proxy-stale") }
+
+// SetProxyStale records apps (none: clears the record).
+func SetProxyStale(instanceDir string, apps []string) {
+	if len(apps) == 0 {
+		os.Remove(proxyStalePath(instanceDir)) //nolint:errcheck // best effort
+		return
+	}
+	os.WriteFile(proxyStalePath(instanceDir), []byte(strings.Join(apps, "\n")+"\n"), 0o600) //nolint:errcheck // a missing warning is not worth failing for
+}
+
+// ProxyStaleApps are the recorded apps still running from before the toggle:
+// started earlier than the record.
+func ProxyStaleApps(instanceDir string, procs map[string]HostProc) []string {
+	data, err := os.ReadFile(proxyStalePath(instanceDir))
+	fi, serr := os.Stat(proxyStalePath(instanceDir))
+	if err != nil || serr != nil {
+		return nil
+	}
+	var out []string
+	for _, n := range strings.Fields(string(data)) {
+		p, ok := procs[n]
+		if t, perr := time.Parse(time.RFC3339, p.StartedAt); ok && perr == nil && t.Before(fi.ModTime()) && HostIdentity(p) {
+			out = append(out, n)
+		}
+	}
+	return out
 }

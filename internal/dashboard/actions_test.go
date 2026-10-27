@@ -269,3 +269,32 @@ func TestDiskEndpointAndFreeSpaceAction(t *testing.T) {
 		t.Fatalf("free-space: %d %+v", code, resp)
 	}
 }
+
+// TestActionProxyUpDown: both proxy actions run through the same path, and
+// the header offers Stop proxy exactly when Start proxy is hidden.
+func TestActionProxyUpDown(t *testing.T) {
+	newBase, legacyBase, _ := preparedFixture(t)
+	t.Setenv("STACKFORK_PROXY_NAME", "sf-proxy-test-dash")
+	srv, err := dashboard.New(newBase, legacyBase, "test", 55308)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := "127.0.0.1:55308"
+	if body := doRequest(srv, "GET", "/", host, nil).Body.String(); !strings.Contains(body, `id="proxy-stop"`) || !strings.Contains(body, `data-action="proxy-down"`) {
+		t.Fatalf("missing the Stop proxy button:\n%s", body)
+	}
+	for _, c := range []struct{ action, msg string }{{"proxy-up", "proxy running"}, {"proxy-down", "proxy stopped"}} {
+		code, resp := postAction(t, srv, host, actionRequestFixture{Action: c.action})
+		if code != 200 || !resp.OK || !strings.Contains(resp.Message, c.msg) {
+			t.Fatalf("%s: code=%d resp=%+v", c.action, code, resp)
+		}
+	}
+	// the token and origin checks guard it like every action
+	req := httptest.NewRequest("POST", "/api/actions", strings.NewReader(`{"action":"proxy-down"}`))
+	req.Host = host
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("no token: %d", rec.Code)
+	}
+}

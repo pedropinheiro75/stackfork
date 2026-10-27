@@ -51,12 +51,14 @@ func cmdProxy(stdout, stderr io.Writer, subArgs []string, newStateBase, legacySt
 		if err != nil {
 			return 0, err
 		}
+		warnProxyRestart(stderr, "proxy up", newStateBase, legacyStateBase)
 		return 0, printJSON(stdout, info)
 	case "down":
 		info, err := lifecycle.ProxyDown()
 		if err != nil {
 			return 0, err
 		}
+		warnProxyRestart(stderr, "proxy down", newStateBase, legacyStateBase)
 		return 0, printJSON(stdout, info)
 	case "status":
 		info, err := proxy.Status(newStateBase)
@@ -71,6 +73,14 @@ func cmdProxy(stdout, stderr io.Writer, subArgs []string, newStateBase, legacySt
 		return 0, nil
 	default:
 		return 2, fmt.Errorf("unknown proxy subcommand %q", sub)
+	}
+}
+
+// warnProxyRestart restarts the host apps whose URL placeholders the proxy
+// change moved. The proxy already changed, so a failure only warns.
+func warnProxyRestart(stderr io.Writer, what, newStateBase, legacyStateBase string) {
+	if err := lifecycle.RestartHostAppsForProxy(stderr, what, newStateBase, legacyStateBase, nil); err != nil {
+		fmt.Fprintf(stderr, "warning: restarting host apps after the proxy change: %s\n", err)
 	}
 }
 
