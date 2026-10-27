@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,6 +37,10 @@ type actionRequest struct {
 	Branch string `json:"branch,omitempty"`
 	// FromMain: reset rebuilds the worktree from the main checkout's recipe.
 	FromMain bool `json:"from_main,omitempty"`
+
+	// trigger labels the run an "up" records; "" is the dashboard. "resume" also
+	// takes the plain up path (no re-prepare, no plan steps) even for a hybrid plan.
+	trigger string
 }
 
 type actionResponse struct {
@@ -142,7 +147,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 		case "service-stop":
 			lifecycleAction, opts.Service = "stop", req.Service
 		}
-		if req.Action == "up" && s.StartEnv != nil && planRunsHost(root) {
+		if req.Action == "up" && req.trigger == "" && s.StartEnv != nil && planRunsHost(root) {
 			// lifecycle.Execute only knows compose; a hybrid up runs the plan.
 			// StartEnv starts the checkout's current branch: it must be this card's.
 			if cur, _ := exec.Command("git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD").Output(); strings.TrimSpace(string(cur)) != branch {
@@ -161,12 +166,23 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 		var code int
 		if lifecycleAction == "up" { // a failed up leaves seeded:false for the next up
 			mode := lifecycle.PlanMode(root, main)
-			rec, berr := runs.Begin(instanceDir, runs.Meta{Command: "up", Trigger: TriggerDashboard, Mode: mode, Project: req.Project,
+			resume := req.trigger == TriggerResume
+			if resume { // what the mode starts: a host app's replaced service stays down
+				if k, _, kerr := knowledge.LoadFor(root, main); kerr == nil && k != nil {
+					if names, all, serr := lifecycle.StartedServices(instanceDir, k.Plan, mode); serr == nil && !all {
+						opts.Services = names
+					}
+				}
+			}
+			rec, berr := runs.Begin(instanceDir, runs.Meta{Command: "up", Trigger: cmp.Or(req.trigger, TriggerDashboard), Mode: mode, Project: req.Project,
 				Branch: branch, Out: &out, Secrets: func() []redact.Secret { return opts.Secrets.Redactions() }})
 			if berr != nil { // another run owns the instance: nothing runs
 				return actionResponse{Message: berr.Error()}
 			}
 			rec.SetRetry("stackfork --instance " + req.Project + " up")
+			if m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); resume && m != nil && m.SeedPending {
+				rec.Step("seed", knowledge.KindExec, "seed").Skip("seed pending; run Start or stackfork seed")
+			}
 			var perr error
 			if opts.Secrets, perr = lifecycle.InstancePreflight(rec, &out, root, instanceDir, true); perr != nil {
 				rec.Finish(perr)
@@ -175,7 +191,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 			res := lifecycle.UpAndSeed(&out, &out, lifecycle.UpSeed{
 				Run: rec, Root: root, Main: main, Branch: branch, Project: req.Project, InstanceDir: instanceDir,
 				NewBase: s.NewStateBase, LegacyBase: s.LegacyStateBase, Mode: mode,
-				Plan: lifecycle.LoadPlan(root, main), Seed: true, Compose: compose,
+				Plan: lifecycle.LoadPlan(root, main), Seed: !resume, Compose: compose,
 			})
 			runErr := res.RunError(rec, req.Project)
 			if res.Err == nil && res.Code == 0 && runErr == nil {

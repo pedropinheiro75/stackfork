@@ -18,7 +18,7 @@ var GlobalFlags = map[string]bool{
 var Actions = []string{
 	"prepare", "up", "down", "status", "urls", "where", "list", "run", "exec", "restart", "start", "stop", "logs",
 	"learn", "plan", "host", "open", "env", "clone-db", "seed", "runs", "prune", "gc", "guard", "hooks", "proxy",
-	"route", "dashboard", "repos", "worktree", "start-env", "reset", "secret", "live", "config", "doctor", "version",
+	"route", "dashboard", "resume", "repos", "worktree", "start-env", "reset", "secret", "live", "config", "doctor", "version",
 }
 
 // IsAction reports whether tok is a command or one of the three help spellings.

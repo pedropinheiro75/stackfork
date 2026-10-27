@@ -394,6 +394,21 @@ func TestWatcherIgnoresAServiceThePlanDoesNotStart(t *testing.T) {
 	}
 }
 
+// After Reset (Docker was out of reach, or a resume ran) a service must be
+// seen running again before it can be lost.
+func TestWatcherResetForgetsSightings(t *testing.T) {
+	dir, procs := cascadeInstance(t, true)
+	st := &stack{states: both}
+	w := st.watcher(dir)
+	w.Tick()
+	w.Reset()
+	st.states = map[string]string{"worker": "running"}
+	ticks(w, 6)
+	if !alive(procs["api"]) {
+		t.Fatal("nothing seen since the reset: nothing is lost")
+	}
+}
+
 func TestDockerStatesMarksACleanExit(t *testing.T) {
 	bin := t.TempDir()
 	out := "migrate exited Exited (0) 3 minutes ago\npg exited Exited (137) 1 minute ago\napi running Up 2 minutes\napi exited Exited (1) 1 hour ago\n"

@@ -19,8 +19,9 @@ import (
 // CascadeTrigger is the trigger (and command) of the run a watcher stop records.
 const CascadeTrigger = "cascade"
 
-// CascadeEvery is the watcher's tick; a service must be missing on two
-// consecutive ticks, so a host app outlives its dependency by 15 to 30 s.
+// CascadeEvery is how often the dashboard's watch loop ticks the watcher; a
+// service must be missing on two consecutive ticks, so a host app outlives
+// its dependency by 15 to 30 s.
 const CascadeEvery = 15 * time.Second
 
 // Sightings a lost service needs before the watcher acts. With other
@@ -41,12 +42,11 @@ const (
 // one-shot, a profile-gated service nobody started and a container still in
 // created state are never "lost". Neither is a job that exited 0 after it was
 // seen running, nor a service the mode's plan does not start (one a hybrid
-// host app replaces).
+// host app replaces). The dashboard's watch loop drives Tick and Reset.
 type CascadeWatcher struct {
 	Instances    func() []string                                 // instance directories
 	States       func(project string) (map[string]string, error) // container state by service; nil: DockerStates
 	ActionLocked func(project string) bool                       // the dashboard's per-project action lock; nil: never
-	Every        time.Duration                                   // 0: CascadeEvery
 	NewBase      string                                          // state bases, for the proxy reload after a stop
 	LegacyBase   string
 
@@ -95,23 +95,10 @@ func DockerStates(project string) (map[string]string, error) {
 	return st, nil
 }
 
-// Run ticks until ctx ends.
-func (w *CascadeWatcher) Run(ctx context.Context) {
-	every := w.Every
-	if every <= 0 {
-		every = CascadeEvery
-	}
-	t := time.NewTicker(every)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			w.Tick()
-		}
-	}
-}
+// Reset forgets every sighting: after it, a service counts as lost only once
+// it is seen running again. The watch loop calls it while Docker is out of
+// reach and on the tick it resumes.
+func (w *CascadeWatcher) Reset() { w.missing, w.seenUp = nil, nil }
 
 // Tick looks at every instance once.
 func (w *CascadeWatcher) Tick() {

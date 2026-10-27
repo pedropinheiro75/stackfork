@@ -239,18 +239,11 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	}
 	srv.StartSampler = func(m *metrics.Sampler, stop <-chan struct{}) { go m.Run(stop) }
 	defer srv.Close()
-	go srv.Warm() // first collection and repo scan, off the request path
+	go srv.Warm()    // first collection and repo scan, off the request path
+	srv.StartWatch() // resume what was running (now and when Docker returns), then the stop_cascade watcher
 	loop, stopLoop, loopDone := startLiveLoop(newStateBase, legacyStateBase, profiles, srv)
 	liveLoop.Store(loop)
 	defer func() { stopLoop(); <-loopDone }()
-	// Stops the host apps whose Compose dependency was lost behind our back
-	// (plan.stop_cascade); idle for a project that has not turned it on.
-	cascade := &lifecycle.CascadeWatcher{NewBase: newStateBase, LegacyBase: legacyStateBase, ActionLocked: srv.ActionLocked,
-		Instances: func() []string { return lifecycle.InstanceDirs(newStateBase, legacyStateBase) }}
-	cascadeCtx, stopCascade := context.WithCancel(context.Background())
-	cascadeDone := make(chan struct{})
-	go func() { defer close(cascadeDone); cascade.Run(cascadeCtx) }()
-	defer func() { stopCascade(); <-cascadeDone }()
 	if *openFlag {
 		openBrowser("http://" + addr)
 	}
@@ -268,13 +261,13 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	}
 
 	unregister()
+	srv.Close() // ends the watcher; it is waited for below
 	// Shutdown closes the listener at once (a new dashboard can take the
 	// port) but lets a running start/up/run finish: killing it leaves a
 	// half-started stack and a "network error" on the page. A second
 	// signal forces it.
 	wait := 5 * time.Second
 	stopLoop() // a live run in progress finishes first
-	stopCascade()
 	if n := srv.Running() + loop.Running(); n > 0 {
 		fmt.Fprintf(stdout, "waiting for %d running action(s) to finish (signal again to stop now)\n", n)
 		wait = 15 * time.Minute
@@ -291,7 +284,8 @@ func cmdDashboard(ctx context.Context, stdout, stderr io.Writer, subArgs []strin
 	if err := httpServer.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
 		return 0, err
 	}
-	select { // the live run in progress, if any
+	srv.WaitWatch(shutdownCtx.Done()) // a resume or cascade in progress finishes first
+	select {                          // the live run in progress, if any
 	case <-loopDone:
 	case <-shutdownCtx.Done():
 	}

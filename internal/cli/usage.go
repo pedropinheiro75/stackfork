@@ -50,6 +50,7 @@ var commandSummaries = []struct{ name, summary string }{
 	{"proxy", "the shared portless-URL proxy: up/down/status/reload"},
 	{"route", "register a host-run app's port with the proxy"},
 	{"dashboard", "a local web page listing every instance and repo"},
+	{"resume", "start the environments that were running before a reboot or a Docker restart (the dashboard does it at start)"},
 	{"repos", "list git repos under the configured roots with branches, worktrees and readiness"},
 	{"worktree", "worktree add REPO BRANCH: create <repo>/.worktrees/<branch>"},
 	{"start-env", "prepare (if needed) and start a checkout's isolated environment"},

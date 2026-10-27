@@ -184,6 +184,9 @@ func run(args []string, stdout, stderr io.Writer) (int, error) {
 	if action == "config" {
 		return cmdConfig(stdout, subArgs)
 	}
+	if action == "resume" {
+		return cmdResume(stdout, subArgs, newStateBase, legacyStateBase)
+	}
 	if action == "dashboard" {
 		return cmdDashboard(context.Background(), stdout, stderr, subArgs, newStateBase, legacyStateBase)
 	}

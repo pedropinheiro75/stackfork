@@ -11,3 +11,12 @@ func SetOsascriptForTest(path string) func() {
 	osascriptPath = path
 	return func() { osascriptPath = old }
 }
+
+// ResumeUp runs the up a resume runs for one instance.
+func (s *Server) ResumeUp(project string) (bool, string) {
+	r := s.runAction(actionRequest{Action: "up", Project: project, trigger: TriggerResume})
+	return r.OK, r.Message
+}
+
+// ResumeBlock exposes resumeBlock.
+var ResumeBlock = resumeBlock

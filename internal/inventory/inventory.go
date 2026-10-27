@@ -6,6 +6,7 @@ package inventory
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -239,6 +240,8 @@ type Instance struct {
 	// SeedOnce/SeedService are the manifest's recorded seed recipe.
 	SeedOnce    string `json:"-"`
 	SeedService string `json:"-"`
+	// WantRunning is the manifest's marker that the person last started it.
+	WantRunning bool `json:"-"`
 }
 
 // Inventory is the whole machine's state, task 1.1's D1 type.
@@ -364,6 +367,7 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 	}
 	inst.IsMain = inst.RelRoot == "main checkout"
 	inst.SeedOnce, inst.SeedService = info.SeedOnce, info.SeedService
+	inst.WantRunning = info.WantRunning
 	fillSeed(&inst, info, filepath.Dir(manifestPath))
 	inst.LastRun = lastRun(filepath.Dir(manifestPath))
 	if o, err := state.ReadEnvOverrides(filepath.Dir(manifestPath)); err == nil {
@@ -817,7 +821,9 @@ var healthPattern = regexp.MustCompile(`\((healthy|unhealthy|health: starting)\)
 // parsed Labels instead of at the docker ps invocation - one call either
 // way.
 func listContainers() ([]containerRow, error) {
-	cmd := exec.Command("docker", "ps", "--all", "--format", "json")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // a wedged daemon must not hang the dashboard
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "docker", "ps", "--all", "--format", "json")
 	cmd.Env = compose.DockerEnv(nil)
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out

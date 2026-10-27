@@ -139,6 +139,7 @@ type Server struct {
 	// done ends the metrics sampler; Close closes it.
 	done     chan struct{}
 	doneOnce sync.Once
+	watch    sync.WaitGroup // the resume/cascade watcher
 }
 
 // maxLogStreams is design.md's documented cap.
