@@ -283,6 +283,18 @@
     </form>
   </div>
 </section>
+<section class="set-row" aria-labelledby="set-resume">
+  <div class="set-label"><h3 id="set-resume">Resume on start</h3><p class="muted">When the dashboard starts, or Docker comes back, start the environments that were running before. One you stopped stays stopped.</p></div>
+  <div class="set-control">
+    <form class="settings-form" data-config-op="set-resume-on-start">
+      <select name="value" aria-label="Resume on start">
+        <option value="on"{{if .Resume}} selected{{end}}>On</option>
+        <option value="off"{{if not .Resume}} selected{{end}}>Off</option>
+      </select>
+      <button type="submit" class="btn">Save</button>
+    </form>
+  </div>
+</section>
 <section class="set-row" aria-labelledby="set-secrets">
   <div class="set-label"><h3 id="set-secrets">Secrets</h3><p class="muted">References to credentials, per repository or folder. stackfork never stores or shows a value here.</p></div>
   <div class="set-control">

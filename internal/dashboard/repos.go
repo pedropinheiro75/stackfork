@@ -453,7 +453,8 @@ func (s *Server) handleSettingsFragment(w http.ResponseWriter, r *http.Request) 
 		repos.Result
 		ConfigPath string
 		Secrets    []mappingView
-	}{res, path, s.secretMappings(cfg)})
+		Resume     bool
+	}{res, path, s.secretMappings(cfg), cfg == nil || cfg.ResumeEnabled()})
 }
 
 func (s *Server) renderFragment(w http.ResponseWriter, name string, data interface{}) {
@@ -513,6 +514,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		} else {
 			err = cfg.SetMaxDepth(n)
 		}
+	case "set-resume-on-start":
+		err = cfg.SetResumeOnStart(req.Value)
 	case "set-mode":
 		// value is REPO=MODE; REPO must be a repo found by the scan
 		i := strings.LastIndex(req.Value, "=")

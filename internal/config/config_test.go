@@ -129,3 +129,23 @@ func TestModeDefaultsAndPerRepo(t *testing.T) {
 		t.Fatalf("file: %s", raw)
 	}
 }
+
+func TestResumeOnStartDefaultsOnAndRoundTrips(t *testing.T) {
+	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
+	c, err := Load()
+	if err != nil || !c.ResumeEnabled() {
+		t.Fatalf("default must be on: %v", err)
+	}
+	if err := c.SetResumeOnStart("off"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetResumeOnStart("maybe"); err == nil {
+		t.Fatal("maybe must be refused")
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if c, err = Load(); err != nil || c.ResumeEnabled() {
+		t.Fatalf("off must persist: %v", err)
+	}
+}

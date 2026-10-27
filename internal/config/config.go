@@ -36,6 +36,9 @@ type Config struct {
 	// D15). Only `live on|off|cleanup` and POST /api/live write them.
 	Live    map[string]bool    `json:"live,omitempty"`
 	Cleanup map[string]Cleanup `json:"cleanup,omitempty"`
+	// ResumeOnStart is nil (on) until the person sets it: the dashboard then
+	// starts what was running before a shutdown (see ResumeEnabled).
+	ResumeOnStart *bool `json:"resume_on_start,omitempty"`
 
 	extra map[string]json.RawMessage
 }
@@ -76,7 +79,7 @@ func load(validate bool) (*Config, error) {
 	if err := json.Unmarshal(data, &c.extra); err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
-	for _, k := range []string{"roots", "exclude", "maxDepth", "mode", "modes", "secrets", "live", "cleanup"} {
+	for _, k := range []string{"roots", "exclude", "maxDepth", "mode", "modes", "secrets", "live", "cleanup", "resume_on_start"} {
 		delete(c.extra, k)
 	}
 	if validate {
@@ -122,6 +125,9 @@ func (c *Config) Save() error {
 	}
 	if len(c.Cleanup) > 0 {
 		out["cleanup"] = c.Cleanup
+	}
+	if c.ResumeOnStart != nil {
+		out["resume_on_start"] = *c.ResumeOnStart
 	}
 	return state.WritePrivate(p, out)
 }
@@ -276,6 +282,20 @@ func (c *Config) SetMaxDepth(n int) error {
 	}
 	c.MaxDepth = n
 	return nil
+}
+
+// ResumeEnabled: resume on start is on unless the person turned it off.
+func (c *Config) ResumeEnabled() bool { return c.ResumeOnStart == nil || *c.ResumeOnStart }
+
+// SetResumeOnStart takes "on" or "off".
+func (c *Config) SetResumeOnStart(v string) error {
+	switch v {
+	case "on", "off":
+		on := v == "on"
+		c.ResumeOnStart = &on
+		return nil
+	}
+	return errors.New("resume-on-start takes on or off")
 }
 
 // AgentRule keeps an agent away from a folder, e.g. a client whose policy

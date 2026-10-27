@@ -14,7 +14,7 @@ import (
 // remove-exclude|set]`: the same edits the dashboard's Settings panel makes.
 func cmdConfig(stdout io.Writer, subArgs []string) (int, error) {
 	if isHelpRequest(subArgs) {
-		printFlaglessUsage(stdout, "config", "config [get | add-root PATH | remove-root PATH | add-exclude NAME | remove-exclude NAME | set max-depth N | set mode M | set-mode REPO M | set roots PATH... | set exclude NAME...]")
+		printFlaglessUsage(stdout, "config", "config [get | add-root PATH | remove-root PATH | add-exclude NAME | remove-exclude NAME | set max-depth N | set mode M | set resume-on-start on|off | set-mode REPO M | set roots PATH... | set exclude NAME...]")
 		return 0, nil
 	}
 	c, err := config.Load()
@@ -40,7 +40,7 @@ func cmdConfig(stdout io.Writer, subArgs []string) (int, error) {
 		}
 		return 0, printJSON(stdout, map[string]interface{}{
 			"path": path, "roots": nonNilStrings(c.Roots), "exclude": nonNilStrings(c.Exclude), "maxDepth": c.Depth(),
-			"mode": mode, "modes": c.Modes,
+			"mode": mode, "modes": c.Modes, "resumeOnStart": c.ResumeEnabled(),
 		})
 	case "add-root", "remove-root", "add-exclude", "remove-exclude":
 		arg, err := one()
@@ -88,6 +88,13 @@ func cmdConfig(stdout io.Writer, subArgs []string) (int, error) {
 			if err := c.SetMode(vals[0]); err != nil {
 				return 0, err
 			}
+		case "resume-on-start":
+			if len(vals) != 1 {
+				return 2, errors.New("config set resume-on-start on|off")
+			}
+			if err := c.SetResumeOnStart(vals[0]); err != nil {
+				return 0, err
+			}
 		case "roots":
 			c.Roots = nil
 			for _, v := range vals {
@@ -103,7 +110,7 @@ func cmdConfig(stdout io.Writer, subArgs []string) (int, error) {
 				}
 			}
 		default:
-			return 2, fmt.Errorf("unknown config key %q (roots, exclude, max-depth, mode)", key)
+			return 2, fmt.Errorf("unknown config key %q (roots, exclude, max-depth, mode, resume-on-start)", key)
 		}
 	default:
 		return 2, fmt.Errorf("unknown config command %q", verb)
