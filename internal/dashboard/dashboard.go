@@ -140,6 +140,8 @@ type Server struct {
 	done     chan struct{}
 	doneOnce sync.Once
 	watch    sync.WaitGroup // the resume/cascade watcher
+	retryMu  sync.Mutex
+	retry    map[string]bool // projects resume skipped only because a run or the lock was busy
 }
 
 // maxLogStreams is design.md's documented cap.

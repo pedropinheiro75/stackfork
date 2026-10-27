@@ -205,10 +205,19 @@ func (w *CascadeWatcher) watch(dir string) {
 			}
 		}
 	}
-	// a run, an action or a lock in flight (a Start brings services up in
-	// turns): look again later, and keep nothing from before
-	if len(wanted) == 0 || w.busy(dir, m.Project) {
+	if len(wanted) == 0 {
 		w.forget(dir)
+		return
+	}
+	// a run, an action or a lock in flight (a Start brings services up in
+	// turns): act on nothing now, restart the counts, but keep what was seen
+	// running so a service lost meanwhile is still caught afterwards
+	if w.busy(dir, m.Project) {
+		for k := range w.missing {
+			if strings.HasPrefix(k, dir+"\x00") {
+				delete(w.missing, k)
+			}
+		}
 		return
 	}
 	jobs := oneShots(dir)

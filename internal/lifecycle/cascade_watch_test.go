@@ -419,3 +419,26 @@ func TestDockerStatesMarksACleanExit(t *testing.T) {
 		t.Fatalf("%v %v", st, err)
 	}
 }
+
+// A service that stops while the instance lock is held is still caught once
+// the lock is free: the locked ticks act on nothing but keep the sightings.
+func TestWatcherKeepsSightingsWhileBusy(t *testing.T) {
+	dir, procs := cascadeInstance(t, true)
+	st := &stack{states: both}
+	w := st.watcher(dir)
+	w.Tick() // seen up
+	lock, err := state.TryLock(filepath.Join(dir, ".lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.states = map[string]string{"worker": "running"}
+	ticks(w, 4)
+	lock.Release()
+	if !alive(procs["api"]) {
+		t.Fatal("nothing is stopped while the lock is held")
+	}
+	ticks(w, 2)
+	if alive(procs["api"]) {
+		t.Fatal("the postgres lost under the lock must still be caught after it")
+	}
+}

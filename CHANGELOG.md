@@ -13,6 +13,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - A one-shot job that exited 0 (a migrate service) no longer makes its stack "partial": a host app can read the instance's env and start next to it, and the card shows no "exited" warning for it.
 - `resume` also finishes a stack that an earlier resume left half started when the dashboard was forced to quit.
+- The dashboard retries a resume it skipped because a run or lock was busy, logs why it skipped an instance, and the cascade watcher keeps its sightings across a busy tick, so a database lost meanwhile is still caught.
 - Run cards and the version menu name a `resume` and a `cascade` run.
 
 ### Added

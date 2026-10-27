@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,7 +60,44 @@ func (s *Server) instanceDirOf(project string) string {
 // through the same up the card's Start button runs (the services the plan's
 // mode starts, no seed). It prints what it starts and skips, and returns how
 // many it started. The data volumes survive a reboot, so nothing is seeded.
-func (s *Server) Resume(out io.Writer) (int, error) {
+func (s *Server) Resume(out io.Writer) (int, error) { return s.resume(out, false) }
+
+// busyRetry adds or drops project in the set of instances resume skipped only
+// because a run or the instance lock was busy; the watcher retries those.
+func (s *Server) busyRetry(project string, add bool) {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	if !add {
+		delete(s.retry, project)
+		return
+	}
+	if s.retry == nil {
+		s.retry = map[string]bool{}
+	}
+	s.retry[project] = true
+}
+
+// retrying lists the projects that wait for a retry.
+func (s *Server) retrying() map[string]bool {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	out := make(map[string]bool, len(s.retry))
+	for p := range s.retry {
+		out[p] = true
+	}
+	return out
+}
+
+// resume is Resume; retry limits it to the instances that wait for a retry.
+// An instance that no longer qualifies (started or stopped by a person, on
+// another branch) leaves the set.
+func (s *Server) resume(out io.Writer, retry bool) (int, error) {
+	var only map[string]bool
+	if retry {
+		if only = s.retrying(); len(only) == 0 {
+			return 0, nil
+		}
+	}
 	inv, err := s.cache.get(inventory.Options{NewStateBase: s.NewStateBase, LegacyStateBase: s.LegacyStateBase, Version: s.Version})
 	if err != nil {
 		return 0, err
@@ -68,7 +106,20 @@ func (s *Server) Resume(out io.Writer) (int, error) {
 		return 0, fmt.Errorf("docker is not reachable: %s", inv.Docker.Error)
 	}
 	started := 0
-	for _, in := range resumable(inv.Instances) {
+	cands := resumable(inv.Instances)
+	if retry {
+		for p := range only {
+			s.busyRetry(p, false)
+		}
+		kept := cands[:0]
+		for _, in := range cands {
+			if only[in.Project] {
+				kept = append(kept, in)
+			}
+		}
+		cands = kept
+	}
+	for _, in := range cands {
 		select {
 		case <-s.done: // shutting down: start nothing new
 			return started, nil
@@ -77,10 +128,12 @@ func (s *Server) Resume(out io.Writer) (int, error) {
 		dir := s.instanceDirOf(in.Project)
 		if why := resumeBlock(in, dir); why != "" {
 			fmt.Fprintf(out, "skipped %s: %s\n", in.Project, why)
+			s.busyRetry(in.Project, why == runBusy)
 			continue
 		}
 		if !s.tryLockProject(in.Project) {
 			fmt.Fprintf(out, "skipped %s: an action is in progress\n", in.Project)
+			s.busyRetry(in.Project, true)
 			continue
 		}
 		fmt.Fprintf(out, "starting %s\n", in.Project)
@@ -92,17 +145,19 @@ func (s *Server) Resume(out io.Writer) (int, error) {
 		}
 		started++
 	}
-	if started == 0 {
+	if started == 0 && !retry {
 		fmt.Fprintln(out, "nothing to resume")
 	}
 	return started, nil
 }
 
+const runBusy = "a run is in progress"
+
 // resumeBlock says why an instance that wants to run is left alone now: a run
 // or another process holds it, or its checkout is on another branch.
 func resumeBlock(in inventory.Instance, dir string) string {
 	if runs.Busy(dir) || state.Held(filepath.Join(dir, ".lock")) {
-		return "a run is in progress"
+		return runBusy
 	}
 	cur, err := exec.Command("git", "-C", in.Root, "symbolic-ref", "--short", "-q", "HEAD").Output() // also works before the first commit
 	if err != nil {
@@ -212,14 +267,31 @@ func (s *Server) watchTick(polls *watchPolls, cw cascadeTicker, cascadeDue bool)
 		cw.Reset()
 		if back {
 			if cfg, err := config.Load(); err == nil && cfg.ResumeEnabled() {
-				s.Resume(io.Discard) //nolint:errcheck // each failure is on its instance's run card
+				s.Resume(resumeLog{}) //nolint:errcheck // each failure is on its instance's run card
 			}
 		}
 		return false
+	}
+	if cfg, err := config.Load(); err == nil && cfg.ResumeEnabled() {
+		if n, _ := s.resume(resumeLog{}, true); n > 0 { // a resume tick: the cascade watcher starts over
+			cw.Reset()
+			return false
+		}
 	}
 	if !cascadeDue {
 		return false
 	}
 	cw.Tick()
 	return true
+}
+
+// resumeLog sends the watcher's resume lines (what it starts, what it skips
+// and why) to the dashboard's log.
+type resumeLog struct{}
+
+func (resumeLog) Write(p []byte) (int, error) {
+	for _, l := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
+		log.Printf("resume: %s", l)
+	}
+	return len(p), nil
 }

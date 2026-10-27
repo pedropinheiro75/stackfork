@@ -1,8 +1,11 @@
 package dashboard
 
 import (
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -126,5 +129,58 @@ func TestWatchTickResumesFirstAndCascadesOnlyAfter(t *testing.T) {
 	}
 	if !tick("0", true) || cw.ticks != 2 {
 		t.Fatalf("after the resume tick: %+v", cw)
+	}
+}
+
+// An instance skipped only because its lock was busy waits in the retry set
+// and is retried when the lock is free; one skipped for its branch never is.
+func TestResumeRetriesABusyInstanceButNotABranchMismatch(t *testing.T) {
+	fake := t.TempDir()
+	os.WriteFile(filepath.Join(fake, "docker"), []byte("#!/bin/sh\nexit 0\n"), 0o755) //nolint:errcheck
+	t.Setenv("PATH", fake+string(os.PathListSeparator)+os.Getenv("PATH"))
+	base := t.TempDir()
+	srv, _ := New(base, t.TempDir(), "t", 1)
+	mk := func(project, branch string) string {
+		root := t.TempDir()
+		for _, a := range [][]string{{"init", "-q", "-b", "main"}, {"-c", "user.email=a@b", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"}} {
+			if out, err := exec.Command("git", append([]string{"-C", root}, a...)...).CombinedOutput(); err != nil {
+				t.Fatalf("%v %s", err, out)
+			}
+		}
+		dir := filepath.Join(base, project)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		m := &state.Manifest{Project: project, Root: root, Branch: branch, Hostname: project + ".localhost", WantRunning: true,
+			Files: []string{"compose.yaml"}, Inputs: map[string]string{}}
+		if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(dir, "compose.json"), []byte(`{"services":{"db":{"image":"postgres"}}}`), 0o600) //nolint:errcheck
+		return dir
+	}
+	busy := mk("sf-busy-1", "main")
+	mk("sf-branch-1", "other")
+	lock, err := state.TryLock(filepath.Join(busy, ".lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.cache = &inventoryCache{}
+	var out strings.Builder
+	srv.Resume(&out) //nolint:errcheck
+	got := srv.retrying()
+	if !got["sf-busy-1"] || got["sf-branch-1"] || len(got) != 1 {
+		t.Fatalf("retry set %v\n%s", got, out.String())
+	}
+	srv.cache = &inventoryCache{}
+	srv.resume(io.Discard, true) //nolint:errcheck
+	if !srv.retrying()["sf-busy-1"] {
+		t.Fatal("still busy: stays in the set")
+	}
+	lock.Release()
+	srv.cache = &inventoryCache{}
+	srv.resume(io.Discard, true) //nolint:errcheck
+	if len(srv.retrying()) != 0 {
+		t.Fatalf("free again: retried and dropped, got %v", srv.retrying())
 	}
 }
