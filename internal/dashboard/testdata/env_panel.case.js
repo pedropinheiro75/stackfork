@@ -81,4 +81,16 @@ module.exports = function (ex, t) {
   assert.match(ehtml, /&quot;|&#34;/);
   assert.match(ehtml, /&#39;|&#x27;/);
   assert.match(ehtml, /&amp;/);
+
+  // the overrides list: only overrides, per service; a masked value never prints
+  const list = ex.envOverridesHtml([svc, evil, { name: "db", vars: [{ name: "X", value: "1", masked: false, origin: "project" }] }], "p1");
+  assert.match(list, /data-env-open data-project="p1" data-service="web"/, "a button per service opens its Environment dialog");
+  assert.match(list, /LOG_LEVEL<\/span><span class="env-ov-val mono">debug</);
+  assert.match(list, /ONLY_MINE/);
+  assert.doesNotMatch(list, /ENABLE_GUEST_ACCESS|NPM_TOKEN|DB_PASSWORD|data-service="db"/, "project, vault and unset names are not listed");
+  assert.doesNotMatch(list, /<img|A<"/, "escaped");
+  const masked = ex.envOverridesHtml([{ name: "web", vars: [{ name: "API_TOKEN", value: null, masked: true, origin: "override" }, { name: "SECRET_X", value: "leak", masked: true, origin: "override" }] }], "p1");
+  assert.match(masked, /env-masked[^>]*>••••</);
+  assert.doesNotMatch(masked, /leak|null/, "a masked override shows bullets, never a value");
+  assert.match(ex.envOverridesHtml([], "p1"), /No overrides are set/);
 };

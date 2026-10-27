@@ -824,6 +824,15 @@ code.setting-value { display: inline-block; }
 
 /* Environment panel: the per-service dialog (add-env-overrides D7). */
 .env-modal { max-width: 720px; }
+button.env-chip { font-family: inherit; cursor: pointer; }
+button.env-chip:hover { filter: brightness(1.15); }
+button.env-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.env-ov { max-height: 52vh; overflow: auto; margin-bottom: var(--space-3); }
+.env-ov-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-1) var(--space-2); }
+.env-ov-head h3 { margin: 0; font-size: 12px; font-weight: 600; }
+.env-ov-rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.env-ov-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--space-3); padding: var(--space-2); border-bottom: 1px solid var(--line); font-size: 12px; }
+.env-ov-val { min-width: 0; overflow-wrap: anywhere; }
 .env-rows { list-style: none; margin: 0 0 var(--space-3); padding: 0; max-height: 52vh; overflow: auto; border-top: 1px solid var(--line); }
 .env-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.5fr) 88px 132px; align-items: center; gap: var(--space-1) var(--space-3); min-height: 44px; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--line); }
 .env-name { min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }

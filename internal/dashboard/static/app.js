@@ -545,7 +545,7 @@
       (inst.knowledge && (inst.knowledge.status === "draft" || inst.knowledge.status === "stale")
         ? '<span class="chip chip-attention" title="Setup knowledge: ' + escapeHtml(inst.knowledge.status) + '"><span class="chip-glyph" aria-hidden="true">' + GLYPH.attention + "</span>Setup unverified</span>" : "") +
       (inst.env_overrides
-        ? '<span class="chip chip-attention env-chip" title="Env overrides replace the project\'s values until you reset them"><span class="chip-glyph" aria-hidden="true">' + GLYPH.attention + "</span>" + plural(inst.env_overrides, "env override") + "</span>" +
+        ? '<button type="button" class="chip chip-attention env-chip" data-env-list data-project="' + p + '" data-key="' + p + '/envchip" aria-haspopup="dialog" title="Env overrides replace the project\'s values until you reset them. Click to see which are set."><span class="chip-glyph" aria-hidden="true">' + GLYPH.attention + "</span>" + plural(inst.env_overrides, "env override") + "</button>" +
           '<button type="button" class="btn btn-ghost" data-env-reset data-project="' + p + '" data-count="' + inst.env_overrides + '" data-key="' + p + '/envreset">Reset to project defaults</button>'
         : "") + "</div>";
     var meta = '<div class="stack-meta mono"><span class="stack-path" title="' + escapeHtml(inst.root) + '">' + escapeHtml(inst.rel_root || inst.root) + "</span>" +
@@ -1817,6 +1817,39 @@
     }
   }
 
+  // The overrides of every service, from GET /api/env (a masked value is null there and shows as bullets).
+  function envOverridesHtml(services, project) {
+    var p = escapeHtml(project);
+    return (services || []).map(function (svc) {
+      var ov = (svc.vars || []).filter(function (v) { return v.origin === "override"; });
+      if (!ov.length) return "";
+      var n = escapeHtml(svc.name);
+      return '<section class="env-ov-svc"><div class="env-ov-head"><h3 class="mono">' + n + '</h3>' +
+        '<button type="button" class="btn btn-ghost" data-env-open data-project="' + p + '" data-service="' + n + '" data-key="' + p + '/envchip">Environment&hellip;</button></div><ul class="env-ov-rows">' +
+        ov.map(function (v) {
+          var val = v.masked || v.value === null || v.value === undefined
+            ? '<span class="env-masked mono" title="Hidden: this page never receives the value">••••</span>'
+            : '<span class="env-ov-val mono">' + (v.value === "" ? '<span class="muted">(empty)</span>' : escapeHtml(v.value)) + "</span>";
+          return '<li class="env-ov-row"><span class="env-name mono">' + escapeHtml(v.name) + "</span>" + val + "</li>";
+        }).join("") + "</ul></section>";
+    }).join("") || '<p class="muted env-empty">No overrides are set.</p>';
+  }
+
+  var envList = { opener: null };
+
+  function openEnvList(btn) {
+    var $ = function (id) { return document.getElementById(id); };
+    var project = btn.dataset.project, dlg = $("envlist-dialog");
+    envList = { opener: openerOf(btn) };
+    $("el-body").innerHTML = '<p class="muted env-empty" role="status">loading…</p>';
+    $("el-error").textContent = "";
+    dlg.showModal();
+    fetch("/api/env?project=" + encodeURIComponent(project), { credentials: "same-origin" })
+      .then(function (r) { return r.ok ? r.json() : r.text().then(function (t) { throw new Error(t.trim() || "status " + r.status); }); })
+      .then(function (body) { if (dlg.open) $("el-body").innerHTML = envOverridesHtml(body.services, project); })
+      .catch(function (e) { $("el-body").innerHTML = ""; $("el-error").textContent = e.message; });
+  }
+
   function envShowError(msg) { document.getElementById("env-error").textContent = msg || ""; }
 
   function openEnv(btn) {
@@ -1873,7 +1906,9 @@
     var dlg = $("env-dialog"), rdlg = $("envreset-dialog");
     document.addEventListener("click", function (e) {
       var open = e.target.closest("[data-env-open]");
-      if (open) { openEnv(open); return; }
+      if (open) { if (open.closest("#envlist-dialog")) $("envlist-dialog").close(); openEnv(open); return; }
+      var lst = e.target.closest("[data-env-list]");
+      if (lst) { openEnvList(lst); return; }
       var rs = e.target.closest("[data-env-reset]");
       if (rs) {
         envReset = { project: rs.dataset.project, opener: rs };
@@ -1885,6 +1920,11 @@
         $("er-cancel").focus();
       }
     });
+    var ldlg = $("envlist-dialog");
+    $("el-close").addEventListener("click", function () { ldlg.close(); });
+    $("el-done").addEventListener("click", function () { ldlg.close(); });
+    // the list closes before the service's Environment dialog opens: that one restores focus then
+    ldlg.addEventListener("close", function () { $("el-body").innerHTML = ""; if (!envSt) focusBack(envList.opener); envList.opener = null; });
     $("env-close").addEventListener("click", function () { dlg.close(); });
     $("env-cancel").addEventListener("click", function () { dlg.close(); });
     dlg.addEventListener("close", function () { if (envSt) focusBack(openerOf(envSt.opener)); envSt = null; });
@@ -2603,7 +2643,7 @@
     openLearn: openLearn, checkSecrets: checkSecrets, postCleanup: postCleanup, stackColorIndex: stackColorIndex };
 
   if (typeof window.__sfExport === "function") {
-    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, cleanupNoteHtml: cleanupNoteHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, noteLiveRuns: noteLiveRuns, liveOp: liveOp, paintLive: paintLive, loadRepos: loadRepos, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip, pickOpenApp: pickOpenApp, isFlagLike: isFlagLike, flagNext: flagNext, envRowsOf: envRowsOf, envRowHtml: envRowHtml, envEdit: envEdit, envRestore: envRestore, envAdd: envAdd, envChanges: envChanges });
+    window.__sfExport({ reposState: reposState, paintRuns: paintRuns, onStreamObject: onStreamObject, fmtDur: fmtDur, runChip: runChip, versionHtml: versionHtml, cleanupNoteHtml: cleanupNoteHtml, agoText: agoText, pickStep: pickStep, stepsHtml: stepsHtml, runCalloutHtml: runCalloutHtml, paintStarts: paintStarts, noteLiveRuns: noteLiveRuns, liveOp: liveOp, paintLive: paintLive, loadRepos: loadRepos, finishStart: finishStart, paintSecrets: paintSecrets, needsSecretCheck: needsSecretCheck, isStreamAction: isStreamAction, retryCommand: retryCommand, startingChip: startingChip, pickOpenApp: pickOpenApp, isFlagLike: isFlagLike, flagNext: flagNext, envRowsOf: envRowsOf, envRowHtml: envRowHtml, envOverridesHtml: envOverridesHtml, envEdit: envEdit, envRestore: envRestore, envAdd: envAdd, envChanges: envChanges });
   }
 
   if (document.readyState === "loading") {

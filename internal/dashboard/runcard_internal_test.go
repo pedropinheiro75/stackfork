@@ -53,7 +53,7 @@ var runCardCases = []struct {
 			{Name: "web", Kind: "web", Image: "nginx", State: "running"},
 			{Name: "host:app", Label: "app", Kind: "host", Image: "host", State: "running", Host: &inventory.HostInfo{PID: 4242, Listening: true}},
 		}
-	}), []string{`<span class="chip chip-attention env-chip"`, "2 env overrides</span>",
+	}), []string{`<button type="button" class="chip chip-attention env-chip" data-env-list data-project="sf-acme-web-2ffa6841c75d"`, "2 env overrides</button>",
 		`<button type="button" class="btn btn-ghost" data-env-reset data-project="sf-acme-web-2ffa6841c75d" data-count="2" data-key="sf-acme-web-2ffa6841c75d/envreset"`, ">Reset to project defaults<",
 		`data-env-open data-project="sf-acme-web-2ffa6841c75d" data-service="web"`, `data-env-open data-project="sf-acme-web-2ffa6841c75d" data-service="host:app"`, ">Environment&hellip;<"}, nil},
 	{"env item: a hostile service name is escaped", runInst(nil, func(i *inventory.Instance) {
@@ -61,7 +61,7 @@ var runCardCases = []struct {
 		i.Services = []inventory.Service{{Name: `<"'&`, Kind: "web", Image: "nginx", State: "running"}}
 	}), []string{`data-env-open data-project="sf-acme-web-2ffa6841c75d" data-service="&lt;&#34;&#39;&amp;"`}, []string{`data-service="<`, `data-service="<"`}},
 	{"one env override", runInst(nil, func(i *inventory.Instance) { i.EnvOverrides = 1 }),
-		[]string{"1 env override</span>", "data-env-reset"}, []string{"1 env overrides"}},
+		[]string{"1 env override</button>", "data-env-reset"}, []string{"1 env overrides"}},
 	{"no env overrides, no chip and no reset", runInst(nil, func(i *inventory.Instance) {
 		i.State = "running"
 		i.Services = []inventory.Service{{Name: "web", Kind: "web", Image: "nginx", State: "stopped"}}
