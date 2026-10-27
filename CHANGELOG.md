@@ -9,6 +9,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - The dashboard's "Environment · SERVICE" dialog is easier to read. It lists the service's overrides first, as Variable, Project value and Your value, with a reset button per row; the other variables sit under "Show all N variables", read-only, with their origin (secret-like values stay hidden). A boolean shows "true" or "false" beside its toggle. The "OVERRIDE" badge is gone. Reset is pending until Save, with an Undo. The button reads "Save and restart SERVICE" and a "No changes" note explains why it is disabled. A long value wraps in full. The name field suggests the service's variables, and adding a name that exists edits its row.
 
+### Fixed
+
+- A one-shot job that exited 0 (a migrate service) no longer makes its stack "partial": a host app can read the instance's env and start next to it, and the card shows no "exited" warning for it.
+- `resume` also finishes a stack that an earlier resume left half started when the dashboard was forced to quit.
+- Run cards and the version menu name a `resume` and a `cascade` run.
+
 ### Added
 
 - Resume what was running. Each instance records whether you want it running (`want_running` in its manifest): a whole-stack `up`, `start-env`, `reset` and Start set it; `down`, Stop, and a `stop` that leaves nothing running clear it; `up SERVICE` leaves it alone. When the dashboard starts (the macOS app's too), and again when Docker comes back after two failed polls, it starts every instance that wants to run and has no Compose container running, one at a time, as a `resume` run on the instance's card. It starts only the services the mode's plan starts and never seeds: a pending seed stays pending and the card says so. It skips an instance whose checkout is now on another branch, or that has a run or the instance lock in progress. Your data volumes are kept. `stackfork resume` does the same once from a terminal. `stackfork config set resume-on-start off` (or the Settings page) turns the automatic part off. Only one dashboard per machine watches (it holds `<state>/watch.lock`), so the macOS app's dashboard and a terminal one do not both act.
