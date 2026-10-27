@@ -36,7 +36,9 @@ type Resolved struct {
 	// recorded target the stack lacks, `none` and a failed guess are not OK.
 	OK      bool
 	Warning string
-	Links   []ResolvedLink
+	// Starting: the target is a host app of the plan with no route yet.
+	Starting bool
+	Links    []ResolvedLink
 
 	hostRoutes map[string]int
 }
@@ -45,16 +47,17 @@ type Resolved struct {
 // on the entry's own base URL, the only kind the proxy's portless address
 // can stand in for.
 type ResolvedLink struct {
-	Name    string
-	Service string
-	Port    int
-	HTTPS   bool
-	HostApp string // for a host route: the name of the host app it points to
-	Path    string
-	Host    bool // the link names a host app: Port is its host port
-	OnEntry bool
-	OK      bool
-	Warning string
+	Name     string
+	Service  string
+	Port     int
+	HTTPS    bool
+	HostApp  string // for a host route: the name of the host app it points to
+	Path     string
+	Host     bool // the link names a host app: Port is its host port
+	OnEntry  bool
+	OK       bool
+	Warning  string
+	Starting bool // a host app of the plan with no route yet
 }
 
 // ResolveEntry applies the order of D6: a host route stands in for the
@@ -92,7 +95,7 @@ func resolveEntry(k *Knowledge, model interface{}, hostRoutes map[string]int, ho
 		r.Source, r.Service, r.Port = SourceRecorded, e.Service, e.Port
 		if hasTarget(targets, e.Service, e.Port) {
 			r.OK, r.HTTPS = true, https(e.Port)
-		} else {
+		} else if r.Starting = isHostStep(k, e.Service); !r.Starting {
 			r.Warning = fmt.Sprintf("the recorded entry %s:%d is not in this stack; record the right one with stackfork learn record entry", e.Service, e.Port)
 		}
 	default:
@@ -103,9 +106,27 @@ func resolveEntry(k *Knowledge, model interface{}, hostRoutes map[string]int, ho
 	}
 
 	for _, l := range links {
-		r.Links = append(r.Links, r.resolveLink(l, e, targets, https))
+		rl := r.resolveLink(l, e, targets, https)
+		if !rl.OK && isHostStep(k, l.Service) {
+			// a host app of the plan that has not started (yet): no route
+			rl.Warning, rl.Starting = "", true
+		}
+		r.Links = append(r.Links, rl)
 	}
 	return r
+}
+
+// isHostStep reports whether name is a host app of k's plan.
+func isHostStep(k *Knowledge, name string) bool {
+	if k == nil || name == "" {
+		return false
+	}
+	for _, s := range k.Plan.HostSteps() {
+		if s.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func hasTarget(targets map[string][]int, service string, port int) bool {
@@ -133,6 +154,8 @@ func (r Resolved) resolveLink(l Link, e *Entry, targets map[string][]int, https 
 		switch {
 		case e == nil || e.None:
 			rl.Warning = fmt.Sprintf("link %q is a path on the entry, but no entry is recorded; record one with stackfork learn record entry", l.Name)
+		case !r.OK && r.Starting:
+			rl.Starting = true
 		case !r.OK:
 			rl.Warning = fmt.Sprintf("link %q is a path on the entry, which is not usable; %s", l.Name, fix)
 		default:

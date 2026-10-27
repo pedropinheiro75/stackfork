@@ -317,10 +317,16 @@ func entryApps(r knowledge.Resolved, inPlay bool, w knowledge.Where, services []
 		} else if r.Warning != "" {
 			chips = append(chips, AppLink{Label: knowledge.ReservedLinkName, Source: "entry", Warning: r.Warning})
 			warnings = append(warnings, r.Warning)
+		} else if r.Starting {
+			chips = append(chips, AppLink{Label: knowledge.ReservedLinkName, Service: r.Service, Source: "entry", Hint: "starts with the stack"})
 		}
 	}
 	for _, l := range r.Links {
 		if !l.OK {
+			if l.Starting {
+				chips = append(chips, AppLink{Label: l.Name, Service: l.Service, Source: "link", Hint: "starts with the stack"})
+				continue
+			}
 			chips = append(chips, AppLink{Label: l.Name, Source: "link", Warning: l.Warning})
 			warnings = append(warnings, l.Warning)
 			continue

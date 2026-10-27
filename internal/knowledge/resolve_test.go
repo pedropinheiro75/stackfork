@@ -236,3 +236,26 @@ func TestResolveHostAppEntry(t *testing.T) {
 		t.Fatal(u)
 	}
 }
+
+// An entry and links to host apps of the plan that have not started yet are
+// "starting", not a warning; once the routes exist they resolve.
+func TestResolveHostAppsNotStartedYet(t *testing.T) {
+	k := &Knowledge{
+		Entry: &Entry{Service: "app", Port: 21675},
+		Links: []Link{{Name: "API", Service: "api", Port: 26824}, {Name: "Admin", Path: "/admin"}},
+		Plan:  Plan{Steps: []Step{{ID: "app", Kind: KindHost, Name: "app"}, {ID: "api", Kind: KindHost, Name: "api"}}},
+	}
+	r := ResolveEntry(k, nil, nil)
+	if r.Warning != "" || !r.Starting {
+		t.Fatalf("entry: %+v", r)
+	}
+	for _, l := range r.Links {
+		if l.Warning != "" || !l.Starting {
+			t.Fatalf("link %s: %+v", l.Name, l)
+		}
+	}
+	r = ResolveEntry(k, nil, map[string]int{"app": 41000, "api": 41001})
+	if !r.OK || !r.Links[0].OK || r.Links[0].Port != 41001 {
+		t.Fatalf("running: %+v", r)
+	}
+}
