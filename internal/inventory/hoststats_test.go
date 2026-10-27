@@ -288,3 +288,28 @@ func TestServerOrFailedHostAppKeepsExitedWarning(t *testing.T) {
 		}
 	}
 }
+
+// Docker lost the containers while a host app kept running: partial, with a
+// warning that says what Start and Stop do.
+func TestStoppedContainersWithALiveHostAppArePartial(t *testing.T) {
+	start, err := state.ProcStart(os.Getpid())
+	if err != nil {
+		t.Skip("no process start time on this platform")
+	}
+	port := startListener(t)
+	base, _ := hostInstance(t, map[string]state.HostProc{
+		"api": {PID: os.Getpid(), StartedAt: start, Cmdline: os.Args, Port: port},
+	})
+	t.Setenv("DOCKER_FAKE_PS", "")
+	inst := collectOne(t, base)
+	if inst.State != StatePartial {
+		t.Fatalf("state %s", inst.State)
+	}
+	found := false
+	for _, w := range inst.Warnings {
+		found = found || strings.Contains(w, "containers are stopped but host apps api still run")
+	}
+	if !found {
+		t.Errorf("warnings %q", inst.Warnings)
+	}
+}

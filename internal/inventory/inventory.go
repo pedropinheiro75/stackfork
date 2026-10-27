@@ -396,6 +396,20 @@ func buildInstance(manifestPath string, legacy bool, rows []containerRow, proxyS
 				}
 			}
 		}
+		if serviceState == StateStopped {
+			// Docker lost the containers (a restart, a sleep) while the host
+			// apps kept running: they run without their database.
+			var alive []string
+			for _, h := range hosts {
+				if h.State == "running" || h.State == "starting" {
+					alive = append(alive, h.Label)
+				}
+			}
+			if len(alive) > 0 {
+				inst.State = StatePartial
+				inst.Warnings = append(inst.Warnings, fmt.Sprintf("the containers are stopped but host apps %s still run; Start brings the containers back, Stop stops everything", strings.Join(alive, ", ")))
+			}
+		}
 		inst.Warnings = append(inst.Warnings, appWarnings...)
 		fillOneOffs(&inst, rows)
 		inst.Apps = appendRouteAndKnowledgeApps(apps, info, hostname)

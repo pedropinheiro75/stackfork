@@ -660,7 +660,8 @@ func TestInventoryListsHostProcessAsService(t *testing.T) {
 	if gone.Kind != "host" || gone.State != "exited" {
 		t.Errorf("gone: %+v", gone)
 	}
-	if inst.State != StateStopped {
-		t.Errorf("a host row must not change the instance state, got %s", inst.State)
+	// stopped containers with a host app still running: partial
+	if inst.State != StatePartial {
+		t.Errorf("a live host app beside stopped containers makes it partial, got %s", inst.State)
 	}
 }
