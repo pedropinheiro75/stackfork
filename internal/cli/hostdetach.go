@@ -346,8 +346,13 @@ func cmdHostManage(stdout, stderr io.Writer, sub string, args []string, root, br
 	if sub == "restart" {
 		return 0, lifecycle.HostRestart(stderr, root, instanceDir, name, newBase, legacyBase)
 	}
-	if err := lifecycle.StopHostLocked(stderr, instanceDir, name, newBase, legacyBase); err != nil {
+	dependents, err := lifecycle.StopHostCascadeLocked(stderr, root, instanceDir, name, newBase, legacyBase)
+	if err != nil {
 		return 0, err
+	}
+	if len(dependents) > 0 {
+		fmt.Fprintf(stdout, "stopped %s and its dependents: %s\n", name, strings.Join(dependents, ", "))
+		return 0, nil
 	}
 	fmt.Fprintf(stdout, "stopped %s\n", name)
 	return 0, nil

@@ -188,7 +188,15 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 		} else {
 			code, err = compose(&out, &out)
 		}
-		return execResult(lifecycleAction, code, err, out.String())
+		resp := execResult(lifecycleAction, code, err, out.String())
+		if resp.OK && lifecycleAction == "stop" { // a cascading stop says what else it stopped
+			for _, l := range strings.Split(out.String(), "\n") {
+				if strings.Contains(l, lifecycle.CascadeMarker) {
+					resp.Message = l
+				}
+			}
+		}
+		return resp
 	case "proxy-up":
 		port, err := proxy.ReadPort(s.NewStateBase)
 		if err != nil {
@@ -253,7 +261,11 @@ func (s *Server) hostAction(req actionRequest, name, instanceDir, root string) a
 	var err error
 	switch req.Action {
 	case "service-stop":
-		err = lifecycle.StopHostLocked(&errBuf, instanceDir, name, s.NewStateBase, s.LegacyStateBase)
+		var dependents []string
+		dependents, err = lifecycle.StopHostCascadeLocked(&errBuf, root, instanceDir, name, s.NewStateBase, s.LegacyStateBase)
+		if err == nil && len(dependents) > 0 {
+			return actionResponse{OK: true, Message: fmt.Sprintf("stopped %s and its %s%s", name, lifecycle.CascadeMarker, strings.Join(dependents, ", "))}
+		}
 	case "host-remove":
 		err = lifecycle.ForgetHostLocked(&errBuf, instanceDir, name, s.NewStateBase, s.LegacyStateBase)
 	default:

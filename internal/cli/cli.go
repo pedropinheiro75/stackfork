@@ -1105,6 +1105,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 		defer lock.Release()
 		unlock = lock.Release
+		opts.Locked = true
 	}
 
 	if action == "up" {
