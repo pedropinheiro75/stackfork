@@ -406,11 +406,21 @@ func DraftSeedSkip(root, main, instanceDir, mode string) string {
 // withMigrate puts the plan's first schema step before the seed, so a new
 // database has its tables. The migrate runs in the seed's service, so a
 // schema step that names another service is not prefixed: it runs at its
-// own place in the plan.
+// own place in the plan. A plan that records a seed step and no schema step
+// gets no prefix.
 func withMigrate(root, main, instanceDir, seed, seedService string) string {
 	migrate := ""
 	for _, d := range []string{root, main} {
 		if k, err := knowledge.Load(filepath.Join(d, ".stackfork", "knowledge.json")); err == nil {
+			// A plan that records its seed but no schema step, or an app whose
+			// own start migrates, decided that already: a detected script is no
+			// reason to migrate again.
+			if m, _ := learn.EntrypointRuns(k); m != nil {
+				return seed
+			}
+			if k.Plan.SeedStep() != nil && k.Plan.MigrateStep() == nil {
+				return seed
+			}
 			if m := k.Plan.MigrateStep(); m != nil {
 				if m.IsHostExec() { // a container seed is not prefixed by a host command
 					return seed
