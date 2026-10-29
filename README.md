@@ -6,7 +6,7 @@
 
 ### Every branch gets its own running stack. Every AI agent gets its own.
 
-**Your `docker-compose.yml`, unchanged. One command per branch. No port, volume or database ever shared by accident.**
+**A reproducible recipe for running your app locally, in Docker or on the host. Run as many branches of it as you need, at the same time, with every process supervised and Git opening and closing the environments.**
 
 [![CI](https://github.com/pedropinheiro75/stackfork/actions/workflows/ci.yml/badge.svg)](https://github.com/pedropinheiro75/stackfork/actions/workflows/ci.yml)
 ![Works with Claude Code · Codex · Copilot CLI](https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Copilot%20CLI-f59e0b)
@@ -22,17 +22,18 @@
 
 **The problem.** You give Claude Code a branch and keep working on another. Both run `docker compose up`. Same ports, same container names, same volumes, often the same database. One of you breaks the other, and the agent cannot tell.
 
-**The fix.** stackfork learns how your project starts, once, and records the plan in the repository. From then on every worktree starts with one command, on its own ports, volumes, network and `.localhost` URL, with its dependencies installed, its migrations run and its database seeded. Five agents and you can work on five branches of one project on one laptop, at the same time, and nothing collides.
+**The fix.** stackfork learns how your project starts, once, and records the recipe in the repository: what runs in Docker, what runs on the host, what to install, migrate and seed, and which URL to open. From then on every worktree starts with one command, on its own ports, volumes, network and `.localhost` URL. Five agents and you can work on five branches of one project on one laptop, at the same time, and nothing collides. stackfork keeps watching every process it started, and Git decides which environments exist.
 
 ## Why developers keep it
 
 | | |
 |---|---|
 | **Zero new config** | It reads the Compose file you already maintain and never edits it. If something cannot be isolated safely, it names the line. |
-| **A branch is an environment** | `worktree add` + `start-env`. Merge or close the pull request, and the environment goes away. GitOps, on your laptop. |
+| **Docker, or not** | Keep Postgres and Redis in containers and run the app on the host for hot reload and a debugger. The recipe knows both, and each branch still gets its own copy. |
+| **Git drives it** | `worktree add` + `start-env`, or turn on live mode and a new branch starts by itself. Merge or close the pull request, and the environment goes away. GitOps, on your laptop. |
 | **Learn once, start forever** | The startup plan (install, build, migrate, seed, host apps, URLs) is a committed file. Teammates and agents start the project the same way, every time. |
 | **Agents run free, people hold the keys** | Agents start, test and stop environments on their own. Deleting data, trusting host commands and turning automation on wait for a person. |
-| **It survives your day** | Reboot, Docker restart, branch switch: what was running comes back by itself, and what lost its database stops instead of running against nothing. |
+| **Every process is supervised** | Host apps are started, health-checked, restarted on a proxy change and reported when they stop answering. Reboot or Docker restart: what was running comes back, and what lost its database stops instead of running against nothing. |
 | **You see everything** | A dashboard and a macOS menu bar app show every running copy, its URLs, its memory and CPU, what each start did and why it failed. |
 
 <img src="docs/dashboard.gif" alt="Dashboard demo: the Instances page with two container instances and one hybrid instance whose app runs on the host, the Project page with the startup workflow canvas and resource charts, the environment overrides dialog, and the Repos page">
