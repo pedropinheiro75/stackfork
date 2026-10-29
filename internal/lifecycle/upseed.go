@@ -28,6 +28,10 @@ type UpSeed struct {
 	// created) but leave running it to the caller (RunDueSeed), at the data
 	// step's place in the plan.
 	DeferSeed bool
+	// RetryFailed: a seed that failed on this data (seeded:false, not pending)
+	// is due again. Only the plan runner sets it: it runs the seed after the
+	// steps the seed needs.
+	RetryFailed bool
 }
 
 // UpOutcome is the result of UpAndSeed. A failed seed is SeedErr: Code and Err
@@ -147,7 +151,7 @@ func UpAndSeed(out, errOut io.Writer, a UpSeed) UpOutcome {
 				}
 				return
 			}
-			seedNow = PlanSeedIn(a.Root, a.Main, a.InstanceDir, a.Mode)
+			seedNow = planSeed(a.Root, a.Main, a.InstanceDir, a.Mode, a.RetryFailed)
 		})
 	}
 	var upS, seedS *runs.Step
@@ -192,6 +196,16 @@ func UpAndSeed(out, errOut io.Writer, a UpSeed) UpOutcome {
 				reason = "no seed for this mode"
 			}
 			seedS.Skip(reason)
+		}
+		return res
+	}
+	if seedNeedsLaterSteps(a) {
+		// The plan has install/build/migrate steps before the seed: a plain up
+		// would seed before they ran. The seed stays pending for start-env.
+		const note = "seed pending: it runs with start-env, after the plan's install/build/migrate steps (stackfork start-env)"
+		fmt.Fprintln(errOut, note)
+		if seedS != nil {
+			seedS.Skip(note)
 		}
 		return res
 	}
@@ -250,4 +264,26 @@ func runDueSeed(out, errOut io.Writer, a UpSeed, seedS *runs.Step) (seedErr erro
 		seedErr = RunSeed(out, errOut, a.Root, a.Main, a.Branch, a.Project, a.InstanceDir, a.NewBase, a.LegacyBase, cmd, svc, a.Plan, seedS)
 	})
 	return seedErr, seedErr == nil && !skipped
+}
+
+// seedNeedsLaterSteps: the plan runs an exec step between the compose-up and
+// the data step that the seed does not cover itself (install, build, a
+// migrate the seed command does not run), so a seed right after the up fails.
+func seedNeedsLaterSteps(a UpSeed) bool {
+	if !SeedDeferred(a.Plan, a.Mode) {
+		return false
+	}
+	run, _ := a.Plan.ForMode(a.Mode)
+	up := false
+	for _, s := range run {
+		switch {
+		case s.Kind == knowledge.KindComposeUp:
+			up = true
+		case s.Kind == knowledge.KindExec && s.Once == knowledge.OnceData:
+			return false
+		case up && s.Kind == knowledge.KindExec && !(s.Once == knowledge.OnceSchema && SeedCoversSchema(a.Root, a.Main, a.InstanceDir, a.Plan, a.Mode, s)):
+			return true
+		}
+	}
+	return false
 }

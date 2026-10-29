@@ -1,6 +1,8 @@
 package cli
 
 import (
+	stpkg "github.com/pedropinheiro75/stackfork/internal/state"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -75,4 +77,74 @@ func TestPlanTextShowsTheSeedWhereItRuns(t *testing.T) {
 		last = i
 	}
 	t.Log(out)
+}
+
+// The field sequence: a plain `up` on a plan with install/build/migrate before
+// the seed must not seed; start-env then runs the seed once, at its place.
+func TestPlainUpLeavesTheSeedPendingForStartEnv(t *testing.T) {
+	calls := stubHostExecCodes(t, nil)
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, fieldPlan())
+	installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+
+	if _, e, code := runCLI(t, append(base, "--root", repo, "prepare", "-f", ".agent-dev/app.compose.yaml")...); code != 0 {
+		t.Fatal(e)
+	}
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	_, e, code := runCLI(t, append(base, "--root", repo, "up")...)
+	if code != 0 || !strings.Contains(e, "seed pending: it runs with start-env") || len(*calls) != 0 {
+		t.Fatalf("%d %s %v", code, e, *calls)
+	}
+	if seededMarker(t, state) != "false" || !seedPendingMarker(t, state) {
+		t.Fatalf("marker %s pending %v", seededMarker(t, state), seedPendingMarker(t, state))
+	}
+
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "0") // the volume exists now
+	_, e, code = runCLI(t, append(base, "start-env", repo)...)
+	want := "install: yarn install|build-packages: yarn build:packages|migrate: yarn db:migrate:prod|seed: yarn db:seed:prod:testdata"
+	if code != 0 || strings.Join(*calls, "|") != want || seededMarker(t, state) != "true" || seedPendingMarker(t, state) {
+		t.Fatalf("%d %s %v", code, e, *calls)
+	}
+
+	n := len(*calls)
+	_, e, code = runCLI(t, append(base, "start-env", repo)...)
+	if code != 0 || strings.Count(strings.Join((*calls)[n:], "|"), "seed:") != 0 {
+		t.Fatalf("%d %s %v", code, e, (*calls)[n:])
+	}
+}
+
+// A seed that failed (seeded:false, not pending) is retried by start-env.
+func TestStartEnvRetriesAFailedSeed(t *testing.T) {
+	codes := map[string]int{"seed": 1}
+	calls := stubHostExecCodes(t, codes)
+	root, state := reposEnv(t)
+	repo := planRepo(t, root, fieldPlan())
+	installFakeDocker(t)
+	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
+
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	_, _, code := runCLI(t, append(base, "start-env", repo)...)
+	if code == 0 || seededMarker(t, state) != "false" || seedPendingMarker(t, state) {
+		t.Fatalf("%d %s", code, seededMarker(t, state))
+	}
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "0")
+	delete(codes, "seed")
+	n := len(*calls)
+	_, e, code := runCLI(t, append(base, "start-env", repo)...)
+	if code != 0 || !strings.Contains(strings.Join((*calls)[n:], "|"), "seed: yarn db:seed:prod:testdata") || seededMarker(t, state) != "true" {
+		t.Fatalf("%d %s %v", code, e, (*calls)[n:])
+	}
+}
+
+func seedPendingMarker(t *testing.T, state string) bool {
+	t.Helper()
+	dirs, _ := filepath.Glob(filepath.Join(state, "*", "manifest.json"))
+	m, err := stpkg.ReadManifest(dirs[0])
+	if err != nil || m == nil {
+		t.Fatal(err)
+	}
+	return m.SeedPending
 }

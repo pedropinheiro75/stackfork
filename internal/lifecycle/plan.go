@@ -277,7 +277,7 @@ func (r PlanRunner) upSeed(s knowledge.Step, deferred bool) UpSeed {
 	return UpSeed{
 		Run: r.Run, Root: r.Root, Main: r.Main, Branch: r.Branch, Project: r.Project, InstanceDir: r.InstanceDir,
 		NewBase: r.NewBase, LegacyBase: r.LegacyBase, Mode: r.Mode, Plan: r.Plan,
-		UpID: s.ID, UpText: StepText(s), Seed: !r.skipsHostSeed(), Lock: true, FreshData: r.FreshData, DeferSeed: deferred,
+		UpID: s.ID, UpText: StepText(s), Seed: !r.skipsHostSeed(), Lock: true, RetryFailed: true, FreshData: r.FreshData, DeferSeed: deferred,
 		Compose: func(stdout, stderr io.Writer) (int, error) {
 			services, err := r.upServices(stdout, s)
 			if err != nil {

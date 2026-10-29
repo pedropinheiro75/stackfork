@@ -499,9 +499,22 @@ func PlanSeed(root, main, instanceDir string) bool {
 // PlanSeedIn is PlanSeed for an explicit mode. When the mode does not run the
 // recorded data step it decides nothing: the seed stays undecided.
 func PlanSeedIn(root, main, instanceDir, mode string) bool {
+	return planSeed(root, main, instanceDir, mode, false)
+}
+
+// planSeed is PlanSeedIn; retryFailed also makes a seed that failed on this
+// data due again (never one that succeeded or was marked done: Seeded true).
+func planSeed(root, main, instanceDir, mode string, retryFailed bool) bool {
 	m, _ := state.ReadManifest(filepath.Join(instanceDir, "manifest.json"))
 	if m != nil && m.SeedPending {
 		cmd, _ := SeedRecipeIn(root, main, instanceDir, mode)
+		return cmd != ""
+	}
+	if retryFailed && m != nil && m.Seeded != nil && !*m.Seeded {
+		cmd, _ := SeedRecipeIn(root, main, instanceDir, mode)
+		if cmd != "" {
+			setSeed(instanceDir, boolPtr(false), true)
+		}
 		return cmd != ""
 	}
 	if m == nil || m.Seeded != nil {
