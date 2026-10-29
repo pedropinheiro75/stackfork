@@ -18,7 +18,7 @@
 
 </div>
 
-<img src="docs/demo.gif" alt="Terminal demo: stackfork learn scans a project, stackfork start-env runs its startup plan, a second worktree starts the same project, and stackfork list shows both instances running on their own URLs">
+<img src="docs/demo.gif" alt="Terminal demo: stackfork start-env starts a project, a second worktree starts the same project, curl shows the two copies counting visits in separate databases, stackfork list shows both running, and down --volumes removes one">
 
 **The problem.** You give Claude Code a branch and keep working on another. Both run `docker compose up`. Same ports, same container names, same volumes, often the same database. One of you breaks the other, and the agent cannot tell.
 
