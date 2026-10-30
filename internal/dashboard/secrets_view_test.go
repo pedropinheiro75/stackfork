@@ -130,7 +130,7 @@ func TestSecretsSectionShowsFolderSource(t *testing.T) {
 	}
 	folder := filepath.Dir(repo)
 	var out, errBuf strings.Builder
-	if code := cli.Run([]string{"secret", "map", folder, "FOLDER_TOK=keychain:idv-tok"}, &out, &errBuf); code != 0 {
+	if code := cli.Run([]string{"secret", "map", folder, "FOLDER_TOK=keychain:acme-tok"}, &out, &errBuf); code != 0 {
 		t.Fatal(errBuf.String())
 	}
 	_, section := secretsFragment(t, e, repo)

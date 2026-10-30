@@ -22,13 +22,13 @@ func TestStackIconUsesAppName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	project := "idv-app-b-isolated-20260922-071e511abe10"
+	project := "idv-app-isolated-20260922-071e511abe10"
 	dir := filepath.Join(legacyBase, project)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	m := &state.Manifest{
-		Project: project, Root: root, Branch: "main", Hostname: "app-b.localhost",
+		Project: project, Root: root, Branch: "main", Hostname: "app.localhost",
 		Files: []string{"compose.yaml"}, Inputs: map[string]string{},
 	}
 	if err := state.WritePrivate(filepath.Join(dir, "manifest.json"), m); err != nil {

@@ -20,7 +20,7 @@ func TestParseDF(t *testing.T) {
 
 func TestAnonymousVolumesNeverNamed(t *testing.T) {
 	anon := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	got := AnonymousVolumes([]string{"mlc_postgres_data", anon, "idv-x_pgdata", "ABC"})
+	got := AnonymousVolumes([]string{"app_postgres_data", anon, "idv-x_pgdata", "ABC"})
 	if !reflect.DeepEqual(got, []string{anon}) {
 		t.Fatalf("got %v", got)
 	}
