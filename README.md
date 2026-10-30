@@ -44,7 +44,7 @@ Supported platforms: macOS and Linux, amd64 and arm64. Windows builds and passes
 
 Choose one method:
 
-- Go 1.24 or later:
+- Go 1.26.10 or later:
 
   ```sh
   go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest

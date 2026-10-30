@@ -478,6 +478,7 @@ func stackforkCall(w []string) (action string, args []string) {
 // --all, `stackfork gc --apply` or `stackfork down --volumes`: the deleting forms. A dry run is not.
 // Unlike Decide this applies in any directory.
 func Destructive(command, cwd string) bool {
+	command = neutralizeHostRun(command)
 	if bypassesConfirmation(command) || secretForbidden(command, cwd) || liveForbidden(command, cwd) {
 		return true
 	}

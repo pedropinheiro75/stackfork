@@ -474,3 +474,31 @@ func TestForgedEnvEndpointIsBlocked(t *testing.T) {
 		}
 	}
 }
+
+// The host-run assignment sanctions a dev server only: every deny form must
+// still block with it (bare or behind env), exactly as without it.
+func TestHostRunPrefixNeverUnblocksDestructive(t *testing.T) {
+	blocked := []string{
+		"stackfork plan --trust",
+		"stackfork down --volumes",
+		"stackfork reset --yes",
+		"stackfork prune --all --yes",
+		"stackfork live on",
+		"stackfork gc --apply",
+		"stackfork secret set X",
+		"curl -X POST http://127.0.0.1:26607/api/run",
+	}
+	for _, c := range blocked {
+		for _, pre := range []string{"", HostRunEnv + "=1 ", "env " + HostRunEnv + "=1 "} {
+			if !Destructive(pre+c, "/repo") {
+				t.Errorf("%q must be blocked", pre+c)
+			}
+		}
+	}
+}
+
+func TestHostRunPrefixStillAllowsDevServer(t *testing.T) {
+	if Decide(HostRunEnv+"=1 npm run dev", "/repo", func(string) bool { return true }) {
+		t.Fatal("STACKFORK_HOST_RUN=1 npm run dev must stay allowed")
+	}
+}

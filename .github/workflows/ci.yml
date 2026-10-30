@@ -10,11 +10,12 @@ permissions:
   contents: read
 
 jobs:
-  # Runs on Pedro's Mac (self-hosted): hosted runners are blocked by billing.
   test:
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
@@ -22,19 +23,23 @@ jobs:
       - run: go test -timeout 30m ./...
 
   vet-windows:
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - run: GOOS=windows go vet ./...
 
-  # The menu bar app (add-macos-app): Swift 6.2 on the same runner.
+  # The menu bar app (add-macos-app).
   macos-app:
-    runs-on: [self-hosted, macOS]
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod # one test builds the helper to check the orphan rule
@@ -44,9 +49,11 @@ jobs:
   # Real Docker stacks: only when started by hand.
   live:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
@@ -62,9 +69,16 @@ jobs:
       - run: bash examples/vite-api/ci-check.sh
 
   gitleaks:
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           fetch-depth: 0
-      - run: gitleaks git --redact --no-banner .
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - run: |
+          go install github.com/gitleaks/gitleaks/v8@v8.28.0
+          "$(go env GOPATH)/bin/gitleaks" git --redact --no-banner .
+

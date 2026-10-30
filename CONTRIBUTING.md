@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Go >= 1.24 (`go.mod` pins the minimum toolchain).
+- Go >= 1.26.10 (`go.mod` pins the minimum toolchain).
 - Docker with Compose v2, only for the live tests.
 
 ## Standard library only
