@@ -24,7 +24,7 @@ The agent guard is advisory. An agent that is not sandboxed and has file access 
 
 ## Live mode and Compose files
 
-With `live on`, an upstream commit runs with no person in the loop. stackfork refuses `privileged`, `devices`, `volumes_from`, shared `network_mode`, `pid` and `ipc`, mounted sockets (a `.sock` bind, `/proc`, `/sys`, `/dev`, so the Docker socket), external networks, volumes, secrets and configs, and writable binds outside the checkout. It removes fixed container names. It does not refuse `cap_add`, `security_opt`, `build.ssh`, `secrets` or `configs` with a `file:` source outside the checkout, or read-only binds of `$HOME`. This is a known limit. We track it as an open issue. Turn on live mode only for a repository whose committers you trust.
+With `live on`, an upstream commit runs with no person in the loop. stackfork refuses `privileged`, `devices`, `volumes_from`, shared `network_mode`, `pid` and `ipc`, mounted sockets (a `.sock` bind, `/proc`, `/sys`, `/dev`, so the Docker socket), external networks, volumes, secrets and configs, and writable binds outside the checkout. It removes fixed container names. It does not refuse `cap_add`, `security_opt`, `build.ssh`, `secrets` or `configs` with a `file:` source outside the checkout, or read-only binds of `$HOME`. This is a known limit, and a fix is planned. Turn on live mode only for a repository whose committers you trust.
 
 ## Multi-user machines
 
