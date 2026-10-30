@@ -163,16 +163,16 @@ func newMachine(t *testing.T) machine {
 		// foreign: stackfork label, project that is no known instance
 		psRow("c-foreign2", "sf-other", "exited", "sf-other-project-123456789abc"),
 		// foreign: unrelated project
-		`{"ID":"c-foreign3","Names":"company-brain","State":"running","Labels":"com.docker.compose.project=company-brain"}`,
+		`{"ID":"c-foreign3","Names":"other-brain","State":"running","Labels":"com.docker.compose.project=other-brain"}`,
 		`{"ID":"c-proxy","Names":"test-proxy","State":"running","Labels":"io.stackfork.proxy=true"}`,
 		// an unrelated container that is merely named like the real proxy
 		`{"ID":"c-notproxy","Names":"stackfork-proxy","State":"running","Labels":""}`,
 	)
 	f.set(t, "network", netRow(m.stopped+"_default", m.stopped), netRow(m.running+"_default", m.running),
-		netRow(m.orphan+"_default", m.orphan), netRow("company-brain_default", "company-brain"),
-		netRow("k3d-company", ""), `{"ID":"n-bridge","Name":"bridge","Labels":""}`)
+		netRow(m.orphan+"_default", m.orphan), netRow("other-brain_default", "other-brain"),
+		netRow("k3d-other", ""), `{"ID":"n-bridge","Name":"bridge","Labels":""}`)
 	f.set(t, "volume", volRow(m.stopped+"_pgdata", m.stopped), volRow(m.orphan+"_pgdata", m.orphan),
-		volRow(m.running+"_pgdata", m.running), volRow("company-brain_data", "company-brain"),
+		volRow(m.running+"_pgdata", m.running), volRow("other-brain_data", "other-brain"),
 		volRow(m.stopped+"-lookalike", "someone-else"), `{"Name":"anon123","Labels":"com.docker.volume.anonymous="}`)
 	f.set(t, "image", imgRow(m.stopped+"-web:dev"), imgRow(m.running+"-web:dev"), imgRow(m.orphan+"-web:dev"),
 		imgRow("postgres:17"), imgRow("sf-unrelated-web:dev"), imgRow(m.stopped+"-web:latest"), imgRow("caddy:2-alpine"))
@@ -212,7 +212,7 @@ func TestPruneDryRunDeletesNothing(t *testing.T) {
 			t.Errorf("overview missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "company") {
+	if strings.Contains(out, "other-brain") {
 		t.Errorf("foreign project leaked into the plan:\n%s", out)
 	}
 	if _, err := os.Stat(filepath.Join(m.base, m.stopped, "manifest.json")); err != nil {
@@ -255,7 +255,7 @@ func TestPruneStoppedRemovesOnlyOwnedStoppedResources(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"c-running", "c-foreign1", "c-foreign2", "c-foreign3", "c-proxy", "c-notproxy",
-		"company", "k3d", "bridge", "anon123", "someone-else", "postgres", "caddy", "sf-unrelated", m.running, ":latest"} {
+		"other-brain", "k3d", "bridge", "anon123", "someone-else", "postgres", "caddy", "sf-unrelated", m.running, ":latest"} {
 		for _, l := range rm {
 			if strings.Contains(l, bad) {
 				t.Errorf("foreign/running object touched (%q): %s", bad, l)

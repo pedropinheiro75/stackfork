@@ -31,6 +31,8 @@ STACKFORK_LIVE=1 go test ./...
 Live tests use the synthetic fixtures in `testdata/`, never a real project
 checkout, so they pass on a clean machine.
 
+Maintainers can set `STACKFORK_PRIVATE_TERMS_FILE` to a file of private terms (one per line, kept outside the repo) to make `internal/privatecheck` fail if any of them appears in the tree; the test is skipped when it is unset.
+
 ## The macOS app
 
 The app is a Swift package in `desktop/macos` (AppKit, WebKit, ServiceManagement and Foundation only; no dependency). It needs Xcode with Swift 6.2.

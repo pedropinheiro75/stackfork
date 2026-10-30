@@ -22,15 +22,27 @@ const modulePath = "github.com/pedropinheiro75/stackfork"
 // tapName is the public Homebrew install name, exempt the same way.
 const tapName = "pedropinheiro75/tap/stackfork"
 
-// denylist is the D4 list, verbatim.
-var denylist = []string{
-	"idv-isolated",
-	"ClientCo",
-	"clientco",
-	"pedropinheiro",
-	"~/code",
-	"memory-plugin",
-	"notes/",
+// publicTerms are generic enough to live in a public repo. The author's
+// real denylist (client and employer names) is never committed: it is read
+// from the file named by STACKFORK_PRIVATE_TERMS_FILE, one term per line.
+var publicTerms = []string{} // ponytail: add generic terms here if ever needed
+
+func loadDenylist(t *testing.T) []string {
+	path := os.Getenv("STACKFORK_PRIVATE_TERMS_FILE")
+	if path == "" {
+		t.Skip("STACKFORK_PRIVATE_TERMS_FILE is not set")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	terms := append([]string(nil), publicTerms...)
+	for _, l := range strings.Split(string(data), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			terms = append(terms, l)
+		}
+	}
+	return terms
 }
 
 // allowedPaths are the only places the denylist may appear (repo-root
@@ -46,7 +58,7 @@ var allowedFiles = map[string]bool{
 	"CHANGELOG.md":                  true,
 	"LICENSE":                       true,
 	".goreleaser.yaml":              true,
-	"internal/privatecheck/no_private_material_test.go": true, // holds the denylist itself
+	"internal/privatecheck/no_private_material_test.go": true, // module path constants
 }
 
 func allowedPath(rel string) bool {
@@ -78,12 +90,12 @@ func repoRoot(t *testing.T) string {
 
 // findViolations scans content line by line, exempting the module path,
 // and reports "path:line: denylisted word" for every hit.
-func findViolations(path, content string) []string {
+func findViolations(path, content string, denylist []string) []string {
 	var violations []string
 	for i, line := range strings.Split(content, "\n") {
 		clean := strings.ReplaceAll(strings.ReplaceAll(line, modulePath, ""), tapName, "")
 		for _, term := range denylist {
-			if strings.Contains(clean, term) {
+			if strings.Contains(strings.ToLower(clean), strings.ToLower(term)) {
 				violations = append(violations, fmt.Sprintf("%s:%d: contains denylisted %q", path, i+1, term))
 			}
 		}
@@ -95,6 +107,7 @@ func findViolations(path, content string) []string {
 // .claude/ and .codex/, skipping only .git) and fails on any D4 denylisted
 // string outside the allowlisted files/directories.
 func TestNoPrivateMaterial(t *testing.T) {
+	denylist := loadDenylist(t)
 	root := repoRoot(t)
 	var violations []string
 
@@ -136,7 +149,7 @@ func TestNoPrivateMaterial(t *testing.T) {
 		if !isText(data) {
 			return nil
 		}
-		violations = append(violations, findViolations(rel, string(data))...)
+		violations = append(violations, findViolations(rel, string(data), denylist)...)
 		return nil
 	})
 	if err != nil {
