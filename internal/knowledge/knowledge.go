@@ -18,7 +18,7 @@ import (
 	"unicode"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
-	"github.com/pedropinheiro75/stackfork/internal/state"
+	"github.com/pedropinheiro75/stackfork/internal/ecosystem"
 )
 
 // CurrentSchema is the schema Save writes. Load also accepts schema 1 (the
@@ -554,7 +554,7 @@ func (k *Knowledge) Markdown() string {
 func (k *Knowledge) StaleInputs(root string) []string {
 	var changed []string
 	for _, in := range k.Inputs {
-		h, err := state.SHA256File(filepath.Join(root, in.Path))
+		h, err := ecosystem.InputHash(filepath.Join(root, in.Path))
 		if err != nil || h != in.SHA256 {
 			changed = append(changed, in.Path)
 		}

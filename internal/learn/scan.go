@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
+	"github.com/pedropinheiro75/stackfork/internal/ecosystem"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
-	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 // underRoot reports whether path is root or a descendant of it, mirroring
@@ -286,7 +286,7 @@ func hashInputs(root string, paths map[string]bool) ([]knowledge.Input, error) {
 
 	inputs := make([]knowledge.Input, 0, len(list))
 	for _, p := range list {
-		sum, err := state.SHA256File(p)
+		sum, err := ecosystem.InputHash(p)
 		if err != nil {
 			return nil, fmt.Errorf("hashing %s: %w", p, err)
 		}

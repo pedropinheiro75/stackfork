@@ -5,6 +5,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- New `internal/ecosystem` package: what stackfork knows per language ecosystem lives there, JS/TS first. `learn` and the stale check hash only the parts of `package.json` the scan reads (`scripts`, `packageManager`, `workspaces`). Bumping a dependency or a version no longer marks the knowledge stale; the install step already re-runs when the lockfile changes.
+
 ## [0.2.0] - 2026-10-30
 
 First public release.
