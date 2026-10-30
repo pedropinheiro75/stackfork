@@ -202,7 +202,7 @@ func mkdirs(t *testing.T, base string, rel ...string) []string {
 func TestInheritedSecretsForByAncestorSegments(t *testing.T) {
 	tempConfig(t)
 	base := t.TempDir()
-	d := mkdirs(t, base, "idv", "rr/team", "rr/team/app", "idv-other/app")
+	d := mkdirs(t, base, "acme", "acme/team", "acme/team/app", "acme-other/app")
 	rr, team, app, other := d[0], d[1], d[2], d[3]
 	c := &Config{Secrets: map[string]map[string]string{
 		rr:    {"NPM_TOKEN": "keychain:far", "ONLY_FAR": "env:FAR"},

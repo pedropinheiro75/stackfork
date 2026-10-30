@@ -1,6 +1,6 @@
 ---
 name: Berth
-description: The stackfork dashboard design system — a dense git + Docker ops console derived from Company the earlier design system, dark-first, monospace-led, status by glyph and text.
+description: The stackfork dashboard design system — a dense git + Docker ops console derived from an earlier internal design system, dark-first, monospace-led, status by glyph and text.
 colors:
   # dark theme values (normative for dark); the light theme table in Colors is normative for light
   bg: "#0B0B0E"
@@ -204,7 +204,7 @@ components:
 
 # Berth
 
-Berth is the design system of the stackfork dashboard: the place where a developer's worktrees dock. It is derived from Company the earlier design system (token rigor, naming, status pairs, motion values) and rebuilt for a dense git + Docker console that one developer scans dozens of times a day, offline, from an embedded Go binary.
+Berth is the design system of the stackfork dashboard: the place where a developer's worktrees dock. It is derived from an earlier internal design system (token rigor, naming, status pairs, motion values) and rebuilt for a dense git + Docker console that one developer scans dozens of times a day, offline, from an embedded Go binary.
 
 ## Overview
 
@@ -220,11 +220,11 @@ Berth is the design system of the stackfork dashboard: the place where a develop
 6. **Calm by default, loud when it matters.** Hairlines, tinted chips, no glow. The only saturated surfaces are banners for conditions that block work.
 7. **Keyboard and polling coexist.** Re-renders never steal focus or selection; every clickable row is a real button or link.
 
-**Theme.** Dark and light both ship. The default follows the OS (`prefers-color-scheme`); a toggle in the top-right system cluster sets `data-theme="dark|light"` on `<html>`, persisted in `localStorage` (`stackfork:theme`) with try/catch. Dark is designed first and screenshots in reviews are taken in both. (Changed from the earlier design system, which is dark-only by default: an ops console sits next to a terminal and an IDE that already follow the OS.)
+**Theme.** Dark and light both ship. The default follows the OS (`prefers-color-scheme`); a toggle in the top-right system cluster sets `data-theme="dark|light"` on `<html>`, persisted in `localStorage` (`stackfork:theme`) with try/catch. Dark is designed first and screenshots in reviews are taken in both. (Changed from the earlier system, which is dark-only by default: an ops console sits next to a terminal and an IDE that already follow the OS.)
 
-**Fonts.** `Geist Mono` is embedded (variable woff2, Latin subset, SIL OFL 1.1, roughly 60–90 KB; served from `/static/fonts/` and declared with `font-display: swap`) because mono is the voice of this product: branches, paths, URLs, ports, commands, logs. The UI sans is the **system stack** (`system-ui, -apple-system, "Segoe UI", …`): a console that lives beside macOS apps should match their text, it costs nothing offline, and Sora's wide geometric letterforms would waste horizontal space in dense rows. Sora is dropped (the earlier design system's title face); its role is taken by the system sans at 600 weight. If Geist Mono fails to load, `ui-monospace / SF Mono / Menlo` carry the same metrics closely enough that nothing reflows.
+**Fonts.** `Geist Mono` is embedded (variable woff2, Latin subset, SIL OFL 1.1, roughly 60–90 KB; served from `/static/fonts/` and declared with `font-display: swap`) because mono is the voice of this product: branches, paths, URLs, ports, commands, logs. The UI sans is the **system stack** (`system-ui, -apple-system, "Segoe UI", …`): a console that lives beside macOS apps should match their text, it costs nothing offline, and Sora's wide geometric letterforms would waste horizontal space in dense rows. Sora is dropped (the earlier system's title face); its role is taken by the system sans at 600 weight. If Geist Mono fails to load, `ui-monospace / SF Mono / Menlo` carry the same metrics closely enough that nothing reflows.
 
-**References.** Borrowed from GitLens Commit Graph and GitKraken Desktop (patterns only, no marks or brand): the column-headed table with micro uppercase headers and relative dates; coloured branch pills whose colour ties the row to a lane; the small proportional bar for quantities (their +/− changes bar becomes our ahead/behind bar); the toolbar with a breadcrumb and verb buttons that carry a count and freshness ("Fetch · 2 h ago"); the narrow left icon rail with counts; a search field inline with the table. Not borrowed: the full commit graph (a worktree lane only shows "branched from default"), avatars, the activity minimap, gradients and glow. From the earlier design system: token names and usage notes, the status bg/line pairs, violet as the single accent, 120/180/240 ms motion, and the ease-out curve.
+**References.** Borrowed from GitLens Commit Graph and GitKraken Desktop (patterns only, no marks or brand): the column-headed table with micro uppercase headers and relative dates; coloured branch pills whose colour ties the row to a lane; the small proportional bar for quantities (their +/− changes bar becomes our ahead/behind bar); the toolbar with a breadcrumb and verb buttons that carry a count and freshness ("Fetch · 2 h ago"); the narrow left icon rail with counts; a search field inline with the table. Not borrowed: the full commit graph (a worktree lane only shows "branched from default"), avatars, the activity minimap, gradients and glow. From the earlier system: token names and usage notes, the status bg/line pairs, violet as the single accent, 120/180/240 ms motion, and the ease-out curve.
 
 ## Colors
 
@@ -280,7 +280,7 @@ Eight fills with white text (all ≥5.1:1): `lane-1 #2F5BD8`, `lane-2 #6D3FD6`, 
 
 ### Surfaces and shadows
 
-Depth is mostly hairlines. `shadow-popover` (`0 8px 24px rgba(0,0,0,.55)` dark / `0 8px 24px rgba(21,21,28,.12)` light) on overflow menus and the log drawer; `shadow-modal` (`0 20px 48px rgba(0,0,0,.65)` / `0 20px 48px rgba(21,21,28,.18)`) on the Learn modal. the earlier design system's `shadow-glow` is dropped: no glow anywhere.
+Depth is mostly hairlines. `shadow-popover` (`0 8px 24px rgba(0,0,0,.55)` dark / `0 8px 24px rgba(21,21,28,.12)` light) on overflow menus and the log drawer; `shadow-modal` (`0 20px 48px rgba(0,0,0,.65)` / `0 20px 48px rgba(21,21,28,.18)`) on the Learn modal. The earlier system's `shadow-glow` is dropped: no glow anywhere.
 
 ## Typography
 
@@ -411,9 +411,9 @@ Toolbar left: search input (`placeholder="Search repos and branches"`), `Ready o
 
 | REPO | STATUS | WORKTREES | BRANCHES | LAST ACTIVITY | |
 |---|---|---|---|---|---|
-| ▸ **acme-web** `code/me` | `● 1 running` | 2 | 1 | 2 d ago | `[Start…] [⋯]` |
-| ▸ **billing-api** `code/me` | `◐ 1 partial` | 1 | 1 | 5 h ago | `[Start…] [⋯]` |
-| ▸ **notes-cli** `code/me` | `○ Not set up` | 1 | 0 | 3 w ago | `[Set up]` ← the one filled button on this view, only on the first row that needs it |
+| ▸ **acme-web** `work/acme` | `● 1 running` | 2 | 1 | 2 d ago | `[Start…] [⋯]` |
+| ▸ **billing-api** `work/acme` | `◐ 1 partial` | 1 | 1 | 5 h ago | `[Start…] [⋯]` |
+| ▸ **notes-cli** `work/acme` | `○ Not set up` | 1 | 0 | 3 w ago | `[Set up]` ← the one filled button on this view, only on the first row that needs it |
 
 - **Sorting** (default): rows with a running or partial instance first, then by last activity (most recent commit or start), then name. Sort menu in the header: Activity · Name · Folder. The folder is a `small fg-muted` suffix under the name, not a group header; grouping by folder is a toggle in the sort menu, and a group header then reads the folder name (`Pedro`, `Backup/Work`), never `(top level)`.
 - **STATUS column** replaces the readiness badge. Vocabulary: `● 2 running` (ok), `◐ 1 partial` (attention), `○ Stopped` (off; instances exist, none running), `○ Not set up` (off; readiness `unknown` or `needs-learn`), `◔ Setup unverified` (attention; readiness `draft`), `✓ Ready` (ok, no instance). The underlying reason sentence ("prepared instance … but no verified knowledge") moves to the tooltip and to the expanded panel.
@@ -480,20 +480,20 @@ Three layers: page (`bg`), card (`surface-1` + 1 px `line`), nested (`surface-2`
 | `lg` | 12 px | Modal. |
 | `full` | 9999 px | Status dots, the busy ring, lane dots, the lane avatar when a service logo is round. |
 
-Smaller than the earlier design system (6/10/16/22) on every step: rows are 32–40 px tall and a 16 px card radius would read as a tile, not a table. Avatars are squares with `sm`. Chips are never fully round: a pill reads as a tag, a rounded rectangle reads as a data cell.
+Smaller than the earlier system (6/10/16/22) on every step: rows are 32–40 px tall and a 16 px card radius would read as a tile, not a table. Avatars are squares with `sm`. Chips are never fully round: a pill reads as a tag, a rounded rectangle reads as a data cell.
 
 ## Components
 
-Mapped against the 51 the earlier design system components. "Adapted" keeps the the earlier design system contract and changes density, radius or copy; "new" exists only here.
+Mapped against that system's 51 components. "Adapted" keeps that contract and changes density, radius or copy; "new" exists only here.
 
 ### Carried over (adapted)
 
-| the earlier design system | Berth | What changes |
+| Earlier system | Berth | What changes |
 |---|---|---|
 | Button (primary/secondary/ghost/danger/compact) | **Button** | 32 px (28 px compact), radius `sm`, no glow; `:active` scales to 0.97; focus ring 2 px `focus`; danger is text-only until hover. Primary appears once per view. Icon buttons are 32×32 with an SVG icon and an `aria-label`; the icon set is a single 16 px, 1.5 px-stroke line set (play, stop, restart, logs, overflow, copy, external, chevron, check, warning, cross, ring, folder, terminal, search, sun/moon). No unicode glyphs. |
 | StatusChip | **StatusChip** | Five states (ok, attention, failed, busy, off) with glyph + text, `micro`, 20 px, radius `xs`, `-bg` fill and `-line` border. Also the system StatusPill in the toolbar. |
 | Banner | **Banner** | Tiers by state tint instead of solid red; icon + text + one action + dismiss (when allowed); `role="status"` for attention/busy, `role="alert"` for failed. DiskBanner is a preset. |
-| Tabs | **Rail** (replaces tabs) and **SegmentedControl** (for sort/filter groups) | The view switcher is the rail with counts; the segmented control keeps the earlier design system's bordered track with the active item in `surface-3`. |
+| Tabs | **Rail** (replaces tabs) and **SegmentedControl** (for sort/filter groups) | The view switcher is the rail with counts; the segmented control keeps the earlier system's bordered track with the active item in `surface-3`. |
 | Input | **Input / Search** | 32 px, radius `sm`, `surface-1` on toolbars and `surface-2` inside cards, `line-control` border, search has a leading icon and a clear button. |
 | Modal | **Modal** (LearnModal preset) | Radius `lg`, `surface-3`, 560 px max, `shadow-modal`; uses `<dialog>`; enters at 220 ms ease-out from 0.97/0, exits at 120 ms. |
 | EmptyState | **EmptyState** | Title + one sentence + one primary + an optional command row; left-aligned inside the content width, never a dashed box. |
@@ -531,13 +531,13 @@ Mapped against the 51 the earlier design system components. "Adapted" keeps the 
 | **DiskBanner** | Banner preset with the disk bar inline and `Free Docker space` as its action. |
 | **LearnModal** | Modal preset: agent options as a radio-style list (name, "opens in Warp" / reason when unavailable), SetupSteps, prompt in a collapsed CommandRow. |
 
-### Dropped from the earlier design system
+### Dropped from the earlier system
 
-(component inventory of the earlier internal design system removed)
+Components of the earlier system that belong to other domains (agents, billing, chat) are not carried over; this is a stack console.
 
 ## Motion
 
-Tokens carried from the earlier design system: `duration-fast` 120 ms (colour, press), `duration-base` 180 ms (menus, chips, drawer tabs), `duration-slow` 240 ms (modal, log drawer); `ease-out: cubic-bezier(0.23, 1, 0.32, 1)` for anything entering, `ease-in-out: cubic-bezier(0.77, 0, 0.175, 1)` for the drawer resize; `ease` for hover colour.
+Tokens carried from the earlier system: `duration-fast` 120 ms (colour, press), `duration-base` 180 ms (menus, chips, drawer tabs), `duration-slow` 240 ms (modal, log drawer); `ease-out: cubic-bezier(0.23, 1, 0.32, 1)` for anything entering, `ease-in-out: cubic-bezier(0.77, 0, 0.175, 1)` for the drawer resize; `ease` for hover colour.
 
 What animates: button press (`scale(.97)`, 120 ms), overflow menu and popover (origin-aware, 0.97/0 → 1/1, 180 ms), modal (centred, 0.97/0 → 1/1, 240 ms in / 120 ms out), log drawer (translateY 100 % → 0, 240 ms), toast (translateY 8 px + fade, 180 ms in, 120 ms out), the `busy` ring (1.2 s linear opacity pulse), the card flash on jump (`accent-soft` fade 600 ms). What never animates: tab/rail switches, card collapse, details drawers, re-renders from polling, anything triggered by the keyboard.
 

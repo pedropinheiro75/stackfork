@@ -198,7 +198,7 @@ tests.
 
 ### Renamed to stackfork, with legacy compatibility
 
-The tool is renamed from `isolated-dev`/`isolated-dev` to `stackfork`
+The tool is renamed from `isolated-dev` to `stackfork`
 (prefix `sf`, label namespace `io.stackfork`, state directory
 `~/.local/state/stackfork`). Existing `idv-`-prefixed instances are not
 migrated or renamed: `where`, `status`, `urls`, `list` and `down` still read

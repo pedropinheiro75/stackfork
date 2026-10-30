@@ -48,9 +48,9 @@ func folderRepo(t *testing.T, folderRefs map[string]string, declared ...string) 
 // R3: a folder reference reaches only a name the repository declares or
 // has recorded, and never makes `up` ask for a new prepare.
 func TestFolderSecretsOnlyForNamesTheRepoUses(t *testing.T) {
-	folder, repo := folderRepo(t, map[string]string{"NPM_TOKEN": "keychain:acme-npm", "OTHER": "keychain:idv-other", "REC": "keychain:idv-rec"}, "NPM_TOKEN")
+	folder, repo := folderRepo(t, map[string]string{"NPM_TOKEN": "keychain:acme-npm", "OTHER": "keychain:acme-other", "REC": "keychain:acme-rec"}, "NPM_TOKEN")
 	refs, from, err := FolderSecrets(repo, map[string]string{"REC": "env:OLD"})
-	if err != nil || len(refs) != 2 || refs["NPM_TOKEN"] != "keychain:acme-npm" || refs["REC"] != "keychain:idv-rec" || from["NPM_TOKEN"] != folder {
+	if err != nil || len(refs) != 2 || refs["NPM_TOKEN"] != "keychain:acme-npm" || refs["REC"] != "keychain:acme-rec" || from["NPM_TOKEN"] != folder {
 		t.Fatalf("%v %v %v", refs, from, err)
 	}
 
@@ -58,7 +58,7 @@ func TestFolderSecretsOnlyForNamesTheRepoUses(t *testing.T) {
 	info := &state.Manifest{Root: repo, Secrets: map[string]string{"REC": "env:OLD"}}
 	mapped, _ := MappedSecrets(repo)
 	got, source, unprepared := InstanceSecrets(info, mapped)
-	if len(unprepared) != 0 || len(got) != 1 || got["REC"] != "keychain:idv-rec" || source["REC"] != SourceFolder {
+	if len(unprepared) != 0 || len(got) != 1 || got["REC"] != "keychain:acme-rec" || source["REC"] != SourceFolder {
 		t.Fatalf("%v %v %v", got, source, unprepared)
 	}
 	// a declared name the manifest lacks cannot be rendered: ignored, not "unprepared"
@@ -85,7 +85,7 @@ func TestOwnMapBeatsFolderBeatsManifest(t *testing.T) {
 }
 
 func TestSecretRowsShowFolderSourceAndFrom(t *testing.T) {
-	folder, repo := folderRepo(t, map[string]string{"NPM_TOKEN": "keychain:acme-npm", "OTHER": "keychain:idv-other"}, "NPM_TOKEN")
+	folder, repo := folderRepo(t, map[string]string{"NPM_TOKEN": "keychain:acme-npm", "OTHER": "keychain:acme-other"}, "NPM_TOKEN")
 	rows, err := SecretRows(repo, repo, false, nil, nil, t.TempDir(), t.TempDir())
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("%+v %v", rows, err)

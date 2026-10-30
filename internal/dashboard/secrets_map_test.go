@@ -57,11 +57,11 @@ func TestSecretsMapRepoScope(t *testing.T) {
 func TestSecretsMapFolderScope(t *testing.T) {
 	e, repo := mapEnv(t)
 	folder := filepath.Dir(repo)
-	rec := e.post("/api/secrets/map", mapBody{"folder", folder, "FOLDER_TOK", "keychain:idv-tok"}, reqOpts{})
+	rec := e.post("/api/secrets/map", mapBody{"folder", folder, "FOLDER_TOK", "keychain:acme-tok"}, reqOpts{})
 	if rec.Code != 200 {
 		t.Fatalf("map: %d %s", rec.Code, rec.Body.String())
 	}
-	if got := mapped(t, folder)["FOLDER_TOK"]; got != "keychain:idv-tok" {
+	if got := mapped(t, folder)["FOLDER_TOK"]; got != "keychain:acme-tok" {
 		t.Fatalf("config holds %q", got)
 	}
 }
@@ -140,13 +140,13 @@ func TestSecretsUnmap(t *testing.T) {
 func TestSecretsSetForAFolderMapping(t *testing.T) {
 	e, repo := mapEnv(t)
 	folder := filepath.Dir(repo)
-	mapTestSecret(t, folder, "FOLDER_TOK", "keychain:idv-tok")
+	mapTestSecret(t, folder, "FOLDER_TOK", "keychain:acme-tok")
 	asked := stubDialog(t, true, typedValue, nil)
 	rec := e.post("/api/secrets/set", map[string]string{"repo": folder, "name": "FOLDER_TOK"}, reqOpts{})
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"ok":true`) || strings.Contains(rec.Body.String(), typedValue) {
 		t.Fatalf("set: %d %s", rec.Code, rec.Body.String())
 	}
-	if len(*asked) != 1 || (*asked)[0] != filepath.Base(folder)+"|FOLDER_TOK|idv-tok" {
+	if len(*asked) != 1 || (*asked)[0] != filepath.Base(folder)+"|FOLDER_TOK|acme-tok" {
 		t.Fatalf("dialog asked: %v", *asked)
 	}
 }

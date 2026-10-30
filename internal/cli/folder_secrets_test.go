@@ -34,8 +34,8 @@ func TestSecretLsJSONShowsFolderSourceAndFrom(t *testing.T) {
 	root, stateDir, _ := secretRepo(t)
 	declareSecrets(t, root, "FOLDER_TOK")
 	folder, _ := identity.ResolvePath(filepath.Dir(root))
-	mapSecret(t, folder, "FOLDER_TOK", "keychain:idv-tok")
-	mapSecret(t, folder, "UNUSED", "keychain:idv-unused")
+	mapSecret(t, folder, "FOLDER_TOK", "keychain:acme-tok")
+	mapSecret(t, folder, "UNUSED", "keychain:acme-unused")
 	out, e, code := runCLI(t, "--state-dir", stateDir, "secret", "ls", root, "--json")
 	if code != 0 {
 		t.Fatalf("%d %s", code, e)
@@ -82,9 +82,9 @@ func TestStartEnvFolderSecretOnlyForDeclaredName(t *testing.T) {
 	repo := planRepo(t, root, runSteps)
 	declareSecrets(t, repo, "npm_token")
 	log := installFakeDocker(t)
-	fakeKeychain(t, map[string]string{"acme-npm": canary, "idv-unused": other})
+	fakeKeychain(t, map[string]string{"acme-npm": canary, "acme-unused": other})
 	mapSecret(t, root, "npm_token", "keychain:acme-npm")
-	mapSecret(t, root, "UNUSED_TOKEN", "keychain:idv-unused")
+	mapSecret(t, root, "UNUSED_TOKEN", "keychain:acme-unused")
 	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
 	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
 	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
@@ -108,7 +108,7 @@ func TestStartEnvFolderNameDeclaredLaterRePrepares(t *testing.T) {
 	root, state := reposEnv(t)
 	repo := planRepo(t, root, runSteps)
 	log := installFakeDocker(t)
-	fakeKeychain(t, map[string]string{"idv-late": canary})
+	fakeKeychain(t, map[string]string{"acme-late": canary})
 	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
 	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
 	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
@@ -120,7 +120,7 @@ func TestStartEnvFolderNameDeclaredLaterRePrepares(t *testing.T) {
 		t.Fatal("canary before the mapping")
 	}
 	declareSecrets(t, repo, "npm_token")
-	mapSecret(t, root, "npm_token", "keychain:idv-late")
+	mapSecret(t, root, "npm_token", "keychain:acme-late")
 	runCLI(t, append(base, "--root", repo, "plan", "--trust")...)
 	if out, e, code := runCLI(t, append(base, "start-env", repo)...); code != 0 || strings.Contains(out+e, canary) {
 		t.Fatalf("%d\n%s\n%s", code, out, e)
