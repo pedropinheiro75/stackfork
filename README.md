@@ -69,7 +69,7 @@ To check the install, run `stackfork version`.
 
 Until the first public release, build the DMG on your Mac. You need Xcode and Go.
 
-1. From the root of a clone, run `scripts/build-macos-app.sh 0.1.15`. The script writes `dist/macos-app/stackfork-app_0.1.15_darwin_universal.dmg` and a `.sha256` file.
+1. From the root of a clone, run `scripts/build-macos-app.sh 0.2.0`. The script writes `dist/macos-app/stackfork-app_0.2.0_darwin_universal.dmg` and a `.sha256` file.
 2. Open the DMG and drag `Stackfork.app` to Applications.
 3. If macOS refuses to open the app, clear the quarantine attribute:
 

@@ -14,6 +14,22 @@ isolated is one you already trust enough to run its Compose stack directly.
 Running an untrusted project's Compose file through stackfork is no safer
 than running it with `docker compose` yourself.
 
+## Supported versions
+
+Only the latest release gets security fixes. Update before you report a problem.
+
+## Limit of the agent guard
+
+The agent guard is advisory. An agent that is not sandboxed and has file access can write the trust file (`<state>/trust/<hash>.json`), `config.json` and the instance manifests (`manifest.json`) directly. It can then trust its own host steps. The guard does not watch these files. The native dialog on Start is the control that stays: an agent cannot answer it. Use a sandbox for agents you do not trust.
+
+## Live mode and Compose files
+
+With `live on`, an upstream commit runs with no person in the loop. stackfork refuses `privileged`, `devices`, `volumes_from`, shared `network_mode`, `pid` and `ipc`, mounted sockets (a `.sock` bind, `/proc`, `/sys`, `/dev`, so the Docker socket), external networks, volumes, secrets and configs, and writable binds outside the checkout. It removes fixed container names. It does not refuse `cap_add`, `security_opt`, `build.ssh`, `secrets` or `configs` with a `file:` source outside the checkout, or read-only binds of `$HOME`. This is a known limit. We track it as an open issue. Turn on live mode only for a repository whose committers you trust.
+
+## Multi-user machines
+
+Any local process can read the dashboard token with `GET /`. Other OS users on the same machine are therefore inside the trust boundary. Do not run the dashboard on a machine you share with people you do not trust.
+
 ## Agent guard hooks
 
 `stackfork hooks install` registers `stackfork guard` as a pre-tool-use hook in Claude Code, Codex and Copilot CLI. The hook blocks a host dev server and a raw `docker compose up` in a managed checkout, and the commands that only a person may run: deleting data (`down --volumes`, `reset`, `prune --yes` and `--all`, `gc --apply`), widening trust (`plan --trust`, `live on`, automatic cleanup), secrets (`secret set|map|unmap`, reads of stackfork items) and `env set --allow-secret`. Each section below lists the rule for its feature. The guard is a guardrail for cooperative agents. It reads the command line it is given, so an agent that runs another tool as the same user can bypass it. It is not a security boundary. Anything it cannot parse is allowed.
@@ -179,5 +195,8 @@ The Windows runtime is built and vetted (`GOOS=windows go vet`), but it has not 
 Please report security issues privately through
 [GitHub Security Advisories](https://github.com/pedropinheiro75/stackfork/security/advisories/new)
 rather than opening a public issue. Include enough detail to reproduce the
-problem (Compose fixture, command, expected vs. actual behaviour). We'll
-acknowledge the report and follow up with next steps.
+problem (Compose fixture, command, expected vs. actual behaviour).
+
+- We acknowledge a report within 7 days.
+- For a confirmed issue, we send a fix or a mitigation plan within 30 days.
+- If the advisory form does not work for you, contact the author on GitHub: [@pedropinheiro75](https://github.com/pedropinheiro75).

@@ -1,0 +1,58 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: Output of `stackfork version`
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: macOS 15.1, Ubuntu 24.04
+    validations:
+      required: true
+  - type: input
+    id: docker
+    attributes:
+      label: Docker version
+      placeholder: Output of `docker version --format '{{.Server.Version}}'`
+    validations:
+      required: true
+  - type: textarea
+    id: compose
+    attributes:
+      label: Compose snippet (optional)
+      description: The smallest snippet that shows the problem.
+      render: yaml
+  - type: textarea
+    id: runs
+    attributes:
+      label: Output of `stackfork runs show` (optional)
+      description: Remove secrets, tokens and passwords before you paste.
+      render: text

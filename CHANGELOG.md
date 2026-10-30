@@ -5,6 +5,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
+First public release.
+
 ### Changed
 
 - Host-command URL placeholders follow the proxy. While the proxy runs, `{{url}}`, `{{APP.url}}` and `{{service.NAME.url}}` expand to the portless URL the dashboard opens (for the app the proxy serves and for the service it routes), so a CORS origin such as `UI_URL={{app.url}}` matches the browser's Origin; other apps keep the port form. `proxy up`, `proxy down` and the dashboard's Start proxy and new Stop proxy buttons restart the running host apps whose command uses such a URL, as a `proxy` run per instance. A run in progress skips the instance; an untrusted plan is not restarted and the card warns to restart host apps.
