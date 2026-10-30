@@ -334,7 +334,7 @@ const stackPaletteSize = 8
 // projectSlug strips the sf-/idv- instance prefix off a project name, so the
 // stack icon's initial letter and color are taken from the meaningful part
 // of the name instead of always reading the same prefix (every legacy
-// instance otherwise shows "R", maintainer feedback: app-b, not the prefix, should
+// instance otherwise shows "R", maintainer feedback: the app name, not the prefix, should
 // give "C").
 func projectSlug(project string) string {
 	for _, p := range []string{identity.Prefix + "-", identity.LegacyPrefix + "-"} {

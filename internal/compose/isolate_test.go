@@ -471,7 +471,7 @@ func TestPrimaryHTTPServiceInferredFallback(t *testing.T) {
 }
 
 // TestPrimaryHTTPServiceGuessPriorityBeatsAlphabeticalOrder is the real
-// bug behind app-d's dashboard "App" chip opening Adminer instead of the
+// bug behind a real project's dashboard "App" chip opening Adminer instead of the
 // app: "adminer" (port 8080) sorts before "app" (port 3000) alphabetically,
 // but 3000 ranks earlier in the fixed-port guess list (80/443/3000/8080/
 // 5050) - guess priority must win over which service name comes first.

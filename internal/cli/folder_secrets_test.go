@@ -54,7 +54,7 @@ func TestSecretMapFolderAndRefusals(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	folder := filepath.Join(t.TempDir(), "idv")
+	folder := filepath.Join(t.TempDir(), "acme")
 	os.Mkdir(folder, 0o755)
 	out, e, code := runCLI(t, "secret", "map", folder, "NPM_TOKEN=keychain:acme-npm")
 	if code != 0 || !strings.Contains(out, "for folder ") || !strings.Contains(out, "applies to the repositories under it that use NPM_TOKEN") {

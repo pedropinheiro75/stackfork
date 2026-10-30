@@ -20,7 +20,7 @@ const (
 
 // siblingRepo builds a scratch repo whose sibling worktree is prepared with
 // a tracked compose file, an untracked .agent-dev adapter + runtime.env and a
-// secret reference (the maintainer's failing app-d layout).
+// secret reference (a real failing layout).
 func siblingRepo(t *testing.T) (repo, sib string, base []string) {
 	t.Helper()
 	root, state := reposEnv(t)

@@ -21,7 +21,7 @@ func folderRepo(t *testing.T, folderRefs map[string]string, declared ...string) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	folder = filepath.Join(base, "idv")
+	folder = filepath.Join(base, "acme")
 	repo = filepath.Join(folder, "app")
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)

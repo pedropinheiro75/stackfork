@@ -603,7 +603,7 @@
   // instance prefix.
   function projectSlug(project) {
     if (project.indexOf("sf-") === 0) return project.slice(3);
-    if (project.indexOf("idv-") === 0) return project.slice(3);
+    if (project.indexOf("idv-") === 0) return project.slice(4);
     return project;
   }
 

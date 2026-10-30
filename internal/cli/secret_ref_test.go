@@ -140,7 +140,7 @@ func TestLiveSecretReferencedDirectlyResolvesAtUp(t *testing.T) {
 // design.md D6: any ${VAR} Render could not resolve at all (not a named
 // secret, not in --env-file, no `:-default` in the source) gets a one-line
 // warning naming it, so a silent empty is never the only signal - the
-// coordinator's account of how this bit app-d in the first place: NPM_TOKEN
+// coordinator's account of how this bit a real project in the first place: NPM_TOKEN
 // quietly resolved to "" with nothing printed anywhere.
 func TestPrepareWarnsOnUnresolvedVariable(t *testing.T) {
 	installFakeDocker(t)
