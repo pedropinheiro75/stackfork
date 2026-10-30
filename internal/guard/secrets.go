@@ -30,7 +30,7 @@ func DenyMessage(command, cwd string) string {
 // and 1Password reads of a mapped reference. A guardrail, not a sandbox.
 func secretForbidden(command, cwd string) bool {
 	// The host-run assignment sanctions a dev server, never a secret read.
-	command = strings.ReplaceAll(command, HostRunEnv+"=", "SF_X=")
+	command = neutralizeHostRun(command)
 	// PowerShell may be unwrapped on Windows only, so look at the whole line.
 	if powershellReadsStackfork(command) {
 		return true
@@ -333,4 +333,11 @@ func opItemReveals(args, refs []string) bool {
 		}
 	}
 	return false
+}
+
+// neutralizeHostRun renames the host-run assignment so it cannot turn a
+// command into the sanctioned `stackfork host` path: that sanction covers a
+// dev server only, never a deleting, trusting or secret form.
+func neutralizeHostRun(command string) string {
+	return strings.ReplaceAll(command, HostRunEnv+"=", "SF_X=")
 }
