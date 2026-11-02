@@ -49,7 +49,7 @@ The release workflow builds the DMG after GoReleaser. If that step fails, the CL
 
 ## Invariants (do not weaken)
 
-These come from `openspec/config.yaml` and hold for every change:
+These hold for every change:
 
 - **Refuse, don't guess.** Anything that cannot be isolated safely (external
   networks, the Docker socket, host namespaces, writable binds outside the

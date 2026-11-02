@@ -5,3 +5,10 @@ __pycache__/
 node_modules/
 desktop/macos/.build/
 desktop/macos/.swiftpm/
+
+# agent tooling and internal specs stay out of the public repo
+.agents/
+.claude/
+.codex/
+openspec/
+docs/superpowers/
