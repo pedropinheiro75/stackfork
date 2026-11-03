@@ -62,7 +62,7 @@ stackfork list && stackfork urls
 
 `stackfork list` shows two running instances. `stackfork urls` prints a `.localhost` URL per checkout. Request each URL more than once: the `visits` count of one copy does not change the other. If the URLs do not answer, run `stackfork proxy up`. Clean up with `stackfork down --volumes` in each checkout.
 
-For your own project, replace the `-f` path with your Compose file, let an agent learn it once, and start every worktree with `stackfork start-env`.
+For your own project, the recommended way is to let your AI agent run the learn session: ask it to "learn this project with stackfork", or click **Learn with your agent** in the dashboard. The scan drafts the recipe, the agent fills in what a scan cannot know (which script is the dev server, what seeds the database, which URL to open) and confirms it with `learn verify`. From then on every worktree starts with `stackfork start-env`.
 
 ## How it works
 
