@@ -30,7 +30,7 @@
 |---|---|
 | **Zero new config** | It reads the Compose file you already maintain and never edits it. If something cannot be isolated safely, it names the line. |
 | **Docker, or not** | Keep Postgres and Redis in containers and run the app on the host for hot reload and a debugger. Each branch still gets its own copy. |
-| **Git drives it** | `worktree add` + `start-env`, or turn on live mode and a new branch starts by itself. Merge or close the pull request, and the environment goes away. |
+| **Git drives it** | `worktree add` + `start-env`, or turn on live mode and a new branch starts by itself. Merge or close the pull request, and the environment goes away. GitOps, on your laptop. |
 | **Learn once, start forever** | The startup plan is a committed file. Teammates and agents start the project the same way, every time. |
 | **Agents run free, people hold the keys** | Agents start, test and stop environments on their own. Deleting data, trusting host commands and turning automation on wait for a person. |
 | **Every process is supervised** | Host apps are health-checked and restarted. After a reboot, what was running comes back, and what lost its database stops instead of running against nothing. |
