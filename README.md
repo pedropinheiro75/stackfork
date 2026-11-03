@@ -6,7 +6,7 @@
 
 ### Every branch gets its own running stack. Every AI agent gets its own.
 
-**A reproducible recipe for running your app locally, in Docker or on the host. Run as many branches as you need, at the same time, with every process supervised and Git opening and closing the environments.**
+**A reproducible recipe for running your apps locally, in Docker or on the host. Run as many branches of each as you need, at the same time, with every process supervised and Git opening and closing the environments.**
 
 [![CI](https://github.com/pedropinheiro75/stackfork/actions/workflows/ci.yml/badge.svg)](https://github.com/pedropinheiro75/stackfork/actions/workflows/ci.yml)
 ![Works with Claude Code · Codex · Copilot CLI](https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Copilot%20CLI-f59e0b)
