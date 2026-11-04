@@ -49,13 +49,16 @@
 
 ## Install
 
-macOS and Linux, amd64 and arm64. Docker with the Compose plugin must be running.
+macOS and Linux, amd64 and arm64. Docker with the Compose plugin must be running. Pick one:
 
-```sh
-go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest   # Go 1.26.10 or later
-```
+- Homebrew (macOS and Linux): `brew install --cask pedropinheiro75/tap/stackfork`
+- Shell script: `curl -fsSL https://raw.githubusercontent.com/pedropinheiro75/stackfork/main/install.sh | sh`
+- Binaries: download one from the [Releases page](https://github.com/pedropinheiro75/stackfork/releases).
+- Go 1.26.10 or later: `go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest`
 
-Or build from a clone with `go build -o stackfork ./cmd/stackfork`. Put the binary on your `PATH` and check it with `stackfork version`. The macOS menu bar app is built from the same clone: see [docs/macos-app.md](docs/macos-app.md).
+The Homebrew tap and the script serve the first tagged release, so until `v0.2.0` exists only `go install` and a clone work.
+
+To build from a clone, run `go build -o stackfork ./cmd/stackfork` and put the binary on your `PATH`. Check the install with `stackfork version`. The macOS menu bar app is built from the same clone: see [docs/macos-app.md](docs/macos-app.md).
 
 ## Quick start
 
