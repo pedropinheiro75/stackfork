@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strconv"
@@ -36,9 +37,25 @@ import (
 
 // Version is the CLI version. It is stamped at build time via
 // `-ldflags "-X github.com/pedropinheiro75/stackfork/internal/cli.Version=..."`
-// (see .goreleaser.yaml); a build without that flag, such as `go build` or
-// `go install` from source, reports "dev".
+// (see .goreleaser.yaml). Without that flag, `go install ...@<version>`
+// reports the module version from the build info (a tag or a pseudo-version).
+// A `go build` in a Git checkout gets a VCS pseudo-version; with no build
+// info it reports "dev".
 var Version = "dev"
+
+func init() { Version = resolveVersion(Version, debug.ReadBuildInfo) }
+
+// resolveVersion keeps a stamped version and otherwise falls back to the main
+// module version, which is "(devel)" or empty for a local build.
+func resolveVersion(stamped string, read func() (*debug.BuildInfo, bool)) string {
+	if stamped != "" && stamped != "dev" {
+		return stamped
+	}
+	if info, ok := read(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
+}
 
 // Run mirrors Python's `if __name__ == '__main__': main()` wrapper,
 // including the "stackfork: <error>" / exit 1 formatting.
