@@ -79,7 +79,9 @@ final class FakePresenter: AlertPresenting {
         let timer = DispatchScheduler().schedule(after: 0.2) { timerFired = true }
         var taskRan = false
         Task { @MainActor in taskRan = true }
-        let ok = await eventually(timeout: 3) { timerFired && taskRan }
+        // A modal loop blocks forever, so a long wait still catches it. The first
+        // window can stall the main thread for seconds on a CI runner (16 s seen).
+        let ok = await eventually(timeout: 30) { timerFired && taskRan }
         #expect(ok)
         timer.cancel()
         token.close()
