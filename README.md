@@ -24,6 +24,13 @@
 
 **The fix.** stackfork learns how your project starts, once, and records the recipe in the repository: what runs in Docker, what runs on the host, what to install, migrate and seed, and which URL to open. From then on every worktree starts with one command, on its own ports, volumes, network and `.localhost` URL. Five agents and you can work on five branches of one project on one laptop, and nothing collides.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/instances-overview-dark.png">
+  <img src="docs/screenshots/instances-overview-light.png" alt="Instances page: acme-api, a hybrid instance whose app runs on the host with its PID, memory, CPU and a hot reload chip, and acme-web with two running checkouts, main and feature-invoices, each with its own URLs, database port and env overrides">
+</picture>
+
+*The dashboard: two projects, three running copies. `acme-api` runs its app on the host with hot reload and its database in Docker. `acme-web` runs `main` and `feature-invoices` side by side, each with its own URL, database port and env overrides.*
+
 ## Why developers keep it
 
 | | |
@@ -75,22 +82,12 @@ For your own project, the recommended way is to let your AI agent run the learn 
 - **Configure one instance.** `stackfork env set SERVICE NAME=VALUE` changes one variable of one instance. Secrets are mapped per machine to the OS keychain or a 1Password `op://` reference, and no command prints a value. [env](references/commands.md#env) · [secret](references/commands.md#secret)
 - **Dashboard.** `stackfork dashboard --open` serves a page on `127.0.0.1` with every instance, repository and worktree, the startup workflow as a canvas, resource charts, overrides and the last run of each checkout. The macOS app runs the same page.
 
-<table>
-  <tr>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/instances-overview-dark.png">
-        <img src="docs/screenshots/instances-overview-light.png" alt="Instances page: acme-api, a hybrid instance whose app runs on the host with its PID, memory, CPU and a hot reload chip, and acme-web with two running checkouts, main and feature-invoices, each with its own URLs, database port and env overrides">
-      </picture>
-    </td>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/project-workflow-dark.png">
-        <img src="docs/screenshots/project-workflow-light.png" alt="Project page: the startup workflow canvas of a hybrid project: secrets, prepare, compose up, the New data volume decision with the seed step, the Mode decision, and the host app that runs on this machine, each step with the state of the last run">
-      </picture>
-    </td>
-  </tr>
-</table>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/project-workflow-dark.png">
+  <img src="docs/screenshots/project-workflow-light.png" alt="Project page: the startup workflow canvas of a hybrid project: secrets, prepare, compose up, the New data volume decision with the seed step, the Mode decision, and the host app that runs on this machine, each step with the state of the last run">
+</picture>
+
+*The Project page: the startup plan of a hybrid project as a canvas, each step with the state of its last run.*
 
 More screenshots in [docs/screenshots](docs/screenshots). Every command and flag: [references/commands.md](references/commands.md) or `stackfork help`.
 
