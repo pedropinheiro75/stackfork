@@ -6,7 +6,7 @@
     "dev": "vite"
   },
   "dependencies": {
-    "pg": "^8.13.0"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "vite": "^6.0.0"
