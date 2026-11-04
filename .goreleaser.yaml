@@ -72,7 +72,7 @@ homebrew_casks:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
     homepage: "https://github.com/pedropinheiro75/stackfork"
-    description: "Run N isolated copies of a project's Docker Compose stack, one per Git worktree/branch"
+    description: "Every branch of your app in its own isolated local stack, for people and AI agents"
     # The binary is not notarized: without this, Gatekeeper refuses to run a
     # cask-installed binary on macOS ("cannot be verified").
     hooks:
