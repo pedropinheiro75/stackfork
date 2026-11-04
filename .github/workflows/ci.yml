@@ -35,7 +35,7 @@ jobs:
 
   # The menu bar app (add-macos-app).
   macos-app:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -79,6 +79,6 @@ jobs:
         with:
           go-version-file: go.mod
       - run: |
-          go install github.com/gitleaks/gitleaks/v8@v8.28.0
+          go install github.com/zricethezav/gitleaks/v8@v8.28.0
           "$(go env GOPATH)/bin/gitleaks" git --redact --no-banner .
 
