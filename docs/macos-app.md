@@ -2,11 +2,9 @@
 
 `Stackfork.app` is a menu bar app for macOS 14 or later. It runs its own dashboard, lists your instances in the menu bar with **Start** and **Stop**, and opens the dashboard in a window. It needs no installed CLI. Press Control-Option-Command-S (`⌃⌥⌘S`) anywhere to show the window.
 
-## Build the app
+## Install the app
 
-Until the first public release, build the DMG on your Mac. You need Xcode and Go.
-
-1. From the root of a clone, run `scripts/build-macos-app.sh 0.2.0`. The script writes `dist/macos-app/stackfork-app_0.2.0_darwin_universal.dmg` and a `.sha256` file.
+1. Download `stackfork-app_<version>_darwin_universal.dmg` from the [Releases page](https://github.com/pedropinheiro75/stackfork/releases). To build it yourself instead, run `scripts/build-macos-app.sh <version>` from the root of a clone (Xcode and Go needed); it writes the DMG and a `.sha256` file to `dist/macos-app/`.
 2. Open the DMG and drag `Stackfork.app` to Applications.
 3. If macOS refuses to open the app, clear the quarantine attribute:
 
