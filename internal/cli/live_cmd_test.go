@@ -210,7 +210,7 @@ func TestLiveStatusShowsPendingAndLastRun(t *testing.T) {
 	inst := filepath.Join(f.nb, "acme-web-feature-login")
 	os.MkdirAll(inst, 0o700)
 	os.WriteFile(filepath.Join(f.repo, "Dockerfile"), []byte("FROM scratch\n"), 0o600)
-	os.WriteFile(filepath.Join(inst, "compose.json"), []byte(`{"services":{"web":{"build":{"context":"`+f.repo+`"}}}}`), 0o600)
+	os.WriteFile(filepath.Join(inst, "compose.json"), []byte(`{"services":{"web":{"build":{"context":"`+jsonEsc(f.repo)+`"}}}}`), 0o600)
 	os.WriteFile(filepath.Join(inst, live.BaselineFile), []byte(`{"branch":"feature-login","digests":{}}`), 0o600)
 	f.targets = []live.Target{{Main: f.repo, Root: f.repo, Project: "acme-web-feature-login", InstanceDir: inst, Branch: "x", State: "running", NewBase: f.nb}}
 	out, _, _ := f.run(t, "status")

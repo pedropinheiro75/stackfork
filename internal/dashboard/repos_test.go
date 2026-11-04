@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -81,6 +82,7 @@ func newBrowserEnv(t *testing.T) *browserEnv {
 	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
 	home, _ := filepath.EvalSymlinks(t.TempDir())
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	e := &browserEnv{t: t, newDir: t.TempDir(), home: home}
 	e.root, _ = filepath.EvalSymlinks(t.TempDir())
 	var out, errBuf bytes.Buffer
@@ -304,6 +306,9 @@ func TestWorktreeAddAndFetchActions(t *testing.T) {
 }
 
 func TestRepoFragmentEscapesHostileNamesAndOffersNoDestructiveButton(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows forbids < > \" in folder and branch names, so these names cannot exist there")
+	}
 	e := newBrowserEnv(t)
 	hostile := scratchRepoAt(t, filepath.Join(e.root, `<img src=x onerror=alert(1)>`))
 	gitIn(t, hostile, "branch", `x"onmouseover="alert(2)`)
@@ -427,7 +432,7 @@ func TestConfigAPIValidationAndSecurity(t *testing.T) {
 		}
 	}
 	got := cfgBytes()
-	for _, want := range []string{other, "Backup", `"maxDepth": 4`} {
+	for _, want := range []string{jsonEsc(other), "Backup", `"maxDepth": 4`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("config get misses %q:\n%s", want, got)
 		}

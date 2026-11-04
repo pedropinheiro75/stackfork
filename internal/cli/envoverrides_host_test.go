@@ -19,7 +19,7 @@ func TestHostAppGetsItsOverrides(t *testing.T) {
 	writeOverrides(t, dir, "app", "DATABASE_URL", "postgres://override", "app", "INHERITED_FLAG", "from-override",
 		"app", "ENABLE_GUEST_ACCESS", "true", "other", "NOT_FOR_APP", "x")
 	out := filepath.Join(t.TempDir(), "env.txt")
-	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "host", "app", "--", "sh", "-c", "env > "+out); code != 0 {
+	if _, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "host", "app", "--", "sh", "-c", "env > '"+filepath.ToSlash(out)+"'"); code != 0 {
 		t.Fatalf("host: %s", stderr)
 	}
 	b, _ := os.ReadFile(out)

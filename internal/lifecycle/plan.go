@@ -262,7 +262,14 @@ func (r PlanRunner) step(s knowledge.Step, fn func(w io.Writer) (int, error)) er
 		return err
 	}
 	rs := r.Run.Step(s.ID, s.Kind, StepText(s))
-	code, err := fn(rs.Start())
+	w := rs.Start()
+	defer func() { // a panic fails the step and closes its log (Windows cannot remove an open file)
+		if p := recover(); p != nil {
+			rs.End(fmt.Errorf("panic: %v", p), 0)
+			panic(p)
+		}
+	}()
+	code, err := fn(w)
 	rs.End(err, code)
 	return err
 }

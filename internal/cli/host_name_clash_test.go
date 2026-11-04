@@ -38,7 +38,7 @@ func TestSetModeOnAWorktreeAppliesToTheMainCheckout(t *testing.T) {
 	}
 	out, _, _ := runCLI(t, "config", "get")
 	resolved, _ := filepath.EvalSymlinks(root)
-	if !strings.Contains(out, resolved+`": "hybrid"`) {
+	if !strings.Contains(out, jsonEsc(resolved)+`": "hybrid"`) {
 		t.Fatalf("mode not stored under the main checkout %s:\n%s", resolved, out)
 	}
 }

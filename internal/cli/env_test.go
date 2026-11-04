@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -14,7 +15,11 @@ import (
 // is genuinely safe for eval "$(stackfork env)" - not just "looks escaped".
 func shellEval(t *testing.T, cmd string) string {
 	t.Helper()
-	out, err := exec.Command("/bin/sh", "-c", cmd).Output()
+	sh := "/bin/sh"
+	if runtime.GOOS == "windows" {
+		sh = "sh" // Git for Windows
+	}
+	out, err := exec.Command(sh, "-c", cmd).Output()
 	if err != nil {
 		t.Fatalf("sh -c %q: %v", cmd, err)
 	}

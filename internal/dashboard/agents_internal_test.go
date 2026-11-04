@@ -18,7 +18,7 @@ func TestAgentChoicesHonourRulesAndInstalls(t *testing.T) {
 	client := filepath.Join(dir, "Client")
 	os.MkdirAll(filepath.Join(client, "app"), 0o755)
 	os.MkdirAll(filepath.Join(dir, "Mine"), 0o755)
-	os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"roots":[],"agentRules":[{"path":"`+client+`","deny":["claude"],"reason":"client policy"}]}`), 0o600)
+	os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"roots":[],"agentRules":[{"path":"`+strings.ReplaceAll(client, `\`, `\\`)+`","deny":["claude"],"reason":"client policy"}]}`), 0o600)
 	old := LookPath
 	defer func() { LookPath = old }()
 	LookPath = func(bin string) (string, error) {

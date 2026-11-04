@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -72,6 +73,9 @@ func newHelperIn(t *testing.T, dir, name string, cfg helperCfg) string {
 		t.Fatal(err)
 	}
 	p := filepath.Join(dir, name)
+	if runtime.GOOS == "windows" && filepath.Ext(p) != ".exe" {
+		p += ".exe" // Windows runs only an .exe, and the store tools must be one
+	}
 	if err := os.WriteFile(p, exe, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -107,8 +111,18 @@ func calls(t *testing.T, p string) []helperRec {
 
 func bytesReader(b []byte) io.Reader { return bytes.NewReader(b) }
 
+// skipNoModes skips a check of Unix file modes: Windows keeps only the
+// read-only bit, and its tool check reads the owner instead (SECURITY.md, Windows).
+func skipNoModes(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("no Unix file modes on Windows")
+	}
+}
+
 func chmodWorldWritable(t *testing.T, p string) {
 	t.Helper()
+	skipNoModes(t)
 	if err := os.Chmod(p, 0o777); err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -30,7 +31,7 @@ func TestRoundTripEveryState(t *testing.T) {
 	pend := r.Step("pending", "exec", "never reached")
 	_ = pend
 	run := r.Step("running", "exec", "running")
-	run.Start()
+	startAbandoned(t, run)
 	ok := r.Step("ok", "prepare", "ok")
 	ok.Start()
 	ok.End(nil, 0)
@@ -87,13 +88,13 @@ func TestModes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if fi.Mode().Perm() != 0o600 {
+		if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 			t.Errorf("%s mode %v", p, fi.Mode().Perm())
 		}
 	}
 	for _, p := range []string{"runs", "runs/1"} {
 		fi, _ := os.Stat(filepath.Join(dir, p))
-		if fi.Mode().Perm() != 0o700 {
+		if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o700 {
 			t.Errorf("%s mode %v", p, fi.Mode().Perm())
 		}
 	}

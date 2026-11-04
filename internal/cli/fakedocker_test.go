@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 // installFakeDocker puts a fake `docker` first on PATH for the duration of
@@ -43,7 +44,7 @@ if [ "$1" = "compose" ]; then
   { printf -- '--- %s\n' "$*"; env; } >> "` + logPath + `.env"
   for a in "$@"; do
     if [ "$a" = "config" ]; then
-      exec "` + real + `" "$@"
+      exec "` + filepath.ToSlash(real) + `" "$@"
     fi
   done
   case " $* " in
@@ -102,10 +103,7 @@ if [ "$1" = "inspect" ]; then
 fi
 exit 0
 `
-	fake := filepath.Join(dir, "docker")
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testsupport.FakeExe(t, filepath.Join(dir, "docker"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return logPath
 }

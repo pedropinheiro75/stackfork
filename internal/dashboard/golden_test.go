@@ -13,6 +13,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/cli"
 	"github.com/pedropinheiro75/stackfork/internal/dashboard"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 // installFakeDocker mirrors the one every other package's tests use: a
@@ -34,7 +35,7 @@ if [ "$1" = "volume" ] && [ "$2" = "inspect" ]; then exit "${DOCKER_FAKE_VOLUME_
 if [ "$1" = "compose" ]; then
   for a in "$@"; do
     if [ "$a" = "config" ]; then
-      exec "` + real + `" "$@"
+      exec "` + filepath.ToSlash(real) + `" "$@"
     fi
   done
   if [ -n "$DOCKER_FAKE_SLEEP" ]; then
@@ -64,9 +65,7 @@ if [ "$1" = "inspect" ]; then
 fi
 exit 0
 `
-	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testsupport.FakeExe(t, filepath.Join(dir, "docker"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 

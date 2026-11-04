@@ -8,6 +8,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/state"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 const entryRouteModel = `{"services":{
@@ -34,9 +35,7 @@ func routeForRaw(t *testing.T, k *knowledge.Knowledge, routes map[string]int, ra
 	t.Helper()
 	bin := t.TempDir()
 	script := "#!/bin/sh\nprintf '%s' '" + entryRoutePS + "'\n"
-	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testsupport.FakeExe(t, filepath.Join(bin, "docker"), script)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	base := t.TempDir()

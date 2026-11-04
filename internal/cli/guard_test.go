@@ -25,9 +25,9 @@ func TestGuardBlocksAndAllowsPerTool(t *testing.T) {
 	state, legacy := t.TempDir(), t.TempDir()
 	args := func(tool string) []string { return []string{"--tool", tool} }
 	payloads := map[string]string{
-		"claude":  `{"session_id":"s","cwd":"` + repo + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"bun run dev"}}`,
-		"codex":   `{"session_id":"s","turn_id":"t","cwd":"` + repo + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"bun run dev"}}`,
-		"copilot": `{"timestamp":1,"cwd":"` + repo + `","toolName":"bash","toolArgs":"{\"command\":\"bun run dev\"}"}`,
+		"claude":  `{"session_id":"s","cwd":"` + jsonEsc(repo) + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"bun run dev"}}`,
+		"codex":   `{"session_id":"s","turn_id":"t","cwd":"` + jsonEsc(repo) + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"bun run dev"}}`,
+		"copilot": `{"timestamp":1,"cwd":"` + jsonEsc(repo) + `","toolName":"bash","toolArgs":"{\"command\":\"bun run dev\"}"}`,
 	}
 	for tool, payload := range payloads {
 		var out, errBuf bytes.Buffer
@@ -62,7 +62,7 @@ func TestGuardAllowsOutsideManagedAndOnMalformed(t *testing.T) {
 	state, legacy := t.TempDir(), t.TempDir()
 	args := []string{}
 	var out, errBuf bytes.Buffer
-	if code, _ := cmdGuard(strings.NewReader(`{"cwd":"`+plain+`","tool_input":{"command":"npm run dev"}}`), &out, &errBuf, args, state, legacy); code != 0 || errBuf.Len() != 0 {
+	if code, _ := cmdGuard(strings.NewReader(`{"cwd":"`+jsonEsc(plain)+`","tool_input":{"command":"npm run dev"}}`), &out, &errBuf, args, state, legacy); code != 0 || errBuf.Len() != 0 {
 		t.Fatalf("unmanaged checkout must be allowed: code=%d %q", code, errBuf.String())
 	}
 	code, _ := cmdGuard(strings.NewReader(`{{{ nope`), &out, &errBuf, args, state, legacy)
@@ -75,7 +75,7 @@ func TestGuardBinaryAllowPathUnder50ms(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the binary")
 	}
-	bin := filepath.Join(t.TempDir(), "stackfork")
+	bin := filepath.Join(t.TempDir(), "stackfork"+exeSuffix)
 	build := exec.Command("go", "build", "-o", bin, "github.com/pedropinheiro75/stackfork/cmd/stackfork")
 	build.Dir = moduleRoot(t)
 	if out, err := build.CombinedOutput(); err != nil {
@@ -84,7 +84,7 @@ func TestGuardBinaryAllowPathUnder50ms(t *testing.T) {
 	repo, _ := guardRepo(t)
 	run := func(command string) (time.Duration, int) {
 		cmd := exec.Command(bin, "--state-dir", t.TempDir(), "--legacy-state-dir", t.TempDir(), "guard")
-		cmd.Stdin = strings.NewReader(`{"cwd":"` + repo + `","tool_name":"Bash","tool_input":{"command":"` + command + `"}}`)
+		cmd.Stdin = strings.NewReader(`{"cwd":"` + jsonEsc(repo) + `","tool_name":"Bash","tool_input":{"command":"` + command + `"}}`)
 		cmd.Env = append(os.Environ(), "STACKFORK_HOST_RUN=", "PATH=/nonexistent") // no docker reachable at all
 		start := time.Now()
 		err := cmd.Run()
@@ -118,9 +118,9 @@ func TestGuardBlocksDestructivePruneForEveryTool(t *testing.T) {
 	payload := func(tool, cmd string) string {
 		switch tool {
 		case "copilot":
-			return `{"timestamp":1,"cwd":"` + plain + `","toolName":"bash","toolArgs":"{\"command\":\"` + cmd + `\"}"}`
+			return `{"timestamp":1,"cwd":"` + jsonEsc(plain) + `","toolName":"bash","toolArgs":"{\"command\":\"` + cmd + `\"}"}`
 		}
-		return `{"cwd":"` + plain + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + cmd + `"}}`
+		return `{"cwd":"` + jsonEsc(plain) + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + cmd + `"}}`
 	}
 	for _, tool := range []string{"claude", "codex", "copilot"} {
 		for cmd, block := range map[string]bool{
@@ -144,7 +144,7 @@ func TestGuardAllowsRunsCommands(t *testing.T) {
 	repo, _ := guardRepo(t)
 	state, legacy := t.TempDir(), t.TempDir()
 	for _, c := range []string{"stackfork runs", "stackfork runs --json --limit 5", "stackfork runs show", "stackfork runs show 3 --step seed", "stackfork --instance sf-x runs show --json"} {
-		payload := `{"session_id":"s","cwd":"` + repo + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + c + `"}}`
+		payload := `{"session_id":"s","cwd":"` + jsonEsc(repo) + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + c + `"}}`
 		var out, errBuf bytes.Buffer
 		code, err := cmdGuard(strings.NewReader(payload), &out, &errBuf, nil, state, legacy)
 		if err != nil || code != 0 || errBuf.Len() != 0 {
@@ -160,9 +160,9 @@ func TestGuardBlocksSecretWritesAndReadsForEveryTool(t *testing.T) {
 	plain := t.TempDir()
 	payload := func(tool, cmd string) string {
 		if tool == "copilot" {
-			return `{"timestamp":1,"cwd":"` + plain + `","toolName":"bash","toolArgs":"{\"command\":\"` + cmd + `\"}"}`
+			return `{"timestamp":1,"cwd":"` + jsonEsc(plain) + `","toolName":"bash","toolArgs":"{\"command\":\"` + cmd + `\"}"}`
 		}
-		return `{"cwd":"` + plain + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + cmd + `"}}`
+		return `{"cwd":"` + jsonEsc(plain) + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + cmd + `"}}`
 	}
 	for _, tool := range []string{"claude", "codex", "copilot"} {
 		for cmd, block := range map[string]bool{
@@ -193,9 +193,9 @@ func TestGuardBlocksLiveOnAndAutoCleanupForEveryTool(t *testing.T) {
 	plain := t.TempDir()
 	payload := func(tool, cmd string) string {
 		if tool == "copilot" {
-			return `{"timestamp":1,"cwd":"` + plain + `","toolName":"bash","toolArgs":"{\"command\":\"` + cmd + `\"}"}`
+			return `{"timestamp":1,"cwd":"` + jsonEsc(plain) + `","toolName":"bash","toolArgs":"{\"command\":\"` + cmd + `\"}"}`
 		}
-		return `{"cwd":"` + plain + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + cmd + `"}}`
+		return `{"cwd":"` + jsonEsc(plain) + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"` + cmd + `"}}`
 	}
 	for _, tool := range []string{"claude", "codex", "copilot"} {
 		for cmd, block := range map[string]bool{
@@ -216,3 +216,6 @@ func TestGuardBlocksLiveOnAndAutoCleanupForEveryTool(t *testing.T) {
 		}
 	}
 }
+
+// jsonEsc escapes a path for a JSON string literal (Windows backslashes).
+func jsonEsc(p string) string { return strings.ReplaceAll(p, `\`, `\\`) }

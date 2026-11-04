@@ -46,9 +46,11 @@ func newCleanupLoop(t *testing.T, cl config.Cleanup) *cleanupLoopFx {
 			return f.fetchErr
 		},
 		CleanupDown: func(Target) func(io.Writer) error {
+			t.Cleanup(f.l.Close) // Windows cannot remove the held live/.lock
 			return func(io.Writer) error { f.downs++; return nil }
 		},
 	}
+	t.Cleanup(f.l.Close) // Windows cannot remove the held live/.lock
 	return f
 }
 

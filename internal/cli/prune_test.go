@@ -13,6 +13,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/prune"
 	"github.com/pedropinheiro75/stackfork/internal/state"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 // pruneFake is a fake `docker` whose listings come from files, deliberately
@@ -39,9 +40,7 @@ case "$1" in
 esac
 exit 0
 `
-	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testsupport.FakeExe(t, filepath.Join(dir, "docker"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("STACKFORK_PROXY_NAME", "test-proxy")
 	return &pruneFake{dir: dir}

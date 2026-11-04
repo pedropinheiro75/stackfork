@@ -3,6 +3,7 @@ package repos
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +87,7 @@ func TestSiblingRecipeAppliesToNewWorktree(t *testing.T) {
 		}
 	}
 	env, _ := os.ReadFile(filepath.Join(ad, "runtime.env"))
-	for _, want := range []string{"DEV_CHECKOUT=" + res.Path + "\n", "DEV_RUNTIME_ENV=" + res.Path + "/.agent-dev/runtime.env\n", "TOKENISH=" + canary, `LOGDIR="` + res.Path + `/logs"`, "OTHER=/elsewhere"} {
+	for _, want := range []string{"DEV_CHECKOUT=" + res.Path + "\n", "DEV_RUNTIME_ENV=" + filepath.Join(res.Path, ".agent-dev", "runtime.env") + "\n", "TOKENISH=" + canary, `LOGDIR="` + res.Path + `/logs"`, "OTHER=/elsewhere"} {
 		if !strings.Contains(string(env), want) {
 			t.Errorf("runtime.env missing %q:\n%s", want, env)
 		}
@@ -94,7 +95,7 @@ func TestSiblingRecipeAppliesToNewWorktree(t *testing.T) {
 	if strings.Contains(string(env), sib) {
 		t.Errorf("sibling path left in runtime.env:\n%s", env)
 	}
-	if fi, _ := os.Stat(filepath.Join(ad, "runtime.env")); fi.Mode().Perm() != 0o600 {
+	if fi, _ := os.Stat(filepath.Join(ad, "runtime.env")); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Errorf("runtime.env mode %v", fi.Mode())
 	}
 	// the sibling's own file is untouched

@@ -78,7 +78,7 @@ func TestIsolateRefusals(t *testing.T) {
 		`{"networks": {"default": {"ipam": {"config": [{"subnet": "172.20.0.0/16"}]}}}}`,
 		`{"services": {"db": {"image": "postgres:17", "network_mode": "host"}}}`,
 		`{"services": {"db": {"image": "postgres:17", "privileged": true}}}`,
-		`{"services": {"db": {"image": "postgres:17", "env_file": [{"path": "` + filepath.Join(a, ".env") + `"}]}}}`,
+		`{"services": {"db": {"image": "postgres:17", "env_file": [{"path": "` + jsonEsc(filepath.Join(a, ".env")) + `"}]}}}`,
 		`{"services": {"db": {"image": "postgres:17", "volumes": [{"type": "bind", "source": "/local_db", "target": "/var/lib/postgresql/data"}]}}}`,
 	}
 	for _, raw := range bad {
@@ -103,7 +103,7 @@ func TestIsolateDryRunCollectsAllFindings(t *testing.T) {
 			"container_name": "fixed-db",
 			"volumes": [
 				{"type": "bind", "source": "/var/run/docker.sock", "target": "/var/run/docker.sock"},
-				{"type": "bind", "source": "` + outside + `", "target": "/data"}
+				{"type": "bind", "source": "` + jsonEsc(outside) + `", "target": "/data"}
 			]
 		}},
 		"networks": {"default": {"external": true}}
@@ -202,7 +202,7 @@ func TestRenderIsolateRoundTrip(t *testing.T) {
 		"services": {"db": {
 			"image": "postgres:17",
 			"environment": {"LITERAL": "price$$100", "POSTGRES_USER": "postgres"},
-			"env_file": [{"path": "` + env + `"}],
+			"env_file": [{"path": "` + jsonEsc(env) + `"}],
 			"healthcheck": {"test": ["CMD-SHELL", "echo $$POSTGRES_USER"]}
 		}}
 	}`
@@ -585,3 +585,6 @@ func TestPrimaryHTTPServiceSkipsUtilityImages(t *testing.T) {
 		t.Fatalf("lone utility: %s %v", service, ok)
 	}
 }
+
+// jsonEsc escapes a path for a JSON string literal (Windows backslashes).
+func jsonEsc(p string) string { return strings.ReplaceAll(p, `\`, `\\`) }

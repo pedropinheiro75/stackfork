@@ -421,9 +421,10 @@ type projectData struct {
 }
 
 // repoRoot is the main checkout a version belongs to: the part of its root
-// before "/.worktrees/", else the root itself. app.js's repoRoot must match.
+// before "/.worktrees/" (or "\.worktrees\" on Windows), else the root
+// itself. app.js's repoRoot must match.
 func repoRoot(root string) string {
-	if i := strings.LastIndex(root, "/.worktrees/"); i > 0 {
+	if i := strings.LastIndex(strings.ReplaceAll(root, `\`, "/"), "/.worktrees/"); i > 0 {
 		return root[:i]
 	}
 	return root

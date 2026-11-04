@@ -32,6 +32,7 @@ func newLoop(t *testing.T, f *fx, nb string) *loopFx {
 		Rand:    func() float64 { return 0.5 },
 		Admit:   func(*config.Config, string) string { return "" }, // the fixtures sit outside a configured root
 	}
+	t.Cleanup(lf.l.Close) // Windows cannot remove the held live/.lock
 	return lf
 }
 

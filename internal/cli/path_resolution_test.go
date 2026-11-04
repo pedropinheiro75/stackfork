@@ -88,9 +88,9 @@ func TestPrepareMissingFileErrorNamesAbsolutePath(t *testing.T) {
 		t.Fatalf("expected prepare to fail, got: %s", out)
 	}
 	wantPath := filepath.Join(worktree, ".agent-dev", "does-not-exist.yaml")
-	resolvedWant, _ := filepath.EvalSymlinks(filepath.Dir(wantPath))
-	if resolvedWant == "" {
-		resolvedWant = filepath.Dir(wantPath)
+	resolvedWant := filepath.Dir(wantPath)
+	if wt, err := filepath.EvalSymlinks(worktree); err == nil { // also the long name of a Windows 8.3 temp path
+		resolvedWant = filepath.Join(wt, ".agent-dev")
 	}
 	if !strings.Contains(string(out), resolvedWant) {
 		t.Fatalf("expected the error to name the absolute path under the worktree (%s), got: %s", resolvedWant, out)

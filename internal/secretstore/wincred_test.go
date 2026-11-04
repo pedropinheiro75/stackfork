@@ -1,6 +1,7 @@
 package secretstore
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -117,6 +118,9 @@ func TestWindowsBackendThroughCredentialManager(t *testing.T) {
 }
 
 func TestWindowsBuildWithoutAPIIsUnavailable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("checks the stub of non-Windows builds; here the real Credential Manager answers")
+	}
 	b := &Backend{GOOS: "windows"} // on this OS the real calls are the stub
 	if _, st, err := b.Resolve("keychain:acme-npm-token"); st != Unavailable || err == nil {
 		t.Fatalf("%v %v", st, err)

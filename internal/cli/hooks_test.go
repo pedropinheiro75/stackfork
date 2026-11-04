@@ -12,6 +12,7 @@ import (
 func TestHooksCommandOnTempHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	for _, v := range []string{"CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME"} {
 		t.Setenv(v, "")
 	}
@@ -52,6 +53,7 @@ func TestHooksCommandOnTempHome(t *testing.T) {
 func TestHooksCodexTrustGuidance(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	for _, v := range []string{"CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME"} {
 		t.Setenv(v, "")
 	}

@@ -48,7 +48,7 @@ func ReadinessOf(name string, checkouts []string, ref string, insts []inventory.
 	for _, c := range checkouts {
 		for _, dir := range []string{".stackfork", ".agent-dev"} {
 			if m, _ := filepath.Glob(filepath.Join(c, dir, "*.compose.yaml")); len(m) > 0 {
-				return NeedsLearn, "adapter " + filepath.Join(dir, filepath.Base(m[0])) + " in " + filepath.Base(c) + " but no verified knowledge" + learnIt
+				return NeedsLearn, "adapter " + dir + "/" + filepath.Base(m[0]) + " in " + filepath.Base(c) + " but no verified knowledge" + learnIt
 			}
 		}
 	}

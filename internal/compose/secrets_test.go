@@ -100,7 +100,7 @@ func TestDockerEnvAddsValuesUnderEveryAliasOnly(t *testing.T) {
 		t.Error("a COMPOSE_ variable was inherited")
 	}
 	for _, e := range DockerEnv(nil) {
-		if strings.Contains(e, "v1") || strings.HasPrefix(e, "STRIPE=") {
+		if strings.HasSuffix(e, "=v1") || strings.HasPrefix(e, "STRIPE=") {
 			t.Error("nil values must add nothing")
 		}
 	}

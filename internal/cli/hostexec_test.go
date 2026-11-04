@@ -40,8 +40,11 @@ func TestHostExecRunsArgvWithoutShellInTheCheckout(t *testing.T) {
 	if !strings.Contains(out, `argv=["two words","*","x"]`) {
 		t.Fatalf("argv not passed as written:\n%s", out)
 	}
-	rootR, _ := filepath.EvalSymlinks(root)
-	if !strings.Contains(out, "cwd="+rootR+"\n") || !strings.Contains(out, "stdin=true") {
+	_, cwd, _ := strings.Cut(out, "cwd=")
+	cwd, _, _ = strings.Cut(cwd, "\n")
+	a, _ := os.Stat(cwd)
+	b, _ := os.Stat(root) // the same folder; Windows may print its short (8.3) name
+	if a == nil || b == nil || !os.SameFile(a, b) || !strings.Contains(out, "stdin=true") {
 		t.Fatalf("cwd or stdin:\n%s", out)
 	}
 	if !strings.Contains(out, "DATABASE_URL=postgres") || !strings.Contains(out, "STACKFORK_HOST_RUN=1") || strings.Contains(out, "PORT=3") {

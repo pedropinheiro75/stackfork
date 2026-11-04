@@ -3,6 +3,7 @@ package repos
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -141,7 +142,7 @@ func TestSecondScanOfUnchangedRepoRunsNoGit(t *testing.T) {
 	if readLog(t, logPath) == "" {
 		t.Fatal("rescan must re-read")
 	}
-	if fi, err := os.Stat(cacheFile); err != nil || fi.Mode().Perm() != 0o600 {
+	if fi, err := os.Stat(cacheFile); err != nil || runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("cache file: %v %v", fi, err)
 	}
 }

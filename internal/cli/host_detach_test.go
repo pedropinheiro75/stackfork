@@ -37,7 +37,7 @@ func useRealBinary(t *testing.T) {
 			return
 		}
 		trackTempBin(dir)
-		builtPath = filepath.Join(dir, "stackfork")
+		builtPath = filepath.Join(dir, "stackfork"+exeSuffix)
 		out, err := exec.Command("go", "build", "-o", builtPath, "../../cmd/stackfork").CombinedOutput()
 		if err != nil {
 			builtErr = err

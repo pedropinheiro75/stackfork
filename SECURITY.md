@@ -186,6 +186,7 @@ A run's step logs (`runs/<id>/<step>.log` in the instance directory) hold the ou
 The Windows runtime is built and vetted (`GOOS=windows go vet`), but it has not run on a Windows machine. Its ceilings:
 
 - No graceful stop. `host stop` and `down` use `taskkill /T /F`, so the app gets no chance to clean up.
+- No Unix file modes. stackfork asks for 0600 files and 0700 folders, but Windows keeps only the read-only bit. The state and config files get the access list of their folder under `%LOCALAPPDATA%`, which by default lets only you, SYSTEM and Administrators read them.
 - Process identity is the PID plus its creation time. stackfork does not read the command line, so a recycled PID is not matched, but a process is not checked for being the app it started.
 - Children of a supervisor that was killed first can survive. Their tree was not killed, and `doctor` reports their port.
 - The guard treats a backslash as a literal character (paths such as `C:\Users\x\stackfork.exe`). It unwraps `cmd /c` and `powershell -Command` before it checks the command, and it still splits on `&&`, `||`, `;`, `|` and `&`.

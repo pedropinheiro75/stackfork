@@ -64,7 +64,7 @@ func readGit(path string) (gitData, error) {
 		for _, line := range strings.Split(block, "\n") {
 			switch {
 			case strings.HasPrefix(line, "worktree "):
-				w.Path = strings.TrimPrefix(line, "worktree ")
+				w.Path = filepath.FromSlash(strings.TrimPrefix(line, "worktree ")) // git prints C:/x on Windows
 			case strings.HasPrefix(line, "branch refs/heads/"):
 				w.Branch = strings.TrimPrefix(line, "branch refs/heads/")
 			case strings.HasPrefix(line, "HEAD ") && w.Branch == "":

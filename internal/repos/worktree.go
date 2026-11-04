@@ -61,7 +61,7 @@ func Checkouts(repo string) []string {
 	}
 	for _, line := range strings.Split(list, "\n") {
 		if p, ok := strings.CutPrefix(line, "worktree "); ok && !sameDir(p, repo) {
-			out = append(out, p)
+			out = append(out, filepath.FromSlash(p)) // git prints C:/x on Windows
 		}
 	}
 	return out
@@ -128,7 +128,7 @@ func checkedOutAt(repo, branch string) string {
 	path := ""
 	for _, l := range strings.Split(out, "\n") {
 		if p, ok := strings.CutPrefix(l, "worktree "); ok {
-			path = p
+			path = filepath.FromSlash(p)
 		} else if l == "branch refs/heads/"+branch {
 			if r, err := filepath.EvalSymlinks(path); err == nil {
 				return r

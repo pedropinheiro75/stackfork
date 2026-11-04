@@ -91,7 +91,7 @@ func TestLiveCleanWithoutADialogDeletesNothingAndShowsTheCommand(t *testing.T) {
 	repo, wt := e.liveWorktree(t)
 	f, _ := e.withLiveCleanup(t, false, errors.New("no confirmation dialog on this system; run it in a terminal"))
 	rec := e.post("/api/live", map[string]string{"repo": repo, "op": "clean", "path": wt}, reqOpts{})
-	if !strings.Contains(rec.Body.String(), "stackfork live clean "+repo+" feature-login --yes") || len(f.cleaned) != 0 || strings.Contains(rec.Body.String(), `"ok":true`) {
+	if !strings.Contains(rec.Body.String(), "stackfork live clean "+jsonEsc(repo)+" feature-login --yes") || len(f.cleaned) != 0 || strings.Contains(rec.Body.String(), `"ok":true`) {
 		t.Fatalf("%d %s cleaned=%v", rec.Code, rec.Body.String(), f.cleaned)
 	}
 }
@@ -186,7 +186,7 @@ func TestLiveCleanupAutoAsksAndWritesOnlyAfterApproval(t *testing.T) {
 	}
 	// no dialog: nothing written, the command is shown
 	e.withLiveCleanup(t, false, errors.New("no confirmation dialog on this system"))
-	if out := post(map[string]interface{}{"mode": "auto", "grace_hours": 12}); !strings.Contains(out, "stackfork live cleanup auto "+repo+" --grace 12") || cleanupOf(t, repo) != before {
+	if out := post(map[string]interface{}{"mode": "auto", "grace_hours": 12}); !strings.Contains(out, "stackfork live cleanup auto "+jsonEsc(repo)+" --grace 12") || cleanupOf(t, repo) != before {
 		t.Fatalf("no dialog: %s cfg=%+v", out, cleanupOf(t, repo))
 	}
 	// approved: written
@@ -234,3 +234,6 @@ func TestLiveCleanupBranchDeletionAsksSuggestAndOffDoNot(t *testing.T) {
 		t.Errorf("a refused grace changed the setting: %+v", cleanupOf(t, repo))
 	}
 }
+
+// jsonEsc is p as it appears inside a JSON string (Windows backslashes doubled).
+func jsonEsc(p string) string { return strings.ReplaceAll(p, `\`, `\\`) }

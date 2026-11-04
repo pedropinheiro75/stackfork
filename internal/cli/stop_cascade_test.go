@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/pedropinheiro75/stackfork/internal/state"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 // cascadeStack prepares a stack of db and worker (depends on db), records the
@@ -114,10 +115,8 @@ func TestStopCascadesToDependentsFirst(t *testing.T) {
 	for _, n := range []string{"api", "app", "studio"} {
 		pids = append(pids, fmt.Sprint(procs[n].PID))
 	}
-	script := "#!/bin/sh\ncase \" $* \" in *\" stop \"*) for p in " + strings.Join(pids, " ") + "; do kill -0 $p 2>/dev/null && echo $p >> " + seen + "; done;; esac\nexec " + orig + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(wrapDir, "docker"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	script := "#!/bin/sh\ncase \" $* \" in *\" stop \"*) for p in " + strings.Join(pids, " ") + "; do kill -0 $p 2>/dev/null && echo $p >> " + seen + "; done;; esac\nexec \"" + filepath.ToSlash(orig) + "\" \"$@\"\n"
+	testsupport.FakeExe(t, filepath.Join(wrapDir, "docker"), script)
 	t.Setenv("PATH", wrapDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	os.Truncate(log, 0)
 

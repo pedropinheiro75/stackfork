@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +19,9 @@ var (
 	tempBinMu   sync.Mutex
 	tempBinDirs []string
 )
+
+// exeSuffix names a built binary so Windows runs it.
+var exeSuffix = map[bool]string{true: ".exe"}[runtime.GOOS == "windows"]
 
 func trackTempBin(dir string) {
 	tempBinMu.Lock()

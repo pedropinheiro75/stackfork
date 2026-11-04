@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 var fixedNow = time.Date(2026, 10, 20, 14, 22, 33, 0, time.UTC)
@@ -87,7 +88,7 @@ func TestMoveAsideMovesOnlyUntrackedAdapterFiles(t *testing.T) {
 			t.Errorf("%s still in place", f)
 		}
 	}
-	if fi, _ := os.Stat(filepath.Join(dest, "old.compose.yaml")); fi.Mode().Perm() != 0o640 {
+	if fi, _ := os.Stat(filepath.Join(dest, "old.compose.yaml")); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o640 {
 		t.Errorf("mode %v", fi.Mode().Perm())
 	}
 	if fi, _ := os.Stat(filepath.Join(wt, ".stackfork-aside", "20261020T142233Z")); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o700 {
@@ -162,7 +163,7 @@ func TestAsideFilesRefusesAnUntrackedRecipeFileOutsideTheAdapterFolders(t *testi
 	if _, err := os.Stat(filepath.Join(wt, ".git")); err != nil {
 		t.Fatal(".git is gone")
 	}
-	if top := strings.TrimSpace(git(t, wt, "rev-parse", "--show-toplevel")); top != wt {
+	if top := filepath.FromSlash(strings.TrimSpace(git(t, wt, "rev-parse", "--show-toplevel"))); top != wt {
 		t.Fatalf("worktree detached: %s", top)
 	}
 	for _, f := range []string{"notes.md", ".env.local"} {
@@ -215,10 +216,8 @@ func TestAsideFilesTreatsOtherGitFailuresAsErrors(t *testing.T) {
 	r, _ := FindMainRecipe(main, wt, insts)
 	real, _ := exec.LookPath("git")
 	dir := t.TempDir()
-	script := "#!/bin/sh\ncase \" $* \" in *\" ls-files \"*) exit 3;; esac\nexec " + real + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	script := "#!/bin/sh\ncase \" $* \" in *\" ls-files \"*) exit 3;; esac\nexec \"" + filepath.ToSlash(real) + "\" \"$@\"\n"
+	testsupport.FakeExe(t, filepath.Join(dir, "git"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if files, err := AsideFiles(wt, r); err == nil || files != nil {
 		t.Fatalf("want an error, got %v %v", files, err)

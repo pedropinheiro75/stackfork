@@ -26,7 +26,7 @@ func TestBaselineWrittenOnFirstSightOnly(t *testing.T) {
 		t.Fatalf("first sight: %+v %v %v", b, created, err)
 	}
 	if runtime.GOOS != "windows" {
-		if fi, _ := os.Stat(filepath.Join(inst, BaselineFile)); fi.Mode().Perm() != 0o600 {
+		if fi, _ := os.Stat(filepath.Join(inst, BaselineFile)); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 			t.Fatalf("mode %v", fi.Mode().Perm())
 		}
 	}
