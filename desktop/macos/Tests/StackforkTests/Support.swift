@@ -70,8 +70,10 @@ func makeScript(_ body: String, name: String = "child.sh") throws -> URL {
 }
 
 /// Polls `condition` on the main actor until it holds or `timeout` passes.
+/// The default is long because the first window can stall the main thread
+/// for about 16 s on a CI runner, which starves every test that waits here.
 @MainActor
-func eventually(timeout: TimeInterval = 10, _ condition: @MainActor () -> Bool) async -> Bool {
+func eventually(timeout: TimeInterval = 30, _ condition: @MainActor () -> Bool) async -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         if condition() { return true }

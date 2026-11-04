@@ -65,9 +65,9 @@ import Testing
             environment: env)
         let supervisor = Supervisor(launcher: launcher, scheduler: DispatchScheduler())
         supervisor.start()
-        #expect(await eventually(timeout: 20) { supervisor.state == .ready })
+        #expect(await eventually { supervisor.state == .ready })
         supervisor.closeChildInput()
-        let restarted = await eventually(timeout: 10) {
+        let restarted = await eventually {
             if case .restarting = supervisor.state { return true } else { return false }
         }
         #expect(restarted) // the child left on its own: end of file on its standard input
