@@ -12,3 +12,7 @@ updates:
     directory: /examples/node-postgres
     schedule:
       interval: monthly
+  - package-ecosystem: npm
+    directory: /examples/vite-api
+    schedule:
+      interval: monthly
