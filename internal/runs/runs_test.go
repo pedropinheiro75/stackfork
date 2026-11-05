@@ -127,3 +127,19 @@ func TestFinishClearsADefaultRetryOnSuccess(t *testing.T) {
 		t.Fatalf("retry on a succeeded run: %q", got.Retry)
 	}
 }
+
+// Finish closes the log of a step that was started and never ended: Windows
+// cannot remove the run directory while the file is open.
+func TestFinishClosesAnUnendedStepLog(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := newRun(dir, Meta{Command: "up"}, 1)
+	s := r.Step("up", "compose-up", "x")
+	s.Start().Write([]byte("partial\n"))
+	r.Finish(nil)
+	if s.w != nil {
+		t.Fatal("the step writer is still open")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "runs", "1", "up.log")); string(b) != "partial\n" {
+		t.Fatalf("log = %q", b)
+	}
+}
