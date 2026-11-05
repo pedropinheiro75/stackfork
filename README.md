@@ -6,9 +6,7 @@
 
 ### Your branches. Your laptop. All running at once.
 
-**A reproducible recipe for running your apps locally, in Docker or on the host. Run as many branches of each as you need, at the same time, with every process supervised and Git opening and closing the environments.**
-
-*Run every app you build with AI, in as many versions as you like, all at once on your own computer, with none of them getting in each other's way.*
+Run every app you build with AI, in as many versions as you like, all at once on your own computer, with none of them getting in each other's way.
 
 [![CI](https://github.com/pedropinheiro75/stackfork/actions/workflows/ci.yml/badge.svg)](https://github.com/pedropinheiro75/stackfork/actions/workflows/ci.yml)
 ![Works with Claude Code · Codex · Copilot CLI](https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Copilot%20CLI-f59e0b)
@@ -16,22 +14,63 @@
 ![macOS · Linux · Windows](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-6366f1)
 [![License: MIT](https://img.shields.io/badge/license-MIT-db2777)](LICENSE)
 
-[Install](#install) · [Quick start](#quick-start) · [How you use it](#how-you-use-it) · [How it works](#how-it-works) · [Agents](#work-with-coding-agents) · [Safety](#safety) · [FAQ](#faq) · [Roadmap](#roadmap) · [Docs](#docs)
+[What it looks like](#what-it-looks-like) · [Install](#install) · [How you use it](#how-you-use-it) · [How it works](#how-it-works) · [Agents](#work-with-coding-agents) · [Safety](#safety) · [FAQ](#faq) · [Roadmap](#roadmap) · [Docs](#docs)
 
 </div>
 
-<img src="docs/demo.gif" alt="Terminal demo: stackfork start-env starts a project, a second worktree starts the same project, curl shows the two copies counting visits in separate databases, stackfork list shows both running, and down --volumes removes one">
+<img src="docs/dashboard.gif" alt="Dashboard demo: the Instances page with two container instances and one hybrid instance whose app runs on the host, the Project page with the startup workflow canvas and resource charts, the environment overrides dialog, and the Repos page">
 
 **The problem.** You hand an AI agent a branch and keep working on another. Both run `docker compose up`. Same ports, same container names, same volumes, often the same database. One of you breaks the other, and the agent cannot tell.
 
 **The fix.** stackfork learns how your project starts, once, and records the recipe in the repository: what runs in Docker, what runs on the host, what to install, migrate and seed, and which URL to open. From then on every worktree starts with one command, on its own ports, volumes, network and `.localhost` URL. Five agents and you can work on five branches of one project on one laptop, and nothing collides.
+
+## What it looks like
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/instances-overview-dark.png">
   <img src="docs/screenshots/instances-overview-light.png" alt="Instances page: acme-api, a hybrid instance whose app runs on the host with its PID, memory, CPU and a hot reload chip, and acme-web with two running checkouts, main and feature-invoices, each with its own URLs, database port and env overrides">
 </picture>
 
-*The dashboard: two projects, three running copies. `acme-api` runs its app on the host with hot reload and its database in Docker. `acme-web` runs `main` and `feature-invoices` side by side, each with its own URL, database port and env overrides.*
+**Overview.** Two projects, three running copies. `acme-api` runs its app on the host with hot reload and its database in Docker. `acme-web` runs `main` and `feature-invoices` side by side, each with its own URL, database port and env overrides.
+
+<table>
+<tr>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/instances-hybrid-host-app-dark.png">
+  <img src="docs/screenshots/instances-hybrid-host-app-light.png" alt="Instance card of acme-api: the db service in Docker with its database port, connection URL, psql and exec shortcuts, and the app service running on the host with its PID, memory, CPU and a hot reload chip">
+</picture>
+</td>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/project-resources-dark.png">
+  <img src="docs/screenshots/project-resources-light.png" alt="Resources section of acme-web: memory and CPU charts for the main and feature-invoices checkouts, a disk bar per checkout and a table of every service">
+</picture>
+</td>
+</tr>
+<tr>
+<td><b>Hybrid instance:</b> the database runs in Docker and the app runs on the host with hot reload, shown with its PID, memory and CPU.</td>
+<td><b>Resources:</b> memory, CPU and disk for each checkout, so you see what every copy costs.</td>
+</tr>
+<tr>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/project-workflow-dark.png">
+  <img src="docs/screenshots/project-workflow-light.png" alt="Project page: the startup workflow canvas of a hybrid project: secrets, prepare, compose up, the New data volume decision with the seed step, the Mode decision, and the host app that runs on this machine, each step with the state of the last run">
+</picture>
+</td>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/environment-dialog-dark.png">
+  <img src="docs/screenshots/environment-dialog-light.png" alt="Environment dialog for the app service on the feature-invoices worktree: three variable overrides with their project value and your value, a field to add another, and a Save and restart app button">
+</picture>
+</td>
+</tr>
+<tr>
+<td><b>Startup workflow:</b> the recorded steps of a project, each with the result of its last run.</td>
+<td><b>Environment:</b> change a variable for one worktree only, without touching the repository.</td>
+</tr>
+</table>
 
 ## Why developers keep it
 
@@ -45,35 +84,57 @@
 | **Still running after a restart** | Host apps are health-checked and restarted. After a reboot, what was running comes back, and what lost its database stops instead of running against nothing. |
 | **Every copy in one place** | A dashboard and a macOS menu bar app show every running copy, its URLs, memory and CPU, and why a start failed. |
 
-<img src="docs/dashboard.gif" alt="Dashboard demo: the Instances page with two container instances and one hybrid instance whose app runs on the host, the Project page with the startup workflow canvas and resource charts, the environment overrides dialog, and the Repos page">
-
 ## Install
 
-macOS, Linux and Windows, amd64 and arm64. Docker with the Compose plugin must be running. Pick one:
+You need Docker with the Compose plugin running. stackfork supports amd64 and arm64.
 
-- Homebrew (macOS and Linux): `brew trust pedropinheiro75/tap && brew install --cask pedropinheiro75/tap/stackfork`
-- Shell script: `curl -fsSL https://raw.githubusercontent.com/pedropinheiro75/stackfork/main/install.sh | sh`
-- Windows (PowerShell): `irm https://raw.githubusercontent.com/pedropinheiro75/stackfork/main/install.ps1 | iex`. It needs Docker Desktop with the WSL 2 backend. Windows support is new; read [the Windows limits](SECURITY.md#windows).
-- Binaries: download one from the [Releases page](https://github.com/pedropinheiro75/stackfork/releases).
-- Go 1.26.10 or later: `go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest`
-
-To build from a clone, run `go build -o stackfork ./cmd/stackfork` and put the binary on your `PATH`. Check the install with `stackfork version`. The macOS menu bar app is the `.dmg` on the Releases page: see [docs/macos-app.md](docs/macos-app.md).
-
-## Quick start
-
-Two isolated copies of `examples/node-postgres`, a small Node server with Postgres that counts visits:
+**macOS and Linux, with Homebrew**
 
 ```sh
-git clone https://github.com/pedropinheiro75/stackfork && cd stackfork
-stackfork learn && stackfork prepare -f examples/node-postgres/docker-compose.yml && stackfork up
-git worktree add ../stackfork-2 && cd ../stackfork-2
-stackfork prepare -f examples/node-postgres/docker-compose.yml && stackfork up
-stackfork list && stackfork urls
+brew trust pedropinheiro75/tap
+brew install --cask pedropinheiro75/tap/stackfork
 ```
 
-`stackfork list` shows two running instances. `stackfork urls` prints a `.localhost` URL per checkout. Request each URL more than once: the `visits` count of one copy does not change the other. If the URLs do not answer, run `stackfork proxy up`. Clean up with `stackfork down --volumes` in each checkout.
+**macOS and Linux, with the install script**
 
-For your own project, the recommended way is to let your AI agent run the learn session: ask it to "learn this project with stackfork", or click **Set up** on the project in the dashboard. The scan drafts the recipe, the agent fills in what a scan cannot know (which script is the dev server, what seeds the database, which URL to open) and confirms it with `learn verify`. From then on every worktree starts with `stackfork start-env`.
+```sh
+curl -fsSL https://raw.githubusercontent.com/pedropinheiro75/stackfork/main/install.sh | sh
+```
+
+**Windows, in PowerShell**
+
+```powershell
+irm https://raw.githubusercontent.com/pedropinheiro75/stackfork/main/install.ps1 | iex
+```
+
+It needs Docker Desktop with the WSL 2 backend. Windows support is new; read [the Windows limits](SECURITY.md#windows).
+
+<details>
+<summary>Other ways to install</summary>
+
+Download a binary from the [Releases page](https://github.com/pedropinheiro75/stackfork/releases).
+
+Install with Go 1.26.10 or later:
+
+```sh
+go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest
+```
+
+Build from a clone, then put the binary on your `PATH`:
+
+```sh
+go build -o stackfork ./cmd/stackfork
+```
+
+</details>
+
+Check the install:
+
+```sh
+stackfork version
+```
+
+The macOS menu bar app is the `.dmg` on the Releases page. See [docs/macos-app.md](docs/macos-app.md).
 
 ## How you use it
 
@@ -84,18 +145,11 @@ For your own project, the recommended way is to let your AI agent run the learn 
   <img src="docs/screenshots/settings-folders-light.png" alt="Settings page: the list of folders that stackfork scans for repositories, with a field to add another folder">
 </picture>
 
-2. **Click "Set up" and pick your agent.** Your agent reads the project and saves how it starts. This happens once, for you, your team and every agent. More in [learning.md](references/learning.md).
+2. **Click "Set up" and pick your agent.** Your agent reads the project and saves how it starts. This happens once, for you, your team and every agent. You can also ask your agent: "learn this project with stackfork". More in [learning.md](references/learning.md).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/learn-with-agent-dark.png">
   <img src="docs/screenshots/learn-with-agent-light.png" alt="Repos page: acme-docs is not set up yet; its Set up button opens a dialog where you pick Claude Code, Codex or Copilot CLI and see what the agent will check">
-</picture>
-
-The result is a workflow you can read:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/project-workflow-dark.png">
-  <img src="docs/screenshots/project-workflow-light.png" alt="Project page: the startup workflow canvas of a hybrid project: secrets, prepare, compose up, the New data volume decision with the seed step, the Mode decision, and the host app that runs on this machine, each step with the state of the last run">
 </picture>
 
 3. **Ask your agent for an environment.** For example: "create a stackfork environment for the invoices feature". You get a full copy of the app for that branch. You can also press **Start** on the Repos page.
@@ -111,6 +165,15 @@ The result is a workflow you can read:
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/instances-two-checkouts-dark.png">
   <img src="docs/screenshots/instances-two-checkouts-light.png" alt="Instances page: acme-web with two running checkouts, main and feature-invoices, each with its own address and database port">
 </picture>
+
+<details>
+<summary>Prefer the terminal?</summary>
+
+Every action also exists as a command. See the full walkthrough in [examples/node-postgres](examples/node-postgres/README.md) and every command in [references/commands.md](references/commands.md).
+
+<img src="docs/demo.gif" alt="Terminal demo: stackfork start-env starts a project, a second worktree starts the same project, curl shows the two copies counting visits in separate databases, stackfork list shows both running, and down --volumes removes one">
+
+</details>
 
 ## How it works
 
@@ -195,7 +258,6 @@ There is no telemetry and no account. The dashboard listens only on `127.0.0.1`.
 
 What is planned next. Ideas and votes are welcome in [Discussions](https://github.com/pedropinheiro75/stackfork/discussions).
 
-- **Native Windows support**: in progress.
 - **Share an environment over the internet**: give someone a link to one running branch on your laptop, behind an authentication layer so it is never open to everyone.
 - **Traefik as the proxy**: replace the built-in proxy.
 - **Load testing**: point a load-testing tool at any environment.
