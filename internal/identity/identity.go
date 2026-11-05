@@ -106,7 +106,14 @@ func projectName(prefix, root, branch string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	base := filepath.Base(resolved)
+	slug := slugName(filepath.Base(resolved))
+	digest := projectDigest(resolved, branch)
+	return fmt.Sprintf("%s-%s-%s", prefix, slug, digest), nil
+}
+
+// slugName lower-cases a folder name for use in an instance name or address:
+// other characters become "-", at most 24 characters, never empty.
+func slugName(base string) string {
 	slug := slugInvalid.ReplaceAllString(strings.ToLower(base), "-")
 	if len(slug) > 24 {
 		slug = slug[:24]
@@ -115,9 +122,13 @@ func projectName(prefix, root, branch string) (string, error) {
 	if slug == "" {
 		slug = "app"
 	}
+	return slug
+}
+
+// projectDigest is the 12-hex digest in the project name.
+func projectDigest(resolved, branch string) string {
 	sum := sha256.Sum256([]byte(resolved + "\x00" + branch))
-	digest := hex.EncodeToString(sum[:])[:12]
-	return fmt.Sprintf("%s-%s-%s", prefix, slug, digest), nil
+	return hex.EncodeToString(sum[:])[:12]
 }
 
 // ProjectName mirrors Python's project_name(root, branch), using the
@@ -152,6 +163,86 @@ func BrowserHostname(project, selected string) (string, error) {
 		return "", errors.New("Hostname must be one DNS label followed by .localhost (for example eup-274.localhost)")
 	}
 	return hostname, nil
+}
+
+// DefaultHostnameTemplate is the address pattern when config.json has none.
+const DefaultHostnameTemplate = "{app}-{worktree}"
+
+// ReservedHostname is the dashboard's own address.
+const ReservedHostname = "stackfork.localhost"
+
+var (
+	hostnameTokens = []string{"{app}", "{worktree}", "{hash}"}
+	multiDash      = regexp.MustCompile(`-{2,}`)
+)
+
+// ValidateHostnameTemplate accepts "" (the default) or a template whose
+// tokens are {app}, {worktree} and {hash} and whose other text is a-z, 0-9
+// and "-".
+func ValidateHostnameTemplate(t string) error {
+	rest := t
+	for _, tok := range hostnameTokens {
+		rest = strings.ReplaceAll(rest, tok, "")
+	}
+	for _, r := range rest {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+			return fmt.Errorf("Invalid address pattern %q: use the tokens {app}, {worktree} and {hash}, plus only a-z, 0-9 and - (for example {app}-{worktree})", t)
+		}
+	}
+	return nil
+}
+
+// RenderHostname fills a template. app and worktree are folder names; a
+// checkout that is its own main one has the same name for both, so its
+// {worktree} renders empty next to {app} (acme-web, not acme-web-acme-web).
+// When the result is empty or not a valid label, it falls back to the old
+// "<worktree slug>-<hash>" form.
+func RenderHostname(tmpl, app, worktree, hash string) string {
+	if tmpl == "" {
+		tmpl = DefaultHostnameTemplate
+	}
+	a, w := slugName(app), slugName(worktree)
+	if a == w && strings.Contains(tmpl, "{app}") {
+		w = ""
+	}
+	label := strings.NewReplacer("{app}", a, "{worktree}", w, "{hash}", hash).Replace(tmpl)
+	label = strings.Trim(multiDash.ReplaceAllString(label, "-"), "-")
+	if !hostnamePattern.MatchString(label + ".localhost") {
+		return slugName(worktree) + "-" + hash + ".localhost"
+	}
+	return label + ".localhost"
+}
+
+// TemplateHostname renders the address for a new instance of root+branch, and
+// the digest it uses. {app} is the main checkout's folder name.
+func TemplateHostname(tmpl, root, branch string) (name, hash string, err error) {
+	resolved, err := ResolvePath(root)
+	if err != nil {
+		return "", "", err
+	}
+	hash = projectDigest(resolved, branch)
+	app := filepath.Base(resolved)
+	if main := MainRepoOf(resolved); main != "" {
+		if m, err := ResolvePath(main); err == nil {
+			app = filepath.Base(m)
+		}
+	}
+	return RenderHostname(tmpl, app, filepath.Base(resolved), hash), hash, nil
+}
+
+// UniqueHostname appends "-" and the first 6 hex of hash when name is the
+// dashboard's or taken(name) says another instance holds it, and reports
+// whether it did. A suffixed label over 63 characters falls back to the old
+// "<slug>-<hash>" form of its first 24 characters.
+func UniqueHostname(name, hash string, taken func(string) bool) (string, bool) {
+	if name != ReservedHostname && !taken(name) {
+		return name, false
+	}
+	label := strings.TrimSuffix(name, ".localhost") + "-" + hash[:6]
+	if len(label) > 63 {
+		label = slugName(label[:24]) + "-" + hash
+	}
+	return label + ".localhost", true
 }
 
 // stateDir joins the given state-dir name onto ~/.local/state, or onto
