@@ -39,6 +39,8 @@ type Config struct {
 	// ResumeOnStart is nil (on) until the person sets it: the dashboard then
 	// starts what was running before a shutdown (see ResumeEnabled).
 	ResumeOnStart *bool `json:"resume_on_start,omitempty"`
+	// Hostname is the address template for new instances ("" = default).
+	Hostname string `json:"hostname,omitempty"`
 
 	extra map[string]json.RawMessage
 }
@@ -79,7 +81,7 @@ func load(validate bool) (*Config, error) {
 	if err := json.Unmarshal(data, &c.extra); err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
-	for _, k := range []string{"roots", "exclude", "maxDepth", "mode", "modes", "secrets", "live", "cleanup", "resume_on_start"} {
+	for _, k := range []string{"roots", "exclude", "maxDepth", "mode", "modes", "secrets", "live", "cleanup", "resume_on_start", "hostname"} {
 		delete(c.extra, k)
 	}
 	if validate {
@@ -128,6 +130,9 @@ func (c *Config) Save() error {
 	}
 	if c.ResumeOnStart != nil {
 		out["resume_on_start"] = *c.ResumeOnStart
+	}
+	if c.Hostname != "" {
+		out["hostname"] = c.Hostname
 	}
 	return state.WritePrivate(p, out)
 }
@@ -296,6 +301,23 @@ func (c *Config) SetResumeOnStart(v string) error {
 		return nil
 	}
 	return errors.New("resume-on-start takes on or off")
+}
+
+// SetHostname sets the address template; "" restores the default.
+func (c *Config) SetHostname(t string) error {
+	if err := identity.ValidateHostnameTemplate(t); err != nil {
+		return err
+	}
+	c.Hostname = t
+	return nil
+}
+
+// HostnameTemplate is the template in effect.
+func (c *Config) HostnameTemplate() string {
+	if c.Hostname == "" {
+		return identity.DefaultHostnameTemplate
+	}
+	return c.Hostname
 }
 
 // AgentRule keeps an agent away from a folder, e.g. a client whose policy

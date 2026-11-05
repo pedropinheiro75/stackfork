@@ -295,6 +295,18 @@
     </form>
   </div>
 </section>
+<section class="set-row" aria-labelledby="set-addresses">
+  <div class="set-label"><h3 id="set-addresses">Addresses</h3><p class="muted">How a new environment is named in the browser, for example acme-web-feature-invoices.localhost. The choice applies to new environments; existing ones keep their address.</p></div>
+  <div class="set-control">
+    <form class="settings-form" data-config-op="set-hostname">
+      <select name="value" aria-label="Address pattern">
+        {{range .Addresses}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Text}}</option>
+        {{end}}
+      </select>
+      <button type="submit" class="btn">Save</button>
+    </form>
+  </div>
+</section>
 <section class="set-row" aria-labelledby="set-secrets">
   <div class="set-label"><h3 id="set-secrets">Secrets</h3><p class="muted">References to credentials, per repository or folder. stackfork never stores or shows a value here.</p></div>
   <div class="set-control">

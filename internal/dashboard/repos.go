@@ -454,7 +454,47 @@ func (s *Server) handleSettingsFragment(w http.ResponseWriter, r *http.Request) 
 		ConfigPath string
 		Secrets    []mappingView
 		Resume     bool
-	}{res, path, s.secretMappings(cfg), cfg == nil || cfg.ResumeEnabled()})
+		Addresses  []addressOption
+	}{res, path, s.secretMappings(cfg), cfg == nil || cfg.ResumeEnabled(), addressOptions(cfg)})
+}
+
+// addressOption is one entry of the Settings "Addresses" select.
+type addressOption struct {
+	Value, Text string
+	Selected    bool
+}
+
+// addressPresets are the address patterns the Settings select offers, in
+// order; the first is the default.
+var addressPresets = []struct{ Template, Label string }{
+	{identity.DefaultHostnameTemplate, "App and worktree (default)"},
+	{"{app}-{worktree}-{hash}", "App and worktree, with a random suffix"},
+	{"stackfork-{app}-{worktree}", "With a stackfork prefix"},
+	{"{worktree}", "Worktree only"},
+	{"{worktree}-{hash}", "Worktree with a random suffix (the format used before this setting)"},
+}
+
+// addressOptions lists the presets with an example each, rendered for the
+// worktree feature-invoices of acme-web. A template in config.json that is
+// not a preset is added as a selected last option.
+func addressOptions(cfg *config.Config) []addressOption {
+	cur := identity.DefaultHostnameTemplate
+	if cfg != nil {
+		cur = cfg.HostnameTemplate()
+	}
+	example := func(t string) string {
+		return identity.RenderHostname(t, "acme-web", "feature-invoices", "977bbb347841")
+	}
+	var out []addressOption
+	found := false
+	for _, p := range addressPresets {
+		found = found || p.Template == cur
+		out = append(out, addressOption{p.Template, p.Label + ": " + example(p.Template), p.Template == cur})
+	}
+	if !found {
+		out = append(out, addressOption{cur, cur + ": " + example(cur), true})
+	}
+	return out
 }
 
 func (s *Server) renderFragment(w http.ResponseWriter, name string, data interface{}) {
@@ -516,6 +556,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	case "set-resume-on-start":
 		err = cfg.SetResumeOnStart(req.Value)
+	case "set-hostname":
+		err = cfg.SetHostname(req.Value)
 	case "set-mode":
 		// value is REPO=MODE; REPO must be a repo found by the scan
 		i := strings.LastIndex(req.Value, "=")
