@@ -47,6 +47,15 @@ func DockerEnv(values map[string]string) []string {
 	return env
 }
 
+// windowsRenderEnv is what Windows programs need beyond the list in
+// renderEnv: SystemRoot (Winsock), the program-data and app-data directories
+// (docker CLI plugins and config) and PATHEXT. None holds a secret.
+var windowsRenderEnv = map[string]bool{
+	"SYSTEMROOT": true, "WINDIR": true, "SYSTEMDRIVE": true, "PATHEXT": true, "COMSPEC": true,
+	"PROGRAMDATA": true, "PROGRAMFILES": true, "PROGRAMW6432": true, "PROGRAMFILES(X86)": true,
+	"APPDATA": true, "LOCALAPPDATA": true, "HOMEDRIVE": true, "HOMEPATH": true,
+}
+
 // renderEnv builds the minimal, explicit environment Render's `docker
 // compose config` subprocess runs with (design.md D6, security fix): only
 // what Docker/Compose need to function (PATH, a home directory, a temp
@@ -56,15 +65,6 @@ func DockerEnv(values map[string]string) []string {
 // are added last so a named secret's placeholder always wins over anything
 // same-named in the allowlist above (never happens in practice, but wins
 // deterministically either way).
-// windowsRenderEnv is what Windows programs need beyond the list above:
-// SystemRoot (Winsock), the program-data and app-data directories (docker
-// CLI plugins and config) and PATHEXT. None holds a secret.
-var windowsRenderEnv = map[string]bool{
-	"SYSTEMROOT": true, "WINDIR": true, "SYSTEMDRIVE": true, "PATHEXT": true, "COMSPEC": true,
-	"PROGRAMDATA": true, "PROGRAMFILES": true, "PROGRAMW6432": true, "PROGRAMFILES(X86)": true,
-	"APPDATA": true, "LOCALAPPDATA": true, "HOMEDRIVE": true, "HOMEPATH": true,
-}
-
 func renderEnv(hostname string, sentinels map[string]string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
@@ -126,10 +126,28 @@ func SecretEnvAliases(name string) []string {
 // 253fb81's regression) nor resolve the real value (the leak this whole fix
 // is for) - so it resolves to a harmless placeholder instead, swapped back
 // to the literal "${NAME}" reference afterwards.
-func secretSentinels(secretNames []string) map[string]string {
-	out := map[string]string{}
+//
+// foldCase is true on Windows, where names are case-insensitive: npm_token
+// and its alias NPM_TOKEN are one variable there, and the child keeps only
+// the last of the two (os/exec), so a random map order decided which
+// reference the snapshot got back. Names that differ only by case share one
+// sentinel; the spelling that sorts first (NPM_TOKEN) is the one restored,
+// and Windows resolves it for either spelling at up.
+func secretSentinels(secretNames []string, foldCase bool) map[string]string {
+	var aliases []string
 	for _, name := range secretNames {
-		for _, alias := range SecretEnvAliases(name) {
+		aliases = append(aliases, SecretEnvAliases(name)...)
+	}
+	sort.Strings(aliases)
+	out := map[string]string{}
+	seen := map[string]bool{}
+	for _, alias := range aliases {
+		key := alias
+		if foldCase {
+			key = strings.ToUpper(alias)
+		}
+		if !seen[key] {
+			seen[key] = true
 			out[alias] = "__stackfork_ref_" + alias + "__"
 		}
 	}
@@ -229,7 +247,7 @@ func Render(root string, files []string, envFile string, hostname string, secret
 	}
 	args = append(args, "config", "--no-env-resolution", "--format", "json")
 
-	sentinels := secretSentinels(secretNames)
+	sentinels := secretSentinels(secretNames, runtime.GOOS == "windows")
 	cmd := exec.Command("docker", args...)
 	cmd.Env = renderEnv(hostname, sentinels)
 	var stdout, stderr bytes.Buffer
