@@ -15,6 +15,9 @@ No real project, path or host name appears in any frame.
 | `project-resources-{light,dark}.png` | acme-web Resources: memory and CPU charts per checkout, disk, per-service table (about 30 minutes of samples). |
 | `environment-dialog-{light,dark}.png` | Environment dialog of the app service on the feature-invoices worktree (3 overrides). |
 | `repos-{light,dark}.png` | Repos page with acme-web expanded: recorded plan and the main / feature-invoices lane. |
+| `settings-folders-{light,dark}.png` | Settings page, Folders block: the scanned folder `/private/tmp/sf-demo/code` and the field to add one. |
+| `learn-with-agent-{light,dark}.png` | Repos page with `acme-docs` (not learned, `acme-docs` is a plain repo made by `build`) and the "Set up acme-docs with your agent" dialog open. |
+| `instances-two-checkouts-{light,dark}.png` | The acme-web card on Instances: `main` and `feature-invoices` running, each with its address. |
 | `demo-world.sh` | Builds and resets the demo world (below). |
 
 The PNGs are 1440 px wide (the dialog is cropped to its box, the Repos page starts under the top bar).
@@ -44,6 +47,11 @@ Screenshots: with agent-browser at 1440x1040 (project pages at 1440x2900 so ever
 - workflow: `#project/acme-api`, element screenshot of `#sec-workflow` (crop with 14 px margin);
 - resources: `#project/acme-web`, `#sec-resources`;
 - repos: `#repos`, expand `Worktrees of acme-web`, crop `1440:722:0:48`.
+- settings folders: `#settings` (reload the page first), crop `1440:172:0:48`;
+- learn with agent: `#repos` (reload first), click the `Set up` button of the `acme-docs` row, crop `1440:740:0:100`;
+- two checkouts: `#instances` (reload first), crop the acme-web card `1440:600:0:408`.
+
+Crops are made with `ffmpeg -vf crop=W:H:X:Y` on the agent-browser screenshot; reload the page after each `open` so no dialog stays open.
 
 Dashboard video: open `#instances` at 1440x900 dark, `agent-browser record start dash.webm` (no `--cursor`: its overlay is huge),
 scroll, open the env chip and dialog, go to Repos, click acme-web, scroll the Project page, back to Repos and expand the worktrees,

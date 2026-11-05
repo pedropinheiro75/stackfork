@@ -50,6 +50,13 @@ build() {
   printf 'node_modules\n' >acme-api/.gitignore
   (cd acme-api && npm ci --no-audit --no-fund --silent && git init -q -b main && git add -A && git commit -qm init)
 
+  # acme-docs: a plain repo that is never learned (the "Set up" dialog frame)
+  mkdir acme-docs
+  printf '{\n  "name": "acme-docs",\n  "private": true,\n  "scripts": { "dev": "vite" }\n}\n' >acme-docs/package.json
+  printf '<!doctype html>\n<title>Acme docs</title>\n<h1>Acme docs</h1>\n' >acme-docs/index.html
+  printf '# Acme docs\n\nUser guides for Acme.\n' >acme-docs/README.md
+  (cd acme-docs && git init -q -b main && git add -A && git commit -qm init)
+
   sfs proxy up --port 8099 >/dev/null
 
   # --- acme-web: learn, record the plan, verify as the person ---
