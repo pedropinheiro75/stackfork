@@ -65,6 +65,10 @@ These hold for every change:
 - **Existing running stacks created under legacy `idv-` identities must stay
   manageable.** Legacy identities are read, never rewritten or migrated.
 
+## Translations
+
+`README.md` is the source. A change to it updates `README.pt-BR.md` and `README.es.md` in the same commit.
+
 ## Before opening a PR
 
 - `go vet ./...` and `go test ./...` pass.

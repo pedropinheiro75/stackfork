@@ -8,6 +8,8 @@
 
 Run every app you build with AI, in as many versions as you like, all at once on your own computer, with none of them getting in each other's way.
 
+**English** · [Português](README.pt-BR.md) · [Español](README.es.md)
+
 [![CI](https://github.com/pedropinheiro75/stackfork/actions/workflows/ci.yml/badge.svg)](https://github.com/pedropinheiro75/stackfork/actions/workflows/ci.yml)
 ![Works with Claude Code · Codex · Copilot CLI](https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Copilot%20CLI-f59e0b)
 ![Single binary, stdlib only](https://img.shields.io/badge/single%20binary-stdlib%20only-059669)
