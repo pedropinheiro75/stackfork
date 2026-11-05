@@ -66,7 +66,7 @@ func TestBeginSweepsDeadRunning(t *testing.T) {
 	dir := t.TempDir()
 	// A run that was never finished and whose lock is free: process died.
 	dead, _ := newRun(dir, Meta{Command: "start-env"}, 1)
-	dead.Step("a", "exec", "x").Start()
+	startAbandoned(t, dead.Step("a", "exec", "x"))
 	dead.Step("b", "exec", "x")
 
 	r, err := Begin(dir, Meta{Command: "up"})

@@ -412,7 +412,7 @@ func gitToplevel(root string) (string, error) {
 	if err != nil {
 		return "", errors.New("--root must be inside a Git checkout")
 	}
-	return strings.TrimSpace(string(out)), nil
+	return filepath.FromSlash(strings.TrimSpace(string(out))), nil // git prints C:/x on Windows
 }
 
 func currentBranch(root string) (string, error) {

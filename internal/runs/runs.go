@@ -190,6 +190,12 @@ func (r *Run) Finish(err error) {
 		r.mu.Unlock()
 		return
 	}
+	for _, s := range r.Steps { // a step that was never ended still holds its log open
+		if s.w != nil {
+			s.w.Close()
+			s.w = nil
+		}
+	}
 	r.mu.Unlock()
 	out := Succeeded
 	if err != nil {

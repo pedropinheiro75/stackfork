@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -30,7 +31,7 @@ func TestRoundTripEveryState(t *testing.T) {
 	pend := r.Step("pending", "exec", "never reached")
 	_ = pend
 	run := r.Step("running", "exec", "running")
-	run.Start()
+	startAbandoned(t, run)
 	ok := r.Step("ok", "prepare", "ok")
 	ok.Start()
 	ok.End(nil, 0)
@@ -87,13 +88,13 @@ func TestModes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if fi.Mode().Perm() != 0o600 {
+		if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 			t.Errorf("%s mode %v", p, fi.Mode().Perm())
 		}
 	}
 	for _, p := range []string{"runs", "runs/1"} {
 		fi, _ := os.Stat(filepath.Join(dir, p))
-		if fi.Mode().Perm() != 0o700 {
+		if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o700 {
 			t.Errorf("%s mode %v", p, fi.Mode().Perm())
 		}
 	}
@@ -124,5 +125,21 @@ func TestFinishClearsADefaultRetryOnSuccess(t *testing.T) {
 	r.Finish(nil)
 	if got, _ := Get(dir, r.ID); got.Retry != "" {
 		t.Fatalf("retry on a succeeded run: %q", got.Retry)
+	}
+}
+
+// Finish closes the log of a step that was started and never ended: Windows
+// cannot remove the run directory while the file is open.
+func TestFinishClosesAnUnendedStepLog(t *testing.T) {
+	dir := t.TempDir()
+	r, _ := newRun(dir, Meta{Command: "up"}, 1)
+	s := r.Step("up", "compose-up", "x")
+	s.Start().Write([]byte("partial\n"))
+	r.Finish(nil)
+	if s.w != nil {
+		t.Fatal("the step writer is still open")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "runs", "1", "up.log")); string(b) != "partial\n" {
+		t.Fatalf("log = %q", b)
 	}
 }

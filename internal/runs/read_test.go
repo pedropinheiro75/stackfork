@@ -13,7 +13,7 @@ import (
 func TestReadersDeriveInterrupted(t *testing.T) {
 	dir := t.TempDir()
 	r, _ := newRun(dir, Meta{Command: "start-env"}, 1)
-	r.Step("a", "exec", "x").Start()
+	startAbandoned(t, r.Step("a", "exec", "x"))
 	r.Step("b", "exec", "x")
 
 	got, err := Get(dir, 1)
@@ -135,4 +135,13 @@ func TestLogRefusesTamperedPathAndSymlink(t *testing.T) {
 	if b, err := Log(dir, 1, "s"); err == nil {
 		t.Fatalf("a symlinked log was read: %q", b)
 	}
+}
+
+// startAbandoned starts s as a run that died would leave it, and closes its
+// log when the test ends: Windows cannot remove an open file.
+func startAbandoned(t *testing.T, s *Step) {
+	t.Helper()
+	s.Start()
+	w := s.w
+	t.Cleanup(func() { w.closeWith("") })
 }

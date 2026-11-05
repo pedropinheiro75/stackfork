@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 
@@ -100,7 +101,11 @@ func TestParseSecretFlagNeverEchoesUnparsedInput(t *testing.T) {
 // than resolves becomes an error naming the secret and the reference.
 func TestResolveSecretDelegatesToSecretstore(t *testing.T) {
 	old := secretstore.Default
-	secretstore.Default = &secretstore.Backend{GOOS: "windows"}
+	goos := "windows" // a store this OS does not have: "unavailable"
+	if runtime.GOOS == "windows" {
+		goos = "linux"
+	}
+	secretstore.Default = &secretstore.Backend{GOOS: goos}
 	defer func() { secretstore.Default = old }()
 	for _, ref := range []string{"keychain:acme-npm-token", "op://Dev/acme-stripe/test-key"} {
 		v, err := ResolveSecret("NPM_TOKEN", ref)

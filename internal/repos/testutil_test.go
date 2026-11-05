@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 func init() {
@@ -61,10 +63,8 @@ func installGitLog(t *testing.T) (logPath string) {
 	}
 	dir := t.TempDir()
 	logPath = filepath.Join(dir, "log.txt")
-	script := "#!/bin/sh\n{ for a in \"$@\"; do printf '%s ' \"$a\"; done; printf '\\n'; } >> \"" + logPath + "\"\nexec \"" + real + "\" \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	script := "#!/bin/sh\n{ for a in \"$@\"; do printf '%s ' \"$a\"; done; printf '\\n'; } >> \"" + logPath + "\"\nexec \"" + filepath.ToSlash(real) + "\" \"$@\"\n"
+	testsupport.FakeExe(t, filepath.Join(dir, "git"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return logPath
 }

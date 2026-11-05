@@ -649,7 +649,7 @@
 
   // repoRoot must match dashboard.go's repoRoot: the main checkout.
   function repoRoot(root) {
-    var i = root.lastIndexOf("/.worktrees/");
+    var i = root.replace(/\\/g, "/").lastIndexOf("/.worktrees/");
     return i > 0 ? root.slice(0, i) : root;
   }
 

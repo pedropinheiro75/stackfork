@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -70,7 +71,13 @@ func TestSecretEnvReferenceResolvedAtUp(t *testing.T) {
 	// design D9: the value reaches the docker compose child only, under the
 	// name and its alias, and never stackfork's own environment.
 	env := dockerEnvLog(log)
-	for _, kv := range []string{"npm_token=" + canary, "NPM_TOKEN=" + canary} {
+	want := []string{"npm_token=" + canary, "NPM_TOKEN=" + canary}
+	if runtime.GOOS == "windows" {
+		// Windows names are case-insensitive: os/exec keeps the last alias, and
+		// Compose there looks names up without case.
+		want = want[1:]
+	}
+	for _, kv := range want {
 		if !strings.Contains(env, kv[:strings.Index(kv, "=")+1]) || !strings.Contains(env, "\n"+kv+"\n") {
 			t.Fatalf("the compose child did not receive %s", kv[:strings.Index(kv, "=")])
 		}

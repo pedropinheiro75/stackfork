@@ -15,7 +15,8 @@ func TestConfigCommandRoundTrip(t *testing.T) {
 	if out, _, code := runCLI(t, "config", "get"); code != 0 || !strings.Contains(out, `"roots": []`) {
 		t.Fatalf("empty get: %d %s", code, out)
 	}
-	if _, stderr, code := runCLI(t, "config", "add-root", "/"); code == 0 || !strings.Contains(stderr, "filesystem root") {
+	fsRoot := filepath.VolumeName(root) + string(filepath.Separator) // "/", or "C:\\" on Windows
+	if _, stderr, code := runCLI(t, "config", "add-root", fsRoot); code == 0 || !strings.Contains(stderr, "filesystem root") {
 		t.Fatalf("/ must be refused: %d %s", code, stderr)
 	}
 	if _, stderr, code := runCLI(t, "config", "add-root", root); code != 0 {
@@ -25,7 +26,7 @@ func TestConfigCommandRoundTrip(t *testing.T) {
 	runCLI(t, "config", "set", "max-depth", "4")
 	out, _, _ := runCLI(t, "config", "get")
 	resolved, _ := filepath.EvalSymlinks(root)
-	for _, want := range []string{resolved, "Backup", `"maxDepth": 4`} {
+	for _, want := range []string{jsonEsc(resolved), "Backup", `"maxDepth": 4`} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("get missing %q:\n%s", want, out)
 		}
@@ -40,7 +41,7 @@ func TestConfigCommandRoundTrip(t *testing.T) {
 		t.Fatal("bad mode accepted")
 	}
 	out, _, _ = runCLI(t, "config", "get")
-	for _, want := range []string{`"mode": "hybrid"`, `"modes"`, resolved} {
+	for _, want := range []string{`"mode": "hybrid"`, `"modes"`, jsonEsc(resolved)} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("get missing %q:\n%s", want, out)
 		}

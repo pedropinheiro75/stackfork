@@ -1,0 +1,2 @@
+# LF on every checkout, Windows included: embedded assets and golden files are compared byte for byte.
+* text=auto eol=lf

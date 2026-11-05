@@ -3,6 +3,7 @@ package dashboard_test
 import (
 	"encoding/json"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -276,6 +277,9 @@ func TestReposFragmentWithoutLiveOpsHasNoLiveControls(t *testing.T) {
 }
 
 func TestReposFragmentLiveEscapesHostileNames(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows forbids < > \" in folder and branch names, so these names cannot exist there")
+	}
 	e := newBrowserEnv(t)
 	repo := e.readyRepo(`x"><img src=x onerror=alert(1)>`)
 	f, _ := e.withLiveOps(t, true, nil)

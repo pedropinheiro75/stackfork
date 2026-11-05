@@ -26,6 +26,7 @@ func init() {
 	if os.Getenv("HELPER_BACKGROUND") == "1" { // starts a sleeper that keeps stdout open, then exits
 		c := exec.Command(os.Args[0])
 		c.Env = append(os.Environ(), "HELPER_SLEEPER=1")
+		c.Dir = os.TempDir() // Windows cannot remove the test's folder while a live process works in it
 		c.Stdout = os.Stdout
 		c.Start()
 		fmt.Println("parent done")

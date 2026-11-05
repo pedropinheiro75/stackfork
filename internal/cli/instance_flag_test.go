@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 // worktreeFixture prepares an instance in a linked worktree and returns the
@@ -132,14 +134,12 @@ func TestOpenPrintAndLaunch(t *testing.T) {
 		t.Fatalf("a service with no URL must be refused: %q", stderr)
 	}
 
-	// Without --print the opener runs: a fake `open`/`xdg-open` records the URL.
+	// Without --print the opener runs: a fake `open`/`xdg-open`/`rundll32` records the URL.
 	dir := t.TempDir()
 	rec := filepath.Join(dir, "opened")
-	script := "#!/bin/sh\necho \"$1\" >> " + rec + "\n"
-	for _, name := range []string{"open", "xdg-open"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
-			t.Fatal(err)
-		}
+	script := "#!/bin/sh\necho \"$*\" >> '" + filepath.ToSlash(rec) + "'\n"
+	for _, name := range []string{"open", "xdg-open", "rundll32"} {
+		testsupport.FakeExe(t, filepath.Join(dir, name), script)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if _, stderr, code := runCLI(t, append(base, "open")...); code != 0 {

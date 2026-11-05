@@ -10,6 +10,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/secretstore"
 	"github.com/pedropinheiro75/stackfork/internal/state"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 func cacheClock(t *testing.T, now *time.Time) {
@@ -67,8 +68,7 @@ func gateInfo(t *testing.T, refs map[string]string) *state.Manifest {
 func TestLogSecretsGateForEveryUnresolvedKind(t *testing.T) {
 	npmrc := filepath.Join(t.TempDir(), "npmrc")
 	os.WriteFile(npmrc, []byte("//npm.pkg.github.com/:_authToken=${SF_TEST_GATE_NPM}\n"), 0o600)
-	locked := filepath.Join(t.TempDir(), "security")
-	os.WriteFile(locked, []byte("#!/bin/sh\necho 'User interaction is not allowed.' >&2\nexit 36\n"), 0o755)
+	locked := testsupport.FakeExe(t, filepath.Join(t.TempDir(), "security"), "#!/bin/sh\necho 'User interaction is not allowed.' >&2\nexit 36\n")
 	old := *secretstore.Default
 	secretstore.Default.GOOS, secretstore.Default.Security = "darwin", locked
 	t.Cleanup(func() { *secretstore.Default = old })

@@ -50,7 +50,7 @@ func TestHostRunsWithEnvPortAndRoute(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "env.txt")
 	during := filepath.Join(t.TempDir(), "manifest-during.json")
 
-	script := "env > " + out + "; cat " + filepath.Join(stateDir, project, "manifest.json") + " > " + during
+	script := "env > '" + filepath.ToSlash(out) + "'; cat '" + filepath.ToSlash(filepath.Join(stateDir, project, "manifest.json")) + "' > '" + filepath.ToSlash(during) + "'"
 	stdout, stderr, code := runCLI(t, "--root", root, "--state-dir", stateDir, "host", "app", "--", "sh", "-c", script)
 	if code != 0 {
 		t.Fatalf("host failed: code=%d stderr=%s", code, stderr)
@@ -151,7 +151,7 @@ func TestGuardAllowsHostRunPath(t *testing.T) {
 		"STACKFORK_HOST_RUN=1 bun run dev",
 	} {
 		var out, errBuf bytes.Buffer
-		payload := `{"cwd":"` + repo + `","tool_name":"Bash","tool_input":{"command":"` + command + `"}}`
+		payload := `{"cwd":"` + jsonEsc(repo) + `","tool_name":"Bash","tool_input":{"command":"` + command + `"}}`
 		if code, _ := cmdGuard(strings.NewReader(payload), &out, &errBuf, nil, t.TempDir(), t.TempDir()); code != 0 {
 			t.Errorf("%q must be allowed, got code %d: %s", command, code, errBuf.String())
 		}

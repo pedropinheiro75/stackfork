@@ -53,6 +53,7 @@ func TestSecretMapFolderAndRefusals(t *testing.T) {
 	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	t.Setenv("USERPROFILE", home)
 	folder := filepath.Join(t.TempDir(), "acme")
 	os.Mkdir(folder, 0o755)

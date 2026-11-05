@@ -116,7 +116,7 @@ func TestGuardBlocksOPReadsWhenTheConfigIsUnreadable(t *testing.T) {
 	cwd := t.TempDir()
 	run := func(cmd string) int {
 		var out, errBuf strings.Builder
-		code, _ := cmdGuard(strings.NewReader(`{"cwd":"`+cwd+`","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"`+cmd+`"}}`),
+		code, _ := cmdGuard(strings.NewReader(`{"cwd":"`+jsonEsc(cwd)+`","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"`+cmd+`"}}`),
 			&out, &errBuf, nil, t.TempDir(), t.TempDir())
 		return code
 	}

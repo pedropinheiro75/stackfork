@@ -52,6 +52,7 @@ func hostAppsEnv(t *testing.T) (dir string, rec *runs.Run, restarted, started *[
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { rec.Finish(nil) }) // releases .run.lock: Windows cannot remove a held file
 	return dir, rec, restarted, started
 }
 

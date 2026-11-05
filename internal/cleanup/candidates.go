@@ -58,7 +58,7 @@ func Candidates(main string) ([]Candidate, error) {
 		for _, l := range strings.Split(block, "\n") {
 			switch {
 			case strings.HasPrefix(l, "worktree "):
-				path = strings.TrimPrefix(l, "worktree ")
+				path = filepath.FromSlash(strings.TrimPrefix(l, "worktree ")) // git prints C:/x on Windows
 			case strings.HasPrefix(l, "HEAD "):
 				head = strings.TrimPrefix(l, "HEAD ")
 			case strings.HasPrefix(l, "branch refs/heads/"):

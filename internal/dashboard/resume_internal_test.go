@@ -11,6 +11,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/state"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 func TestResumableSelection(t *testing.T) {
@@ -101,7 +102,7 @@ func (f *fakeCascade) Reset() { f.resets++ }
 func TestWatchTickResumesFirstAndCascadesOnlyAfter(t *testing.T) {
 	dir := t.TempDir()
 	script := "#!/bin/sh\n[ \"$1\" = ps ] && exit ${FAKE_PS_EXIT:-0}\nexit 0\n"
-	os.WriteFile(filepath.Join(dir, "docker"), []byte(script), 0o755)
+	testsupport.FakeExe(t, filepath.Join(dir, "docker"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	srv, _ := New(t.TempDir(), t.TempDir(), "t", 1)
 	polls, cw := &watchPolls{}, &fakeCascade{}
@@ -136,7 +137,7 @@ func TestWatchTickResumesFirstAndCascadesOnlyAfter(t *testing.T) {
 // and is retried when the lock is free; one skipped for its branch never is.
 func TestResumeRetriesABusyInstanceButNotABranchMismatch(t *testing.T) {
 	fake := t.TempDir()
-	os.WriteFile(filepath.Join(fake, "docker"), []byte("#!/bin/sh\nexit 0\n"), 0o755) //nolint:errcheck
+	testsupport.FakeExe(t, filepath.Join(fake, "docker"), "#!/bin/sh\nexit 0\n")
 	t.Setenv("PATH", fake+string(os.PathListSeparator)+os.Getenv("PATH"))
 	base := t.TempDir()
 	srv, _ := New(base, t.TempDir(), "t", 1)

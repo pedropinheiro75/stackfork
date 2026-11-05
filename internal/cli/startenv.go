@@ -574,7 +574,7 @@ func prepareArgsFrom(root, main, instanceDir string) ([]string, string, error) {
 		if m, _ := filepath.Glob(filepath.Join(root, dir, "*.compose.yaml")); len(m) > 0 {
 			sort.Strings(m)
 			rel, _ := filepath.Rel(root, m[0])
-			return fileArgs([]string{rel}), prepareFromAdapter, nil
+			return fileArgs([]string{filepath.ToSlash(rel)}), prepareFromAdapter, nil // the same plan text on every OS
 		}
 	}
 	if main != root {

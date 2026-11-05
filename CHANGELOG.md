@@ -5,6 +5,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Windows support (new). Releases ship `stackfork_VERSION_windows_amd64.zip` and `stackfork_VERSION_windows_arm64.zip`, and `install.ps1` installs one: `irm https://raw.githubusercontent.com/pedropinheiro75/stackfork/main/install.ps1 | iex`. The offline test suite runs on Windows in CI; the Docker flows are not tested on Windows yet (see the Windows section of `SECURITY.md`). Fixed on Windows: `docker compose config` now gets the system variables it needs (`Path`, `SystemRoot`, `ProgramData`), paths that git prints as `C:/x` are read as Windows paths, `STACKFORK_PROFILE_DIRS` is split on `;`, and the dashboard groups worktrees by `\.worktrees\`.
 - New `internal/ecosystem` package: what stackfork knows per language ecosystem lives there, JS/TS first. `learn` and the stale check hash only the parts of `package.json` the scan reads (`scripts`, `packageManager`, `workspaces`). Bumping a dependency or a version no longer marks the knowledge stale; the install step already re-runs when the lockfile changes.
 
 ## [0.2.0] - 2026-10-30

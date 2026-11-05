@@ -145,7 +145,7 @@ func TestListWarnsOnlyForLinkedWorktreeWithAGap(t *testing.T) {
 	w := listWarnings(t, base)
 	var gotWt []string
 	for root, ws := range w {
-		if strings.HasSuffix(root, "/.worktrees/feat-a") {
+		if strings.HasSuffix(filepath.ToSlash(root), "/.worktrees/feat-a") {
 			gotWt = ws
 		} else if root == repo && strings.Contains(strings.Join(ws, "\n"), "Missing:") {
 			t.Fatalf("the main checkout's instance warned: %v", ws)

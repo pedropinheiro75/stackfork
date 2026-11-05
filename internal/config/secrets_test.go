@@ -29,13 +29,15 @@ func TestSecretsMissingKeyIsEmpty(t *testing.T) {
 }
 
 func TestSecretsLoadValidates(t *testing.T) {
-	good := `{"secrets":{"/code/acme-web":{"NPM_TOKEN":"keychain:acme-npm-token","STRIPE_TEST_KEY":"op://Dev/acme-stripe/test-key","A":"env:X","B":"npmrc:/p/.npmrc#h"}}}`
+	repo, _ := identity.ResolvePath(t.TempDir()) // a key as the CLI writes it, drive letter included on Windows
+	key, _ := json.Marshal(repo)
+	good := `{"secrets":{` + string(key) + `:{"NPM_TOKEN":"keychain:acme-npm-token","STRIPE_TEST_KEY":"op://Dev/acme-stripe/test-key","A":"env:X","B":"npmrc:/p/.npmrc#h"}}}`
 	writeCfg(t, good)
 	c, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := c.SecretsFor("/code/acme-web"); len(got) != 4 || got["NPM_TOKEN"] != "keychain:acme-npm-token" {
+	if got := c.SecretsFor(repo); len(got) != 4 || got["NPM_TOKEN"] != "keychain:acme-npm-token" {
 		t.Fatalf("%v", got)
 	}
 
@@ -245,6 +247,7 @@ func TestMapFolderRefusals(t *testing.T) {
 	tempConfig(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	t.Setenv("USERPROFILE", home)
 	base := t.TempDir()
 	file := filepath.Join(base, "f.txt")
@@ -298,6 +301,7 @@ func TestBroadKeysAreIgnoredAndRefused(t *testing.T) {
 	home := filepath.Join(base, "home")
 	app := mkdirs(t, home, ".git", "clients/acme/app")[1]
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	t.Setenv("USERPROFILE", home)
 	c := &Config{Secrets: map[string]map[string]string{
 		home: {"A": "env:A"}, base: {"B": "env:B"}, string(filepath.Separator): {"C": "env:C"},

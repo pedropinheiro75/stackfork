@@ -240,7 +240,7 @@ func worktreesOf(main string) []string {
 	var dirs []string
 	for _, line := range strings.Split(string(out), "\n") {
 		if p, ok := strings.CutPrefix(strings.TrimSpace(line), "worktree "); ok {
-			dirs = append(dirs, p)
+			dirs = append(dirs, filepath.FromSlash(p)) // git prints C:/x on Windows
 		}
 	}
 	return dirs

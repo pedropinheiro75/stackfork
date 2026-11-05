@@ -13,7 +13,7 @@
 [![CI](https://github.com/pedropinheiro75/stackfork/actions/workflows/ci.yml/badge.svg)](https://github.com/pedropinheiro75/stackfork/actions/workflows/ci.yml)
 ![Works with Claude Code · Codex · Copilot CLI](https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Copilot%20CLI-f59e0b)
 ![Single binary, stdlib only](https://img.shields.io/badge/single%20binary-stdlib%20only-059669)
-![macOS · Linux](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux-6366f1)
+![macOS · Linux · Windows](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-6366f1)
 [![License: MIT](https://img.shields.io/badge/license-MIT-db2777)](LICENSE)
 
 [Install](#install) · [Quick start](#quick-start) · [How you use it](#how-you-use-it) · [How it works](#how-it-works) · [Agents](#work-with-coding-agents) · [Safety](#safety) · [FAQ](#faq) · [Roadmap](#roadmap) · [Docs](#docs)
@@ -49,10 +49,11 @@
 
 ## Install
 
-macOS and Linux, amd64 and arm64. Docker with the Compose plugin must be running. Pick one:
+macOS, Linux and Windows, amd64 and arm64. Docker with the Compose plugin must be running. Pick one:
 
 - Homebrew (macOS and Linux): `brew trust pedropinheiro75/tap && brew install --cask pedropinheiro75/tap/stackfork`
 - Shell script: `curl -fsSL https://raw.githubusercontent.com/pedropinheiro75/stackfork/main/install.sh | sh`
+- Windows (PowerShell): `irm https://raw.githubusercontent.com/pedropinheiro75/stackfork/main/install.ps1 | iex`. It needs Docker Desktop with the WSL 2 backend. Windows support is new; read [the Windows limits](SECURITY.md#windows).
 - Binaries: download one from the [Releases page](https://github.com/pedropinheiro75/stackfork/releases).
 - Go 1.26.10 or later: `go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest`
 

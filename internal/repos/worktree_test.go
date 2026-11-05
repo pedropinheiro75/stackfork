@@ -163,7 +163,7 @@ func TestAddWorktreeBranchAlreadyCheckedOut(t *testing.T) {
 	if err == nil {
 		t.Fatal("main is checked out in the main checkout; expected a refusal")
 	}
-	for _, want := range []string{"already checked out at " + repo, "stackfork start-env " + repo} {
+	for _, want := range []string{"already checked out at " + repo, "stackfork start-env " + shellArg(repo)} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("missing %q in %q", want, err)
 		}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -43,7 +44,7 @@ func TestSavePreservesUnknownKeysAndIsPrivate(t *testing.T) {
 	if string(m["future"]) != `"keep"` || !strings.Contains(string(m["theme"]), `"x"`) || !strings.Contains(string(m["exclude"]), "Backup") {
 		t.Fatalf("lost keys: %s", data)
 	}
-	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o600 {
+	if fi, _ := os.Stat(p); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %v", fi.Mode())
 	}
 }
@@ -52,6 +53,7 @@ func TestTildeExpansionAndRootValidation(t *testing.T) {
 	tempConfig(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	os.MkdirAll(filepath.Join(home, "code", "sub"), 0o755)
 	os.WriteFile(filepath.Join(home, "file"), nil, 0o600)
 	c, _ := Load()
@@ -65,7 +67,7 @@ func TestTildeExpansionAndRootValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(got, "/code") || len(c.Roots) != 1 {
+	if filepath.Base(got) != "code" || len(c.Roots) != 1 {
 		t.Fatalf("got %q roots=%v", got, c.Roots)
 	}
 	if _, err := c.AddRoot("~/code/sub"); err == nil || !strings.Contains(err.Error(), "inside") {

@@ -16,6 +16,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"github.com/pedropinheiro75/stackfork/internal/state"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 // sleepHost starts a real process the way a host app is recorded: its own
@@ -412,7 +413,7 @@ func TestWatcherResetForgetsSightings(t *testing.T) {
 func TestDockerStatesMarksACleanExit(t *testing.T) {
 	bin := t.TempDir()
 	out := "migrate exited Exited (0) 3 minutes ago\npg exited Exited (137) 1 minute ago\napi running Up 2 minutes\napi exited Exited (1) 1 hour ago\n"
-	os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\nprintf '"+out+"'\n"), 0o755) //nolint:errcheck // the call below fails
+	testsupport.FakeExe(t, filepath.Join(bin, "docker"), "#!/bin/sh\nprintf '"+out+"'\n")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	st, err := DockerStates("p")
 	if err != nil || st["migrate"] != ExitedZero || st["pg"] != "exited" || st["api"] != "running" {

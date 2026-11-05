@@ -169,7 +169,7 @@ Residual risks that no control removes:
 - **`docker inspect`.** A value passed to a container as an environment variable is visible to whoever can run `docker inspect` on it.
 - **The 8-character redaction limit.** Short values stay in logs.
 - **The keychain access list.** An item created through `/usr/bin/security` trusts that tool, so any process of yours that runs `security` can read it. macOS treats items created this way like this. Linux and Windows have the same property for their own tools.
-- **Windows.** A Credential Manager value is at most 2560 bytes (a UTF-16 limit of the API). The Windows code is built and vetted but has not run on a Windows machine.
+- **Windows.** A Credential Manager value is at most 2560 bytes (a UTF-16 limit of the API). The offline test suite runs on Windows in CI, but the Docker flows have not run on a Windows machine yet.
 
 The guard blocks `stackfork secret set|map|unmap`, store reads (`security find-generic-password -w`/`-g` unless `-s` names another service, so also with no `-s` or with `-l stackfork`; `security dump-keychain -d`; `security -i`; `secret-tool lookup|search` unless a `service` attribute names another service; `cmdkey /list` with a stackfork target; PowerShell that reads a `stackfork/` target), `op read|inject|run` of a mapped `op://` reference (compared without case), `op item get` of a mapped item with `--reveal`, `--fields` or `--format json`, `op item list --format json`, and forged `/api/run`, `/api/actions`, `/api/learn` and `/api/secrets` calls (the URL is cut at `?`/`#`, percent-decoded and cleaned first). If `config.json` cannot be read, the guard blocks `op read|inject|run|item get` for agents. It allows `secret ls` and `secret check`. It matches command text, so a script file, a renamed binary or a new tool gets past it. It is a guardrail for cooperative agents, not a boundary.
 
@@ -183,9 +183,10 @@ A run's step logs (`runs/<id>/<step>.log` in the instance directory) hold the ou
 
 ## Windows
 
-The Windows runtime is built and vetted (`GOOS=windows go vet`), but it has not run on a Windows machine. Its ceilings:
+The offline test suite runs on Windows in CI (`test-windows`), but the Docker flows have not run on a Windows machine yet. Its ceilings:
 
 - No graceful stop. `host stop` and `down` use `taskkill /T /F`, so the app gets no chance to clean up.
+- No Unix file modes. stackfork asks for 0600 files and 0700 folders, but Windows keeps only the read-only bit. The state and config files get the access list of their folder under `%LOCALAPPDATA%`, which by default lets only you, SYSTEM and Administrators read them.
 - Process identity is the PID plus its creation time. stackfork does not read the command line, so a recycled PID is not matched, but a process is not checked for being the app it started.
 - Children of a supervisor that was killed first can survive. Their tree was not killed, and `doctor` reports their port.
 - The guard treats a backslash as a literal character (paths such as `C:\Users\x\stackfork.exe`). It unwraps `cmd /c` and `powershell -Command` before it checks the command, and it still splits on `&&`, `||`, `;`, `|` and `&`.

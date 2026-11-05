@@ -3,6 +3,7 @@ package cli
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,11 +27,11 @@ func TestDashboardCleanupTextNamesWhatIsDeleted(t *testing.T) {
 		}
 	}
 	// ignored files that go with the worktree are named too
-	ignorePath := strings.TrimSpace(gitT(t, f.WT, "rev-parse", "--git-path", "info/exclude"))
-	if !strings.HasPrefix(ignorePath, "/") {
-		ignorePath = f.WT + "/" + ignorePath
+	ignorePath := filepath.FromSlash(strings.TrimSpace(gitT(t, f.WT, "rev-parse", "--git-path", "info/exclude"))) // C:/x on Windows
+	if !filepath.IsAbs(ignorePath) {
+		ignorePath = filepath.Join(f.WT, ignorePath)
 	}
-	os.MkdirAll(ignorePath[:strings.LastIndex(ignorePath, "/")], 0o755)
+	os.MkdirAll(filepath.Dir(ignorePath), 0o755)
 	os.WriteFile(ignorePath, []byte("/.env.local\n"), 0o644)
 	os.WriteFile(f.WT+"/.env.local", []byte("x"), 0o644)
 	if text, _, _ = ops.CleanText(f.Main, f.WT); !strings.Contains(text, ".env.local") {
@@ -104,11 +105,11 @@ func TestDashboardCleanRefusesWhatGrewSinceTheConfirmation(t *testing.T) {
 		t.Fatalf("volumes grew: %v", err)
 	}
 	t.Setenv("DOCKER_FAKE_VOLUMES", "acme-web-feature-login_db-data\n")
-	ignorePath := strings.TrimSpace(gitT(t, f.WT, "rev-parse", "--git-path", "info/exclude"))
-	if !strings.HasPrefix(ignorePath, "/") {
-		ignorePath = f.WT + "/" + ignorePath
+	ignorePath := filepath.FromSlash(strings.TrimSpace(gitT(t, f.WT, "rev-parse", "--git-path", "info/exclude"))) // C:/x on Windows
+	if !filepath.IsAbs(ignorePath) {
+		ignorePath = filepath.Join(f.WT, ignorePath)
 	}
-	os.MkdirAll(ignorePath[:strings.LastIndex(ignorePath, "/")], 0o755)
+	os.MkdirAll(filepath.Dir(ignorePath), 0o755)
 	os.WriteFile(ignorePath, []byte("/.env.local\n"), 0o644)
 	os.WriteFile(f.WT+"/.env.local", []byte("x"), 0o644)
 	if err := ops.Clean(io.Discard, f.Main, f.WT, confirmed, func(string) bool { return false }); err == nil || !strings.Contains(err.Error(), "more ignored files") {

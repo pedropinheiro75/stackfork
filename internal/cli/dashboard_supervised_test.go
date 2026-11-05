@@ -280,6 +280,7 @@ func TestSupervisedShutdownWaitsForRunningAction(t *testing.T) {
 	installFakeDocker(t)
 	home, _ := filepath.EvalSymlinks(t.TempDir())
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	root, _ := filepath.EvalSymlinks(t.TempDir())
 	repo := filepath.Join(root, "acme-web")
 	os.MkdirAll(filepath.Join(repo, ".agent-dev"), 0o755)

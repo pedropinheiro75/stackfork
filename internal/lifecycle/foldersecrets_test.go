@@ -100,7 +100,7 @@ func TestPreflightNamesTheFolder(t *testing.T) {
 	t.Setenv("SF_FOLDER_PREFLIGHT", "x")
 	folder, repo := folderRepo(t, map[string]string{"TOK": "env:SF_FOLDER_PREFLIGHT"}, "TOK")
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"root":"`+repo+`","secrets":{"TOK":"env:OLD"}}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"root":"`+strings.ReplaceAll(repo, `\`, `\\`)+`","secrets":{"TOK":"env:OLD"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer

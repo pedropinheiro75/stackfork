@@ -56,7 +56,7 @@ func normalizedRun(t *testing.T, stateDir string, id int, paths ...string) strin
 	out = strings.ReplaceAll(out, project, "PROJECT")
 	for _, p := range paths {
 		if r, err := filepath.EvalSymlinks(p); err == nil {
-			out = strings.ReplaceAll(out, r, "ROOT")
+			out = strings.ReplaceAll(strings.ReplaceAll(out, jsonEsc(r), "ROOT"), r, "ROOT") // JSON doubles Windows backslashes
 		}
 	}
 	return out

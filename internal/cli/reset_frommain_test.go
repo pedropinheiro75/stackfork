@@ -274,7 +274,7 @@ func TestResetFromMainRefusesAnUntrackedRootRecipeFile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(e.wt, ".git")); err != nil {
 		t.Fatal(".git is gone")
 	}
-	if out, _ := exec.Command("git", "-C", e.wt, "rev-parse", "--show-toplevel").Output(); strings.TrimSpace(string(out)) != e.wt {
+	if out, _ := exec.Command("git", "-C", e.wt, "rev-parse", "--show-toplevel").Output(); filepath.FromSlash(strings.TrimSpace(string(out))) != e.wt {
 		t.Fatalf("the worktree is detached: %s", out)
 	}
 	for _, f := range []string{"notes.md", ".env.local"} {

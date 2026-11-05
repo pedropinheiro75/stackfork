@@ -168,7 +168,7 @@ func TestToolPathsHonorEnvOverrides(t *testing.T) {
 	for _, tool := range Tools("/home/u") {
 		got[tool.Name] = tool.Path
 	}
-	want := map[string]string{"claude": "/x/claude/settings.json", "codex": "/x/codex/hooks.json", "copilot": "/x/copilot/settings.json"}
+	want := map[string]string{"claude": filepath.FromSlash("/x/claude/settings.json"), "codex": filepath.FromSlash("/x/codex/hooks.json"), "copilot": filepath.FromSlash("/x/copilot/settings.json")}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}

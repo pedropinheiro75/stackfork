@@ -19,6 +19,7 @@ func TestResolveToolFirstExistingWinsAndMissingIsNotInstalled(t *testing.T) {
 	if _, err := resolveTool([]string{"/nonexistent/op"}, nil); err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Fatalf("%v", err)
 	}
+	skipNoModes(t)
 	bad := newHelper(t, helperCfg{})
 	os.Chmod(bad, 0o777)
 	good := newHelper(t, helperCfg{})
@@ -30,6 +31,7 @@ func TestResolveToolFirstExistingWinsAndMissingIsNotInstalled(t *testing.T) {
 
 func TestResolveToolRefusals(t *testing.T) {
 	t.Run("world-writable file", func(t *testing.T) {
+		skipNoModes(t)
 		p := newHelper(t, helperCfg{})
 		os.Chmod(p, 0o757)
 		if _, err := resolveTool([]string{p}, nil); err == nil || !strings.Contains(err.Error(), "file is writable") {
@@ -37,6 +39,7 @@ func TestResolveToolRefusals(t *testing.T) {
 		}
 	})
 	t.Run("group-writable file", func(t *testing.T) {
+		skipNoModes(t)
 		p := newHelper(t, helperCfg{})
 		os.Chmod(p, 0o775)
 		if _, err := resolveTool([]string{p}, nil); err == nil {
@@ -44,6 +47,7 @@ func TestResolveToolRefusals(t *testing.T) {
 		}
 	})
 	t.Run("group-writable directory", func(t *testing.T) {
+		skipNoModes(t)
 		p := newHelper(t, helperCfg{})
 		os.Chmod(filepath.Dir(p), 0o775)
 		if _, err := resolveTool([]string{p}, nil); err == nil || !strings.Contains(err.Error(), "directory is writable") {
@@ -51,6 +55,7 @@ func TestResolveToolRefusals(t *testing.T) {
 		}
 	})
 	t.Run("not executable", func(t *testing.T) {
+		skipNoModes(t)
 		p := newHelper(t, helperCfg{})
 		os.Chmod(p, 0o600)
 		if _, err := resolveTool([]string{p}, nil); err == nil {
@@ -91,6 +96,7 @@ func TestResolveToolRefusals(t *testing.T) {
 		}
 	})
 	t.Run("symlink to a world-writable file", func(t *testing.T) {
+		skipNoModes(t)
 		target := newHelper(t, helperCfg{})
 		os.Chmod(target, 0o777)
 		link := filepath.Join(t.TempDir(), "op")

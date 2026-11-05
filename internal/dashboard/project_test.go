@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -394,9 +395,13 @@ func TestProjectCheckoutKeysAreUnique(t *testing.T) {
 // two repos with one name, and names with % or ?, open the right page.
 func TestReposLinkEncodesNameAndPath(t *testing.T) {
 	e := newBrowserEnv(t)
-	odd := e.readyRepo("50%?odd")
+	name, enc := "50%?odd", "50%25%3Fodd"
+	if runtime.GOOS == "windows" { // ? is not allowed in a Windows folder name
+		name, enc = "50%#odd", "50%25%23odd"
+	}
+	odd := e.readyRepo(name)
 	frag := e.get("/fragments/repos").Body.String()
-	want := `#project/50%25%3Fodd?path=` + url.QueryEscape(odd)
+	want := `#project/` + enc + `?path=` + url.QueryEscape(odd)
 	if n := strings.Count(frag, `href="`+want+`"`); n != 2 {
 		t.Errorf("want 2 links (name and Open project) to %s, got %d", want, n)
 	}

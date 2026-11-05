@@ -12,6 +12,7 @@ import (
 
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/state"
+	"github.com/pedropinheiro75/stackfork/internal/testsupport"
 )
 
 // startListener binds a free loopback port and holds it for the test's
@@ -48,9 +49,7 @@ if [ "$1" = "inspect" ]; then
 fi
 exit 0
 `
-	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	testsupport.FakeExe(t, filepath.Join(dir, "docker"), script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 

@@ -1298,18 +1298,20 @@ func markWaiting(services []Service) {
 // relRoot shortens a checkout path for display (Instance.RelRoot). A .git
 // directory marks a repo's own checkout; a linked worktree has a .git file.
 func relRoot(root string) string {
-	if i := strings.LastIndex(root, "/.worktrees/"); i >= 0 {
-		return root[i+1:]
+	slash := filepath.ToSlash(root) // a no-op on Unix; Windows paths use either separator
+	if i := strings.LastIndex(slash, "/.worktrees/"); i >= 0 {
+		return slash[i+1:]
 	}
 	if fi, err := os.Stat(filepath.Join(root, ".git")); err == nil && fi.IsDir() {
 		return "main checkout"
 	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" && home != "/" {
-		if root == home {
+		home = filepath.ToSlash(home)
+		if slash == home {
 			return "~"
 		}
-		if strings.HasPrefix(root, home+"/") {
-			return "~" + root[len(home):]
+		if strings.HasPrefix(slash, home+"/") {
+			return "~" + slash[len(home):]
 		}
 	}
 	return root
@@ -1319,7 +1321,7 @@ func relRoot(root string) string {
 // before "/.worktrees/", the checkout itself when .git is a directory, or the
 // main repo a linked worktree's .git file points at. "" when none applies.
 func appName(root string) string {
-	if i := strings.LastIndex(root, "/.worktrees/"); i > 0 {
+	if i := strings.LastIndex(filepath.ToSlash(root), "/.worktrees/"); i > 0 {
 		return filepath.Base(root[:i])
 	}
 	fi, err := os.Stat(filepath.Join(root, ".git"))
@@ -1333,8 +1335,9 @@ func appName(root string) string {
 	if err != nil {
 		return ""
 	}
-	if i := strings.Index(string(data), "/.git/worktrees/"); i > 0 {
-		return filepath.Base(string(data)[:i])
+	gitdir := filepath.ToSlash(string(data))
+	if i := strings.Index(gitdir, "/.git/worktrees/"); i > 0 {
+		return filepath.Base(gitdir[:i])
 	}
 	return ""
 }

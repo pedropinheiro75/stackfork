@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -55,6 +56,15 @@ func DockerEnv(values map[string]string) []string {
 // are added last so a named secret's placeholder always wins over anything
 // same-named in the allowlist above (never happens in practice, but wins
 // deterministically either way).
+// windowsRenderEnv is what Windows programs need beyond the list above:
+// SystemRoot (Winsock), the program-data and app-data directories (docker
+// CLI plugins and config) and PATHEXT. None holds a secret.
+var windowsRenderEnv = map[string]bool{
+	"SYSTEMROOT": true, "WINDIR": true, "SYSTEMDRIVE": true, "PATHEXT": true, "COMSPEC": true,
+	"PROGRAMDATA": true, "PROGRAMFILES": true, "PROGRAMW6432": true, "PROGRAMFILES(X86)": true,
+	"APPDATA": true, "LOCALAPPDATA": true, "HOMEDRIVE": true, "HOMEPATH": true,
+}
+
 func renderEnv(hostname string, sentinels map[string]string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
@@ -62,11 +72,18 @@ func renderEnv(hostname string, sentinels map[string]string) []string {
 		if idx := strings.IndexByte(kv, '='); idx >= 0 {
 			key = kv[:idx]
 		}
+		if runtime.GOOS == "windows" {
+			// Windows names are case-insensitive (Path), and the docker CLI
+			// needs the system directories to start and to find its plugins.
+			key = strings.ToUpper(key)
+		}
 		switch {
 		case key == "PATH", key == "HOME", key == "USERPROFILE",
 			key == "TMPDIR", key == "TEMP", key == "TMP":
 			env = append(env, kv)
 		case strings.HasPrefix(key, "DOCKER_"):
+			env = append(env, kv)
+		case runtime.GOOS == "windows" && windowsRenderEnv[key]:
 			env = append(env, kv)
 		}
 	}

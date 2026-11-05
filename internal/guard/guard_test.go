@@ -129,7 +129,7 @@ func TestCdTracksDirectory(t *testing.T) {
 	t.Setenv(HostRunEnv, "")
 	var seen string
 	Decide("cd .worktrees/pr630 && bun run dev", "/repo", func(d string) bool { seen = d; return true })
-	if seen != "/repo/.worktrees/pr630" {
+	if seen != filepath.FromSlash("/repo/.worktrees/pr630") {
 		t.Fatalf("managed() saw %q", seen)
 	}
 }
@@ -346,6 +346,7 @@ func TestDestructiveOnWindowsSyntax(t *testing.T) {
 }
 
 func TestExeSuffixTightensOnlyOnUnix(t *testing.T) {
+	useUnixSplit(t)
 	// The `.exe` strip adds blocks (a deny guard), never removes one.
 	if !Destructive("/opt/stackfork.exe prune --all", "/repo") {
 		t.Error("stackfork.exe prune --all should be destructive")
@@ -387,9 +388,17 @@ func TestWindowsGuardBypassesBlocked(t *testing.T) {
 }
 
 func TestUnixDoesNotUnwrapWindowsEscapes(t *testing.T) {
+	useUnixSplit(t)
 	if Destructive("stackfork prune --a^ll", "/repo") || Destructive("stackfork prune --a`ll", "/repo") {
 		t.Error("^ and backtick are not escapes in the Unix split")
 	}
+}
+
+// useUnixSplit runs a test with the Unix command syntax on any host.
+func useUnixSplit(t *testing.T) {
+	old := windowsSplit
+	windowsSplit = false
+	t.Cleanup(func() { windowsSplit = old })
 }
 
 func checkBlocked(t *testing.T, blocked, allowed []string) {

@@ -21,7 +21,8 @@ type ProfileInfo struct {
 }
 
 // resolveProfileDirs returns the profile directories to use: explicit
-// --profile-dir flags, then $STACKFORK_PROFILE_DIRS (colon-separated), and
+// --profile-dir flags, then $STACKFORK_PROFILE_DIRS (colon-separated, ";" on
+// Windows like PATH), and
 // only when neither is given, every directory under
 // $STACKFORK_CONFIG_DIR/profiles (default ~/.config/stackfork/profiles),
 // with symlinks resolved.
@@ -29,7 +30,7 @@ func resolveProfileDirs(flagDirs []string) ([]string, error) {
 	var dirs []string
 	dirs = append(dirs, flagDirs...)
 	if env := os.Getenv("STACKFORK_PROFILE_DIRS"); env != "" {
-		dirs = append(dirs, strings.Split(env, ":")...)
+		dirs = append(dirs, filepath.SplitList(env)...)
 	}
 	if len(dirs) > 0 {
 		var resolved []string

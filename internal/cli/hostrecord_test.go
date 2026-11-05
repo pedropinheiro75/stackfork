@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -25,7 +26,8 @@ func TestHostWritesRecordOnStartAndExit(t *testing.T) {
 	during := filepath.Join(t.TempDir(), "record-during.json")
 	// the record is written right after the child starts: wait for it, then copy it
 	recPath := filepath.Join(stateDir, project, "host-app.json")
-	script := "for i in $(seq 1 100); do grep -q '\"pid\"' " + recPath + " 2>/dev/null && break; sleep 0.05; done; cat " + recPath + " > " + during + "; echo tok-0123456789abcdef; exit 3"
+	recQ, dur := "'"+filepath.ToSlash(recPath)+"'", "'"+filepath.ToSlash(during)+"'" // sh reads \ as an escape
+	script := "for i in $(seq 1 100); do grep -q '\"pid\"' " + recQ + " 2>/dev/null && break; sleep 0.05; done; cat " + recQ + " > " + dur + "; echo tok-0123456789abcdef; exit 3"
 	_, _, code := runCLI(t, "--root", root, "--state-dir", stateDir, "host", "app", "--", "sh", "-c", script)
 	if code != 3 {
 		t.Fatalf("code %d", code)
@@ -50,7 +52,7 @@ func TestHostWritesRecordOnStartAndExit(t *testing.T) {
 	if strings.Contains(strings.Join(rec.Argv, " "), "tok-0123456789abcdef") || !strings.Contains(strings.Join(rec.Argv, " "), "[redacted:api_token]") {
 		t.Errorf("argv not redacted: %q", rec.Argv)
 	}
-	if fi, _ := os.Stat(state.HostRecordPath(dir, "app")); fi.Mode().Perm() != 0o600 {
+	if fi, _ := os.Stat(state.HostRecordPath(dir, "app")); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v", fi.Mode())
 	}
 }
