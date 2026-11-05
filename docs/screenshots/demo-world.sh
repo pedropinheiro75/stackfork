@@ -32,7 +32,7 @@ load() { . "$T/env.sh"; }
 
 build() {
   mkdir -p "$T"/{bin,config,state,code}
-  (cd "$repo" && go build -o "$T/bin/stackfork" ./cmd/stackfork)
+  (cd "$repo" && go build -buildvcs=false -o "$T/bin/stackfork" ./cmd/stackfork)
   env_file; load
   sfs config set roots "$T/code" >/dev/null
   cd "$T/code"
