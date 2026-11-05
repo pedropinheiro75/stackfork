@@ -23,6 +23,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/pedropinheiro75/stackfork/internal/compose"
+	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/identity"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
@@ -578,6 +579,44 @@ type prepareOutput struct {
 	Result   string   `json:"result"`
 }
 
+// chooseHostname picks an instance's address: --hostname, else the one saved
+// for it, else the configured template (made unique, with a note on stderr).
+// bases are the new and the legacy state dirs.
+func chooseHostname(stderr io.Writer, flag, saved, tmpl, root, branch, project string, bases ...string) (string, error) {
+	if flag == "" {
+		flag = saved
+	}
+	if flag != "" {
+		return identity.BrowserHostname(project, flag)
+	}
+	name, hash, err := identity.TemplateHostname(tmpl, root, branch)
+	if err != nil {
+		return "", err
+	}
+	taken := func(h string) bool {
+		for i, base := range bases {
+			prefix := identity.Prefix
+			if i == 1 {
+				prefix = identity.LegacyPrefix
+			}
+			paths, _ := state.Manifests(base, prefix)
+			for _, p := range paths {
+				if m, _ := state.ReadManifest(p); m != nil && m.Project != project {
+					if other, _ := identity.BrowserHostname(m.Project, m.Hostname); other == h {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	used, changed := identity.UniqueHostname(name, hash, taken)
+	if changed {
+		fmt.Fprintf(stderr, "Address %s is taken, using %s instead.\n", name, used)
+	}
+	return identity.BrowserHostname(project, used)
+}
+
 func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, project, instanceDir, npmrcTop string, secretFlags []string, newStateBase, legacyStateBase string) error {
 	fs := newFlagSet(stdout, "prepare")
 	var files stringList
@@ -669,11 +708,15 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 		}
 	}
 
-	hostnameArg := *hostnameFlag
-	if hostnameArg == "" && previous != nil {
-		hostnameArg = previous.Hostname
+	savedHostname := ""
+	if previous != nil {
+		savedHostname = previous.Hostname
 	}
-	hostname, err := identity.BrowserHostname(project, hostnameArg)
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	hostname, err := chooseHostname(stderr, *hostnameFlag, savedHostname, cfg.Hostname, root, branch, project, newStateBase, legacyStateBase)
 	if err != nil {
 		return err
 	}

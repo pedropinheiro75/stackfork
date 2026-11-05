@@ -59,7 +59,7 @@ func TestHostExpandsEveryPlaceholder(t *testing.T) {
 	}
 	m := readManifestAt(t, stateDir, project)
 	port := func(n string) string { return strconv.Itoa(m.HostPorts[n]) }
-	host := project[strings.Index(project, "-")+1:] + ".localhost"
+	host := m.Hostname
 	argv := helperArgv(t, out)
 	if len(argv) != 10 || argv[0] != "env" {
 		t.Fatalf("argv %q", argv)

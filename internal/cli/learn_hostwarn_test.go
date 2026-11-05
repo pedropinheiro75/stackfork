@@ -9,7 +9,7 @@ import (
 
 func TestLearnRecordStepWarnsOnLiteralPortsAndHostname(t *testing.T) {
 	root, stateDir, project := templateEnv(t)
-	host := project[strings.Index(project, "-")+1:] + ".localhost"
+	host := readManifestAt(t, stateDir, project).Hostname
 	rec := func(args ...string) (string, int) {
 		_, stderr, code := runCLI(t, append([]string{"--root", root, "--state-dir", stateDir, "learn", "record", "step"}, args...)...)
 		return stderr, code
