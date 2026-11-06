@@ -11,6 +11,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `secret ls` and `secret check` without REPO, run inside a worktree, show that worktree's recorded references (source `manifest`) and the other checkouts' as `sibling`, so they agree with what a plain `up` there uses. With REPO and in the dashboard nothing changes.
 - A reference that `prepare --secret` recorded and that does not resolve now says how to leave it: give `prepare` a new `--secret NAME=REF`, or run `stackfork secret forget NAME`.
 - `env set` with an argument that has no `=` no longer prints the argument back. The error names the expected form, `NAME=VALUE`. A name that is not a valid variable name is never printed back by `env set` or `env unset`, and `env unset` with an `=` answers `env unset: expected NAME`.
+- Fixed on Windows: `prepare` sometimes wrote `${npm_token}` into the snapshot where the Compose file says `${NPM_TOKEN}`. Windows names ignore case, so the placeholders for `npm_token` and its alias `NPM_TOKEN` collided and a random one won. Names that differ only by case now share one placeholder, and the snapshot keeps `${NPM_TOKEN}`.
 
 ## [0.2.1] - 2026-11-05
 
