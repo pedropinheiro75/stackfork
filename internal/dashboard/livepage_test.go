@@ -348,6 +348,8 @@ func TestReposFragmentCleanupCallouts(t *testing.T) {
 			[]string{"PR merged, but this worktree has uncommitted changes"}, []string{`data-live-op="clean"`, `data-live-op="keep"`}},
 		"closed": {cleanupStatus(repo, wt, "suggest", live.CandidateStatus{State: "closed"}),
 			[]string{"PR closed without merge"}, []string{`data-live-op="clean"`}},
+		"closed, forge says merged": {cleanupStatus(repo, wt, "suggest", live.CandidateStatus{State: "closed", Forge: "MERGED"}),
+			[]string{"PR merged, but feature-login has work that is not in the default branch"}, []string{"closed without merge", `data-live-op="clean"`}},
 		"kept": {cleanupStatus(repo, wt, "suggest", live.CandidateStatus{State: "merged", Eligible: true, Kept: true}),
 			nil, []string{"PR merged", "data-live-op=\"clean\""}},
 	} {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pedropinheiro75/stackfork/internal/cleanup"
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/inventory"
 	"github.com/pedropinheiro75/stackfork/internal/live"
@@ -229,7 +230,7 @@ func (v *liveView) fill(r repos.Repo, rst *live.RepoStatus, now time.Time) {
 		cc := cleanupCandidate{Branch: c.Branch, Path: c.Path, State: c.State, PR: c.PR, URL: c.URL, Project: c.Project}
 		switch {
 		case c.State == "closed":
-			cc.Title = "PR closed without merge"
+			cc.Title = cleanup.ClosedWarning(c.Forge, c.Branch, "the default branch")
 			if c.Warning != "" {
 				cc.Title = c.Warning
 			}

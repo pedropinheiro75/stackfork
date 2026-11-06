@@ -78,7 +78,7 @@ func Evaluate(c Check) Verdict {
 		v.Warning = "PR merged, but this branch has commits that are not in " + def
 		return v
 	default:
-		v.Warning = "PR closed without merge"
+		v.Warning = ClosedWarning(c.Result.Forge, branch, def)
 		return v
 	}
 
@@ -120,6 +120,17 @@ func Evaluate(c Check) Verdict {
 	}
 	v.Eligible = true
 	return v
+}
+
+// ClosedWarning is the text for a branch that git cannot prove merged. The
+// forge is never a proof, but when it says MERGED the PR was not "closed
+// without merge": the branch has work that is not in the default branch, and
+// a person decides.
+func ClosedWarning(forge, branch, def string) string {
+	if forge == "MERGED" {
+		return "PR merged, but " + branch + " has work that is not in " + def + "; check it before you delete anything"
+	}
+	return "PR closed without merge"
 }
 
 // initializedSubmodule: a `git submodule status` line that does not start with

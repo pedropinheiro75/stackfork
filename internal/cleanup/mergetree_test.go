@@ -162,3 +162,34 @@ func TestDetectBranchWithMergeFromTargetInsideProvedByMergeTree(t *testing.T) {
 		t.Fatalf("got %+v", r)
 	}
 }
+
+// The forge says MERGED but git cannot prove it (here only half of a stack
+// landed): the text names the branch and the default branch, never says
+// "closed", and nothing is eligible. The forge is not a proof.
+func TestEvaluateForgeMergedWithoutAGitProofSaysSo(t *testing.T) {
+	f := newFixture(t)
+	f.stack(t)
+	squash(t, f, "feature-invoices")
+	f.settle(t, "feature-invoices-ui", true)
+	cs, _ := Candidates(f.Main)
+	var c Candidate
+	for _, x := range cs {
+		if x.Branch == "feature-invoices-ui" {
+			c = x
+		}
+	}
+	r := f.detect(t, "feature-invoices-ui")
+	if r.State != Closed {
+		t.Fatalf("git proved it: %+v", r)
+	}
+	r.Forge = "MERGED"
+	v := Evaluate(Check{Main: f.Main, Candidate: c, Result: r})
+	want := "PR merged, but feature-invoices-ui has work that is not in main; check it before you delete anything"
+	if v.Eligible || v.Warning != want {
+		t.Fatalf("got %+v, want warning %q", v, want)
+	}
+	r.Forge = "CLOSED"
+	if v := Evaluate(Check{Main: f.Main, Candidate: c, Result: r}); v.Warning != "PR closed without merge" {
+		t.Fatalf("forge CLOSED: %+v", v)
+	}
+}
