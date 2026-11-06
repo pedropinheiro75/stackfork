@@ -102,6 +102,9 @@ func cmdEnvOverrides(stdout, stderr io.Writer, subArgs []string, root, branch, p
 		if len(pos) != 2 {
 			return 2, errors.New("usage: stackfork " + envOverridesUsage)
 		}
+		if strings.Contains(pos[1], "=") {
+			return 2, errors.New("env unset: expected NAME")
+		}
 		if err := lifecycle.SetEnvOverrides(instanceDir, pos[0], nil, []string{pos[1]}, false); err != nil {
 			return 0, err
 		}

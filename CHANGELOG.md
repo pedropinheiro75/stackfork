@@ -10,7 +10,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A plain `up` and `seed` check the secrets the Compose file uses, like Start does. A name with no reference now fails at the `secrets` step with the fix, not later in Docker.
 - `secret ls` and `secret check` without REPO, run inside a worktree, show that worktree's recorded references (source `manifest`) and the other checkouts' as `sibling`, so they agree with what a plain `up` there uses. With REPO and in the dashboard nothing changes.
 - A reference that `prepare --secret` recorded and that does not resolve now says how to leave it: give `prepare` a new `--secret NAME=REF`, or run `stackfork secret forget NAME`.
-- `env set` with an argument that has no `=` no longer prints the argument back. The error names the expected form, `NAME=VALUE`.
+- `env set` with an argument that has no `=` no longer prints the argument back. The error names the expected form, `NAME=VALUE`. A name that is not a valid variable name is never printed back by `env set` or `env unset`, and `env unset` with an `=` answers `env unset: expected NAME`.
 
 ## [0.2.1] - 2026-11-05
 
