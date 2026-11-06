@@ -107,6 +107,18 @@ func TestEnvUnsetRemovesAndRecreates(t *testing.T) {
 	}
 }
 
+// A pasted value without NAME= is never printed back: it may be a secret.
+func TestEnvSetWithoutEqualsDoesNotEchoTheArgument(t *testing.T) {
+	_, root, stateDir, _, _ := envFixture(t)
+	out, stderr, code := envCLI(t, root, stateDir, "env", "set", "web", "sfcanary-NOEQ-deadbeef0000")
+	if code == 0 || !strings.Contains(stderr, "NAME=VALUE") {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	if strings.Contains(out+stderr, "sfcanary-NOEQ-deadbeef0000") {
+		t.Fatalf("the argument is echoed: %s%s", out, stderr)
+	}
+}
+
 func TestEnvSecretLikeNamesAreRefusedUnlessAllowed(t *testing.T) {
 	_, root, stateDir, _, dir := envFixture(t)
 	_, stderr, code := envCLI(t, root, stateDir, "env", "set", "web", "API_TOKEN=abc", "--no-restart")
