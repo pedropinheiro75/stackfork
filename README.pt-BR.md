@@ -30,26 +30,32 @@ Rode cada app que você cria com IA, em quantas versões quiser, todas ao mesmo 
 
 ## Como fica
 
+<a href="docs/screenshots/instances-overview-dark.png?raw=true">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/instances-overview-dark.png">
   <img src="docs/screenshots/instances-overview-light.png" alt="Página Instances: acme-api, uma instância híbrida cujo app roda no host, com PID, memória, CPU e um chip de hot reload, e acme-web com dois checkouts rodando, main e feature-invoices, cada um com suas URLs, porta de banco e overrides de env">
 </picture>
+</a>
 
 **Visão geral.** Dois projetos, três cópias rodando. O `acme-api` roda o app no host com hot reload e o banco no Docker. O `acme-web` roda `main` e `feature-invoices` lado a lado, cada um com sua URL, porta de banco e overrides de env.
 
 <table>
 <tr>
 <td width="50%">
+<a href="docs/screenshots/instances-hybrid-host-app-dark.png?raw=true">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/instances-hybrid-host-app-dark.png">
   <img src="docs/screenshots/instances-hybrid-host-app-light.png" alt="Card de instância do acme-api: o serviço db no Docker com sua porta de banco, URL de conexão e atalhos de psql e exec, e o serviço app rodando no host com PID, memória, CPU e um chip de hot reload">
 </picture>
+</a>
 </td>
 <td width="50%">
+<a href="docs/screenshots/project-resources-dark.png?raw=true">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/project-resources-dark.png">
   <img src="docs/screenshots/project-resources-light.png" alt="Seção de recursos do acme-web: gráficos de memória e CPU dos checkouts main e feature-invoices, uma barra de disco por checkout e uma tabela com todos os serviços">
 </picture>
+</a>
 </td>
 </tr>
 <tr>
@@ -58,16 +64,20 @@ Rode cada app que você cria com IA, em quantas versões quiser, todas ao mesmo 
 </tr>
 <tr>
 <td width="50%">
+<a href="docs/screenshots/project-workflow-dark.png?raw=true">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/project-workflow-dark.png">
   <img src="docs/screenshots/project-workflow-light.png" alt="Página Project: o canvas do fluxo de inicialização de um projeto híbrido: secrets, prepare, compose up, a decisão New data volume com o passo de seed, a decisão Mode e o app no host que roda nesta máquina, cada passo com o estado da última execução">
 </picture>
+</a>
 </td>
 <td width="50%">
+<a href="docs/screenshots/environment-dialog-dark.png?raw=true">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/environment-dialog-dark.png">
   <img src="docs/screenshots/environment-dialog-light.png" alt="Diálogo de ambiente do serviço app no worktree feature-invoices: três overrides de variável com o valor do projeto e o seu valor, um campo para adicionar outro e um botão Save and restart app">
 </picture>
+</a>
 </td>
 </tr>
 <tr>
@@ -144,31 +154,39 @@ O app de barra de menus do macOS é o `.dmg` da página de Releases. Veja [docs/
 
 1. **Aponte o stackfork para a pasta do seu código.** Rode `stackfork dashboard --open`. Em **Settings**, adicione a pasta que guarda todos os seus projetos, por exemplo `~/code`.
 
+<a href="docs/screenshots/settings-folders-dark.png?raw=true">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-folders-dark.png">
   <img src="docs/screenshots/settings-folders-light.png" alt="Página Settings: a lista de pastas que o stackfork varre atrás de repositórios, com um campo para adicionar outra pasta">
 </picture>
+</a>
 
 2. **Clique em "Set up" e escolha seu agente.** Seu agente lê o projeto e salva como ele sobe. Isso acontece uma vez, para você, seu time e todos os agentes. Você também pode pedir ao seu agente: "aprenda este projeto com o stackfork". Mais em [learning.md](references/learning.md).
 
+<a href="docs/screenshots/learn-with-agent-dark.png?raw=true">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/learn-with-agent-dark.png">
   <img src="docs/screenshots/learn-with-agent-light.png" alt="Página Repos: o acme-docs ainda não foi configurado; o botão Set up abre um diálogo onde você escolhe Claude Code, Codex ou Copilot CLI e vê o que o agente vai verificar">
 </picture>
+</a>
 
 3. **Peça um ambiente ao seu agente.** Por exemplo: "crie um ambiente do stackfork para a feature de faturas". Você recebe uma cópia completa do app para aquela branch. Você também pode apertar **Start** na página Repos.
 
+<a href="docs/screenshots/repos-dark.png?raw=true">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/repos-dark.png">
   <img src="docs/screenshots/repos-light.png" alt="Página Repos: os repositórios encontrados na pasta varrida, cada um com seu status, worktrees e um botão Start; o acme-web está expandido e mostra o switch Live, os passos de inicialização aprendidos (prepare, compose up, seed) e suas duas branches, main e feature-invoices, ambas rodando">
 </picture>
+</a>
 
 4. **Abra.** Cada ambiente tem seu próprio endereço. Abra no navegador e compare lado a lado com a `main`.
 
+<a href="docs/screenshots/instances-two-checkouts-dark.png?raw=true">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/instances-two-checkouts-dark.png">
   <img src="docs/screenshots/instances-two-checkouts-light.png" alt="Página Instances: acme-web com dois checkouts rodando, main e feature-invoices, cada um com seu endereço e porta de banco">
 </picture>
+</a>
 
 <details>
 <summary>Prefere o terminal?</summary>
