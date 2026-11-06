@@ -29,7 +29,7 @@ type CandidateStatus struct {
 	Head    string `json:"head"`
 	Project string `json:"project,omitempty"` // the worktree's instance, if any
 	State   string `json:"state"`             // merged or closed
-	Via     string `json:"via,omitempty"`     // ancestry, cherry or patch-id
+	Via     string `json:"via,omitempty"`     // ancestry, cherry, patch-id or merge-tree
 	PR      int    `json:"pr,omitempty"`
 	URL     string `json:"url,omitempty"`
 	Forge   string `json:"forge,omitempty"`

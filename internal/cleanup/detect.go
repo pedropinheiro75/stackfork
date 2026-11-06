@@ -24,6 +24,10 @@ const (
 	ViaAncestry = "ancestry" // merge commit or fast-forward
 	ViaCherry   = "cherry"   // every commit has an equivalent patch (rebase merge)
 	ViaPatchID  = "patch-id" // the whole branch diff equals one commit (squash merge)
+	// ViaMergeTree: merging the branch into the target conflicts nowhere and
+	// leaves the target's tree as it is (for example the second squash merge
+	// of a stack).
+	ViaMergeTree = "merge-tree"
 )
 
 // maxSquashCommits bounds the squash-merge search (design D16). A variable
@@ -106,7 +110,43 @@ func inDefault(main, branch, target string) string {
 	if squashMerged(main, ref, target) {
 		return ViaPatchID
 	}
+	if mergeAddsNothing(main, ref, target) {
+		return ViaMergeTree
+	}
 	return ""
+}
+
+// mergeAddsNothing is the last proof: a three-way merge of ref into target has
+// no conflict and its tree is target's tree, so every change of the branch is
+// already in target. It needs git 2.38 (merge-tree --write-tree); on an older
+// git, on a conflict or on any error the proof is simply not available.
+//
+// Detect writes no object, and merge-tree writes the trees of the merge. So
+// the command gets a temporary object directory of its own, with the
+// repository's as an alternate to read from; the temporary one is removed.
+func mergeAddsNothing(main, ref, target string) bool {
+	// A merge driver in the config can resolve a conflict however it likes
+	// ("ours" would make every conflict look like nothing to add).
+	if drivers, err := git(main, "config", "--get-regexp", `^merge\..*\.driver$`); err == nil || drivers != "" {
+		return false
+	}
+	objects, err := git(main, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+	if err != nil || objects == "" {
+		return false
+	}
+	tmp, err := os.MkdirTemp("", "stackfork-merge-tree-")
+	if err != nil {
+		return false
+	}
+	defer os.RemoveAll(tmp)
+	env := []string{"GIT_OBJECT_DIRECTORY=" + tmp, "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + objects}
+	out, err := gitEnv(main, env, "merge-tree", "--write-tree", "--no-messages", target, ref)
+	if err != nil { // exit 1 is a conflict; anything else is a git that cannot do it
+		return false
+	}
+	tree := strings.Fields(out)
+	want, err := git(main, "rev-parse", "--verify", "--quiet", target+"^{tree}")
+	return err == nil && len(tree) == 1 && tree[0] == want
 }
 
 // squashMerged compares the stable patch id of the whole branch diff with the
