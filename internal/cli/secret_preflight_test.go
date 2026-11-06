@@ -191,6 +191,23 @@ func TestPreflightRecordedReferenceSaysHowToReplaceIt(t *testing.T) {
 	noDockerCalls(t, dockerLog)
 }
 
+// `start SERVICE` runs the same secrets step as `up`: a name the Compose file
+// uses and nothing supplies fails with the fix before any Compose call, not
+// with Compose's own message.
+func TestPreflightStartServiceChecksTheNamesComposeUses(t *testing.T) {
+	repo, base, dockerLog := usedSecretFixture(t)
+	prepareWith(t, repo, base[1], filepath.Join(repo, ".agent-dev", "app.compose.yaml"))
+	os.Truncate(dockerLog, 0)
+	_, e, code := runCLI(t, "--root", repo, "--state-dir", base[1], "--legacy-state-dir", base[3], "start", "app")
+	if code == 0 || !strings.Contains(e, "npm_token is used by app.compose.yaml but has no reference; run: stackfork secret map") {
+		t.Fatalf("%d %s", code, e)
+	}
+	noDockerCalls(t, dockerLog)
+	if ds, _ := filepath.Glob(filepath.Join(base[1], "*", "runs")); len(ds) != 0 {
+		t.Fatalf("a Start of one service recorded a run: %v", ds)
+	}
+}
+
 // usedSecretCompose uses npm_token (nothing supplies it) and tok_file (a file
 // supplies it): only the first needs a reference.
 const usedSecretCompose = "services:\n  app:\n    image: alpine\n    secrets: [npm_token, tok_file]\nsecrets:\n  npm_token:\n    environment: SF_TEST_USED_SECRET_UNSET\n  tok_file:\n    file: ./tok.txt\n"
