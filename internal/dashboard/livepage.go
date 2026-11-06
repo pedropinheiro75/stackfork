@@ -234,6 +234,10 @@ func (v *liveView) fill(r repos.Repo, rst *live.RepoStatus, now time.Time) {
 			if c.Warning != "" {
 				cc.Title = c.Warning
 			}
+		case !c.Eligible && c.IgnoredOnly:
+			// Only the ignored files block the automatic cleanup. A person can
+			// still confirm it: the dialog lists every file that goes.
+			cc.Title, cc.Ask = "PR merged — clean up?"+ignoredNote(c.Ignored), "suggest"
 		case !c.Eligible:
 			cc.Title = c.Warning
 			if cc.Title == "" {
@@ -242,11 +246,23 @@ func (v *liveView) fill(r repos.Repo, rst *live.RepoStatus, now time.Time) {
 		case rst.Cleanup.Mode == config.CleanupAuto && !c.CleanAt.IsZero():
 			cc.Title, cc.Ask = cleanupIn(c.CleanAt, now), "auto"
 		default:
-			cc.Title, cc.Ask = "PR merged — clean up?", "suggest"
+			cc.Title, cc.Ask = "PR merged — clean up?"+ignoredNote(c.Ignored), "suggest"
 		}
 		cv.Candidates = append(cv.Candidates, cc)
 	}
 	v.Cleanup = cv
+}
+
+// ignoredNote is the part of the callout title that says how many ignored
+// files or folders the cleanup deletes with the worktree ("" for none).
+func ignoredNote(ignored []string) string {
+	switch len(ignored) {
+	case 0:
+		return ""
+	case 1:
+		return " It deletes 1 ignored file or folder (you see the list first)."
+	}
+	return fmt.Sprintf(" It deletes %d ignored files or folders (you see the list first).", len(ignored))
 }
 
 // reposJSON is GET /api/repos: the scan, byte for byte as `stackfork repos
