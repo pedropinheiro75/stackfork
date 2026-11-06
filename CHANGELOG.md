@@ -6,6 +6,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 - Instance addresses follow a pattern you choose. The new `hostname` setting (`stackfork config set hostname PATTERN`, or **Addresses** in the dashboard Settings) builds the address from `{app}`, `{worktree}` and `{hash}`. The default is `{app}-{worktree}`, for example `acme-web-feature-invoices.localhost`; the old format is `{worktree}-{hash}`. An instance that exists keeps its address, `--hostname` still wins, and a second instance with the same address gets a short suffix.
+- Fixed on Windows: `prepare` sometimes wrote `${npm_token}` into the snapshot where the Compose file says `${NPM_TOKEN}`. Windows names ignore case, so the placeholders for `npm_token` and its alias `NPM_TOKEN` collided and a random one won. Names that differ only by case now share one placeholder, and the snapshot keeps `${NPM_TOKEN}`.
 
 ## [0.2.1] - 2026-11-05
 
