@@ -7,6 +7,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Instance addresses follow a pattern you choose. The new `hostname` setting (`stackfork config set hostname PATTERN`, or **Addresses** in the dashboard Settings) builds the address from `{app}`, `{worktree}` and `{hash}`. The default is `{app}-{worktree}`, for example `acme-web-feature-invoices.localhost`; the old format is `{worktree}-{hash}`. An instance that exists keeps its address, `--hostname` still wins, and a second instance with the same address gets a short suffix.
 - `stackfork start SERVICE` works on a service that uses a Compose secret. It resolves the secret references like `up` does and gives the values only to the Compose child, so `stop` then `start` no longer fails with `environment variable ... is not set`. The dashboard's per-service Start checks the secrets first, like Start does, and shows the dashboard message when a reference does not resolve.
+- A plain `up` and `seed` check the secrets the Compose file uses, like Start does. A name with no reference now fails at the `secrets` step with the fix, not later in Docker.
 - `env set` with an argument that has no `=` no longer prints the argument back. The error names the expected form, `NAME=VALUE`.
 
 ## [0.2.1] - 2026-11-05

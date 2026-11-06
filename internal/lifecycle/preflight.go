@@ -243,8 +243,15 @@ func InstancePreflight(rec *runs.Run, out io.Writer, root, instanceDir string, d
 			folders[n] = from[n]
 		}
 	}
+	// The names the recorded Compose files use count like declared ones, so a
+	// bare up fails here and not later in Docker. Best effort: files that are
+	// gone or Compose that cannot render give none, as before.
+	envFile := ""
+	if info.EnvFile != nil {
+		envFile = *info.EnvFile
+	}
 	return Preflight{Run: rec, Out: out, InstanceDir: instanceDir, Main: main, Refs: refs, Folders: folders, Declared: DeclaredSecrets(root, main),
-		Unprepared: unprepared, Dashboard: dashboard}.Do()
+		Used: ComposeSecrets(root, info.Files, envFile), Unprepared: unprepared, Dashboard: dashboard}.Do()
 }
 
 // fromFolder is " (from folder X)" for a reference a folder mapping supplies.

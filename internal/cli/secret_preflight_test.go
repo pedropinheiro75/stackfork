@@ -162,6 +162,19 @@ func TestPreflightBareUpAndSeedFailBeforeDocker(t *testing.T) {
 	noDockerCalls(t, dockerLog)
 }
 
+// A name the Compose file uses needs a reference on a bare up and seed too,
+// not only on a Start: it fails at the secrets step, not later in Docker.
+func TestPreflightBareUpAndSeedCheckTheNamesComposeUses(t *testing.T) {
+	repo, base, dockerLog := usedSecretFixture(t)
+	prepareWith(t, repo, base[1], filepath.Join(repo, ".agent-dev", "app.compose.yaml"))
+	os.Truncate(dockerLog, 0)
+	_, e, code := runCLI(t, "--root", repo, "--state-dir", base[1], "--legacy-state-dir", base[3], "up")
+	if code == 0 || !strings.Contains(e, "step secrets failed: npm_token has no reference") {
+		t.Fatalf("%d %s", code, e)
+	}
+	noDockerCalls(t, dockerLog)
+}
+
 // usedSecretCompose uses npm_token (nothing supplies it) and tok_file (a file
 // supplies it): only the first needs a reference.
 const usedSecretCompose = "services:\n  app:\n    image: alpine\n    secrets: [npm_token, tok_file]\nsecrets:\n  npm_token:\n    environment: SF_TEST_USED_SECRET_UNSET\n  tok_file:\n    file: ./tok.txt\n"
