@@ -72,3 +72,22 @@ func TestRunResolvesMappedSecretWithoutLeakingIt(t *testing.T) {
 		t.Fatal("run must pass the value to the compose child only")
 	}
 }
+
+// `start SERVICE` runs Compose against the same project model as `up`, so it
+// resolves the map's reference too, for the compose child only.
+func TestStartResolvesMappedSecretWithoutLeakingIt(t *testing.T) {
+	log := installFakeDocker(t)
+	fakeKeychain(t, map[string]string{"acme-start": "start-canary-value"})
+	root, stateDir, _ := secretRepo(t, "SF_START_TOK=env:SF_TEST_START_UNSET")
+	mapSecret(t, root, "SF_START_TOK", "keychain:acme-start")
+	out, e, code := runCLI(t, "--root", root, "--state-dir", stateDir, "start", "db")
+	if code != 0 {
+		t.Fatal(e)
+	}
+	if !strings.Contains(dockerEnvLog(log), "\nSF_START_TOK=start-canary-value\n") || os.Getenv("SF_START_TOK") != "" {
+		t.Fatal("start must pass the value to the compose child only")
+	}
+	if strings.Contains(out+e, "start-canary-value") {
+		t.Fatal("the value is in the output")
+	}
+}

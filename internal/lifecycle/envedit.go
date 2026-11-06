@@ -63,6 +63,9 @@ func SetEnvOverrides(instanceDir, service string, set map[string]string, unset [
 		return err
 	}
 	for _, n := range unset {
+		if err := state.ValidEnvName(n); err != nil {
+			return err
+		}
 		if !o.Unset(service, n) {
 			return fmt.Errorf("no override %s on %s", n, service)
 		}

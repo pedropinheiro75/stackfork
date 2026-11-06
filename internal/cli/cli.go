@@ -1204,6 +1204,14 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 		return res.Code, res.Err
 	}
+	if action == "start" && opts.Secrets == nil {
+		// The secrets step of up, without a run: one line per problem and its fix,
+		// and nothing resolves after it (review I1).
+		var perr error
+		if opts.Secrets, perr = lifecycle.StartSecrets(stderr, root, instanceDir, opts.Targets, envTrigger() == "dashboard"); perr != nil {
+			return 0, perr
+		}
+	}
 	code, err := lifecycle.Execute(stdout, stderr, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)
 	if forget && code == 0 && err == nil {
 		unlock() // Windows cannot delete the open lock file

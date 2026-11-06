@@ -167,8 +167,12 @@ func secretList(stdout io.Writer, verb string, args []string, rootArg, newStateB
 		return 0, err
 	}
 	root := repo
+	own := mainRepo(repo) // with REPO, the repository's main checkout
+	if len(pos) == 0 {
+		own = root // without it, the checkout the command runs in: what a plain up there uses
+	}
 	repo = mainRepo(repo)
-	rows, err := lifecycle.SecretRows(root, repo, verb == "check", nil, flagSecrets(global), newStateBase, legacyStateBase)
+	rows, err := lifecycle.SecretRowsAt(own, root, repo, verb == "check", nil, flagSecrets(global), newStateBase, legacyStateBase)
 	if err != nil {
 		return 0, err
 	}

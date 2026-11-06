@@ -33,7 +33,7 @@ type EnvOverrides struct {
 // ValidEnvName reports why name is not a variable name, or nil.
 func ValidEnvName(name string) error {
 	if !envNamePattern.MatchString(name) {
-		return fmt.Errorf("invalid variable name %q; use letters, digits and underscores, not starting with a digit", name)
+		return errors.New("invalid variable name; use letters, digits and underscores, not starting with a digit") // never echoed: it may be a pasted value
 	}
 	return nil
 }

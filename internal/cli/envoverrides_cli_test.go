@@ -107,6 +107,41 @@ func TestEnvUnsetRemovesAndRecreates(t *testing.T) {
 	}
 }
 
+// A pasted value without NAME= is never printed back: it may be a secret.
+func TestEnvSetWithoutEqualsDoesNotEchoTheArgument(t *testing.T) {
+	_, root, stateDir, _, _ := envFixture(t)
+	out, stderr, code := envCLI(t, root, stateDir, "env", "set", "web", "sfcanary-NOEQ-deadbeef0000")
+	if code == 0 || !strings.Contains(stderr, "NAME=VALUE") {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	if strings.Contains(out+stderr, "sfcanary-NOEQ-deadbeef0000") {
+		t.Fatalf("the argument is echoed: %s%s", out, stderr)
+	}
+}
+
+// A name that is not a variable name may be a pasted value: set and unset
+// say what a valid name is and never print the argument.
+func TestEnvInvalidNamesAreNeverEchoed(t *testing.T) {
+	_, root, stateDir, _, _ := envFixture(t)
+	const canary = "sfcanary-BADNAME-deadbeef0001"
+	for _, args := range [][]string{
+		{"env", "set", "web", canary + "=1", "--no-restart"},
+		{"env", "unset", "web", canary, "--no-restart"},
+		{"env", "unset", "web", "A=" + canary, "--no-restart"},
+	} {
+		out, stderr, code := envCLI(t, root, stateDir, args...)
+		if code == 0 || strings.Contains(out+stderr, canary) {
+			t.Fatalf("%v: code=%d out=%s stderr=%s", args[:2], code, out, stderr)
+		}
+	}
+	if _, stderr, _ := envCLI(t, root, stateDir, "env", "unset", "web", "A="+canary, "--no-restart"); !strings.Contains(stderr, "env unset: expected NAME") {
+		t.Fatalf("stderr=%s", stderr)
+	}
+	if _, stderr, _ := envCLI(t, root, stateDir, "env", "unset", "web", canary, "--no-restart"); !strings.Contains(stderr, "letters, digits and underscores") {
+		t.Fatalf("stderr=%s", stderr)
+	}
+}
+
 func TestEnvSecretLikeNamesAreRefusedUnlessAllowed(t *testing.T) {
 	_, root, stateDir, _, dir := envFixture(t)
 	_, stderr, code := envCLI(t, root, stateDir, "env", "set", "web", "API_TOKEN=abc", "--no-restart")

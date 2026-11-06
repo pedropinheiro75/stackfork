@@ -186,7 +186,10 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 
 	var secretEnv map[string]string // for the one docker compose child (design D9)
 	var resolved SecretValues       // what this call resolved itself, for redacting run output
-	if action == "up" || action == "apply" || action == "run" {
+	if action == "up" || action == "apply" || action == "run" || action == "start" {
+		// start is here because Compose refuses the project model of a
+		// service that uses a secret when the value is not in its environment.
+		// The D2 check below stays with up, apply and run.
 		// Named secrets (task 6.1, design.md D6): resolve each reference
 		// into its value now, not at prepare, so a rotated env var or
 		// npmrc token is picked up without re-preparing. The value goes
@@ -215,6 +218,9 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 				// prompt from here, or a value the redactor never saw, is the
 				// hole this closes (review I1).
 				v, ok := opts.Secrets[name]
+				if action == "start" && !ok {
+					continue // StartSecrets let a start through that lists no secret: it needs no value
+				}
 				if !ok || v.Ref != ref {
 					return 0, fmt.Errorf("secret %s was not resolved by the secrets step; start again", name)
 				}
@@ -225,6 +231,8 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 			secretEnv[name] = value
 			resolved[name] = SecretValue{Ref: ref, Value: value}
 		}
+	}
+	if action == "up" || action == "apply" || action == "run" {
 		// D2: another branch stack from this checkout must be refused
 		// whether it was labelled under the current namespace or the
 		// legacy one, so an existing idv- stack is never orphaned and a
@@ -374,8 +382,8 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 		return cmd
 	}
 	cmd := newCmd()
-	if action == "run" || action == "exec" {
-		// Both print what a container prints, to whoever called: redact with
+	if action == "run" || action == "exec" || action == "start" {
+		// All print what a container prints, to whoever called: redact with
 		// the values known for this instance (review I2).
 		// A terminal is left alone: the redactor holds bytes back, which breaks
 		// interactive use, and the person at it can read the store anyway. An

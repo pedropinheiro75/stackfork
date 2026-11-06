@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,6 +161,148 @@ func TestPreflightBareUpAndSeedFailBeforeDocker(t *testing.T) {
 		t.Fatalf("%d %s", code, e)
 	}
 	noDockerCalls(t, dockerLog)
+}
+
+// A name the Compose file uses needs a reference on a bare up and seed too,
+// not only on a Start: it fails at the secrets step, not later in Docker.
+func TestPreflightBareUpAndSeedCheckTheNamesComposeUses(t *testing.T) {
+	repo, base, dockerLog := usedSecretFixture(t)
+	prepareWith(t, repo, base[1], filepath.Join(repo, ".agent-dev", "app.compose.yaml"))
+	os.Truncate(dockerLog, 0)
+	_, e, code := runCLI(t, "--root", repo, "--state-dir", base[1], "--legacy-state-dir", base[3], "up")
+	if code == 0 || !strings.Contains(e, "step secrets failed: npm_token has no reference") {
+		t.Fatalf("%d %s", code, e)
+	}
+	noDockerCalls(t, dockerLog)
+}
+
+// A reference given once by --secret stays in the manifest: the failure says
+// how to get out, and the other references get no such hint.
+func TestPreflightRecordedReferenceSaysHowToReplaceIt(t *testing.T) {
+	root, stateDir, _ := secretRepo(t, "TOK=npmrc:/nonexistent/sf.npmrc#registry.example.com")
+	dockerLog := installFakeDocker(t)
+	_, e, code := runCLI(t, "--root", root, "--state-dir", stateDir, "up", "--wait-timeout", "10")
+	if code == 0 || !strings.Contains(e, "step secrets failed") {
+		t.Fatalf("%d %s", code, e)
+	}
+	log, _ := secretsStepLog(t, []string{"", stateDir}, root)
+	if !strings.Contains(log, "or give prepare a new --secret TOK=REF, or run: stackfork secret forget TOK") {
+		t.Fatalf("%s", log)
+	}
+	noDockerCalls(t, dockerLog)
+}
+
+// `start SERVICE` runs the same secrets step as `up`: a name the Compose file
+// uses and nothing supplies fails with the fix before any Compose call, not
+// with Compose's own message.
+func TestPreflightStartServiceChecksTheNamesComposeUses(t *testing.T) {
+	repo, base, dockerLog := usedSecretFixture(t)
+	prepareWith(t, repo, base[1], filepath.Join(repo, ".agent-dev", "app.compose.yaml"))
+	os.Truncate(dockerLog, 0)
+	_, e, code := runCLI(t, "--root", repo, "--state-dir", base[1], "--legacy-state-dir", base[3], "start", "app")
+	if code == 0 || !strings.Contains(e, "npm_token is used by app.compose.yaml but has no reference; run: stackfork secret map") {
+		t.Fatalf("%d %s", code, e)
+	}
+	noDockerCalls(t, dockerLog)
+	if ds, _ := filepath.Glob(filepath.Join(base[1], "*", "runs")); len(ds) != 0 {
+		t.Fatalf("a Start of one service recorded a run: %v", ds)
+	}
+}
+
+// startSecretProject prepares usedSecretCompose plus a worker service that
+// lists no secret.
+func startSecretProject(t *testing.T, secrets ...string) (repo string, base []string, dockerLog string) {
+	t.Helper()
+	repo, base, dockerLog = usedSecretFixture(t)
+	compose := strings.Replace(usedSecretCompose, "secrets:\n  npm_token:", "  worker:\n    image: alpine\nsecrets:\n  npm_token:", 1)
+	path := filepath.Join(repo, ".agent-dev", "app.compose.yaml")
+	os.WriteFile(path, []byte(compose), 0o644)
+	prepareWith(t, repo, base[1], path, secrets...)
+	os.Truncate(dockerLog, 0)
+	return repo, base, dockerLog
+}
+
+func startCLI(t *testing.T, repo string, base []string, services ...string) (string, string, int) {
+	t.Helper()
+	return runCLI(t, append([]string{"--root", repo, "--state-dir", base[1], "--legacy-state-dir", base[3], "start"}, services...)...)
+}
+
+// A Start fails at the secrets step only when a service it starts lists a
+// secret: `start worker` needs no values, as before.
+func TestStartServiceWithoutSecretsIgnoresAnUnresolvedSecret(t *testing.T) {
+	repo, base, dockerLog := startSecretProject(t)
+	out, e, code := startCLI(t, repo, base, "worker")
+	if code != 0 {
+		t.Fatalf("%d %s", code, e)
+	}
+	if b, _ := os.ReadFile(dockerLog); !strings.Contains(string(b), " start worker") {
+		t.Fatalf("compose start did not run:\n%s", b)
+	}
+	if strings.Contains(out+e, "has no reference") {
+		t.Fatalf("the secrets lines are printed: %s %s", out, e)
+	}
+}
+
+func TestStartServicesThatListASecretFailAtTheSecretsStep(t *testing.T) {
+	repo, base, dockerLog := startSecretProject(t)
+	for _, services := range [][]string{{"app"}, {"app", "worker"}, {"worker", "app"}} {
+		_, e, code := startCLI(t, repo, base, services...)
+		if code == 0 || !strings.Contains(e, "npm_token is used by app.compose.yaml but has no reference; run: stackfork secret map") {
+			t.Fatalf("%v: %d %s", services, code, e)
+		}
+		noDockerCalls(t, dockerLog)
+	}
+}
+
+// The secrets lines of a Start are printed only when the step fails.
+func TestStartPrintsNoSecretsLinesOnSuccess(t *testing.T) {
+	t.Setenv("SF_TEST_START_QUIET", "quiet-canary-value")
+	repo, base, _ := startSecretProject(t, "npm_token=env:SF_TEST_START_QUIET")
+	out, e, code := startCLI(t, repo, base, "app")
+	if code != 0 || strings.Contains(out+e, "resolves") || strings.Contains(out+e, "quiet-canary-value") {
+		t.Fatalf("%d %s %s", code, out, e)
+	}
+}
+
+// Inside a worktree, `secret ls` and `secret check` without REPO describe this
+// checkout's recorded reference, the one a plain up there uses. Another
+// checkout's reference is the sibling row; with REPO nothing changes.
+func TestSecretLsInAWorktreeShowsThisCheckoutsReference(t *testing.T) {
+	repo, sib, base := siblingRepo(t)
+	os.Unsetenv("SF_TEST_MAIN_TOKEN")
+	if _, e, code := runCLI(t, append(append([]string{}, base...), "--root", repo, "--secret", "tok=env:SF_TEST_MAIN_TOKEN",
+		"prepare", "--force", "-f", "docker-compose.yml")...); code != 0 {
+		t.Fatal(e)
+	}
+	row := func(args ...string) (secretRowFixture, int) {
+		out, e, code := runCLI(t, append(append(append([]string{}, base...), args...), "--json")...)
+		var rows []secretRowFixture
+		if err := json.Unmarshal([]byte(out), &rows); err != nil {
+			t.Fatalf("%v: %s %s", err, out, e)
+		}
+		for _, r := range rows {
+			if r.Name == "tok" {
+				return r, code
+			}
+		}
+		t.Fatalf("no tok row: %s", out)
+		return secretRowFixture{}, 0
+	}
+	if r, code := row("--root", sib, "secret", "check"); r.Reference != "env:"+sibTokenName || r.Source != "manifest" || code != 0 {
+		t.Fatalf("in the worktree: %+v exit %d", r, code)
+	}
+	if r, code := row("--root", repo, "secret", "check"); r.Reference != "env:SF_TEST_MAIN_TOKEN" || r.Source != "manifest" || code != 1 {
+		t.Fatalf("in the main checkout: %+v exit %d", r, code)
+	}
+	if r, _ := row("--root", sib, "secret", "ls", repo); r.Reference != "env:SF_TEST_MAIN_TOKEN" || r.Source != "manifest" {
+		t.Fatalf("with REPO: %+v", r)
+	}
+}
+
+type secretRowFixture struct {
+	Name      string `json:"name"`
+	Reference string `json:"reference"`
+	Source    string `json:"source"`
 }
 
 // usedSecretCompose uses npm_token (nothing supplies it) and tok_file (a file

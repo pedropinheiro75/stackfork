@@ -87,7 +87,7 @@ func cmdEnvOverrides(stdout, stderr io.Writer, subArgs []string, root, branch, p
 		}
 		name, value, ok := strings.Cut(pos[1], "=")
 		if !ok {
-			return 2, fmt.Errorf("%q is not NAME=VALUE", pos[1])
+			return 2, errors.New("env set: expected NAME=VALUE")
 		}
 		if err := lifecycle.SetEnvOverrides(instanceDir, pos[0], map[string]string{name: value}, nil, *allowSecret); err != nil {
 			return 0, err
@@ -101,6 +101,9 @@ func cmdEnvOverrides(stdout, stderr io.Writer, subArgs []string, root, branch, p
 	case "unset":
 		if len(pos) != 2 {
 			return 2, errors.New("usage: stackfork " + envOverridesUsage)
+		}
+		if strings.Contains(pos[1], "=") {
+			return 2, errors.New("env unset: expected NAME")
 		}
 		if err := lifecycle.SetEnvOverrides(instanceDir, pos[0], nil, []string{pos[1]}, false); err != nil {
 			return 0, err

@@ -43,20 +43,28 @@ type RefStatus struct {
 // checkout asked about (its own knowledge declares names, as LoadFor finds
 // it); repo is its main checkout, which keys the machine map.
 func SecretRows(root, repo string, check bool, known map[string]RefStatus, flags map[string]string, newBase, legacyBase string) ([]SecretRow, error) {
+	return SecretRowsAt(repo, root, repo, check, known, flags, newBase, legacyBase)
+}
+
+// SecretRowsAt is SecretRows with the checkout whose instance counts as the
+// manifest row (own): the repository's main checkout for SecretRows, the
+// checkout a command runs in for `secret ls` without REPO. Every other
+// checkout's recorded references are the sibling row.
+func SecretRowsAt(own, root, repo string, check bool, known map[string]RefStatus, flags map[string]string, newBase, legacyBase string) ([]SecretRow, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
 	}
-	own, sibling := manifestRefsFor(repo, newBase, legacyBase)
+	ownRefs, sibling := manifestRefsFor(own, repo, newBase, legacyBase)
 	files, envFile := RecipeFiles(repo, newBase, legacyBase)
 	used := ComposeSecrets(repo, files, envFile) // names the Compose source needs count as declared
-	folder, folderFrom, err := FolderSecrets(repo, UsedPlus(own, repo, files, envFile))
+	folder, folderFrom, err := FolderSecrets(repo, UsedPlus(ownRefs, repo, files, envFile))
 	if err != nil {
 		return nil, err
 	}
 	refs, source := Effective(
 		Layer{Source: SourceSibling, Refs: sibling},
-		Layer{Source: SourceManifest, Refs: own},
+		Layer{Source: SourceManifest, Refs: ownRefs},
 		Layer{Source: SourceFolder, Refs: folder},
 		Layer{Source: SourceMap, Refs: cfg.SecretsFor(repo)},
 		Layer{Source: SourceFlag, Refs: flags})
@@ -113,10 +121,11 @@ func firstLineOf(s string) string {
 }
 
 // manifestRefsFor are the references recorded by the newest prepared
-// instance of the repository's own checkout (own) and by the newest one of
-// another checkout of it (sibling), or nil.
-func manifestRefsFor(repo, newBase, legacyBase string) (own, sibling map[string]string) {
+// instance of the checkout self (own) and by the newest one of any other
+// checkout of the repository (sibling), or nil.
+func manifestRefsFor(self, repo, newBase, legacyBase string) (own, sibling map[string]string) {
 	want, _ := filepath.EvalSymlinks(repo)
+	selfWant, _ := filepath.EvalSymlinks(self)
 	var ownTime, sibTime int64
 	for _, base := range []string{newBase, legacyBase} {
 		files, _ := filepath.Glob(filepath.Join(base, "*", "manifest.json"))
@@ -133,9 +142,9 @@ func manifestRefsFor(repo, newBase, legacyBase string) (own, sibling map[string]
 			root, _ := filepath.EvalSymlinks(m.Root)
 			t := fi.ModTime().UnixNano()
 			switch {
-			case root == want && t > ownTime:
+			case root == selfWant && t > ownTime:
 				own, ownTime = m.ResolvedSecrets(), t
-			case root != want && t > sibTime:
+			case root != selfWant && t > sibTime:
 				sibling, sibTime = m.ResolvedSecrets(), t
 			}
 		}
