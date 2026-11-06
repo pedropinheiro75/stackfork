@@ -267,17 +267,7 @@ func rewriteFilePaths(path string, froms []string, to string) error {
 	if err != nil {
 		return err
 	}
-	roots := append(slices.Clone(froms), to)
-	sort.Slice(roots, func(i, j int) bool { return len(roots[i]) > len(roots[j]) })
-	alts := make([]string, len(roots))
-	for i, r := range roots {
-		alts[i] = regexp.QuoteMeta(r)
-	}
-	re := regexp.MustCompile(`(?m)(?:` + strings.Join(alts, "|") + `)([/"'\s,\]}]|$)`)
-	out := re.ReplaceAllFunc(b, func(m []byte) []byte {
-		tail := re.FindSubmatch(m)[1]
-		return append([]byte(to), tail...)
-	})
+	out := rewritePaths(b, froms, to)
 	if string(out) == string(b) {
 		return nil
 	}
@@ -286,6 +276,41 @@ func rewriteFilePaths(path string, froms []string, to string) error {
 		return err
 	}
 	return os.WriteFile(path, out, fi.Mode().Perm())
+}
+
+// RewrittenCopy is what Apply leaves in target at rel when it copies the file
+// of the same path from the checkout source: a Compose file (.yml, .yaml) with
+// the source's absolute paths pointed at target, the env file with
+// checkout-specific values rewritten, any other file unchanged. Branch cleanup
+// compares a recorded file with it to tell a copy that nobody touched from one
+// that a person edited. Apply changes nothing else in the content.
+func RewrittenCopy(source, target, rel string, isEnv bool) ([]byte, error) {
+	b, err := os.ReadFile(filepath.Join(source, filepath.FromSlash(rel)))
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case isEnv:
+		out, _ := rewriteEnv(b, sourceRoots(source), target, filepath.Join(target, filepath.FromSlash(rel)))
+		return out, nil
+	case strings.HasSuffix(rel, ".yml") || strings.HasSuffix(rel, ".yaml"):
+		return rewritePaths(b, sourceRoots(source), target), nil
+	}
+	return b, nil
+}
+
+func rewritePaths(b []byte, froms []string, to string) []byte {
+	roots := append(slices.Clone(froms), to)
+	sort.Slice(roots, func(i, j int) bool { return len(roots[i]) > len(roots[j]) })
+	alts := make([]string, len(roots))
+	for i, r := range roots {
+		alts[i] = regexp.QuoteMeta(r)
+	}
+	re := regexp.MustCompile(`(?m)(?:` + strings.Join(alts, "|") + `)([/"'\s,\]}]|$)`)
+	return re.ReplaceAllFunc(b, func(m []byte) []byte {
+		tail := re.FindSubmatch(m)[1]
+		return append([]byte(to), tail...)
+	})
 }
 
 // RepointAdapterCompose fixes adapter compose files (-f under .agent-dev/ or

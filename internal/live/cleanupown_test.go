@@ -45,9 +45,9 @@ func excludeInMain(t *testing.T, f *cleanupFx, line string) {
 func TestScanCleanupAutoIgnoresTheFilesTheManifestRecords(t *testing.T) {
 	f := newCleanupFx(t)
 	excludeInMain(t, f, "/.agent-dev")
-	for _, root := range []string{f.Main, f.WT} {
-		write(t, root, ".agent-dev/nuxt.compose.yaml", "services: {}\n")
-		write(t, root, ".agent-dev/runtime.env", "A=1\n")
+	for _, root := range []string{f.Main, f.WT} { // the copy has main's paths rewritten to the worktree's
+		write(t, root, ".agent-dev/nuxt.compose.yaml", "services:\n  web:\n    build: "+root+"/app\n")
+		write(t, root, ".agent-dev/runtime.env", "DEV_CHECKOUT="+root+"\nA=1\n")
 	}
 	recordManifest(t, f, []string{".agent-dev/nuxt.compose.yaml"}, ".agent-dev/runtime.env")
 	in := ScanInput{Main: f.Main, NewBase: f.State, Settings: config.Cleanup{Mode: config.CleanupAuto, GraceHours: 1}, Now: time.Now(), Targets: []Target{f.Inst}}
@@ -55,6 +55,13 @@ func TestScanCleanupAutoIgnoresTheFilesTheManifestRecords(t *testing.T) {
 	if err != nil || len(cs) != 1 || !cs[0].Eligible || len(cs[0].Ignored) != 0 {
 		t.Fatalf("own files only: %+v %v", cs, err)
 	}
+	// one edited line in the copied env: a person's change, so it blocks auto
+	write(t, f.WT, ".agent-dev/runtime.env", "DEV_CHECKOUT="+f.WT+"\nA=1\nMY_TOKEN=abc\n")
+	cs, _ = ScanCleanup(in)
+	if c := cs[0]; c.Eligible || !c.IgnoredOnly || !slices.Equal(c.Ignored, []string{".agent-dev/runtime.env"}) {
+		t.Fatalf("an edited env copy must block auto and be listed: %+v", c)
+	}
+	write(t, f.WT, ".agent-dev/runtime.env", "DEV_CHECKOUT="+f.WT+"\nA=1\n")
 	write(t, f.WT, ".agent-dev/notes.md", "mine\n")
 	cs, _ = ScanCleanup(in)
 	c := cs[0]
@@ -77,10 +84,10 @@ func TestOwnFilesNeedACopyInTheMainCheckout(t *testing.T) {
 	write(t, f.WT, ".agent-dev/a.yaml", "a\n")
 	write(t, f.WT, ".agent-dev/only-here.yaml", "b\n")
 	recordManifest(t, f, []string{".agent-dev/a.yaml", ".agent-dev/only-here.yaml", "../outside.yaml"}, "")
-	if got, want := ownFiles(f.Main, &f.Inst), []string{".agent-dev/a.yaml"}; !slices.Equal(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
+	if got, _ := ownFiles(f.Main, &f.Inst); !slices.Equal(got, []string{".agent-dev/a.yaml"}) {
+		t.Fatalf("got %v", got)
 	}
-	if ownFiles(f.Main, nil) != nil {
+	if got, env := ownFiles(f.Main, nil); got != nil || env != "" {
 		t.Fatal("no instance, no record")
 	}
 }

@@ -80,17 +80,18 @@ func adapterFiles(main string) []string {
 
 // ownFiles are the files that the instance's manifest records (the Compose
 // files and the env file prepare used) that lie inside its checkout and that
-// the main checkout also has, as repository-relative slash paths. Stackfork
-// copied them there from another checkout; a file only this checkout has may
-// be a person's, so it is not listed. nil when there is no instance or no
-// manifest.
-func ownFiles(main string, t *Target) []string {
+// the main checkout also has, as repository-relative slash paths, and the env
+// file among them ("" when none). Stackfork copied them there from another
+// checkout; a file only this checkout has may be a person's, so it is not
+// listed. The cleanup still compares the content (cleanup.ownFile). nil when
+// there is no instance or no manifest.
+func ownFiles(main string, t *Target) (own []string, env string) {
 	if t == nil {
-		return nil
+		return nil, ""
 	}
 	m, err := state.ReadManifest(filepath.Join(t.InstanceDir, "manifest.json"))
 	if err != nil || m == nil {
-		return nil
+		return nil, ""
 	}
 	recorded := slices.Clone(m.Files)
 	if m.EnvFile != nil {
@@ -100,7 +101,6 @@ func ownFiles(main string, t *Target) []string {
 	if root == "" {
 		root = t.Root
 	}
-	var own []string
 	for _, p := range recorded {
 		rel, err := filepath.Rel(root, p)
 		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
@@ -108,9 +108,12 @@ func ownFiles(main string, t *Target) []string {
 		}
 		if fi, err := os.Lstat(filepath.Join(main, rel)); err == nil && fi.Mode().IsRegular() {
 			own = append(own, filepath.ToSlash(rel))
+			if m.EnvFile != nil && p == *m.EnvFile {
+				env = filepath.ToSlash(rel)
+			}
 		}
 	}
-	return own
+	return own, env
 }
 
 // instance is the candidate's instance: same checkout and same branch (a
@@ -160,7 +163,7 @@ func ScanCleanup(in ScanInput) ([]CandidateStatus, error) {
 			cs.Project, job.Instance = t.Project, t
 		}
 		cs.Others, job.Others = others, others
-		job.Own = ownFiles(in.Main, t)
+		job.Own, job.OwnEnv = ownFiles(in.Main, t)
 		v := cleanup.Evaluate(job.CheckFor())
 		cs.Eligible, cs.Warning, cs.Ignored, cs.IgnoredOnly = v.Eligible, v.Warning, v.Ignored, v.IgnoredOnly
 		if v.State == cleanup.Merged && v.Eligible && !cs.Kept {
@@ -209,7 +212,7 @@ func (in ScanInput) Job(c CandidateStatus, auto bool) CleanupJob {
 		Candidate: cleanup.Candidate{Path: c.Path, Branch: c.Branch, Head: c.Head},
 		Result:    cleanup.Result{Branch: c.Branch, State: c.State, Via: c.Via, PR: c.PR, URL: c.URL, Forge: c.Forge}}
 	j.Instance, j.Others = in.instance(c.Path, c.Branch)
-	j.Own = ownFiles(in.Main, j.Instance)
+	j.Own, j.OwnEnv = ownFiles(in.Main, j.Instance)
 	return j
 }
 

@@ -22,9 +22,10 @@ func autoWarning(t *testing.T, f fixture, c Candidate, r Result, chk func(*Check
 // the folder is never excluded as a whole.
 func TestEvaluateOwnFilesDoNotBlockAutoButAPersonsFileInTheSameFolderDoes(t *testing.T) {
 	f, c, r := mergedFx(t)
-	ignore(t, c.Path, ".agent-dev/runtime.env")
-	put(t, c.Path, ".agent-dev/nuxt.compose.yaml", "services: {}\n")
-	own := func(k *Check) { k.Own = []string{".agent-dev/runtime.env", ".agent-dev/nuxt.compose.yaml"} }
+	copiedPair(t, f, c)
+	own := func(k *Check) {
+		k.Own, k.OwnEnv = []string{".agent-dev/runtime.env", ".agent-dev/nuxt.compose.yaml"}, ".agent-dev/runtime.env"
+	}
 	if v := autoWarning(t, f, c, r, own); !v.Eligible || len(v.Ignored) != 0 {
 		t.Fatalf("only stackfork's own files: %+v", v)
 	}
@@ -39,6 +40,45 @@ func TestEvaluateOwnFilesDoNotBlockAutoButAPersonsFileInTheSameFolderDoes(t *tes
 	// without the record the same folder blocks as a whole, as before
 	if v := autoWarning(t, f, c, r, nil); v.Eligible {
 		t.Fatalf("no record, no exclusion: %+v", v)
+	}
+}
+
+// copiedPair writes the Compose file and the runtime env in main and in the
+// worktree the way the sibling copy leaves them: the main checkout's absolute
+// path rewritten to the worktree's.
+func copiedPair(t *testing.T, f fixture, c Candidate) {
+	t.Helper()
+	excludeLine(t, c.Path, "/.agent-dev")
+	put(t, f.Main, ".agent-dev/nuxt.compose.yaml", "services:\n  web:\n    build: "+f.Main+"/app\n")
+	put(t, c.Path, ".agent-dev/nuxt.compose.yaml", "services:\n  web:\n    build: "+c.Path+"/app\n")
+	put(t, f.Main, ".agent-dev/runtime.env", "DEV_CHECKOUT="+f.Main+"\nDB_NAME=app\n")
+	put(t, c.Path, ".agent-dev/runtime.env", "DEV_CHECKOUT="+c.Path+"\nDB_NAME=app\n")
+}
+
+// A recorded file counts as stackfork's own only while it is exactly what the
+// copy wrote. One edited line (a Compose tweak, a value added to the env) is
+// the person's work: it blocks `auto`, sets IgnoredOnly and is in the list.
+func TestEvaluateEditedCopiedFilesBlockAutoAndAreListed(t *testing.T) {
+	own := func(k *Check) {
+		k.Own, k.OwnEnv = []string{".agent-dev/runtime.env", ".agent-dev/nuxt.compose.yaml"}, ".agent-dev/runtime.env"
+	}
+	for _, edit := range []struct{ rel, body string }{
+		{".agent-dev/runtime.env", "DB_NAME=app\nMY_TOKEN=abc\n"},
+		{".agent-dev/nuxt.compose.yaml", "services:\n  web:\n    build: ./other\n"},
+	} {
+		t.Run(edit.rel, func(t *testing.T) {
+			f, c, r := mergedFx(t)
+			copiedPair(t, f, c)
+			put(t, c.Path, edit.rel, edit.body)
+			v := autoWarning(t, f, c, r, own)
+			if v.Eligible || !v.IgnoredOnly || !slices.Equal(v.Ignored, []string{edit.rel}) {
+				t.Fatalf("auto: %+v", v)
+			}
+			m := Evaluate(Check{Main: f.Main, Candidate: c, Result: r, Own: []string{".agent-dev/runtime.env", ".agent-dev/nuxt.compose.yaml"}, OwnEnv: ".agent-dev/runtime.env"})
+			if !m.Eligible || !slices.Equal(m.Ignored, []string{edit.rel}) {
+				t.Fatalf("suggest: %+v", m)
+			}
+		})
 	}
 }
 

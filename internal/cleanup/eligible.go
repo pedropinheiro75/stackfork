@@ -46,9 +46,12 @@ type Check struct {
 	// Own are files (repository-relative, slash-separated) that the instance's
 	// manifest records and that stackfork wrote into this checkout: the
 	// compose files and the runtime env it copied from another checkout. They
-	// are not ignored work. Only a file that is also in the main checkout
-	// counts; the caller checks that.
+	// are not ignored work, but only while their content is exactly what the
+	// copy wrote (see ownFile): an edited copy is a person's file.
 	Own []string
+	// OwnEnv is the env file among Own ("" when none): its copy rewrites
+	// checkout-specific values.
+	OwnEnv string
 	// Locked reports why the instance's run lock or the dashboard's action
 	// lock is held ("" when both are free). nil: free.
 	Locked func() string
@@ -124,7 +127,7 @@ func Evaluate(c Check) Verdict {
 		v.Warning = "PR merged, but this worktree has uncommitted changes"
 		return v
 	}
-	v.Ignored = ignoredFiles(c.Main, path, c.Adapter, c.Own)
+	v.Ignored = ignoredFiles(c.Main, path, c.Adapter, c.Own, c.OwnEnv)
 	if c.Locked != nil {
 		if why := c.Locked(); why != "" {
 			v.Warning = "PR merged, but " + why
@@ -211,7 +214,7 @@ func dirty(main, wt string, adapter []string) []string {
 // folder that holds a file of stackfork's own (see ownFile): that one is
 // opened, and only the files in it that are not stackfork's are listed. A
 // folder is never excluded as a whole: a person may keep a file in it.
-func ignoredFiles(main, wt string, adapter, own []string) []string {
+func ignoredFiles(main, wt string, adapter, own []string, ownEnv string) []string {
 	out, err := gitRaw(wt, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z")
 	if err != nil {
 		return []string{"(git ls-files failed)"}
@@ -222,10 +225,10 @@ func ignoredFiles(main, wt string, adapter, own []string) []string {
 			continue
 		}
 		if strings.HasSuffix(p, "/") && !inCacheDir(wt, p) && holdsOwn(p, own) {
-			res = append(res, notOwn(main, wt, p, own)...)
+			res = append(res, notOwn(main, wt, p, own, ownEnv)...)
 			continue
 		}
-		if ownFile(main, wt, p, own) {
+		if ownFile(main, wt, p, own, ownEnv) {
 			continue
 		}
 		if inCacheDir(wt, p) {
@@ -256,12 +259,12 @@ func holdsOwn(p string, own []string) bool {
 
 // ownFile: rel is a file that stackfork wrote into the checkout. Three
 // sources, each checked:
-//   - the manifest's compose and env files (own), which the caller lists only
-//     when the main checkout has the same file;
+//   - the manifest's compose and env files (own), only while their content is
+//     the main checkout's copy, with or without the sibling copy's rewrite;
 //   - .stackfork/.gitignore with the exact content `learn` writes;
 //   - .stackfork/knowledge.json and knowledge.md when they equal the main
 //     checkout's copy (they hold a recorded plan: an edited copy is work).
-func ownFile(main, wt, rel string, own []string) bool {
+func ownFile(main, wt, rel string, own []string, ownEnv string) bool {
 	rel = filepath.ToSlash(rel)
 	mine := filepath.Join(wt, filepath.FromSlash(rel))
 	switch {
@@ -274,13 +277,28 @@ func ownFile(main, wt, rel string, own []string) bool {
 	if !slices.Contains(own, rel) {
 		return false
 	}
-	fi, err := os.Lstat(mine)
-	return err == nil && fi.Mode().IsRegular()
+	if fi, err := os.Lstat(mine); err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	// Only a file that is exactly what the copy wrote: the main checkout's
+	// copy as is (worktree add), or after the rewrite that the sibling copy
+	// does (repos.RewrittenCopy). An edited line makes it a person's file.
+	// Apply's content changes are all computable from the source file, the
+	// source root and the target path, so nothing else is left to guess.
+	if sameFileContent(mine, filepath.Join(main, filepath.FromSlash(rel))) {
+		return true
+	}
+	want, err := repos.RewrittenCopy(main, wt, rel, rel == ownEnv)
+	if err != nil {
+		return false
+	}
+	have, err := os.ReadFile(mine)
+	return err == nil && bytes.Equal(have, want)
 }
 
 // notOwn lists the files in folder p (trailing slash) that are not
 // stackfork's own, by relative path.
-func notOwn(main, wt, p string, own []string) []string {
+func notOwn(main, wt, p string, own []string, ownEnv string) []string {
 	var res []string
 	filepath.WalkDir(filepath.Join(wt, filepath.FromSlash(p)), func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -292,7 +310,7 @@ func notOwn(main, wt, p string, own []string) []string {
 			return nil
 		}
 		rel, _ := filepath.Rel(wt, path)
-		if !ownFile(main, wt, rel, own) {
+		if !ownFile(main, wt, rel, own, ownEnv) {
 			res = append(res, filepath.ToSlash(rel))
 		}
 		return nil
