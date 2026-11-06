@@ -55,6 +55,7 @@ type Preflight struct {
 	Declared    []knowledge.SecretDecl
 	Used        map[string]string // name -> Compose file that uses it (ComposeSecrets)
 	Folders     map[string]string // name -> folder, for a reference a folder supplies
+	Recorded    map[string]bool   // names whose reference is the instance's recorded one (--secret at prepare)
 	Unprepared  []string          // mapped names the manifest does not record (bare up)
 	Dashboard   bool              // the dashboard does not see the shell environment
 }
@@ -185,10 +186,14 @@ func (p Preflight) fix(name, ref string, st secretstore.Status, err error) strin
 			return fmt.Sprintf("%s keep it in the keychain: printenv %s | stackfork secret set %s; stackfork secret map %s %s=keychain:%s", lead, v, item, repo, name, item)
 		}
 	}
+	out := "run: stackfork secret check " + repo
 	if err != nil {
-		return firstLine(err.Error()) + "; run: stackfork secret check " + repo
+		out = firstLine(err.Error()) + "; " + out
 	}
-	return "run: stackfork secret check " + repo
+	if p.Recorded[name] { // prepare keeps a --secret reference until it is replaced or forgotten
+		out += "; or give prepare a new --secret " + name + "=REF, or run: stackfork secret forget " + name
+	}
+	return out
 }
 
 func firstLine(s string) string {
@@ -238,10 +243,12 @@ func InstancePreflight(rec *runs.Run, out io.Writer, root, instanceDir string, d
 	refs, source, unprepared := InstanceSecrets(info, mapped)
 	_, from, _ := FolderSecrets(root, info.ResolvedSecrets())
 	folders := map[string]string{}
+	recorded := map[string]bool{}
 	for n, src := range source {
 		if src == SourceFolder {
 			folders[n] = from[n]
 		}
+		recorded[n] = src == SourceManifest
 	}
 	// The names the recorded Compose files use count like declared ones, so a
 	// bare up fails here and not later in Docker. Best effort: files that are
@@ -250,7 +257,7 @@ func InstancePreflight(rec *runs.Run, out io.Writer, root, instanceDir string, d
 	if info.EnvFile != nil {
 		envFile = *info.EnvFile
 	}
-	return Preflight{Run: rec, Out: out, InstanceDir: instanceDir, Main: main, Refs: refs, Folders: folders, Declared: DeclaredSecrets(root, main),
+	return Preflight{Run: rec, Out: out, InstanceDir: instanceDir, Main: main, Refs: refs, Folders: folders, Recorded: recorded, Declared: DeclaredSecrets(root, main),
 		Used: ComposeSecrets(root, info.Files, envFile), Unprepared: unprepared, Dashboard: dashboard}.Do()
 }
 

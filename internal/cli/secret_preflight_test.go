@@ -175,6 +175,22 @@ func TestPreflightBareUpAndSeedCheckTheNamesComposeUses(t *testing.T) {
 	noDockerCalls(t, dockerLog)
 }
 
+// A reference given once by --secret stays in the manifest: the failure says
+// how to get out, and the other references get no such hint.
+func TestPreflightRecordedReferenceSaysHowToReplaceIt(t *testing.T) {
+	root, stateDir, _ := secretRepo(t, "TOK=npmrc:/nonexistent/sf.npmrc#registry.example.com")
+	dockerLog := installFakeDocker(t)
+	_, e, code := runCLI(t, "--root", root, "--state-dir", stateDir, "up", "--wait-timeout", "10")
+	if code == 0 || !strings.Contains(e, "step secrets failed") {
+		t.Fatalf("%d %s", code, e)
+	}
+	log, _ := secretsStepLog(t, []string{"", stateDir}, root)
+	if !strings.Contains(log, "or give prepare a new --secret TOK=REF, or run: stackfork secret forget TOK") {
+		t.Fatalf("%s", log)
+	}
+	noDockerCalls(t, dockerLog)
+}
+
 // usedSecretCompose uses npm_token (nothing supplies it) and tok_file (a file
 // supplies it): only the first needs a reference.
 const usedSecretCompose = "services:\n  app:\n    image: alpine\n    secrets: [npm_token, tok_file]\nsecrets:\n  npm_token:\n    environment: SF_TEST_USED_SECRET_UNSET\n  tok_file:\n    file: ./tok.txt\n"

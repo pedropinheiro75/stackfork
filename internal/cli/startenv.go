@@ -969,12 +969,14 @@ func startPreflight(rec *runs.Run, o StartOptions, root, main, instanceDir, trig
 		lifecycle.Layer{Source: lifecycle.SourceMap, Refs: mapped},
 		lifecycle.Layer{Source: lifecycle.SourceFlag, Refs: flags})
 	folders := map[string]string{}
+	recorded := map[string]bool{}
 	for n, src := range source {
 		if src == lifecycle.SourceFolder {
 			folders[n] = from[n]
 		}
+		recorded[n] = src == lifecycle.SourceManifest
 	}
-	return lifecycle.Preflight{Run: rec, InstanceDir: instanceDir, Main: main, Refs: refs, Folders: folders, Declared: lifecycle.DeclaredSecrets(root, main), Used: used,
+	return lifecycle.Preflight{Run: rec, InstanceDir: instanceDir, Main: main, Refs: refs, Folders: folders, Recorded: recorded, Declared: lifecycle.DeclaredSecrets(root, main), Used: used,
 		Dashboard: trigger == "dashboard" || trigger == live.TriggerLive}.Do()
 }
 
