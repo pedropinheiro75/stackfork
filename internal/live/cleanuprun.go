@@ -27,6 +27,9 @@ type CleanupJob struct {
 	// Auto: the cleanup starts without a click, so ignored files block it.
 	Auto    bool
 	Adapter []string // knowledge adapter_files
+	// Own are the files of the instance's manifest that stackfork wrote into
+	// the checkout (see ownFiles).
+	Own []string
 	// Instance is the candidate's instance, nil when it has none.
 	Instance *Target
 	// Others are the branches of other instances in the candidate's worktree:
@@ -98,7 +101,7 @@ func (j CleanupJob) now() time.Time {
 
 // CheckFor is the eligibility question for this job.
 func (j CleanupJob) CheckFor() cleanup.Check {
-	return cleanup.Check{Main: j.Main, Candidate: j.Candidate, Result: j.Result, Auto: j.Auto, Adapter: j.Adapter, Others: j.Others,
+	return cleanup.Check{Main: j.Main, Candidate: j.Candidate, Result: j.Result, Auto: j.Auto, Adapter: j.Adapter, Own: j.Own, Others: j.Others,
 		Locked: func() string {
 			if j.Instance == nil {
 				return ""
