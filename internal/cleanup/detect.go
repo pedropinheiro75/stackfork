@@ -3,6 +3,7 @@ package cleanup
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -119,15 +120,15 @@ func inDefault(main, branch, target string) string {
 // mergeAddsNothing is the last proof: a three-way merge of ref into target has
 // no conflict and its tree is target's tree, so every change of the branch is
 // already in target. It needs git 2.38 (merge-tree --write-tree); on an older
-// git, on a conflict or on any error the proof is simply not available.
+// git, on a conflict or on any error the proof is simply not available. It is
+// also not available when a merge driver is configured, or when a path that
+// either side changed has a `merge` attribute (see noMergeAttributes).
 //
 // Detect writes no object, and merge-tree writes the trees of the merge. So
 // the command gets a temporary object directory of its own, with the
 // repository's as an alternate to read from; the temporary one is removed.
 func mergeAddsNothing(main, ref, target string) bool {
-	// A merge driver in the config can resolve a conflict however it likes
-	// ("ours" would make every conflict look like nothing to add).
-	if drivers, err := git(main, "config", "--get-regexp", `^merge\..*\.driver$`); err == nil || drivers != "" {
+	if !noMergeDrivers(main) {
 		return false
 	}
 	objects, err := git(main, "rev-parse", "--path-format=absolute", "--git-path", "objects")
@@ -140,6 +141,9 @@ func mergeAddsNothing(main, ref, target string) bool {
 	}
 	defer os.RemoveAll(tmp)
 	env := []string{"GIT_OBJECT_DIRECTORY=" + tmp, "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + objects}
+	if !noMergeAttributes(main, env, ref, target) {
+		return false
+	}
 	out, err := gitEnv(main, env, "merge-tree", "--write-tree", "--no-messages", target, ref)
 	if err != nil { // exit 1 is a conflict; anything else is a git that cannot do it
 		return false
@@ -147,6 +151,72 @@ func mergeAddsNothing(main, ref, target string) bool {
 	tree := strings.Fields(out)
 	want, err := git(main, "rev-parse", "--verify", "--quiet", target+"^{tree}")
 	return err == nil && len(tree) == 1 && tree[0] == want
+}
+
+// noMergeDrivers: git answers for certain that no merge driver is configured
+// (exit status 1 and no output). A driver in the config can resolve a conflict
+// however it likes ("ours" would make every conflict look like nothing to
+// add). Any other outcome, a failing git included, means "do not know".
+func noMergeDrivers(main string) bool {
+	out, err := git(main, "config", "--get-regexp", `^merge\..*\.driver$`)
+	var ee *exec.ExitError
+	return out == "" && errors.As(err, &ee) && ee.ExitCode() == 1
+}
+
+// noMergeAttributes: no path that the branch or the target changed since their
+// merge base has a `merge` attribute. Built-in drivers need no config:
+// merge=union resolves a conflicting hunk without a conflict, and can leave
+// the target's tree while the branch's change is not in it. The attributes are
+// read from the working tree and from both refs (--source needs git 2.40; an
+// older git errors, and an error means no proof), in the environment of the
+// merge-tree call.
+func noMergeAttributes(main string, env []string, ref, target string) bool {
+	base, err := git(main, "merge-base", ref, target)
+	if err != nil || base == "" {
+		return false
+	}
+	var paths bytes.Buffer
+	for _, tip := range []string{ref, target} {
+		out, err := gitRawEnv(main, env, nil, "diff", "--name-only", "-z", "--no-renames", base, tip)
+		if err != nil {
+			return false
+		}
+		paths.Write(out)
+	}
+	if paths.Len() == 0 {
+		return true
+	}
+	for _, src := range [][]string{nil, {"--source=" + ref}, {"--source=" + target}} {
+		args := append(append([]string{"check-attr", "-z", "--stdin"}, src...), "merge")
+		out, err := gitRawEnv(main, env, paths.Bytes(), args...)
+		if err != nil {
+			return false
+		}
+		// -z output: path NUL attribute NUL value NUL
+		f := strings.Split(string(out), "\x00")
+		for i := 2; i < len(f); i += 3 {
+			if f[i] != "unspecified" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// gitRawEnv is git with extra environment and optional stdin; the output
+// keeps its NULs.
+func gitRawEnv(dir string, env []string, stdin []byte, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0"), env...)
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	return out.Bytes(), err
 }
 
 // squashMerged compares the stable patch id of the whole branch diff with the

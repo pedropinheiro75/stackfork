@@ -163,6 +163,57 @@ func TestDetectBranchWithMergeFromTargetInsideProvedByMergeTree(t *testing.T) {
 	}
 }
 
+// merge=union resolves a conflicting hunk without a conflict. When the branch
+// deleted the line the target changed, the result equals the target while the
+// branch's deletion is not in it: a path with a merge attribute disables the
+// proof.
+func TestDetectMergeAttributeOnAChangedPathDisablesMergeTreeProof(t *testing.T) {
+	f := newFixture(t)
+	commit(t, f.Main, "list.txt", "a\nb\nc\n", "list")
+	commit(t, f.Main, ".gitattributes", "list.txt merge=union\n", "attributes")
+	wt := f.branch(t, "feature-invoices", 0)
+	commit(t, wt, "list.txt", "a\nc\n", "drop b")
+	run(t, wt, "push", "-q", "origin", "feature-invoices")
+	commit(t, f.Main, "list.txt", "a\nB\nc\n", "change b")
+	f.settle(t, "feature-invoices", true)
+	if mergeAddsNothing(f.Main, "refs/heads/feature-invoices", "origin/main") {
+		t.Fatal("the proof ran on a path with merge=union")
+	}
+	if r := f.detect(t, "feature-invoices"); r.State != Closed {
+		t.Fatalf("got %+v", r)
+	}
+}
+
+// A merge attribute on a path that neither side touched changes nothing.
+func TestDetectMergeAttributeOnAnUntouchedPathLeavesTheProofAvailable(t *testing.T) {
+	f := newFixture(t)
+	commit(t, f.Main, ".gitattributes", "untouched.txt merge=union\n", "attributes")
+	f.branch(t, "feature-invoices", 1)
+	squash(t, f, "feature-invoices")
+	put(t, f.Main, "review.txt", "extra\n")
+	run(t, f.Main, "add", "review.txt")
+	run(t, f.Main, "commit", "-q", "--amend", "--no-edit")
+	f.settle(t, "feature-invoices", true)
+	if r := f.detect(t, "feature-invoices"); r.State != Merged || r.Via != ViaMergeTree {
+		t.Fatalf("got %+v", r)
+	}
+}
+
+// Only a clean "no match" from git config lets the proof run.
+func TestMergeDriverConfigCheckNeedsACertainNoMatch(t *testing.T) {
+	f := newFixture(t)
+	if !noMergeDrivers(f.Main) {
+		t.Fatal("no driver configured: the check must pass")
+	}
+	if noMergeDrivers(filepath.Join(f.Main, "does-not-exist")) {
+		t.Fatal("a git that fails is not a 'no match'")
+	}
+	run(t, f.Main, "config", "merge.x.driver", "true")
+	if noMergeDrivers(f.Main) {
+		t.Fatal("a configured driver must disable the proof")
+	}
+}
+
 // The forge says MERGED but git cannot prove it (here only half of a stack
 // landed): the text names the branch and the default branch, never says
 // "closed", and nothing is eligible. The forge is not a proof.
