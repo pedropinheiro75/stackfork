@@ -7,6 +7,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Instance addresses follow a pattern you choose. The new `hostname` setting (`stackfork config set hostname PATTERN`, or **Addresses** in the dashboard Settings) builds the address from `{app}`, `{worktree}` and `{hash}`. The default is `{app}-{worktree}`, for example `acme-web-feature-invoices.localhost`; the old format is `{worktree}-{hash}`. An instance that exists keeps its address, `--hostname` still wins, and a second instance with the same address gets a short suffix.
 
+- `stackfork start SERVICE` works on a service that uses a Compose secret. It resolves the secret references like `up` does and gives the values only to the Compose child, so `stop` then `start` no longer fails with `environment variable ... is not set`.
+
 ## [0.2.1] - 2026-11-05
 
 - Windows support (new). Releases ship `stackfork_VERSION_windows_amd64.zip` and `stackfork_VERSION_windows_arm64.zip`, and `install.ps1` installs one: `irm https://raw.githubusercontent.com/pedropinheiro75/stackfork/main/install.ps1 | iex`. The offline test suite runs on Windows in CI; the Docker flows are not tested on Windows yet (see the Windows section of `SECURITY.md`). Fixed on Windows: `docker compose config` now gets the system variables it needs (`Path`, `SystemRoot`, `ProgramData`), paths that git prints as `C:/x` are read as Windows paths, `STACKFORK_PROFILE_DIRS` is split on `;`, and the dashboard groups worktrees by `\.worktrees\`.
