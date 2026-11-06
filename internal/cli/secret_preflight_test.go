@@ -209,6 +209,61 @@ func TestPreflightStartServiceChecksTheNamesComposeUses(t *testing.T) {
 	}
 }
 
+// startSecretProject prepares usedSecretCompose plus a worker service that
+// lists no secret.
+func startSecretProject(t *testing.T, secrets ...string) (repo string, base []string, dockerLog string) {
+	t.Helper()
+	repo, base, dockerLog = usedSecretFixture(t)
+	compose := strings.Replace(usedSecretCompose, "secrets:\n  npm_token:", "  worker:\n    image: alpine\nsecrets:\n  npm_token:", 1)
+	path := filepath.Join(repo, ".agent-dev", "app.compose.yaml")
+	os.WriteFile(path, []byte(compose), 0o644)
+	prepareWith(t, repo, base[1], path, secrets...)
+	os.Truncate(dockerLog, 0)
+	return repo, base, dockerLog
+}
+
+func startCLI(t *testing.T, repo string, base []string, services ...string) (string, string, int) {
+	t.Helper()
+	return runCLI(t, append([]string{"--root", repo, "--state-dir", base[1], "--legacy-state-dir", base[3], "start"}, services...)...)
+}
+
+// A Start fails at the secrets step only when a service it starts lists a
+// secret: `start worker` needs no values, as before.
+func TestStartServiceWithoutSecretsIgnoresAnUnresolvedSecret(t *testing.T) {
+	repo, base, dockerLog := startSecretProject(t)
+	out, e, code := startCLI(t, repo, base, "worker")
+	if code != 0 {
+		t.Fatalf("%d %s", code, e)
+	}
+	if b, _ := os.ReadFile(dockerLog); !strings.Contains(string(b), " start worker") {
+		t.Fatalf("compose start did not run:\n%s", b)
+	}
+	if strings.Contains(out+e, "has no reference") {
+		t.Fatalf("the secrets lines are printed: %s %s", out, e)
+	}
+}
+
+func TestStartServicesThatListASecretFailAtTheSecretsStep(t *testing.T) {
+	repo, base, dockerLog := startSecretProject(t)
+	for _, services := range [][]string{{"app"}, {"app", "worker"}, {"worker", "app"}} {
+		_, e, code := startCLI(t, repo, base, services...)
+		if code == 0 || !strings.Contains(e, "npm_token is used by app.compose.yaml but has no reference; run: stackfork secret map") {
+			t.Fatalf("%v: %d %s", services, code, e)
+		}
+		noDockerCalls(t, dockerLog)
+	}
+}
+
+// The secrets lines of a Start are printed only when the step fails.
+func TestStartPrintsNoSecretsLinesOnSuccess(t *testing.T) {
+	t.Setenv("SF_TEST_START_QUIET", "quiet-canary-value")
+	repo, base, _ := startSecretProject(t, "npm_token=env:SF_TEST_START_QUIET")
+	out, e, code := startCLI(t, repo, base, "app")
+	if code != 0 || strings.Contains(out+e, "resolves") || strings.Contains(out+e, "quiet-canary-value") {
+		t.Fatalf("%d %s %s", code, out, e)
+	}
+}
+
 // Inside a worktree, `secret ls` and `secret check` without REPO describe this
 // checkout's recorded reference, the one a plain up there uses. Another
 // checkout's reference is the sibling row; with REPO nothing changes.

@@ -1208,7 +1208,7 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		// The secrets step of up, without a run: one line per problem and its fix,
 		// and nothing resolves after it (review I1).
 		var perr error
-		if opts.Secrets, perr = lifecycle.InstancePreflight(nil, stderr, root, instanceDir, envTrigger() == "dashboard"); perr != nil {
+		if opts.Secrets, perr = lifecycle.StartSecrets(stderr, root, instanceDir, opts.Targets, envTrigger() == "dashboard"); perr != nil {
 			return 0, perr
 		}
 	}

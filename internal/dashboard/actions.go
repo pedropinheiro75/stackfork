@@ -207,7 +207,7 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 				// A Start records no run: the secrets step writes to out and nothing
 				// resolves later (review I1), so no 1Password prompt comes from here.
 				var perr error
-				if opts.Secrets, perr = lifecycle.InstancePreflight(nil, &out, root, instanceDir, true); perr != nil {
+				if opts.Secrets, perr = lifecycle.StartSecrets(&out, root, instanceDir, []string{opts.Service}, true); perr != nil {
 					return actionResponse{Message: out.String() + perr.Error()}
 				}
 			}

@@ -24,6 +24,11 @@ func startSecretFixture(t *testing.T, varName string) (srv *dashboard.Server, pr
 		t.Fatal(err)
 	}
 	t.Setenv("STACKFORK_CONFIG_DIR", t.TempDir())
+	// app lists the secret tok, worker lists none
+	compose := "services:\n  app:\n    image: alpine\n    secrets: [tok]\n  worker:\n    image: alpine\nsecrets:\n  tok:\n    environment: " + varName + "\n"
+	if err := os.WriteFile(filepath.Join(m.Root, "compose.yaml"), []byte(compose), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	var out, errBuf bytes.Buffer
 	if code := cli.Run([]string{"--root", m.Root, "--state-dir", newBase, "--secret", "tok=env:" + varName,
 		"prepare", "--force", "-f", filepath.Join(m.Root, "compose.yaml")}, &out, &errBuf); code != 0 {
@@ -55,7 +60,7 @@ func TestServiceStartPassesTheSecretToTheComposeChildOnly(t *testing.T) {
 	const val = "svc-start-canary-5-1"
 	t.Setenv("SF_TEST_SVC_START", val)
 	srv, project, envLog := startSecretFixture(t, "SF_TEST_SVC_START")
-	code, resp := postAction(t, srv, "127.0.0.1:55421", actionRequestFixture{Action: "service-start", Project: project, Service: "db"})
+	code, resp := postAction(t, srv, "127.0.0.1:55421", actionRequestFixture{Action: "service-start", Project: project, Service: "app"})
 	if code != 200 || !resp.OK || strings.Contains(resp.Message, val) {
 		t.Fatalf("%d %+v", code, resp)
 	}
@@ -68,11 +73,24 @@ func TestServiceStartPassesTheSecretToTheComposeChildOnly(t *testing.T) {
 	}
 }
 
+// A service that lists no secret starts with the reference unresolved, and
+// the message carries no secrets lines.
+func TestServiceStartWithoutSecretsIgnoresAnUnresolvedReference(t *testing.T) {
+	srv, project, envLog := startSecretFixture(t, "SF_TEST_SVC_START_UNSET")
+	code, resp := postAction(t, srv, "127.0.0.1:55421", actionRequestFixture{Action: "service-start", Project: project, Service: "worker"})
+	if code != 200 || !resp.OK || strings.Contains(resp.Message, "SF_TEST_SVC_START_UNSET") {
+		t.Fatalf("%d %+v", code, resp)
+	}
+	if _, err := os.Stat(envLog); err != nil {
+		t.Fatal("compose start did not run")
+	}
+}
+
 // An unresolvable reference fails with the dashboard's message before any
 // Compose start.
 func TestServiceStartFailsBeforeComposeWhenASecretDoesNotResolve(t *testing.T) {
 	srv, project, envLog := startSecretFixture(t, "SF_TEST_SVC_START_UNSET")
-	code, resp := postAction(t, srv, "127.0.0.1:55421", actionRequestFixture{Action: "service-start", Project: project, Service: "db"})
+	code, resp := postAction(t, srv, "127.0.0.1:55421", actionRequestFixture{Action: "service-start", Project: project, Service: "app"})
 	if code != 200 || resp.OK || !strings.Contains(resp.Message, "SF_TEST_SVC_START_UNSET") || !strings.Contains(resp.Message, "does not see your shell environment") {
 		t.Fatalf("%d %+v", code, resp)
 	}

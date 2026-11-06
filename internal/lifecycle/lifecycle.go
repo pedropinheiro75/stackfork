@@ -218,6 +218,9 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 				// prompt from here, or a value the redactor never saw, is the
 				// hole this closes (review I1).
 				v, ok := opts.Secrets[name]
+				if action == "start" && !ok {
+					continue // StartSecrets let a start through that lists no secret: it needs no value
+				}
 				if !ok || v.Ref != ref {
 					return 0, fmt.Errorf("secret %s was not resolved by the secrets step; start again", name)
 				}
