@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -206,6 +207,47 @@ func TestPreflightStartServiceChecksTheNamesComposeUses(t *testing.T) {
 	if ds, _ := filepath.Glob(filepath.Join(base[1], "*", "runs")); len(ds) != 0 {
 		t.Fatalf("a Start of one service recorded a run: %v", ds)
 	}
+}
+
+// Inside a worktree, `secret ls` and `secret check` without REPO describe this
+// checkout's recorded reference, the one a plain up there uses. Another
+// checkout's reference is the sibling row; with REPO nothing changes.
+func TestSecretLsInAWorktreeShowsThisCheckoutsReference(t *testing.T) {
+	repo, sib, base := siblingRepo(t)
+	os.Unsetenv("SF_TEST_MAIN_TOKEN")
+	if _, e, code := runCLI(t, append(append([]string{}, base...), "--root", repo, "--secret", "tok=env:SF_TEST_MAIN_TOKEN",
+		"prepare", "--force", "-f", "docker-compose.yml")...); code != 0 {
+		t.Fatal(e)
+	}
+	row := func(args ...string) (secretRowFixture, int) {
+		out, e, code := runCLI(t, append(append(append([]string{}, base...), args...), "--json")...)
+		var rows []secretRowFixture
+		if err := json.Unmarshal([]byte(out), &rows); err != nil {
+			t.Fatalf("%v: %s %s", err, out, e)
+		}
+		for _, r := range rows {
+			if r.Name == "tok" {
+				return r, code
+			}
+		}
+		t.Fatalf("no tok row: %s", out)
+		return secretRowFixture{}, 0
+	}
+	if r, code := row("--root", sib, "secret", "check"); r.Reference != "env:"+sibTokenName || r.Source != "manifest" || code != 0 {
+		t.Fatalf("in the worktree: %+v exit %d", r, code)
+	}
+	if r, code := row("--root", repo, "secret", "check"); r.Reference != "env:SF_TEST_MAIN_TOKEN" || r.Source != "manifest" || code != 1 {
+		t.Fatalf("in the main checkout: %+v exit %d", r, code)
+	}
+	if r, _ := row("--root", sib, "secret", "ls", repo); r.Reference != "env:SF_TEST_MAIN_TOKEN" || r.Source != "manifest" {
+		t.Fatalf("with REPO: %+v", r)
+	}
+}
+
+type secretRowFixture struct {
+	Name      string `json:"name"`
+	Reference string `json:"reference"`
+	Source    string `json:"source"`
 }
 
 // usedSecretCompose uses npm_token (nothing supplies it) and tok_file (a file
