@@ -226,6 +226,36 @@ O stackfork isola os checkouts uns dos outros. Ele não é um sandbox: não prot
 - `down` mantém os volumes. `prune` é uma simulação até receber `--yes`, toca só em objetos com label do stackfork e nunca roda `docker system prune`.
 - Os valores dos secrets vêm do seu repositório de credenciais, aparecem como placeholders no dashboard e nos logs, e o `env set` os recusa.
 
+### O que vem no download
+
+O stackfork não tem código de terceiros. Tudo está neste repositório.
+
+| Parte | Feita com | Código de terceiros |
+|---|---|---|
+| CLI e servidor do dashboard | Biblioteca padrão do Go | Nenhum. O `go.mod` não lista dependência |
+| Página do dashboard | HTML, CSS e JavaScript deste repositório, embutidos no binário | Nenhum. Não carrega nada de CDN |
+| App do macOS | Swift com frameworks da Apple | Nenhum. O `Package.swift` não lista pacote |
+| Arquivos embutidos | Fonte Geist Mono (SIL OFL 1.1) e logos do Simple Icons (CC0) | Só arquivos estáticos |
+
+- **Sem telemetria e sem checagem de atualização.** O binário só se conecta ao endereço de loopback da sua própria máquina. O tráfego de rede vem das ferramentas que ele roda para você: o `git` fala com o seu remoto e o Docker baixa imagens.
+- **O que ele roda.** `git` e `docker`, que você instalou. Para secrets, o cofre de credenciais do seu sistema (`security` no macOS, `secret-tool` no Linux, Credential Manager no Windows), e o `op` só quando você mapeia uma referência do 1Password.
+- **Imagens que ele baixa.** `caddy:2-alpine` para o proxy local e `alpine:3.20` para duas checagens. As duas são imagens oficiais do Docker Hub. Qualquer outra imagem é do seu projeto.
+- **Como uma release é gerada.** O GitHub Actions gera cada release a partir de uma tag assinada. Cada action está fixada em um commit, e o Dependabot acompanha. Cada release tem um `checksums.txt`, e os scripts de instalação param quando o SHA-256 não confere.
+
+Limites conhecidos: a Apple ainda não notarizou os binários do macOS ([#10](https://github.com/pedropinheiro75/stackfork/issues/10)), então o cask do Homebrew remove a marca de quarentena. Uma release tem checksums, mas não tem assinatura nem atestado de procedência. As duas tags de imagem não estão fixadas por digest.
+
+Se você prefere não confiar em um download, compile a partir do código:
+
+```sh
+go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest
+```
+
+Para ver do que um binário foi compilado:
+
+```sh
+go version -m "$(command -v stackfork)"
+```
+
 O [SECURITY.md](SECURITY.md) traz o limite completo, as restrições conhecidas e como reportar uma vulnerabilidade.
 
 ## Por que não simplesmente...

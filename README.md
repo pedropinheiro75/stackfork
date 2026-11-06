@@ -224,6 +224,36 @@ stackfork isolates checkouts from each other. It is not a sandbox: it does not p
 - `down` keeps volumes. `prune` is a dry run until `--yes`, touches only stackfork-labelled objects, and never runs `docker system prune`.
 - Secret values come from your credential store, show as placeholders in the dashboard and logs, and are refused by `env set`.
 
+### What is in the download
+
+stackfork has no third-party code. All of it is in this repository.
+
+| Part | Built from | Third-party code |
+|---|---|---|
+| CLI and dashboard server | Go standard library | None. `go.mod` lists no dependency |
+| Dashboard page | HTML, CSS and JavaScript from this repository, built into the binary | None. It loads nothing from a CDN |
+| macOS app | Swift with Apple frameworks | None. `Package.swift` lists no package |
+| Bundled files | Geist Mono font (SIL OFL 1.1) and Simple Icons logos (CC0) | Static files only |
+
+- **No telemetry and no update check.** The binary connects only to the loopback address of your own machine. Network traffic comes from the tools it runs for you: `git` talks to your remote and Docker pulls images.
+- **What it runs.** `git` and `docker`, which you installed. For secrets, the credential store of your system (`security` on macOS, `secret-tool` on Linux, Credential Manager on Windows), and `op` only when you map a 1Password reference.
+- **Images it pulls.** `caddy:2-alpine` for the local proxy and `alpine:3.20` for two checks. Both are official images from Docker Hub. Every other image belongs to your project.
+- **How a release is built.** GitHub Actions builds each release from a signed tag. Every action is pinned to a commit, and Dependabot watches them. Each release has a `checksums.txt`, and the install scripts stop when the SHA-256 does not match.
+
+Known limits: Apple has not notarized the macOS binaries yet ([#10](https://github.com/pedropinheiro75/stackfork/issues/10)), so the Homebrew cask clears the quarantine flag. A release has checksums but no signature or provenance attestation. The two image tags are not pinned by digest.
+
+If you prefer not to trust a download, build it from the source:
+
+```sh
+go install github.com/pedropinheiro75/stackfork/cmd/stackfork@latest
+```
+
+To see what a binary was built from:
+
+```sh
+go version -m "$(command -v stackfork)"
+```
+
 [SECURITY.md](SECURITY.md) has the full boundary, the known limits and how to report a vulnerability.
 
 ## Why not just...
