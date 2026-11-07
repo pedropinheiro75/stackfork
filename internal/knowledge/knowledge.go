@@ -378,6 +378,12 @@ func atomicWrite(path string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
+// StackforkGitignore is the content of .stackfork/.gitignore as `learn` writes
+// it. Knowledge and adapters are meant to be committed (design.md D10); only
+// files that can hold a real value are excluded. Branch cleanup recognizes the
+// file by this exact content.
+const StackforkGitignore = "runtime.env\n*.env\n!*.env.example\n!*.env.sample\n"
+
 // SaveMarkdown writes knowledge.md, generated from k, atomically.
 func (k *Knowledge) SaveMarkdown(path string) error {
 	return atomicWrite(path, []byte(k.Markdown()), 0o644)

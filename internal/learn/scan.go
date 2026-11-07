@@ -312,8 +312,5 @@ func WriteKnowledge(root string, k *knowledge.Knowledge) error {
 	if err := k.SaveMarkdown(filepath.Join(dir, "knowledge.md")); err != nil {
 		return err
 	}
-	// Knowledge and adapters are meant to be committed (design.md D10); only
-	// files that can hold a real value are excluded.
-	gitignore := "runtime.env\n*.env\n!*.env.example\n!*.env.sample\n"
-	return os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(gitignore), 0o644)
+	return os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(knowledge.StackforkGitignore), 0o644)
 }

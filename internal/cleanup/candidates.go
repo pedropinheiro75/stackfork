@@ -19,11 +19,14 @@ import (
 const gitTimeout = 30 * time.Second
 
 // git runs git in dir with prompts disabled and returns trimmed stdout.
-func git(dir string, args ...string) (string, error) {
+func git(dir string, args ...string) (string, error) { return gitEnv(dir, nil, args...) }
+
+// gitEnv is git with extra environment variables.
+func gitEnv(dir string, env []string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND=ssh -o BatchMode=yes", "GIT_OPTIONAL_LOCKS=0")
+	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND=ssh -o BatchMode=yes", "GIT_OPTIONAL_LOCKS=0"), env...)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()

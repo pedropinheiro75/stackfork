@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/repos"
 )
 
@@ -19,7 +20,13 @@ import (
 // unless they hold a git repository. A name counts only at the repository root
 // or in a folder with one of manifestFiles (a build context): src/vendor is
 // source.
-var cacheDirs = []string{"node_modules", ".nuxt", ".next", ".output", "vendor", ".venv", "target"}
+//
+// Only ignored files are in question: a tracked file in one of these folders
+// is not listed by ignoredFiles, and an edit of it is an uncommitted change.
+// So a build output that a project tracks (dist/) stays work.
+var cacheDirs = []string{"node_modules", ".nuxt", ".next", ".output", "vendor", ".venv", "target",
+	".turbo", ".yarn", ".pnpm-store", ".parcel-cache", ".svelte-kit", ".angular", ".pytest_cache", "__pycache__",
+	".mypy_cache", ".ruff_cache", ".gradle", "coverage", "dist", "build"}
 
 var manifestFiles = []string{"package.json", "go.mod", "Cargo.toml", "composer.json", "pyproject.toml", "requirements.txt", "Gemfile", "pom.xml", "build.gradle", "Pipfile"}
 
@@ -36,6 +43,15 @@ type Check struct {
 	// Adapter is knowledge.json adapter_files: files stackfork copied at
 	// `worktree add`. One that equals the main checkout's copy is not work.
 	Adapter []string
+	// Own are files (repository-relative, slash-separated) that the instance's
+	// manifest records and that stackfork wrote into this checkout: the
+	// compose files and the runtime env it copied from another checkout. They
+	// are not ignored work, but only while their content is exactly what the
+	// copy wrote (see ownFile): an edited copy is a person's file.
+	Own []string
+	// OwnEnv is the env file among Own ("" when none): its copy rewrites
+	// checkout-specific values.
+	OwnEnv string
 	// Locked reports why the instance's run lock or the dashboard's action
 	// lock is held ("" when both are free). nil: free.
 	Locked func() string
@@ -53,6 +69,10 @@ type Verdict struct {
 	Warning  string   // why not; shown on the worktree row
 	Dirty    []string // uncommitted or untracked paths
 	Ignored  []string // ignored files outside the cache folders; removing the worktree deletes them
+	// IgnoredOnly: the branch is merged, nothing else blocks, and only the
+	// ignored files keep an automatic cleanup from running. A person can
+	// still clean it up after seeing the list.
+	IgnoredOnly bool
 }
 
 // Evaluate re-reads everything from disk, so a call right before acting sees
@@ -78,7 +98,7 @@ func Evaluate(c Check) Verdict {
 		v.Warning = "PR merged, but this branch has commits that are not in " + def
 		return v
 	default:
-		v.Warning = "PR closed without merge"
+		v.Warning = ClosedWarning(c.Result.Forge, branch, def)
 		return v
 	}
 
@@ -107,19 +127,31 @@ func Evaluate(c Check) Verdict {
 		v.Warning = "PR merged, but this worktree has uncommitted changes"
 		return v
 	}
-	v.Ignored = ignoredFiles(c.Main, path, c.Adapter)
-	if c.Auto && len(v.Ignored) > 0 {
-		v.Warning = "PR merged, but this worktree has ignored files (" + strings.Join(head(v.Ignored, 3), ", ") + ")"
-		return v
-	}
+	v.Ignored = ignoredFiles(c.Main, path, c.Adapter, c.Own, c.OwnEnv)
 	if c.Locked != nil {
 		if why := c.Locked(); why != "" {
 			v.Warning = "PR merged, but " + why
 			return v
 		}
 	}
+	if c.Auto && len(v.Ignored) > 0 {
+		v.Warning = "PR merged, but this worktree has ignored files (" + strings.Join(head(v.Ignored, 3), ", ") + ")"
+		v.IgnoredOnly = true
+		return v
+	}
 	v.Eligible = true
 	return v
+}
+
+// ClosedWarning is the text for a branch that git cannot prove merged. The
+// forge is never a proof, but when it says MERGED the PR was not "closed
+// without merge": the branch has work that is not in the default branch, and
+// a person decides.
+func ClosedWarning(forge, branch, def string) string {
+	if forge == "MERGED" {
+		return "PR merged, but " + branch + " has work that is not in " + def + "; check it before you delete anything"
+	}
+	return "PR closed without merge"
 }
 
 // initializedSubmodule: a `git submodule status` line that does not start with
@@ -178,8 +210,11 @@ func dirty(main, wt string, adapter []string) []string {
 }
 
 // ignoredFiles lists ignored entries outside the cache folders and the
-// copied adapter files. Fully ignored folders come as one entry.
-func ignoredFiles(main, wt string, adapter []string) []string {
+// copied adapter files. Fully ignored folders come as one entry, except a
+// folder that holds a file of stackfork's own (see ownFile): that one is
+// opened, and only the files in it that are not stackfork's are listed. A
+// folder is never excluded as a whole: a person may keep a file in it.
+func ignoredFiles(main, wt string, adapter, own []string, ownEnv string) []string {
 	out, err := gitRaw(wt, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z")
 	if err != nil {
 		return []string{"(git ls-files failed)"}
@@ -187,6 +222,13 @@ func ignoredFiles(main, wt string, adapter []string) []string {
 	var res []string
 	for _, p := range strings.Split(string(out), "\x00") {
 		if p == "" || adapterCopy(main, wt, p, adapter) {
+			continue
+		}
+		if strings.HasSuffix(p, "/") && !inCacheDir(wt, p) && holdsOwn(p, own) {
+			res = append(res, notOwn(main, wt, p, own, ownEnv)...)
+			continue
+		}
+		if ownFile(main, wt, p, own, ownEnv) {
 			continue
 		}
 		if inCacheDir(wt, p) {
@@ -197,6 +239,82 @@ func ignoredFiles(main, wt string, adapter []string) []string {
 		}
 		res = append(res, p)
 	}
+	return res
+}
+
+// generatedStackforkFiles are files that `learn` writes into every checkout it
+// runs in. They count as stackfork's own only while they are what it wrote.
+var generatedStackforkFiles = []string{".stackfork/.gitignore", ".stackfork/knowledge.json", ".stackfork/knowledge.md"}
+
+// holdsOwn: a file stackfork may have written is inside folder p.
+func holdsOwn(p string, own []string) bool {
+	p = filepath.ToSlash(p)
+	for _, o := range slices.Concat(own, generatedStackforkFiles) {
+		if strings.HasPrefix(filepath.ToSlash(o), p) {
+			return true
+		}
+	}
+	return false
+}
+
+// ownFile: rel is a file that stackfork wrote into the checkout. Three
+// sources, each checked:
+//   - the manifest's compose and env files (own), only while their content is
+//     the main checkout's copy, with or without the sibling copy's rewrite;
+//   - .stackfork/.gitignore with the exact content `learn` writes;
+//   - .stackfork/knowledge.json and knowledge.md when they equal the main
+//     checkout's copy (they hold a recorded plan: an edited copy is work).
+func ownFile(main, wt, rel string, own []string, ownEnv string) bool {
+	rel = filepath.ToSlash(rel)
+	mine := filepath.Join(wt, filepath.FromSlash(rel))
+	switch {
+	case rel == ".stackfork/.gitignore":
+		b, err := os.ReadFile(mine)
+		return err == nil && string(b) == knowledge.StackforkGitignore
+	case slices.Contains(generatedStackforkFiles, rel):
+		return sameFileContent(mine, filepath.Join(main, filepath.FromSlash(rel)))
+	}
+	if !slices.Contains(own, rel) {
+		return false
+	}
+	if fi, err := os.Lstat(mine); err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	// Only a file that is exactly what the copy wrote: the main checkout's
+	// copy as is (worktree add), or after the rewrite that the sibling copy
+	// does (repos.RewrittenCopy). An edited line makes it a person's file.
+	// Apply's content changes are all computable from the source file, the
+	// source root and the target path, so nothing else is left to guess.
+	if sameFileContent(mine, filepath.Join(main, filepath.FromSlash(rel))) {
+		return true
+	}
+	want, err := repos.RewrittenCopy(main, wt, rel, rel == ownEnv)
+	if err != nil {
+		return false
+	}
+	have, err := os.ReadFile(mine)
+	return err == nil && bytes.Equal(have, want)
+}
+
+// notOwn lists the files in folder p (trailing slash) that are not
+// stackfork's own, by relative path.
+func notOwn(main, wt, p string, own []string, ownEnv string) []string {
+	var res []string
+	filepath.WalkDir(filepath.Join(wt, filepath.FromSlash(p)), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			rel, _ := filepath.Rel(wt, path)
+			res = append(res, filepath.ToSlash(rel)) // unreadable: do not guess
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(wt, path)
+		if !ownFile(main, wt, rel, own, ownEnv) {
+			res = append(res, filepath.ToSlash(rel))
+		}
+		return nil
+	})
 	return res
 }
 

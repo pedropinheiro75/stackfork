@@ -1,11 +1,16 @@
 package live
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/pedropinheiro75/stackfork/internal/cleanup"
 	"github.com/pedropinheiro75/stackfork/internal/config"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/state"
 )
 
 // CleanupStatus is the branch-cleanup part of a repository's live status:
@@ -29,7 +34,7 @@ type CandidateStatus struct {
 	Head    string `json:"head"`
 	Project string `json:"project,omitempty"` // the worktree's instance, if any
 	State   string `json:"state"`             // merged or closed
-	Via     string `json:"via,omitempty"`     // ancestry, cherry or patch-id
+	Via     string `json:"via,omitempty"`     // ancestry, cherry, patch-id or merge-tree
 	PR      int    `json:"pr,omitempty"`
 	URL     string `json:"url,omitempty"`
 	Forge   string `json:"forge,omitempty"`
@@ -38,7 +43,11 @@ type CandidateStatus struct {
 	Eligible bool     `json:"eligible"`
 	Warning  string   `json:"warning,omitempty"`
 	Ignored  []string `json:"ignored,omitempty"` // ignored files that go with the worktree
-	Kept     bool     `json:"kept,omitempty"`
+	// IgnoredOnly: only the ignored files keep an automatic cleanup from
+	// running (the branch is merged and nothing else blocks). A person can
+	// still clean it up from the list.
+	IgnoredOnly bool `json:"ignored_only,omitempty"`
+	Kept        bool `json:"kept,omitempty"`
 	// Others are the branches of other instances prepared in the same
 	// worktree. They are never downed, so they block the cleanup.
 	Others []string `json:"other_instances,omitempty"`
@@ -67,6 +76,44 @@ func adapterFiles(main string) []string {
 		return k.AdapterFiles
 	}
 	return nil
+}
+
+// ownFiles are the files that the instance's manifest records (the Compose
+// files and the env file prepare used) that lie inside its checkout and that
+// the main checkout also has, as repository-relative slash paths, and the env
+// file among them ("" when none). Stackfork copied them there from another
+// checkout; a file only this checkout has may be a person's, so it is not
+// listed. The cleanup still compares the content (cleanup.ownFile). nil when
+// there is no instance or no manifest.
+func ownFiles(main string, t *Target) (own []string, env string) {
+	if t == nil {
+		return nil, ""
+	}
+	m, err := state.ReadManifest(filepath.Join(t.InstanceDir, "manifest.json"))
+	if err != nil || m == nil {
+		return nil, ""
+	}
+	recorded := slices.Clone(m.Files)
+	if m.EnvFile != nil {
+		recorded = append(recorded, *m.EnvFile)
+	}
+	root := m.Root
+	if root == "" {
+		root = t.Root
+	}
+	for _, p := range recorded {
+		rel, err := filepath.Rel(root, p)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		if fi, err := os.Lstat(filepath.Join(main, rel)); err == nil && fi.Mode().IsRegular() {
+			own = append(own, filepath.ToSlash(rel))
+			if m.EnvFile != nil && p == *m.EnvFile {
+				env = filepath.ToSlash(rel)
+			}
+		}
+	}
+	return own, env
 }
 
 // instance is the candidate's instance: same checkout and same branch (a
@@ -116,8 +163,9 @@ func ScanCleanup(in ScanInput) ([]CandidateStatus, error) {
 			cs.Project, job.Instance = t.Project, t
 		}
 		cs.Others, job.Others = others, others
+		job.Own, job.OwnEnv = ownFiles(in.Main, t)
 		v := cleanup.Evaluate(job.CheckFor())
-		cs.Eligible, cs.Warning, cs.Ignored = v.Eligible, v.Warning, v.Ignored
+		cs.Eligible, cs.Warning, cs.Ignored, cs.IgnoredOnly = v.Eligible, v.Warning, v.Ignored, v.IgnoredOnly
 		if v.State == cleanup.Merged && v.Eligible && !cs.Kept {
 			since, ok := st.since(c.Branch, c.Head)
 			if !ok && in.Persist { // only the loop starts a grace period
@@ -164,6 +212,7 @@ func (in ScanInput) Job(c CandidateStatus, auto bool) CleanupJob {
 		Candidate: cleanup.Candidate{Path: c.Path, Branch: c.Branch, Head: c.Head},
 		Result:    cleanup.Result{Branch: c.Branch, State: c.State, Via: c.Via, PR: c.PR, URL: c.URL, Forge: c.Forge}}
 	j.Instance, j.Others = in.instance(c.Path, c.Branch)
+	j.Own, j.OwnEnv = ownFiles(in.Main, j.Instance)
 	return j
 }
 

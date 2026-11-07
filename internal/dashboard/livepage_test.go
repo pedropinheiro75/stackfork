@@ -348,6 +348,14 @@ func TestReposFragmentCleanupCallouts(t *testing.T) {
 			[]string{"PR merged, but this worktree has uncommitted changes"}, []string{`data-live-op="clean"`, `data-live-op="keep"`}},
 		"closed": {cleanupStatus(repo, wt, "suggest", live.CandidateStatus{State: "closed"}),
 			[]string{"PR closed without merge"}, []string{`data-live-op="clean"`}},
+		// auto mode, only ignored files block: no dead end, the person is offered the manual cleanup
+		"ignored files block auto": {cleanupStatus(repo, wt, "auto", live.CandidateStatus{State: "merged", IgnoredOnly: true,
+			Ignored: []string{".env.local", "notes/", ".idea/"}, Warning: "PR merged, but this worktree has ignored files (.env.local, notes/, .idea/)"}),
+			[]string{"It deletes 3 ignored files or folders", `data-cleanup="suggest"`, `data-live-op="clean"`, ">Clean up<", `data-live-op="keep"`}, []string{"Clean up now", "Cleanup in"}},
+		"suggest with one ignored file": {cleanupStatus(repo, wt, "suggest", live.CandidateStatus{State: "merged", Eligible: true, Ignored: []string{".env.local"}}),
+			[]string{"PR merged — clean up? It deletes 1 ignored file or folder"}, nil},
+		"closed, forge says merged": {cleanupStatus(repo, wt, "suggest", live.CandidateStatus{State: "closed", Forge: "MERGED"}),
+			[]string{"PR merged, but feature-login has work that is not in the default branch"}, []string{"closed without merge", `data-live-op="clean"`}},
 		"kept": {cleanupStatus(repo, wt, "suggest", live.CandidateStatus{State: "merged", Eligible: true, Kept: true}),
 			nil, []string{"PR merged", "data-live-op=\"clean\""}},
 	} {

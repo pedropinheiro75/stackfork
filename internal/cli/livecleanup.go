@@ -109,7 +109,7 @@ func (p CleanupPreview) Describe() string {
 		fmt.Fprintf(&b, "\nThe local branch %s is kept.\n", p.Branch)
 	}
 	if len(p.Ignored) > 0 {
-		b.WriteString("\nIgnored files that go with the worktree:\n  " + strings.Join(p.Ignored, "\n  ") + "\n")
+		fmt.Fprintf(&b, "\nIgnored files that go with the worktree (%d):\n  %s\n", len(p.Ignored), strings.Join(p.Ignored, "\n  "))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

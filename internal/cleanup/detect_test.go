@@ -84,7 +84,9 @@ func TestDetectSquashBeyondTheCommitCapIsNotMerged(t *testing.T) {
 	f.branch(t, "feature-login", 2)
 	run(t, f.Main, "merge", "-q", "--squash", "feature-login")
 	run(t, f.Main, "commit", "-q", "-m", "squash")
-	// more commits than the window land after the squash
+	// A later edit of the branch's file keeps the merge-tree proof from
+	// answering, then more commits than the window land after the squash.
+	commit(t, f.Main, "feature-login-a.txt", "edited later\n", "later edit")
 	for i := 0; i < maxSquashCommits; i++ {
 		run(t, f.Main, "commit", "-q", "--allow-empty", "-m", "later")
 	}
