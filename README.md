@@ -28,7 +28,7 @@ Run every app you build with AI, in as many versions as you like, all at once on
 
 ## What it looks like
 
-<a href="docs/screenshots/instances-overview-dark.png?raw=true">
+<a href="docs/screenshots/instances-overview-dark.png">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/instances-overview-dark.png">
   <img src="docs/screenshots/instances-overview-light.png" alt="Instances page: acme-api, a hybrid instance whose app runs on the host with its PID, memory, CPU and a hot reload chip, and acme-web with two running checkouts, main and feature-invoices, each with its own URLs, database port and env overrides">
@@ -40,7 +40,7 @@ Run every app you build with AI, in as many versions as you like, all at once on
 <table>
 <tr>
 <td width="50%">
-<a href="docs/screenshots/instances-hybrid-host-app-dark.png?raw=true">
+<a href="docs/screenshots/instances-hybrid-host-app-dark.png">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/instances-hybrid-host-app-dark.png">
   <img src="docs/screenshots/instances-hybrid-host-app-light.png" alt="Instance card of acme-api: the db service in Docker with its database port, connection URL, psql and exec shortcuts, and the app service running on the host with its PID, memory, CPU and a hot reload chip">
@@ -48,7 +48,7 @@ Run every app you build with AI, in as many versions as you like, all at once on
 </a>
 </td>
 <td width="50%">
-<a href="docs/screenshots/project-resources-dark.png?raw=true">
+<a href="docs/screenshots/project-resources-dark.png">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/project-resources-dark.png">
   <img src="docs/screenshots/project-resources-light.png" alt="Resources section of acme-web: memory and CPU charts for the main and feature-invoices checkouts, a disk bar per checkout and a table of every service">
@@ -62,7 +62,7 @@ Run every app you build with AI, in as many versions as you like, all at once on
 </tr>
 <tr>
 <td width="50%">
-<a href="docs/screenshots/project-workflow-dark.png?raw=true">
+<a href="docs/screenshots/project-workflow-dark.png">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/project-workflow-dark.png">
   <img src="docs/screenshots/project-workflow-light.png" alt="Project page: the startup workflow canvas of a hybrid project: secrets, prepare, compose up, the New data volume decision with the seed step, the Mode decision, and the host app that runs on this machine, each step with the state of the last run">
@@ -70,7 +70,7 @@ Run every app you build with AI, in as many versions as you like, all at once on
 </a>
 </td>
 <td width="50%">
-<a href="docs/screenshots/environment-dialog-dark.png?raw=true">
+<a href="docs/screenshots/environment-dialog-dark.png">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/environment-dialog-dark.png">
   <img src="docs/screenshots/environment-dialog-light.png" alt="Environment dialog for the app service on the feature-invoices worktree: three variable overrides with their project value and your value, a field to add another, and a Save and restart app button">
@@ -152,7 +152,7 @@ The macOS menu bar app is the `.dmg` on the Releases page. See [docs/macos-app.m
 
 1. **Point stackfork at your code folder.** Run `stackfork dashboard --open`. In **Settings**, add the folder that holds all your projects, for example `~/code`.
 
-<a href="docs/screenshots/settings-folders-dark.png?raw=true">
+<a href="docs/screenshots/settings-folders-dark.png">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-folders-dark.png">
   <img src="docs/screenshots/settings-folders-light.png" alt="Settings page: the list of folders that stackfork scans for repositories, with a field to add another folder">
@@ -161,7 +161,7 @@ The macOS menu bar app is the `.dmg` on the Releases page. See [docs/macos-app.m
 
 2. **Click "Set up" and pick your agent.** Your agent reads the project and saves how it starts. This happens once, for you, your team and every agent. You can also ask your agent: "learn this project with stackfork". More in [learning.md](references/learning.md).
 
-<a href="docs/screenshots/learn-with-agent-dark.png?raw=true">
+<a href="docs/screenshots/learn-with-agent-dark.png">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/learn-with-agent-dark.png">
   <img src="docs/screenshots/learn-with-agent-light.png" alt="Repos page: acme-docs is not set up yet; its Set up button opens a dialog where you pick Claude Code, Codex or Copilot CLI and see what the agent will check">
@@ -170,7 +170,7 @@ The macOS menu bar app is the `.dmg` on the Releases page. See [docs/macos-app.m
 
 3. **Ask your agent for an environment.** For example: "create a stackfork environment for the invoices feature". You get a full copy of the app for that branch. You can also press **Start** on the Repos page.
 
-<a href="docs/screenshots/repos-dark.png?raw=true">
+<a href="docs/screenshots/repos-dark.png">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/repos-dark.png">
   <img src="docs/screenshots/repos-light.png" alt="Repos page: the repositories found in the scanned folder, each with its status, worktrees and a Start button; acme-web is expanded and shows the Live switch, the learned startup steps (prepare, compose up, seed) and its two branches, main and feature-invoices, both running">
@@ -179,7 +179,7 @@ The macOS menu bar app is the `.dmg` on the Releases page. See [docs/macos-app.m
 
 4. **Open it.** Each environment has its own address. Open it in the browser and compare it side by side with `main`.
 
-<a href="docs/screenshots/instances-two-checkouts-dark.png?raw=true">
+<a href="docs/screenshots/instances-two-checkouts-dark.png">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/instances-two-checkouts-dark.png">
   <img src="docs/screenshots/instances-two-checkouts-light.png" alt="Instances page: acme-web with two running checkouts, main and feature-invoices, each with its own address and database port">
