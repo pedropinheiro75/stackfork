@@ -553,10 +553,12 @@ func unquote(s string) string {
 // endpoints, or an /api/ path with shell brace or curl glob characters that
 // could expand to one.
 func hitsEndpoint(w string) bool {
-	if strings.Contains(w, "/api/") && strings.ContainsAny(w, "{}[]") {
+	norm := normalizeURLWord(w)
+	// The decoded form too: curl globs `/%61pi/{run,live}` after the server
+	// would decode %61, so the raw spelling alone misses it.
+	if (strings.Contains(w, "/api/") || strings.Contains(norm, "/api/")) && strings.ContainsAny(w, "{}[]") {
 		return true
 	}
-	norm := normalizeURLWord(w)
 	for _, ep := range []string{"/api/run", "/api/actions", "/api/learn", "/api/secrets", "/api/live", "/api/env"} {
 		if containsSegment(w, ep) || containsSegment(norm, ep) {
 			return true

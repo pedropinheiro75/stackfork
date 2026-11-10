@@ -205,10 +205,32 @@ func isLiteralValue(s string) bool {
 
 var requirepassPattern = regexp.MustCompile(`--requirepass[= ]("[^"]*"|'[^']*'|\S+)`)
 
-// hasRequirepass reports whether a Redis service's command sets a password,
-// whatever its form (a literal or a ${VAR}).
-func hasRequirepass(raw map[string]interface{}) bool {
-	return strings.Contains(fmt.Sprint(raw["command"]), "--requirepass")
+// redisWithoutAuth reports whether a Redis service plainly has no password:
+// the stock image started as is, or with a command that sets neither a
+// password, an ACL file nor a config file. Anything that could set one
+// (an entrypoint, an env_file, a *PASSWORD* variable, a mounted config, a
+// bitnami-style image) counts as "has a password", so the URL keeps its
+// placeholder instead of dropping a credential the server needs.
+func redisWithoutAuth(raw map[string]interface{}) bool {
+	if raw["entrypoint"] != nil || raw["env_file"] != nil {
+		return false
+	}
+	for k := range compose.NormalizeEnvironment(raw["environment"]) {
+		if strings.Contains(strings.ToUpper(k), "PASSWORD") {
+			return false
+		}
+	}
+	if strings.Contains(fmt.Sprint(raw["image"]), "bitnami") {
+		return false
+	}
+	cmd := strings.ToLower(fmt.Sprint(raw["command"]))
+	mounts := strings.ToLower(fmt.Sprint(raw["volumes"], raw["configs"]))
+	for _, sign := range []string{"requirepass", "aclfile", ".conf", ".acl"} {
+		if strings.Contains(cmd, sign) || strings.Contains(mounts, sign) {
+			return false
+		}
+	}
+	return true
 }
 
 // requirepassFromCommand reads a Redis service's own `--requirepass`

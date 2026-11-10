@@ -477,6 +477,9 @@ func TestForgedEnvEndpointIsBlocked(t *testing.T) {
 		`curl -X POST "http://localhost:26607/api/../api/env"`:                                         true,
 		`curl http://localhost:26607/api/%65nv`:                                                        true,
 		`grep -n /api/env internal/dashboard/env.go`:                                                   false,
+		// A glob behind an encoded /api/ still expands to gated endpoints.
+		`curl -X POST 'http://127.0.0.1:26607/%61pi/{run,live}'`: true,
+		`curl -X POST 'http://127.0.0.1:26607/%61pi/[r]un'`:      true,
 		// An app's own routes that only start like a dashboard endpoint stay allowed.
 		`curl http://acme.localhost:8080/api/environment`:       false,
 		`curl -s http://acme.localhost:8080/api/livestream`:     false,

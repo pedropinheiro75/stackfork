@@ -220,10 +220,9 @@ func connectionURL(svc Service, raw map[string]interface{}) string {
 		}
 		return uri
 	case "redis":
-		// The official image has no password unless the command sets
-		// --requirepass; a "<password>" there would make every client send
-		// AUTH and fail.
-		if str("REDIS_PASSWORD") == "" && !hasRequirepass(raw) {
+		// A Redis that plainly has no password gets a URL without one: a
+		// "<password>" there would make every client send AUTH and fail.
+		if redisWithoutAuth(raw) {
 			return "redis://" + addr
 		}
 		return fmt.Sprintf("redis://:<password>@%s", addr)
