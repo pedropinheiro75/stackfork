@@ -307,8 +307,10 @@ func pingHealthcheck(hc map[string]interface{}) bool {
 }
 
 // redisSafeFlags cannot set a password, a user, an ACL or a config file.
+// --appendonly is not one: on start Redis replays the AOF under /data,
+// which can hold CONFIG SET requirepass or ACL SETUSER.
 var redisSafeFlags = map[string]bool{
-	"--appendonly": true, "--appendfsync": true, "--save": true, "--port": true, "--loglevel": true,
+	"--save": true, "--port": true, "--loglevel": true,
 	"--databases": true, "--maxmemory": true, "--maxmemory-policy": true, "--protected-mode": true,
 	"--bind": true, "--dir": true, "--dbfilename": true, "--io-threads": true, "--tcp-keepalive": true,
 	"--timeout": true, "--notify-keyspace-events": true,
