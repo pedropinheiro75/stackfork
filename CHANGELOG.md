@@ -5,6 +5,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Fixed: a Redis service with no password got `REDIS_URL=redis://:<password>@HOST:PORT` from `stackfork env`, and host apps and host exec steps received it as is. Clients then sent `AUTH <password>` and failed with `ERR AUTH <password> called without any password configured`. A Redis with no `REDIS_PASSWORD` and no `--requirepass` in its command now gets `redis://HOST:PORT`. With a password, nothing changes.
+- Fixed: the agent guard blocked an HTTP call to any path that only starts like a dashboard endpoint, for example an app's own `/api/environment` (it matched `/api/env`) or the read-only `/api/runs`. An endpoint now matches only as a whole path segment. `/api/env`, `/api/env?project=…`, `/api/secrets/set` and the encoded forms stay blocked.
+
 ## [0.2.2] - 2026-11-07
 
 - Branch cleanup recognizes the second squash merge of a stack. When two stacked pull requests are both squash-merged, no commit of the default branch has the second branch's patch identity, so the card said "PR closed without merge". A fourth proof, `merge-tree`, now marks a branch merged when `git merge-tree --write-tree` (git 2.38 or newer) merges it into the default branch with no conflict and the result tree equals the default branch's tree. It writes no object to the repository, and it is not used when the repository config defines a merge driver, or when a path that either side changed has a `merge` attribute (this needs git 2.40).

@@ -558,11 +558,32 @@ func hitsEndpoint(w string) bool {
 	}
 	norm := normalizeURLWord(w)
 	for _, ep := range []string{"/api/run", "/api/actions", "/api/learn", "/api/secrets", "/api/live", "/api/env"} {
-		if strings.Contains(w, ep) || strings.Contains(norm, ep) {
+		if containsSegment(w, ep) || containsSegment(norm, ep) {
 			return true
 		}
 	}
 	return false
+}
+
+// containsSegment reports whether ep appears in w as a whole path: followed
+// by the end, `/`, `?`, `#` or any other non-name character. An app's own
+// /api/environment or /api/runs is not the dashboard's /api/env or /api/run.
+func containsSegment(w, ep string) bool {
+	for i := 0; ; {
+		j := strings.Index(w[i:], ep)
+		if j < 0 {
+			return false
+		}
+		end := i + j + len(ep)
+		if end == len(w) || !isNameByte(w[end]) {
+			return true
+		}
+		i = end
+	}
+}
+
+func isNameByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-' || c == '.'
 }
 
 // normalizeURLWord is the path the server would route a URL word to: cut at

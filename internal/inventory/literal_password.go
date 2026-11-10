@@ -205,6 +205,12 @@ func isLiteralValue(s string) bool {
 
 var requirepassPattern = regexp.MustCompile(`--requirepass[= ]("[^"]*"|'[^']*'|\S+)`)
 
+// hasRequirepass reports whether a Redis service's command sets a password,
+// whatever its form (a literal or a ${VAR}).
+func hasRequirepass(raw map[string]interface{}) bool {
+	return strings.Contains(fmt.Sprint(raw["command"]), "--requirepass")
+}
+
 // requirepassFromCommand reads a Redis service's own `--requirepass`
 // command-line argument, the official redis image's way of setting a
 // password (unlike the env-var pattern bitnami-style images use).
