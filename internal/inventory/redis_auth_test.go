@@ -41,6 +41,11 @@ func TestRedisWithoutAuth(t *testing.T) {
 		{"compose secret", m{"image": "redis:7", "secrets": l{"redis_pw"}}, false},
 		{"unknown key", m{"image": "redis:7", "x-future": true}, false},
 		{"compose config nulls", m{"image": "redis:7-alpine", "command": nil, "entrypoint": nil, "labels": m{}, "networks": m{"default": nil}, "ports": l{m{"target": 6379}}}, true},
+		{"healthcheck that sets a password", m{"image": "redis:7-alpine", "healthcheck": m{"test": l{"CMD", "redis-cli", "CONFIG", "SET", "requirepass", "x"}}}, false},
+		{"PATH override", m{"image": "redis:7-alpine", "environment": m{"PATH": "/data:/usr/local/bin:/usr/bin:/bin"}, "volumes": l{"./bin:/data"}}, false},
+		{"any variable", m{"image": "redis:7", "environment": m{"TZ": "UTC"}}, false},
+		{"empty environment", m{"image": "redis:7", "environment": m{}}, true},
+		{"ping healthcheck string", m{"image": "redis:7", "healthcheck": m{"test": "CMD-SHELL redis-cli ping"}}, true},
 		{"usual keys", m{"image": "redis:7", "ports": l{"6379"}, "networks": m{"default": nil}, "restart": "always", "labels": m{"a": "b"}, "healthcheck": m{"test": l{"CMD", "redis-cli", "ping"}}}, true},
 	}
 	for _, c := range cases {

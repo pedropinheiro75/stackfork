@@ -532,8 +532,6 @@ func bypassesConfirmation(command string) bool {
 		// The URL may sit in another segment (`echo URL | xargs curl`), and the
 		// raw text catches what the splitter joined or unquoted differently.
 		words := strings.Fields(unquote(command))
-		// Bash turns $'\x61pi' into "api" and $"run" into "run" before curl sees it.
-		words = append(words, strings.Fields(unquote(strings.ReplaceAll(decodeANSIC(command), `$"`, `"`)))...)
 		for _, seg := range segs {
 			words = append(words, seg.Words...)
 		}
@@ -553,10 +551,9 @@ func unquote(s string) string {
 
 // hitsEndpoint reports whether a word names one of the confirmation-gated
 // endpoints, or an /api/ path with shell brace or curl glob characters that
-// could expand to one. The glob check also reads the decoded word: curl
-// globs `/%61pi/{run,live}` and the server decodes %61.
+// could expand to one.
 func hitsEndpoint(w string) bool {
-	if (strings.Contains(w, "/api/") || strings.Contains(normalizeURLWord(w), "/api/")) && strings.ContainsAny(w, "{}[]") {
+	if strings.Contains(w, "/api/") && strings.ContainsAny(w, "{}[]") {
 		return true
 	}
 	return namesEndpoint(w)

@@ -223,11 +223,12 @@ func redisWithoutAuth(raw map[string]interface{}) bool {
 	if !officialRedisImage(fmt.Sprint(raw["image"])) {
 		return false
 	}
-	for k := range compose.NormalizeEnvironment(raw["environment"]) {
-		u := strings.ToUpper(k)
-		if strings.Contains(u, "PASS") || strings.Contains(u, "AUTH") {
-			return false
-		}
+	// Any variable can change what runs (PATH, LD_PRELOAD, REDIS_PASSWORD...).
+	if len(compose.NormalizeEnvironment(raw["environment"])) > 0 {
+		return false
+	}
+	if hc, ok := raw["healthcheck"].(map[string]interface{}); ok && !pingHealthcheck(hc) {
+		return false // a healthcheck runs a command: CONFIG SET requirepass would set a password
 	}
 	if vols, ok := raw["volumes"].([]interface{}); ok {
 		for _, v := range vols {
@@ -275,9 +276,34 @@ func volumeTarget(v interface{}) string {
 var redisSafeKeys = map[string]bool{
 	"image": true, "command": true, "environment": true, "volumes": true, "ports": true, "expose": true,
 	"networks": true, "restart": true, "labels": true, "healthcheck": true, "container_name": true,
-	"hostname": true, "depends_on": true, "logging": true, "ulimits": true, "stop_grace_period": true,
-	"stop_signal": true, "pull_policy": true, "platform": true, "mem_limit": true, "cpus": true,
-	"shm_size": true, "deploy": true,
+	"hostname": true, "depends_on": true, "stop_grace_period": true, "stop_signal": true,
+	"pull_policy": true, "platform": true,
+}
+
+// pingHealthcheck reports whether a healthcheck only pings: its test is
+// `redis-cli ping` (or valkey-cli), as CMD or CMD-SHELL, or it is disabled.
+func pingHealthcheck(hc map[string]interface{}) bool {
+	if d, _ := hc["disable"].(bool); d {
+		return true
+	}
+	var parts []string
+	switch t := hc["test"].(type) {
+	case nil:
+		return true
+	case string:
+		parts = strings.Fields(t)
+	case []interface{}:
+		for _, p := range t {
+			parts = append(parts, strings.Fields(fmt.Sprint(p))...)
+		}
+	default:
+		return false
+	}
+	switch strings.Join(parts, " ") {
+	case "NONE", "CMD redis-cli ping", "CMD-SHELL redis-cli ping", "CMD valkey-cli ping", "CMD-SHELL valkey-cli ping", "redis-cli ping", "valkey-cli ping":
+		return true
+	}
+	return false
 }
 
 // redisSafeFlags cannot set a password, a user, an ACL or a config file.
