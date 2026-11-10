@@ -205,6 +205,164 @@ func isLiteralValue(s string) bool {
 
 var requirepassPattern = regexp.MustCompile(`--requirepass[= ]("[^"]*"|'[^']*'|\S+)`)
 
+// redisWithoutAuth reports whether a Redis service is known to have no
+// password. It is a positive check, never a guess: the official redis or
+// valkey image, no entrypoint, env_file, configs or password variable, no
+// mount other than the /data directory, and either no command or
+// `redis-server`/`valkey-server` with only flags that cannot set a
+// password. Anything else (an inline ACL, a config file, a shell, a custom
+// image) keeps the "<password>" placeholder, so a URL never drops a
+// credential the server needs.
+func redisWithoutAuth(raw map[string]interface{}) bool {
+	for k, v := range raw {
+		// `docker compose config` writes unset keys as null (entrypoint: null).
+		if v != nil && !redisSafeKeys[k] {
+			return false // build, entrypoint, env_file, configs, secrets, post_start, ... or a new key
+		}
+	}
+	if !officialRedisImage(fmt.Sprint(raw["image"])) {
+		return false
+	}
+	// Any variable can change what runs (PATH, LD_PRELOAD, REDIS_PASSWORD...).
+	// Checked on the raw value: a passed-through entry (`FOO: null`, or a
+	// bare `FOO` in a list) is filled in by Compose at start, and
+	// NormalizeEnvironment drops it.
+	switch env := raw["environment"].(type) {
+	case nil:
+	case map[string]interface{}:
+		if len(env) > 0 {
+			return false
+		}
+	case []interface{}:
+		if len(env) > 0 {
+			return false
+		}
+	default:
+		return false
+	}
+	if hc, ok := raw["healthcheck"].(map[string]interface{}); ok && !pingHealthcheck(hc) {
+		return false // a healthcheck runs a command: CONFIG SET requirepass would set a password
+	}
+	if vols, ok := raw["volumes"].([]interface{}); ok {
+		for _, v := range vols {
+			if volumeTarget(v) != "/data" {
+				return false
+			}
+		}
+	} else if raw["volumes"] != nil {
+		return false
+	}
+	return harmlessRedisCommand(raw["command"])
+}
+
+func officialRedisImage(image string) bool {
+	repo := image
+	if i := strings.Index(repo, "@"); i >= 0 {
+		repo = repo[:i]
+	}
+	if i := strings.LastIndex(repo, ":"); i > strings.LastIndex(repo, "/") {
+		repo = repo[:i]
+	}
+	repo = strings.TrimPrefix(strings.TrimPrefix(repo, "docker.io/"), "library/")
+	return repo == "redis" || repo == "valkey/valkey"
+}
+
+// volumeTarget is the container path of a Compose volume entry, in its
+// short ("src:dst[:mode]") or long ({target: dst}) form.
+func volumeTarget(v interface{}) string {
+	switch m := v.(type) {
+	case string:
+		parts := strings.Split(m, ":")
+		if len(parts) >= 2 {
+			return strings.TrimRight(parts[1], "/")
+		}
+		return strings.TrimRight(parts[0], "/")
+	case map[string]interface{}:
+		return strings.TrimRight(fmt.Sprint(m["target"]), "/")
+	}
+	return ""
+}
+
+// redisSafeKeys are the Compose service keys that cannot set a password or
+// run anything at start. Every other key (build, entrypoint, env_file,
+// configs, secrets, post_start, pre_stop, user, ...) keeps the placeholder.
+var redisSafeKeys = map[string]bool{
+	"image": true, "command": true, "environment": true, "volumes": true, "ports": true, "expose": true,
+	"networks": true, "restart": true, "labels": true, "healthcheck": true, "container_name": true,
+	"hostname": true, "depends_on": true, "stop_grace_period": true, "stop_signal": true,
+	"pull_policy": true, "platform": true,
+}
+
+// pingHealthcheck reports whether a healthcheck only pings: its test is
+// `redis-cli ping` (or valkey-cli), as CMD or CMD-SHELL, or it is disabled.
+func pingHealthcheck(hc map[string]interface{}) bool {
+	if d, _ := hc["disable"].(bool); d {
+		return true
+	}
+	var parts []string
+	switch t := hc["test"].(type) {
+	case nil:
+		return true
+	case string:
+		parts = strings.Fields(t)
+	case []interface{}:
+		for _, p := range t {
+			parts = append(parts, strings.Fields(fmt.Sprint(p))...)
+		}
+	default:
+		return false
+	}
+	switch strings.Join(parts, " ") {
+	case "NONE", "CMD redis-cli ping", "CMD-SHELL redis-cli ping", "CMD valkey-cli ping", "CMD-SHELL valkey-cli ping", "redis-cli ping", "valkey-cli ping":
+		return true
+	}
+	return false
+}
+
+// redisSafeFlags cannot set a password, a user, an ACL or a config file.
+// --appendonly is not one: on start Redis replays the AOF under /data,
+// which can hold CONFIG SET requirepass or ACL SETUSER.
+var redisSafeFlags = map[string]bool{
+	"--save": true, "--port": true, "--loglevel": true,
+	"--databases": true, "--maxmemory": true, "--maxmemory-policy": true, "--protected-mode": true,
+	"--bind": true, "--dir": true, "--dbfilename": true, "--io-threads": true, "--tcp-keepalive": true,
+	"--timeout": true, "--notify-keyspace-events": true,
+}
+
+func harmlessRedisCommand(cmd interface{}) bool {
+	var args []string
+	switch c := cmd.(type) {
+	case nil:
+		return true
+	case string:
+		args = strings.Fields(c)
+	case []interface{}:
+		for _, a := range c {
+			args = append(args, fmt.Sprint(a))
+		}
+	default:
+		return false
+	}
+	if len(args) == 0 {
+		return true
+	}
+	if args[0] != "redis-server" && args[0] != "valkey-server" {
+		return false
+	}
+	flag := false
+	for _, a := range args[1:] {
+		if strings.HasPrefix(a, "--") {
+			if !redisSafeFlags[strings.ToLower(a)] {
+				return false
+			}
+			flag = true
+		} else if !flag {
+			return false // a config file path before any flag
+		}
+	}
+	return true
+}
+
 // requirepassFromCommand reads a Redis service's own `--requirepass`
 // command-line argument, the official redis image's way of setting a
 // password (unlike the env-var pattern bitnami-style images use).

@@ -53,6 +53,13 @@ func TestConnectionURLNeverIncludesAPassword(t *testing.T) {
 				},
 				"environment": map[string]interface{}{"REDIS_PASSWORD": redisPassword},
 			},
+			"cachepass": map[string]interface{}{
+				"image":   "redis:7",
+				"command": []interface{}{"redis-server", "--requirepass", "${REDIS_PW}"},
+				"ports": []interface{}{
+					map[string]interface{}{"target": json.Number("6379"), "published": "20014", "protocol": "tcp"},
+				},
+			},
 			"mongodb": map[string]interface{}{
 				"image": "mongo:7",
 				"ports": []interface{}{
@@ -111,6 +118,7 @@ func TestConnectionURLNeverIncludesAPassword(t *testing.T) {
 		{"pg", "postgres://appuser:<password>@127.0.0.1:20010/appdb"},
 		{"mysqldb", "mysql://appuser:<password>@127.0.0.1:20011/appdb"},
 		{"cache", "redis://:<password>@127.0.0.1:20012"},
+		{"cachepass", "redis://:<password>@127.0.0.1:20014"},
 		{"mongodb", "mongodb://root:<password>@127.0.0.1:20013/appdb"},
 	}
 	for _, c := range cases {

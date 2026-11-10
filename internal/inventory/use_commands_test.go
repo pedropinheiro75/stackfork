@@ -184,7 +184,7 @@ func TestEnvBlockCoversAllKinds(t *testing.T) {
 			inst = i
 		}
 	}
-	for _, want := range []string{"DATABASE_URL=postgres://postgres:<password>@127.0.0.1:20080/postgres", "REDIS_URL=redis://:<password>@127.0.0.1:20081", "SMTP_HOST=127.0.0.1", "SMTP_PORT=20083"} {
+	for _, want := range []string{"DATABASE_URL=postgres://postgres:<password>@127.0.0.1:20080/postgres", "REDIS_URL=redis://127.0.0.1:20081", "SMTP_HOST=127.0.0.1", "SMTP_PORT=20083"} {
 		if !strings.Contains(inst.EnvBlock, want) {
 			t.Errorf("expected env block to contain %q, got:\n%s", want, inst.EnvBlock)
 		}
