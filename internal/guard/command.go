@@ -532,6 +532,8 @@ func bypassesConfirmation(command string) bool {
 		// The URL may sit in another segment (`echo URL | xargs curl`), and the
 		// raw text catches what the splitter joined or unquoted differently.
 		words := strings.Fields(unquote(command))
+		// Bash turns $'\x61pi' into "api" before curl sees it.
+		words = append(words, strings.Fields(unquote(decodeANSIC(command)))...)
 		for _, seg := range segs {
 			words = append(words, seg.Words...)
 		}
@@ -550,15 +552,30 @@ func unquote(s string) string {
 }
 
 // hitsEndpoint reports whether a word names one of the confirmation-gated
-// endpoints, or an /api/ path with shell brace or curl glob characters that
-// could expand to one.
+// endpoints, directly or after shell brace or curl glob expansion of its
+// path. Glob characters in the query (`?fields[]=x`) are left alone.
 func hitsEndpoint(w string) bool {
-	norm := normalizeURLWord(w)
-	// The decoded form too: curl globs `/%61pi/{run,live}` after the server
-	// would decode %61, so the raw spelling alone misses it.
-	if (strings.Contains(w, "/api/") || strings.Contains(norm, "/api/")) && strings.ContainsAny(w, "{}[]") {
-		return true
+	path, rest := w, ""
+	if i := strings.IndexAny(w, "?#"); i >= 0 {
+		path, rest = w[:i], w[i:]
 	}
+	if !strings.ContainsAny(path, "{}[]") {
+		return namesEndpoint(w)
+	}
+	expanded, ok := expandGlob(path, maxGlobExpansions)
+	if !ok {
+		return true // too many or unreadable: fail closed
+	}
+	for _, e := range expanded {
+		if namesEndpoint(e + rest) {
+			return true
+		}
+	}
+	return false
+}
+
+func namesEndpoint(w string) bool {
+	norm := normalizeURLWord(w)
 	for _, ep := range []string{"/api/run", "/api/actions", "/api/learn", "/api/secrets", "/api/live", "/api/env"} {
 		if containsSegment(w, ep) || containsSegment(norm, ep) {
 			return true

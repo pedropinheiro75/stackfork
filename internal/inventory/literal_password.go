@@ -205,29 +205,104 @@ func isLiteralValue(s string) bool {
 
 var requirepassPattern = regexp.MustCompile(`--requirepass[= ]("[^"]*"|'[^']*'|\S+)`)
 
-// redisWithoutAuth reports whether a Redis service plainly has no password:
-// the stock image started as is, or with a command that sets neither a
-// password, an ACL file nor a config file. Anything that could set one
-// (an entrypoint, an env_file, a *PASSWORD* variable, a mounted config, a
-// bitnami-style image) counts as "has a password", so the URL keeps its
-// placeholder instead of dropping a credential the server needs.
+// redisWithoutAuth reports whether a Redis service is known to have no
+// password. It is a positive check, never a guess: the official redis or
+// valkey image, no entrypoint, env_file, configs or password variable, no
+// mount other than the /data directory, and either no command or
+// `redis-server`/`valkey-server` with only flags that cannot set a
+// password. Anything else (an inline ACL, a config file, a shell, a custom
+// image) keeps the "<password>" placeholder, so a URL never drops a
+// credential the server needs.
 func redisWithoutAuth(raw map[string]interface{}) bool {
-	if raw["entrypoint"] != nil || raw["env_file"] != nil {
+	if raw["entrypoint"] != nil || raw["env_file"] != nil || raw["configs"] != nil {
+		return false
+	}
+	if !officialRedisImage(fmt.Sprint(raw["image"])) {
 		return false
 	}
 	for k := range compose.NormalizeEnvironment(raw["environment"]) {
-		if strings.Contains(strings.ToUpper(k), "PASSWORD") {
+		u := strings.ToUpper(k)
+		if strings.Contains(u, "PASS") || strings.Contains(u, "AUTH") {
 			return false
 		}
 	}
-	if strings.Contains(fmt.Sprint(raw["image"]), "bitnami") {
+	if vols, ok := raw["volumes"].([]interface{}); ok {
+		for _, v := range vols {
+			if volumeTarget(v) != "/data" {
+				return false
+			}
+		}
+	} else if raw["volumes"] != nil {
 		return false
 	}
-	cmd := strings.ToLower(fmt.Sprint(raw["command"]))
-	mounts := strings.ToLower(fmt.Sprint(raw["volumes"], raw["configs"]))
-	for _, sign := range []string{"requirepass", "aclfile", ".conf", ".acl"} {
-		if strings.Contains(cmd, sign) || strings.Contains(mounts, sign) {
-			return false
+	return harmlessRedisCommand(raw["command"])
+}
+
+func officialRedisImage(image string) bool {
+	repo := image
+	if i := strings.Index(repo, "@"); i >= 0 {
+		repo = repo[:i]
+	}
+	if i := strings.LastIndex(repo, ":"); i > strings.LastIndex(repo, "/") {
+		repo = repo[:i]
+	}
+	repo = strings.TrimPrefix(strings.TrimPrefix(repo, "docker.io/"), "library/")
+	return repo == "redis" || repo == "valkey/valkey"
+}
+
+// volumeTarget is the container path of a Compose volume entry, in its
+// short ("src:dst[:mode]") or long ({target: dst}) form.
+func volumeTarget(v interface{}) string {
+	switch m := v.(type) {
+	case string:
+		parts := strings.Split(m, ":")
+		if len(parts) >= 2 {
+			return strings.TrimRight(parts[1], "/")
+		}
+		return strings.TrimRight(parts[0], "/")
+	case map[string]interface{}:
+		return strings.TrimRight(fmt.Sprint(m["target"]), "/")
+	}
+	return ""
+}
+
+// redisSafeFlags cannot set a password, a user, an ACL or a config file.
+var redisSafeFlags = map[string]bool{
+	"--appendonly": true, "--appendfsync": true, "--save": true, "--port": true, "--loglevel": true,
+	"--databases": true, "--maxmemory": true, "--maxmemory-policy": true, "--protected-mode": true,
+	"--bind": true, "--dir": true, "--dbfilename": true, "--io-threads": true, "--tcp-keepalive": true,
+	"--timeout": true, "--notify-keyspace-events": true,
+}
+
+func harmlessRedisCommand(cmd interface{}) bool {
+	var args []string
+	switch c := cmd.(type) {
+	case nil:
+		return true
+	case string:
+		args = strings.Fields(c)
+	case []interface{}:
+		for _, a := range c {
+			args = append(args, fmt.Sprint(a))
+		}
+	default:
+		return false
+	}
+	if len(args) == 0 {
+		return true
+	}
+	if args[0] != "redis-server" && args[0] != "valkey-server" {
+		return false
+	}
+	flag := false
+	for _, a := range args[1:] {
+		if strings.HasPrefix(a, "--") {
+			if !redisSafeFlags[strings.ToLower(a)] {
+				return false
+			}
+			flag = true
+		} else if !flag {
+			return false // a config file path before any flag
 		}
 	}
 	return true

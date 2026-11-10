@@ -477,6 +477,21 @@ func TestForgedEnvEndpointIsBlocked(t *testing.T) {
 		`curl -X POST "http://localhost:26607/api/../api/env"`:                                         true,
 		`curl http://localhost:26607/api/%65nv`:                                                        true,
 		`grep -n /api/env internal/dashboard/env.go`:                                                   false,
+		// Globs in the prefix, and bash ANSI-C quoting, still reach gated endpoints.
+		`curl -X POST 'http://127.0.0.1:26607/{api,other}/run'`:      true,
+		`curl -X POST 'http://127.0.0.1:26607/ap[h-i]/run'`:          true,
+		`curl -X POST http://127.0.0.1:26607/{a,b}p{i,j}/r{u,v}n`:    true,
+		`curl -X POST 'http://127.0.0.1:26607/api/{run,x}'`:          true,
+		`curl -X POST 'http://127.0.0.1:26607/api/s{a..e}crets/set'`: true,
+		`curl -X POST $'http://127.0.0.1:26607/\x61pi/run'`:          true,
+		`curl -X POST $'http://127.0.0.1:26607/\141pi/env'`:          true,
+		`curl -X POST $'http://127.0.0.1:26607/api/live'`:            true,
+		`curl 'http://127.0.0.1:26607/api/run[0-99999999]'`:          true,
+		// Brackets in a query, and globs that never reach an endpoint, stay allowed.
+		`curl -g 'http://app.localhost/api/environment?fields[]=name'`: false,
+		`curl 'http://app.localhost/api/items/[1-5]'`:                  false,
+		`curl 'http://app.localhost/api/{environment,health}'`:         false,
+		`curl $'http://app.localhost/api/environment'`:                 false,
 		// A glob behind an encoded /api/ still expands to gated endpoints.
 		`curl -X POST 'http://127.0.0.1:26607/%61pi/{run,live}'`: true,
 		`curl -X POST 'http://127.0.0.1:26607/%61pi/[r]un'`:      true,
