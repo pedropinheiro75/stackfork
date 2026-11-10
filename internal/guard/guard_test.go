@@ -503,6 +503,13 @@ func TestForgedEnvEndpointIsBlocked(t *testing.T) {
 		`curl 'http://[::1]:3000/api/stack'`:                           false,
 		`curl $'http://app.localhost/api/environment'`:                 false,
 		`node -e "const a = [1, 2]; console.log(a)"`:                   false,
+		// Round-4 review: a bare localhost host, code around a URL, a slash in the query.
+		`curl -X POST --connect-to localhost:80:127.0.0.1:26607 'localhost/api/{run,health}'`: true,
+		`curl -X POST 'localhost/{api,x}/run'`:                                                true,
+		`node -e "fetch('http://app.localhost/health',{method:'GET'})"`:                       false,
+		`node -e "Promise.all(['http://a.localhost/x','http://b.localhost/y'].map(fetch))"`:   false,
+		`curl -g 'http://app.localhost?next=/[1-5]'`:                                          false,
+		`curl -g 'http://app.localhost/?next=/{a,b}'`:                                         false,
 		// A glob behind an encoded /api/ still expands to gated endpoints.
 		`curl -X POST 'http://127.0.0.1:26607/%61pi/{run,live}'`: true,
 		`curl -X POST 'http://127.0.0.1:26607/%61pi/[r]un'`:      true,
