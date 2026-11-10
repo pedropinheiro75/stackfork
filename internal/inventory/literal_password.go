@@ -214,8 +214,11 @@ var requirepassPattern = regexp.MustCompile(`--requirepass[= ]("[^"]*"|'[^']*'|\
 // image) keeps the "<password>" placeholder, so a URL never drops a
 // credential the server needs.
 func redisWithoutAuth(raw map[string]interface{}) bool {
-	if raw["entrypoint"] != nil || raw["env_file"] != nil || raw["configs"] != nil {
-		return false
+	for k, v := range raw {
+		// `docker compose config` writes unset keys as null (entrypoint: null).
+		if v != nil && !redisSafeKeys[k] {
+			return false // build, entrypoint, env_file, configs, secrets, post_start, ... or a new key
+		}
 	}
 	if !officialRedisImage(fmt.Sprint(raw["image"])) {
 		return false
@@ -264,6 +267,17 @@ func volumeTarget(v interface{}) string {
 		return strings.TrimRight(fmt.Sprint(m["target"]), "/")
 	}
 	return ""
+}
+
+// redisSafeKeys are the Compose service keys that cannot set a password or
+// run anything at start. Every other key (build, entrypoint, env_file,
+// configs, secrets, post_start, pre_stop, user, ...) keeps the placeholder.
+var redisSafeKeys = map[string]bool{
+	"image": true, "command": true, "environment": true, "volumes": true, "ports": true, "expose": true,
+	"networks": true, "restart": true, "labels": true, "healthcheck": true, "container_name": true,
+	"hostname": true, "depends_on": true, "logging": true, "ulimits": true, "stop_grace_period": true,
+	"stop_signal": true, "pull_policy": true, "platform": true, "mem_limit": true, "cpus": true,
+	"shm_size": true, "deploy": true,
 }
 
 // redisSafeFlags cannot set a password, a user, an ACL or a config file.

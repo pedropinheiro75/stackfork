@@ -552,104 +552,14 @@ func unquote(s string) string {
 }
 
 // hitsEndpoint reports whether a word names one of the confirmation-gated
-// endpoints, or could after shell brace or curl glob expansion.
-//
-// A glob is never expanded here: bash and curl have too many forms, so the
-// guard fails closed. A word that names /api and has a glob is blocked, as
-// before, unless every glob sits in the query (after a `?` or `#` outside
-// any {} or [] group: `?fields[]=x` is allowed, `/api/{run?x,y}` is not). A
-// URL whose first path segment has a glob (`/{api,x}/run`) is blocked too.
+// endpoints, or an /api/ path with shell brace or curl glob characters that
+// could expand to one. The glob check also reads the decoded word: curl
+// globs `/%61pi/{run,live}` and the server decodes %61.
 func hitsEndpoint(w string) bool {
-	if namesEndpoint(w) {
+	if (strings.Contains(w, "/api/") || strings.Contains(normalizeURLWord(w), "/api/")) && strings.ContainsAny(w, "{}[]") {
 		return true
 	}
-	g := withoutIPv6Host(w)
-	if !strings.ContainsAny(g, "{}[]") {
-		return false
-	}
-	if strings.Contains(w, "/api") || strings.Contains(normalizeURLWord(w), "/api") {
-		return !globsOnlyInQuery(g)
-	}
-	path := urlPath(w)
-	for _, p := range []string{path, normalizeURLWord(path)} {
-		first, _, _ := strings.Cut(strings.TrimPrefix(p, "/"), "/")
-		if strings.HasPrefix(p, "/") && strings.ContainsAny(first, "{}[]") {
-			return true
-		}
-	}
-	return false
-}
-
-// withoutIPv6Host drops a literal IPv6 host (`://[::1]`), whose brackets
-// are not a glob.
-func withoutIPv6Host(w string) string {
-	i := strings.Index(w, "://[")
-	if i < 0 {
-		return w
-	}
-	j := strings.IndexByte(w[i+4:], ']')
-	if j < 0 || strings.Trim(w[i+4:i+4+j], "0123456789abcdefABCDEF:.") != "" {
-		return w
-	}
-	return w[:i+3] + "ipv6" + w[i+4+j+1:]
-}
-
-// topLevelIndex is the index of the first byte of w in set that sits
-// outside every {} and [] group, or -1.
-func topLevelIndex(w, set string) int {
-	depth := 0
-	for i := 0; i < len(w); i++ {
-		switch c := w[i]; {
-		case c == '{' || c == '[':
-			depth++
-		case c == '}' || c == ']':
-			if depth > 0 {
-				depth--
-			}
-		case depth == 0 && strings.IndexByte(set, c) >= 0:
-			return i
-		}
-	}
-	return -1
-}
-
-// globsOnlyInQuery reports whether every glob character of w comes after
-// its first top-level `?` or `#`.
-func globsOnlyInQuery(w string) bool {
-	i := topLevelIndex(w, "?#")
-	return i >= 0 && !strings.ContainsAny(w[:i], "{}[]")
-}
-
-// urlPath is the path of the URL in a word: after `scheme://host`, or after
-// a scheme-less host (`localhost/x`, `127.0.0.1:26607/x`), and before the
-// query. The URL ends at the first top-level character that cannot be part
-// of an unquoted URL in code (`,`, `(`, `)`, `;`, a quote), so the object in
-// fetch(URL,{...}) is not read as a glob. Empty when the word is not a URL.
-func urlPath(w string) string {
-	if i := strings.Index(w, "://"); i >= 0 {
-		w = w[i+3:]
-	} else if host, _, ok := strings.Cut(w, "/"); !ok || !looksLikeHost(host) {
-		return ""
-	}
-	if i := topLevelIndex(w, ",();'\"`"); i >= 0 {
-		w = w[:i]
-	}
-	if i := topLevelIndex(w, "?#"); i >= 0 {
-		w = w[:i]
-	}
-	j := strings.IndexByte(w, '/') // the authority ends at the first `/`
-	if j < 0 {
-		return ""
-	}
-	return w[j:]
-}
-
-func looksLikeHost(h string) bool {
-	h = strings.ToLower(h)
-	if h == "localhost" || strings.HasPrefix(h, "localhost:") {
-		return true
-	}
-	return strings.ContainsAny(h, ".:") && !strings.ContainsAny(h, "{}[](),;=")
+	return namesEndpoint(w)
 }
 
 func namesEndpoint(w string) bool {

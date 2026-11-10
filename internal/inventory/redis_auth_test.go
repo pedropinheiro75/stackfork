@@ -36,6 +36,12 @@ func TestRedisWithoutAuth(t *testing.T) {
 		{"redis-stack", m{"image": "redis/redis-stack:latest"}, false},
 		{"mounted config", m{"image": "redis:7", "volumes": l{"./redis.conf:/usr/local/etc/redis/redis.conf"}}, false},
 		{"compose config", m{"image": "redis:7", "configs": l{m{"source": "redis_conf", "target": "/etc/redis.conf"}}}, false},
+		{"post_start hook", m{"image": "redis:7-alpine", "post_start": l{m{"command": l{"redis-cli", "CONFIG", "SET", "requirepass", "x"}}}}, false},
+		{"build", m{"image": "redis:7", "build": m{"context": "."}}, false},
+		{"compose secret", m{"image": "redis:7", "secrets": l{"redis_pw"}}, false},
+		{"unknown key", m{"image": "redis:7", "x-future": true}, false},
+		{"compose config nulls", m{"image": "redis:7-alpine", "command": nil, "entrypoint": nil, "labels": m{}, "networks": m{"default": nil}, "ports": l{m{"target": 6379}}}, true},
+		{"usual keys", m{"image": "redis:7", "ports": l{"6379"}, "networks": m{"default": nil}, "restart": "always", "labels": m{"a": "b"}, "healthcheck": m{"test": l{"CMD", "redis-cli", "ping"}}}, true},
 	}
 	for _, c := range cases {
 		if got := redisWithoutAuth(c.raw); got != c.want {
