@@ -485,13 +485,24 @@ func TestForgedEnvEndpointIsBlocked(t *testing.T) {
 		`curl -X POST 'http://127.0.0.1:26607/api/s{a..e}crets/set'`: true,
 		`curl -X POST $'http://127.0.0.1:26607/\x61pi/run'`:          true,
 		`curl -X POST $'http://127.0.0.1:26607/\141pi/env'`:          true,
-		`curl -X POST $'http://127.0.0.1:26607/api/live'`:            true,
+		`curl -X POST $'http://127.0.0.1:26607/api/r\565n'`:          true,
+		`curl -X POST http://127.0.0.1:26607/api/$"run"`:             true,
 		`curl 'http://127.0.0.1:26607/api/run[0-99999999]'`:          true,
-		// Brackets in a query, and globs that never reach an endpoint, stay allowed.
+		`curl -X POST 'http://127.0.0.1:26607/api/{run?x,health}'`:   true,
+		`curl -X POST 'http://127.0.0.1:26607/api/{run#x,health}'`:   true,
+		`curl -X POST http://127.0.0.1:26607/api/r{u..z..2}n`:        true,
+		// A glob next to /api, or in the first segment, fails closed, even one that would miss.
+		`curl 'http://app.localhost/api/items/[1-5]'`:                 true,
+		`curl 'http://app.localhost/api/{environment,health}'`:        true,
+		`curl -X POST 'localhost:26607/{api,x}/run'`:                  true,
+		`curl -X POST 'http://127.0.0.1:26607/health/../{api,x}/run'`: true,
+		`curl -X POST 'http://127.0.0.1:26607//{api,x}/run'`:          true,
+		`curl 'http://app.localhost/health/{a,b}'`:                    false,
+		// Brackets in a query, an IPv6 host and plain app calls stay allowed.
 		`curl -g 'http://app.localhost/api/environment?fields[]=name'`: false,
-		`curl 'http://app.localhost/api/items/[1-5]'`:                  false,
-		`curl 'http://app.localhost/api/{environment,health}'`:         false,
+		`curl 'http://[::1]:3000/api/stack'`:                           false,
 		`curl $'http://app.localhost/api/environment'`:                 false,
+		`node -e "const a = [1, 2]; console.log(a)"`:                   false,
 		// A glob behind an encoded /api/ still expands to gated endpoints.
 		`curl -X POST 'http://127.0.0.1:26607/%61pi/{run,live}'`: true,
 		`curl -X POST 'http://127.0.0.1:26607/%61pi/[r]un'`:      true,

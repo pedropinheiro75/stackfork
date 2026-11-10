@@ -532,8 +532,8 @@ func bypassesConfirmation(command string) bool {
 		// The URL may sit in another segment (`echo URL | xargs curl`), and the
 		// raw text catches what the splitter joined or unquoted differently.
 		words := strings.Fields(unquote(command))
-		// Bash turns $'\x61pi' into "api" before curl sees it.
-		words = append(words, strings.Fields(unquote(decodeANSIC(command)))...)
+		// Bash turns $'\x61pi' into "api" and $"run" into "run" before curl sees it.
+		words = append(words, strings.Fields(unquote(strings.ReplaceAll(decodeANSIC(command), `$"`, `"`)))...)
 		for _, seg := range segs {
 			words = append(words, seg.Words...)
 		}
@@ -554,24 +554,63 @@ func unquote(s string) string {
 // hitsEndpoint reports whether a word names one of the confirmation-gated
 // endpoints, directly or after shell brace or curl glob expansion of its
 // path. Glob characters in the query (`?fields[]=x`) are left alone.
+//
+// A glob is never expanded here: bash and curl have too many forms. A
+// shell brace or curl glob in the URL path is blocked (fail closed) when
+// the path names /api or the glob sits in the first path segment, where
+// "api" would have to be. `/health/{a,b}` stays allowed. The query starts
+// at the first `?` or `#` outside a {} or [] group, so `?fields[]=x` stays
+// allowed and `/api/{run?x,health}` does not.
 func hitsEndpoint(w string) bool {
-	path, rest := w, ""
-	if i := strings.IndexAny(w, "?#"); i >= 0 {
-		path, rest = w[:i], w[i:]
+	if namesEndpoint(w) {
+		return true
 	}
-	if !strings.ContainsAny(path, "{}[]") {
-		return namesEndpoint(w)
+	path := urlPath(w)
+	if !strings.HasPrefix(path, "/") || !strings.ContainsAny(path, "{}[]") {
+		return false // not a URL path (code such as `a = [1, 2]`), or no glob
 	}
-	expanded, ok := expandGlob(path, maxGlobExpansions)
-	if !ok {
-		return true // too many or unreadable: fail closed
-	}
-	for _, e := range expanded {
-		if namesEndpoint(e + rest) {
+	norm := normalizeURLWord(path)
+	for _, p := range []string{path, norm} {
+		first, _, _ := strings.Cut(strings.TrimLeft(p, "/"), "/")
+		if strings.Contains(p, "/api") || strings.ContainsAny(first, "{}[]") {
 			return true
 		}
 	}
 	return false
+}
+
+// urlPath is the part of a word that a glob could turn into an endpoint:
+// after the scheme and host (so an IPv6 [::1] host does not count), and
+// before the first `?` or `#` that sits outside a {} or [] group. A word
+// with no scheme whose first part looks like a host (`localhost:26607/x`)
+// loses that part too.
+func urlPath(w string) string {
+	if i := strings.Index(w, "://"); i >= 0 {
+		w = w[i+3:]
+		j := strings.IndexByte(w, '/')
+		if j < 0 {
+			return ""
+		}
+		w = w[j:]
+	} else if host, rest, ok := strings.Cut(w, "/"); ok && host != "" && strings.ContainsAny(host, ".:") {
+		w = "/" + rest
+	}
+	depth := 0
+	for i := 0; i < len(w); i++ {
+		switch w[i] {
+		case '{', '[':
+			depth++
+		case '}', ']':
+			if depth > 0 {
+				depth--
+			}
+		case '?', '#':
+			if depth == 0 {
+				return w[:i]
+			}
+		}
+	}
+	return w
 }
 
 func namesEndpoint(w string) bool {
