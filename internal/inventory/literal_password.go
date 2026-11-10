@@ -224,7 +224,20 @@ func redisWithoutAuth(raw map[string]interface{}) bool {
 		return false
 	}
 	// Any variable can change what runs (PATH, LD_PRELOAD, REDIS_PASSWORD...).
-	if len(compose.NormalizeEnvironment(raw["environment"])) > 0 {
+	// Checked on the raw value: a passed-through entry (`FOO: null`, or a
+	// bare `FOO` in a list) is filled in by Compose at start, and
+	// NormalizeEnvironment drops it.
+	switch env := raw["environment"].(type) {
+	case nil:
+	case map[string]interface{}:
+		if len(env) > 0 {
+			return false
+		}
+	case []interface{}:
+		if len(env) > 0 {
+			return false
+		}
+	default:
 		return false
 	}
 	if hc, ok := raw["healthcheck"].(map[string]interface{}); ok && !pingHealthcheck(hc) {

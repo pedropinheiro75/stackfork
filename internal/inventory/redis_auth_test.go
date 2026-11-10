@@ -46,6 +46,10 @@ func TestRedisWithoutAuth(t *testing.T) {
 		{"PATH override", m{"image": "redis:7-alpine", "environment": m{"PATH": "/data:/usr/local/bin:/usr/bin:/bin"}, "volumes": l{"./bin:/data"}}, false},
 		{"any variable", m{"image": "redis:7", "environment": m{"TZ": "UTC"}}, false},
 		{"empty environment", m{"image": "redis:7", "environment": m{}}, true},
+		{"empty environment list", m{"image": "redis:7", "environment": l{}}, true},
+		{"passed-through variable", m{"image": "valkey/valkey:8-alpine", "environment": m{"VALKEY_EXTRA_FLAGS": nil}}, false},
+		{"passed-through bare name", m{"image": "valkey/valkey:8-alpine", "environment": l{"VALKEY_EXTRA_FLAGS"}}, false},
+		{"environment of an odd type", m{"image": "redis:7", "environment": "X=1"}, false},
 		{"ping healthcheck string", m{"image": "redis:7", "healthcheck": m{"test": "CMD-SHELL redis-cli ping"}}, true},
 		{"usual keys", m{"image": "redis:7", "ports": l{"6379"}, "networks": m{"default": nil}, "restart": "always", "labels": m{"a": "b"}, "healthcheck": m{"test": l{"CMD", "redis-cli", "ping"}}}, true},
 	}
