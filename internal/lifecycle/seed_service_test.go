@@ -112,49 +112,84 @@ func TestPrepareRefreshesTheResolvedServiceInTaskHashes(t *testing.T) {
 	}
 }
 
-// The receipt shows that the recorded command itself ran to its end: one shell,
-// so export, cd and set -e keep their meaning; a prefix that exits first, or
-// an entrypoint that ignores the command it is given, leaves none.
+// The receipt shows that the recorded commands themselves ran to their end: one
+// shell, so export, cd and set -e keep their meaning; a prefix that exits
+// first, a comment or open heredoc that would swallow the seed, or an
+// entrypoint that ignores or only echoes the command leaves none.
 func TestTaskReceiptOnlyAfterTheCommandRanToItsEnd(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh to run the receipt script")
 	}
-	for _, tc := range []struct {
-		cmd      string
-		receipt  bool
-		exitZero bool
-	}{
-		{"true", true, true},
-		{"exit 0 && echo seed", false, true},
-		{"set -e; false; true", false, false},
-		{"export X=1; cd /; [ \"$X\" = 1 ] && [ \"$(pwd)\" = / ]", true, true},
-		{"false", false, false},
-		{"echo \"$1$2\"", true, true}, // the wrapper's own arguments are not the command's
-	} {
+	run := func(entry []string, cmds ...string) (bool, error, string) {
+		r := newTaskReceipt()
 		var out strings.Builder
-		r := newTaskReceipt(&out)
-		argv := r.command(tc.cmd)
+		argv := append(entry, r.command(cmds...)...)
 		cmd := exec.Command(argv[0], argv[1:]...)
-		cmd.Stdout = r
+		cmd.Stdout, cmd.Stderr = r.wrap(&out, &out)
 		err := cmd.Run()
-		if (err == nil) != tc.exitZero || r.seen != tc.receipt {
-			t.Errorf("%q: exit ok %t, receipt %t; want %t, %t (output %q)", tc.cmd, err == nil, r.seen, tc.exitZero, tc.receipt, out.String())
+		return r.Seen(), err, out.String()
+	}
+	for _, tc := range []struct {
+		name          string
+		entry, cmds   []string
+		receipt, okay bool
+	}{
+		{"plain", nil, []string{"true"}, true, true},
+		{"failing", nil, []string{"false"}, false, false},
+		{"exit 0 prefix", nil, []string{"exit 0 && echo seed"}, false, true},
+		{"set -e", nil, []string{"set -e; false; true"}, false, false},
+		{"exit 0 migrate", nil, []string{"exit 0", "echo seed"}, false, true},
+		{"failing migrate", nil, []string{"false", "echo seed"}, false, false},
+		{"state kept across parts", nil, []string{"export X=1; cd /; echo x > /tmp/sf-receipt-test", "[ \"$X\" = 1 ] && [ \"$(pwd)\" = / ]"}, true, true},
+		{"comment in migrate", nil, []string{"echo migrated # comment", "false"}, false, false},
+		{"open heredoc in migrate", nil, []string{"cat <<EOF\nx", "false"}, false, false},
+		{"own arguments hidden", nil, []string{"[ -z \"$1$2$3\" ]"}, true, true},
+		{"entrypoint ignores", []string{"sh", "-c", "exit 0"}, []string{"true"}, false, true},
+		{"entrypoint echoes $*", []string{"sh", "-c", "echo \"$*\"; exit 0"}, []string{"true"}, false, true},
+		{"entrypoint echoes each arg", []string{"sh", "-c", "for a; do echo \"$a\"; done; exit 0", "sh"}, []string{"true"}, false, true},
+	} {
+		seen, err, out := run(tc.entry, tc.cmds...)
+		if seen != tc.receipt || (err == nil) != tc.okay {
+			t.Errorf("%s: receipt %t, exit ok %t; want %t, %t (output %q)", tc.name, seen, err == nil, tc.receipt, tc.okay, out)
 		}
 	}
-	// an entrypoint that never runs its arguments
-	r := newTaskReceipt(io.Discard)
-	cmd := exec.Command("sh", append([]string{"-c", "exit 0"}, r.command("true")...)...)
-	cmd.Stdout = r
-	if err := cmd.Run(); err != nil || r.seen {
-		t.Fatalf("entrypoint that ignores the command: err %v, receipt %t", err, r.seen)
+
+	// split across writes, and only as a whole line
+	r := newTaskReceipt()
+	stdout, _ := r.wrap(io.Discard, io.Discard)
+	for _, c := range append(append([]byte("noise\n"), r.want...), '\n') {
+		stdout.Write([]byte{c})
 	}
-	// a receipt split across writes still counts
-	r = newTaskReceipt(io.Discard)
-	line := append(append([]byte("noise "), r.want...), '\n')
-	for _, b := range line {
-		r.Write([]byte{b})
-	}
-	if !r.seen {
+	if !r.Seen() {
 		t.Fatal("receipt split across writes was missed")
+	}
+	r = newTaskReceipt()
+	stdout, stderr := r.wrap(io.Discard, io.Discard)
+	stdout.Write(append(append([]byte("prefix "), r.want...), '\n'))
+	stderr.Write(append(append([]byte(nil), r.want...), '\n'))
+	if r.Seen() {
+		t.Fatal("receipt inside a longer line, or on stderr, counted")
+	}
+}
+
+// Both streams of a task reach one step log through the receipt: they write
+// under one lock (go test -race).
+func TestTaskReceiptSerializesBothStreams(t *testing.T) {
+	var log bytes.Buffer // not safe for concurrent use
+	r := newTaskReceipt()
+	stdout, stderr := r.wrap(&log, &log)
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 200; i++ {
+			stderr.Write([]byte("err\n"))
+		}
+		close(done)
+	}()
+	for i := 0; i < 200; i++ {
+		stdout.Write([]byte("out\n"))
+	}
+	<-done
+	if log.Len() != 200*8 {
+		t.Fatalf("log has %d bytes", log.Len())
 	}
 }

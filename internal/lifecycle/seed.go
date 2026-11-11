@@ -200,9 +200,9 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 			break
 		}
 	}
-	receipt := newTaskReceipt(w)
-	code, err := Execute(receipt, ew, action, root, branch, project, instanceDir, newBase, legacyBase,
-		Options{Service: service, Command: receipt.command(cmd), Secrets: values})
+	receipt := newTaskReceipt()
+	code, err := Execute(w, ew, action, root, branch, project, instanceDir, newBase, legacyBase,
+		Options{Service: service, Command: receipt.command(seedParts(plan, mode, cmd)...), Secrets: values, Receipt: receipt})
 	if err == nil && code != 0 {
 		err = fmt.Errorf("exited with status %d", code)
 	}
@@ -219,7 +219,7 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 	t := true
 	SetSeeded(instanceDir, &t)
 	fmt.Fprintf(w, "seeded new database with %s\n", cmd)
-	if !receipt.seen && step != nil && step.DefinitionHash != "" {
+	if !receipt.Seen() && step != nil && step.DefinitionHash != "" {
 		fmt.Fprintf(w, noReceiptNote, "the seed")
 		step.SetDefinition("", "")
 	}
@@ -277,6 +277,24 @@ func runsSeedOf(plan knowledge.Plan, instanceDir string, c knowledge.Step, cmd s
 	return m != nil && !m.IsHostExec() && m.Cmd != "" &&
 		ResolveExecService(instanceDir, *m, plan) == ResolveExecService(instanceDir, c, plan) &&
 		cmd == m.Cmd+" && "+c.Cmd
+}
+
+// seedParts are the commands a container seed evals one after the other in
+// one shell: a prefix (the migrate) and then the plan's data command, when cmd
+// is "<prefix> && <data command>"; otherwise cmd whole. Separate evals keep a
+// comment or an open heredoc at the end of the prefix from swallowing the
+// seed, which plain concatenation would let through.
+func seedParts(plan knowledge.Plan, mode, cmd string) []string {
+	active, _ := plan.ForMode(mode)
+	for _, c := range active {
+		if c.Kind == knowledge.KindExec && c.Once == knowledge.OnceData {
+			if prefix, ok := strings.CutSuffix(cmd, " && "+c.Cmd); ok && c.Cmd != "" && strings.TrimSpace(prefix) != "" {
+				return []string{prefix, c.Cmd}
+			}
+			break
+		}
+	}
+	return []string{cmd}
 }
 
 func failSeed(stderr io.Writer, step *runs.Step, err error) error {
