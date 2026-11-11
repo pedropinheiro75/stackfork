@@ -190,6 +190,13 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 	fmt.Fprintf(w, "seeding the new database in %s: %s\n", service, cmd)
 	action := "exec"
 	active, _ := plan.ForMode(mode)
+	if step != nil && step.DefinitionHash == "" { // a standalone seed or plain up: the plan's task still earns its evidence
+		for _, candidate := range active {
+			if candidate.ID == step.ID && candidate.Kind == knowledge.KindExec && candidate.Once == knowledge.OnceData {
+				step.SetDefinition(TaskDefinitionHash(instanceDir, candidate, plan), "")
+			}
+		}
+	}
 	for _, candidate := range active {
 		if candidate.Kind == knowledge.KindExec && candidate.Once == knowledge.OnceData {
 			if candidate.On == knowledge.OnOneOff && ResolveExecService(instanceDir, candidate, plan) == service && (cmd == candidate.Cmd || strings.HasSuffix(cmd, " && "+candidate.Cmd)) {

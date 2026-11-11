@@ -219,3 +219,100 @@ func TestOneOffTasksReusePreflightSecrets(t *testing.T) {
 		}
 	}
 }
+
+// oneOffVerify prepares a fake-docker instance whose recipe has a one-off
+// install without an explicit service, and returns a start-env runner.
+func oneOffVerify(t *testing.T, steps []knowledge.Step, appService string) (recipeVerify, func(), string) {
+	t.Helper()
+	steps = append([]knowledge.Step{{ID: "prepare", Kind: knowledge.KindPrepare, Args: fullPrepare}}, steps...)
+	v := newRecipeVerify(t, fullPrepare, steps)
+	k, _ := knowledge.Load(v.path)
+	k.Plan.AppService = appService
+	if err := k.Save(v.path); err != nil {
+		t.Fatal(err)
+	}
+	logPath := installFakeDocker(t)
+	if err := os.WriteFile(filepath.Join(v.root, "compose.yaml"), []byte(gapBase+"  db:\n    image: postgres:17\n    volumes:\n      - data:/data\nvolumes:\n  data: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, stderr, code := runCLI(t, append(append(append([]string{}, v.flags...), "--root", v.root, "prepare"), fullPrepare...)...); code != 0 {
+		t.Fatalf("prepare: %d %s %s", code, out, stderr)
+	}
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	start := func() {
+		t.Helper()
+		if out, stderr, code := runCLI(t, append(append([]string{}, v.flags...), "start-env", v.root)...); code != 0 {
+			t.Fatalf("start: %d %s %s", code, out, stderr)
+		}
+	}
+	return v, start, logPath
+}
+
+func TestExecutionEvidenceFollowsTheResolvedService(t *testing.T) {
+	v, start, logPath := oneOffVerify(t, []knowledge.Step{
+		{ID: "dependencies", Kind: knowledge.KindComposeUp, Exclude: []string{"app"}},
+		{ID: "install", Kind: knowledge.KindExec, On: knowledge.OnOneOff, Cmd: "install-packages", Once: knowledge.OnceDeps},
+		{ID: "up", Kind: knowledge.KindComposeUp},
+	}, "app")
+	start()
+	if out, stderr, code := v.verify(t); code != 0 {
+		t.Fatalf("verify: %d %s %s", code, out, stderr)
+	}
+	k, _ := knowledge.Load(v.path)
+	k.Plan.AppService = "worker"
+	if err := k.Save(v.path); err != nil {
+		t.Fatal(err)
+	}
+	start()
+	log, _ := os.ReadFile(logPath)
+	if strings.Count(string(log), "install-packages") != 1 {
+		t.Fatalf("existing data was forced to reinstall:\n%s", log)
+	}
+	if _, stderr, code := v.verify(t); code == 0 || !strings.Contains(stderr, "execution evidence") {
+		t.Fatalf("install verified for a service it never ran in: %d %s", code, stderr)
+	}
+}
+
+func TestVerifyRefusesWhenANewerRunFailsDuringTheProbe(t *testing.T) {
+	v, start, _ := oneOffVerify(t, []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+	}, "")
+	start()
+	afterVerifyProbe = func() {
+		afterVerifyProbe = nil
+		t.Setenv("DOCKER_FAKE_UP_MSG", "boom")
+		t.Setenv("DOCKER_FAKE_UP_ALWAYS", "1")
+		runCLI(t, append(append([]string{}, v.flags...), "start-env", v.root)...)
+	}
+	t.Cleanup(func() { afterVerifyProbe = nil })
+	if _, stderr, code := v.verify(t); code == 0 || !strings.Contains(stderr, "newer start-env run") {
+		t.Fatalf("verified after a newer run failed: %d %s", code, stderr)
+	}
+	if k, _ := knowledge.Load(v.path); k.Status == knowledge.StatusVerified {
+		t.Fatal("knowledge was written as verified")
+	}
+}
+
+func TestStandaloneSeedRetryEstablishesExecutionEvidence(t *testing.T) {
+	v, start, logPath := oneOffVerify(t, []knowledge.Step{
+		{ID: "dependencies", Kind: knowledge.KindComposeUp, Exclude: []string{"app"}},
+		{ID: "seed", Kind: knowledge.KindExec, On: knowledge.OnOneOff, Service: "app", Cmd: "seed-data", Once: knowledge.OnceData},
+		{ID: "up", Kind: knowledge.KindComposeUp},
+	}, "")
+	t.Setenv("DOCKER_FAKE_EXEC_EXIT", "1")
+	if _, _, code := runCLI(t, append(append([]string{}, v.flags...), "start-env", v.root)...); code == 0 {
+		t.Fatal("start-env should fail in the seed")
+	}
+	t.Setenv("DOCKER_FAKE_EXEC_EXIT", "0")
+	if out, stderr, code := runCLI(t, append(append([]string{}, v.flags...), "--root", v.root, "seed")...); code != 0 {
+		t.Fatalf("seed retry: %d %s %s", code, out, stderr)
+	}
+	start()
+	log, _ := os.ReadFile(logPath)
+	if strings.Count(string(log), "sh -c seed-data") != 2 {
+		t.Fatalf("expected the failed attempt and one retry only:\n%s", log)
+	}
+	if out, stderr, code := v.verify(t); code != 0 {
+		t.Fatalf("a successful seed retry gave no evidence: %d %s %s", code, out, stderr)
+	}
+}

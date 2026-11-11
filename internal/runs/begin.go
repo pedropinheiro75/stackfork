@@ -86,6 +86,19 @@ func Begin(dir string, m Meta) (*Run, error) {
 	return r, nil
 }
 
+// Hold takes the run lock once, for a reader that must not race a run.
+// Release the returned lock when done.
+func Hold(dir string) (*state.Lock, error) {
+	if err := os.MkdirAll(runsDir(dir), 0o700); err != nil {
+		return nil, err
+	}
+	l, err := state.TryLock(lockPath(dir))
+	if errors.Is(err, state.ErrLocked) {
+		return nil, busyError(dir)
+	}
+	return l, err
+}
+
 func busyError(dir string) error {
 	ids := listIDs(dir)
 	for i := len(ids) - 1; i >= 0; i-- {

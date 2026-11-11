@@ -286,6 +286,7 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 	if err != nil {
 		return fmt.Errorf("no knowledge to verify; run `stackfork learn` first: %w", err)
 	}
+	loadedHash := k.Plan.ExecutionHash() // the plan on disk, before verify records a prepare step
 	if k.Plan.Status != knowledge.PlanRecorded {
 		return errors.New("plan is proposed, not recorded; record it with `learn record step` (or `learn record recipe`) before verifying")
 	}
@@ -324,47 +325,40 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 		}
 		return fmt.Errorf("recipe cannot start: %w", err)
 	}
-	history, err := runs.List(instanceDir)
+	executed, err := verifiedStartRun(k, instanceDir, mode, manifest.ConfigSHA256)
 	if err != nil {
-		return err
-	}
-	var executed *runs.Run
-	for _, candidate := range history {
-		if candidate.Command != "start-env" && candidate.Command != "reset" {
-			continue
-		}
-		if candidate.Mode == mode && candidate.RecipeHash == k.Plan.ExecutionHash() {
-			if candidate.Outcome == runs.Succeeded && candidate.SnapshotHash != "" && candidate.SnapshotHash == manifest.ConfigSHA256 {
-				executed = candidate
+		var missing errNoStartRun
+		if errors.As(err, &missing) {
+			k.Status = knowledge.StatusDraft
+			if werr := learn.WriteKnowledge(root, k); werr != nil {
+				return werr
 			}
-			break
 		}
-	}
-	if executed == nil {
-		k.Status = knowledge.StatusDraft
-		if err := learn.WriteKnowledge(root, k); err != nil {
-			return err
-		}
-		return fmt.Errorf("recipe has no successful start-env run for mode %s; run `stackfork start-env`, then repeat `stackfork learn verify`", mode)
-	}
-	active, _ := k.Plan.ForMode(mode)
-	for _, task := range active {
-		if task.Once != knowledge.OnceDeps && task.Once != knowledge.OnceData {
-			continue
-		}
-		proved := false
-		for _, recorded := range executed.Steps {
-			proved = proved || (recorded.ID == task.ID && recorded.ExecutedHash == task.ExecutionHash())
-		}
-		if !proved {
-			return fmt.Errorf("step %s has no successful execution evidence for its current definition; existing data was kept. Validate this task in a new isolated instance before verifying", task.ID)
-		}
+		return err
 	}
 	entry, linkChecks, probeWarnings, err := probeEntryAndLinks(root, newStateBase, legacyStateBase, k)
 	if err != nil {
 		return err
 	}
 	warnings = append(warnings, probeWarnings...)
+
+	if afterVerifyProbe != nil {
+		afterVerifyProbe()
+	}
+	// The probe ran unlocked: take the run lock and prove nothing moved before writing.
+	lock, err := runs.Hold(instanceDir)
+	if err != nil {
+		return fmt.Errorf("cannot record the verification: %w", err)
+	}
+	defer lock.Release()
+	if _, _, _, current, merr := checkoutManifest(root, newStateBase, legacyStateBase); merr != nil || current == nil {
+		return errors.New("the prepared instance changed while verifying; repeat `stackfork learn verify`")
+	} else if again, rerr := verifiedStartRun(k, instanceDir, mode, current.ConfigSHA256); rerr != nil || again.ID != executed.ID {
+		return errors.New("a newer start-env run or a changed snapshot replaced the run being verified; repeat `stackfork learn verify`")
+	}
+	if latest, lerr := knowledge.Load(path); lerr != nil || latest.Plan.ExecutionHash() != loadedHash {
+		return errors.New("the recipe changed while verifying; repeat `stackfork learn verify`")
+	}
 
 	k.Status = knowledge.StatusVerified
 	k.Verification = &knowledge.Verification{
@@ -386,6 +380,54 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 		}
 	}
 	return printJSON(stdout, out)
+}
+
+// afterVerifyProbe lets a test start a run between the probe and the write.
+var afterVerifyProbe func()
+
+type errNoStartRun struct{ mode string }
+
+func (e errNoStartRun) Error() string {
+	return fmt.Sprintf("recipe has no successful start-env run for mode %s; run `stackfork start-env`, then repeat `stackfork learn verify`", e.mode)
+}
+
+// verifiedStartRun returns the latest start-env run of this recipe and mode
+// when it succeeded on this snapshot and every once task of the mode has
+// execution evidence for its current definition.
+func verifiedStartRun(k *knowledge.Knowledge, instanceDir, mode, snapshot string) (*runs.Run, error) {
+	history, err := runs.List(instanceDir)
+	if err != nil {
+		return nil, err
+	}
+	var executed *runs.Run
+	for _, candidate := range history {
+		if candidate.Command != "start-env" && candidate.Command != "reset" {
+			continue
+		}
+		if candidate.Mode == mode && candidate.RecipeHash == k.Plan.ExecutionHash() {
+			if candidate.Outcome == runs.Succeeded && candidate.SnapshotHash != "" && candidate.SnapshotHash == snapshot {
+				executed = candidate
+			}
+			break
+		}
+	}
+	if executed == nil {
+		return nil, errNoStartRun{mode}
+	}
+	active, _ := k.Plan.ForMode(mode)
+	for _, task := range active {
+		if task.Once != knowledge.OnceDeps && task.Once != knowledge.OnceData {
+			continue
+		}
+		proved := false
+		for _, recorded := range executed.Steps {
+			proved = proved || (recorded.ID == task.ID && recorded.ExecutedHash == lifecycle.TaskDefinitionHash(instanceDir, task, k.Plan))
+		}
+		if !proved {
+			return nil, fmt.Errorf("step %s has no successful execution evidence for its current definition; existing data was kept. Validate this task in a new isolated instance before verifying", task.ID)
+		}
+	}
+	return executed, nil
 }
 
 func splitList(s string) []string {

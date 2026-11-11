@@ -277,12 +277,20 @@ func (r PlanRunner) declare(steps []knowledge.Step) {
 				break
 			}
 		}
-		hash, executed := definition.ExecutionHash(), r.Run.ExecutedDefinition(s.ID)
+		hash, executed := TaskDefinitionHash(r.InstanceDir, definition, r.Plan), r.Run.ExecutedDefinition(s.ID)
 		if executed != hash {
 			executed = ""
 		}
 		recorded.SetDefinition(hash, executed)
 	}
+}
+
+// TaskDefinitionHash fingerprints what a once task runs: its recorded step and
+// the service an omitted `service` resolves to now, so a changed app_service
+// no longer matches the evidence of an earlier run.
+func TaskDefinitionHash(instanceDir string, s knowledge.Step, plan knowledge.Plan) string {
+	s.Service = ResolveExecService(instanceDir, s, plan)
+	return s.ExecutionHash()
 }
 
 // step runs fn as the step s: its writer is the step's writer, its result the step's.
