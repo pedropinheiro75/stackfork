@@ -154,6 +154,17 @@ func TestTaskReceiptOnlyAfterTheCommandRanToItsEnd(t *testing.T) {
 		}
 	}
 
+	// a shell that inherits nounset still runs a single command
+	for _, cmds := range [][]string{{"true"}, {"true", "true"}} {
+		r := newTaskReceipt()
+		argv := r.command(cmds...)
+		cmd := exec.Command(argv[0], append([]string{"-u"}, argv[1:]...)...)
+		cmd.Stdout, cmd.Stderr = r.wrap(io.Discard, io.Discard)
+		if err := cmd.Run(); err != nil || !r.Seen() {
+			t.Fatalf("sh -u with %d command(s): err %v, receipt %t", len(cmds), err, r.Seen())
+		}
+	}
+
 	// split across writes, and only as a whole line
 	r := newTaskReceipt()
 	stdout, _ := r.wrap(io.Discard, io.Discard)

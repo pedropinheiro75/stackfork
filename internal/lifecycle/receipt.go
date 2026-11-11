@@ -17,7 +17,7 @@ import (
 // receipt is printed as its two halves joined, so an entrypoint that only
 // echoes its arguments does not print it. The fake docker of the cli tests
 // recognizes the "__sf_a=" prefix.
-const receiptScript = `__sf_a=$1; __sf_b=$2; __sf_1=$3; __sf_2=$4; __sf_n=$#; set --; ` +
+const receiptScript = `__sf_a=$1; __sf_b=$2; __sf_1=$3; __sf_2=${4-}; __sf_n=$#; set --; ` +
 	`eval "$__sf_1"; __sf_s=$?; [ "$__sf_s" -eq 0 ] || exit "$__sf_s"; ` +
 	`if [ "$__sf_n" -gt 3 ]; then eval "$__sf_2"; __sf_s=$?; [ "$__sf_s" -eq 0 ] || exit "$__sf_s"; fi; ` +
 	`printf '\n%s%s\n' "$__sf_a" "$__sf_b"`
