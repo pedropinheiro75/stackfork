@@ -5,6 +5,7 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/runs"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -111,21 +112,49 @@ func TestPrepareRefreshesTheResolvedServiceInTaskHashes(t *testing.T) {
 	}
 }
 
-// A migrate prefix runs as its own command, so one that exits 0 (recorded or
-// not) cannot stand in for the seed: the data command still runs, alone.
-func TestSeedPartsRunTheDataCommandOnItsOwn(t *testing.T) {
-	plan := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
-		{ID: "migrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Cmd: "exit 0", Service: "app"},
-		{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Cmd: "seed-original", Service: "app"},
-	}}
-	for cmd, want := range map[string][]string{
-		"exit 0 && seed-original":  {"exit 0", "seed-original"},
-		"seed-original":            {"seed-original"},
-		"seed-original || true":    {"seed-original || true"},
-		"exit 0 && seed-original2": {"exit 0 && seed-original2"},
+// The receipt shows that the recorded command itself ran to its end: one shell,
+// so export, cd and set -e keep their meaning; a prefix that exits first, or
+// an entrypoint that ignores the command it is given, leaves none.
+func TestTaskReceiptOnlyAfterTheCommandRanToItsEnd(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh to run the receipt script")
+	}
+	for _, tc := range []struct {
+		cmd      string
+		receipt  bool
+		exitZero bool
+	}{
+		{"true", true, true},
+		{"exit 0 && echo seed", false, true},
+		{"set -e; false; true", false, false},
+		{"export X=1; cd /; [ \"$X\" = 1 ] && [ \"$(pwd)\" = / ]", true, true},
+		{"false", false, false},
+		{"echo \"$1$2\"", true, true}, // the wrapper's own arguments are not the command's
 	} {
-		if got := seedParts(plan, knowledge.ModeContainer, cmd); strings.Join(got, "|") != strings.Join(want, "|") {
-			t.Errorf("seedParts(%q) = %q, want %q", cmd, got, want)
+		var out strings.Builder
+		r := newTaskReceipt(&out)
+		argv := r.command(tc.cmd)
+		cmd := exec.Command(argv[0], argv[1:]...)
+		cmd.Stdout = r
+		err := cmd.Run()
+		if (err == nil) != tc.exitZero || r.seen != tc.receipt {
+			t.Errorf("%q: exit ok %t, receipt %t; want %t, %t (output %q)", tc.cmd, err == nil, r.seen, tc.exitZero, tc.receipt, out.String())
 		}
+	}
+	// an entrypoint that never runs its arguments
+	r := newTaskReceipt(io.Discard)
+	cmd := exec.Command("sh", append([]string{"-c", "exit 0"}, r.command("true")...)...)
+	cmd.Stdout = r
+	if err := cmd.Run(); err != nil || r.seen {
+		t.Fatalf("entrypoint that ignores the command: err %v, receipt %t", err, r.seen)
+	}
+	// a receipt split across writes still counts
+	r = newTaskReceipt(io.Discard)
+	line := append(append([]byte("noise "), r.want...), '\n')
+	for _, b := range line {
+		r.Write([]byte{b})
+	}
+	if !r.seen {
+		t.Fatal("receipt split across writes was missed")
 	}
 }

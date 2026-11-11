@@ -311,7 +311,7 @@ func TestUpMigratesThenSeedsFromPlan(t *testing.T) {
 		t.Fatalf("up: %s", stderr)
 	}
 	b, _ := os.ReadFile(log)
-	if m, sd := strings.Index(string(b), "sh -c m \n"), strings.Index(string(b), "sh -c bun run db:seed"); m < 0 || sd < m {
+	if !strings.Contains(string(b), "m && bun run db:seed") {
 		t.Fatalf("expected the migrate then seed exec, log:\n%s", b)
 	}
 }

@@ -519,10 +519,17 @@ func (r PlanRunner) exec(w io.Writer, s knowledge.Step) (int, error) {
 	if s.On == knowledge.OnOneOff {
 		action = "run"
 	}
-	code, err := Execute(w, w, action, r.Root, r.Branch, r.Project, r.InstanceDir, r.NewBase, r.LegacyBase,
-		Options{Service: svc, Command: []string{"sh", "-c", s.Cmd}, Secrets: r.Secrets})
+	receipt := newTaskReceipt(w)
+	code, err := Execute(receipt, w, action, r.Root, r.Branch, r.Project, r.InstanceDir, r.NewBase, r.LegacyBase,
+		Options{Service: svc, Command: receipt.command(s.Cmd), Secrets: r.Secrets})
 	if err != nil {
 		return 0, err
+	}
+	if code == 0 && !receipt.seen && r.Run != nil {
+		if rs := r.Run.Step(s.ID, s.Kind, StepText(s)); rs.DefinitionHash != "" {
+			fmt.Fprintf(w, noReceiptNote, "step "+s.ID)
+			rs.SetDefinition("", "")
+		}
 	}
 	if code != 0 {
 		err := fmt.Errorf("exited with status %d", code)

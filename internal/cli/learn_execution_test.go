@@ -335,8 +335,8 @@ func (w *preflightMutator) Write(data []byte) (int, error) {
 
 // The seed command is read from the recipe on disk, after the plan is captured.
 // When the two differ, what ran must not count as the captured task, even under
-// a hash a Start declared early. A prefix runs as its own command, so the
-// captured command still runs after one that exits 0, and that counts.
+// a hash a Start declared early. Nor does a seed whose command left no receipt
+// (an entrypoint that ignores it, or a prefix that exits first).
 func TestSeedEvidenceNeedsTheCapturedCommandToRun(t *testing.T) {
 	for _, tc := range []struct {
 		name, changed string
@@ -345,7 +345,12 @@ func TestSeedEvidenceNeedsTheCapturedCommandToRun(t *testing.T) {
 		args          func(repo string) []string
 		env           map[string]string
 	}{
-		{name: "standalone seed with an exiting prefix", changed: "exit 0 && seed-original", ran: []string{"sh -c exit 0", "sh -c seed-original"}, verified: true,
+		{name: "standalone seed with an exiting prefix", changed: "exit 0 && seed-original", ran: []string{"sh -c exit 0 && seed-original"},
+			args: func(repo string) []string { return []string{"--root", repo, "seed"} }},
+		{name: "seed that left no receipt", changed: "seed-original", ran: []string{"sh -c seed-original"},
+			args: func(repo string) []string { return []string{"--root", repo, "seed"} },
+			env:  map[string]string{"DOCKER_FAKE_NO_RECEIPT": "1"}},
+		{name: "seed that ran to its end", changed: "seed-original", ran: []string{"sh -c seed-original"}, verified: true,
 			args: func(repo string) []string { return []string{"--root", repo, "seed"} }},
 		{name: "start with a declared hash", changed: "seed-other", ran: []string{"sh -c seed-other"},
 			args: func(repo string) []string { return []string{"start-env", repo} },
@@ -410,9 +415,6 @@ func TestSeedEvidenceNeedsTheCapturedCommandToRun(t *testing.T) {
 				if !strings.Contains(string(log), ran) {
 					t.Fatalf("%q did not run:\n%s", ran, log)
 				}
-			}
-			if !tc.verified && strings.Contains(string(log), "sh -c seed-original") {
-				t.Fatalf("seed-original ran:\n%s", log)
 			}
 			v := recipeVerify{root: repo, flags: base, path: path}
 			if _, stderr, code := v.verify(t); (code == 0) != tc.verified {
