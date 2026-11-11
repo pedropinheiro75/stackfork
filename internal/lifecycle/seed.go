@@ -193,7 +193,7 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 	active, _ := plan.ForMode(mode)
 	for _, candidate := range active {
 		if candidate.Kind == knowledge.KindExec && candidate.Once == knowledge.OnceData {
-			if candidate.On == knowledge.OnOneOff && ResolveExecService(instanceDir, candidate, plan) == service && (cmd == candidate.Cmd || strings.HasSuffix(cmd, " && "+candidate.Cmd)) {
+			if candidate.On == knowledge.OnOneOff && ResolveExecService(instanceDir, candidate, plan) == service && runsSeedOf(plan, instanceDir, candidate, cmd) {
 				action = "run"
 			}
 			break
@@ -223,29 +223,52 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 	return nil
 }
 
-// proveSeed gives a standalone seed or plain up the plan task's definition
-// hash, so its success can count as execution evidence. The hash goes on the
-// step only when the command and service about to run are the ones that
-// captured task records.
+// proveSeed decides whether this seed's success can count as execution
+// evidence: the step keeps (or gets) the plan task's definition hash only when
+// what is about to run is exactly what the captured plan's data task runs. The
+// command comes from the recipe on disk, which can change after the plan was
+// captured, so a hash declared earlier (a Start) is checked here too and
+// cleared on a mismatch: nothing is proven that did not run.
 func proveSeed(step *runs.Step, instanceDir string, plan knowledge.Plan, mode, cmd, service string, hostSteps []knowledge.Step) {
-	if step == nil || step.DefinitionHash != "" {
+	if step == nil {
 		return
 	}
+	hash := ""
 	active, _ := plan.ForMode(mode)
 	for _, c := range active {
-		if c.ID != step.ID || c.Kind != knowledge.KindExec || c.Once != knowledge.OnceData {
+		if c.Kind != knowledge.KindExec || c.Once != knowledge.OnceData {
 			continue
 		}
-		if hostSteps != nil {
-			if !c.IsHostExec() || hostSteps[len(hostSteps)-1].ID != c.ID {
-				return
-			}
-		} else if c.IsHostExec() || ResolveExecService(instanceDir, c, plan) != service || (cmd != c.Cmd && !strings.HasSuffix(cmd, " && "+c.Cmd)) {
-			return
+		if c.ID != step.ID {
+			break
 		}
-		step.SetDefinition(TaskDefinitionHash(instanceDir, c, plan), "")
-		return
+		if hostSteps != nil {
+			// runHostSeed runs hostSteps, taken from this plan, not cmd
+			if c.IsHostExec() && hostSteps[len(hostSteps)-1].ID == c.ID {
+				hash = TaskDefinitionHash(instanceDir, c, plan)
+			}
+		} else if !c.IsHostExec() && ResolveExecService(instanceDir, c, plan) == service && runsSeedOf(plan, instanceDir, c, cmd) {
+			hash = TaskDefinitionHash(instanceDir, c, plan)
+		}
+		break
 	}
+	if hash == "" || hash != step.DefinitionHash {
+		step.SetDefinition(hash, "")
+	}
+}
+
+// runsSeedOf reports whether cmd is exactly what the captured plan's data task
+// c runs in a container: c's command, or the plan's own migrate prefix and
+// then c's command (withMigrate's form). Anything else, such as another
+// prefix that can exit before the seed, is not c.
+func runsSeedOf(plan knowledge.Plan, instanceDir string, c knowledge.Step, cmd string) bool {
+	if cmd == c.Cmd {
+		return true
+	}
+	m := plan.MigrateStep()
+	return m != nil && !m.IsHostExec() && m.Cmd != "" &&
+		ResolveExecService(instanceDir, *m, plan) == ResolveExecService(instanceDir, c, plan) &&
+		cmd == m.Cmd+" && "+c.Cmd
 }
 
 func failSeed(stderr io.Writer, step *runs.Step, err error) error {

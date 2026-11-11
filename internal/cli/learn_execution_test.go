@@ -316,3 +316,100 @@ func TestStandaloneSeedRetryEstablishesExecutionEvidence(t *testing.T) {
 		t.Fatalf("a successful seed retry gave no evidence: %d %s %s", code, out, stderr)
 	}
 }
+
+// preflightMutator calls change the first time the secrets preflight reports a
+// resolved value: the moment a recipe on disk can differ from the plan the
+// command captured.
+type preflightMutator struct {
+	change func()
+	called bool
+}
+
+func (w *preflightMutator) Write(data []byte) (int, error) {
+	if !w.called && strings.Contains(string(data), "resolves") {
+		w.called = true
+		w.change()
+	}
+	return len(data), nil
+}
+
+// The seed command is read from the recipe on disk, after the plan is captured.
+// When the two differ, what ran must not count as the captured task: not under
+// a prefix that can exit first, and not under a hash a Start declared early.
+func TestSeedEvidenceNeedsTheCapturedCommandToRun(t *testing.T) {
+	for _, tc := range []struct {
+		name, changed, ran string
+		args               func(repo string) []string
+		env                map[string]string
+	}{
+		{name: "standalone seed with an exiting prefix", changed: "exit 0 && seed-original", ran: "sh -c exit 0 && seed-original",
+			args: func(repo string) []string { return []string{"--root", repo, "seed"} }},
+		{name: "start with a declared hash", changed: "seed-other", ran: "sh -c seed-other",
+			args: func(repo string) []string { return []string{"start-env", repo} },
+			env:  map[string]string{"DOCKER_FAKE_VOLUME_EXIT": "1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, base, logPath, _ := preflightFixture(t, knowledge.SecretDecl{Name: "NPM_TOKEN"})
+			fakeOp(t, "seed-evidence-canary")
+			mapSecret(t, repo, "NPM_TOKEN", "op://test/item/token")
+			compose := "services:\n  db:\n    image: postgres:17\n    volumes: [data:/data]\n    secrets: [NPM_TOKEN]\nvolumes:\n  data: {}\nsecrets:\n  NPM_TOKEN:\n    environment: NPM_TOKEN\n"
+			if err := os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(compose), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			path := knowledgePath(repo)
+			original, err := knowledge.Load(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			original.Entry = &knowledge.Entry{None: true}
+			original.Plan = knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+				{ID: "prepare", Kind: knowledge.KindPrepare, Args: []string{"-f", ".agent-dev/app.compose.yaml"}},
+				{ID: "up", Kind: knowledge.KindComposeUp},
+				{ID: "seed", Kind: knowledge.KindExec, Service: "db", On: knowledge.OnOneOff, Cmd: "seed-original", Once: knowledge.OnceData},
+			}}
+			if err := verifiedFixture(original).Save(path); err != nil {
+				t.Fatal(err)
+			}
+			if _, stderr, code := runCLI(t, append(append([]string{}, base...), "--root", repo, "prepare", "-f", ".agent-dev/app.compose.yaml")...); code != 0 {
+				t.Fatalf("prepare: %s", stderr)
+			}
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			w := &preflightMutator{change: func() {
+				changed, err := knowledge.Load(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				changed.Plan.Steps[2].Cmd = tc.changed
+				if err := changed.Save(path); err != nil {
+					t.Fatal(err)
+				}
+			}}
+			var stderr strings.Builder
+			if code := Run(append(append([]string{}, base...), tc.args(repo)...), w, &stderr); code != 0 || !w.called {
+				t.Fatalf("run: code %d, changed %t: %s", code, w.called, stderr.String())
+			}
+			for k := range tc.env {
+				os.Unsetenv(k)
+			}
+			if err := original.Save(path); err != nil {
+				t.Fatal(err)
+			}
+			if _, stderr, code := runCLI(t, append(append([]string{}, base...), "start-env", repo)...); code != 0 {
+				t.Fatal(stderr)
+			}
+			log, err := os.ReadFile(logPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(log), "sh -c seed-original") || !strings.Contains(string(log), tc.ran) {
+				t.Fatalf("expected only %q to run:\n%s", tc.ran, log)
+			}
+			v := recipeVerify{root: repo, flags: base, path: path}
+			if _, _, code := v.verify(t); code == 0 {
+				t.Fatalf("verified seed-original although only %q ran", tc.ran)
+			}
+		})
+	}
+}
