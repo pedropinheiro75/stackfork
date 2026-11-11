@@ -64,7 +64,7 @@ func TestLiveBranchCleanup(t *testing.T) {
 		{ID: "prepare", Kind: knowledge.KindPrepare, Args: []string{"-f", "docker-compose.yml"}},
 		{ID: "up", Kind: knowledge.KindComposeUp},
 	}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	gitT(t, repo, "add", "-A")

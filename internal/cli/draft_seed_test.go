@@ -17,7 +17,7 @@ const draftSeedNote = "seed not run: setup is a draft; record it with `stackfork
 func saveKnowledge(t *testing.T, root string, k knowledge.Knowledge) {
 	t.Helper()
 	k.Schema = knowledge.CurrentSchema
-	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(&k).Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 }

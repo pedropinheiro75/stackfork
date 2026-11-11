@@ -49,16 +49,18 @@ const schema = 1
 
 // Meta is what the caller knows when a run begins.
 type Meta struct {
-	Command  string // start-env, up, seed, reset or live
-	Trigger  string // cli, dashboard or live
-	Cause    *Cause // live runs only: why the run started
-	NoWait   bool   // Begin tries the run lock once instead of retrying for 2 s
-	Mode     string
-	Project  string
-	Branch   string
-	Out      io.Writer              // caller output, may be nil
-	Secrets  func() []redact.Secret // may be nil
-	Observer func(Event)            // may be nil
+	executionProofs map[string]string
+	RecipeHash      string
+	Command         string // start-env, up, seed, reset or live
+	Trigger         string // cli, dashboard or live
+	Cause           *Cause // live runs only: why the run started
+	NoWait          bool   // Begin tries the run lock once instead of retrying for 2 s
+	Mode            string
+	Project         string
+	Branch          string
+	Out             io.Writer              // caller output, may be nil
+	Secrets         func() []redact.Secret // may be nil
+	Observer        func(Event)            // may be nil
 }
 
 // Event describes one state change. Step is empty for a run-level change.
@@ -73,21 +75,24 @@ type Event struct {
 
 // Run is one execution of a plan, as stored in runs/<id>.json.
 type Run struct {
-	Schema    int       `json:"schema"`
-	ID        int       `json:"id"`
-	Command   string    `json:"command"`
-	Trigger   string    `json:"trigger"`
-	Mode      string    `json:"mode"`
-	Project   string    `json:"project"`
-	Branch    string    `json:"branch"`
-	PID       int       `json:"pid"`
-	StartedAt time.Time `json:"started_at"`
-	EndedAt   time.Time `json:"ended_at,omitzero"`
-	Outcome   string    `json:"outcome"`
-	Error     string    `json:"error,omitempty"`
-	Retry     string    `json:"retry,omitempty"`
-	Cause     *Cause    `json:"cause,omitempty"`
-	Steps     []*Step   `json:"steps"`
+	ExecutionProofs map[string]string `json:"execution_proofs,omitempty"`
+	RecipeHash      string            `json:"recipe_hash,omitempty"`
+	SnapshotHash    string            `json:"snapshot_hash,omitempty"`
+	Schema          int               `json:"schema"`
+	ID              int               `json:"id"`
+	Command         string            `json:"command"`
+	Trigger         string            `json:"trigger"`
+	Mode            string            `json:"mode"`
+	Project         string            `json:"project"`
+	Branch          string            `json:"branch"`
+	PID             int               `json:"pid"`
+	StartedAt       time.Time         `json:"started_at"`
+	EndedAt         time.Time         `json:"ended_at,omitzero"`
+	Outcome         string            `json:"outcome"`
+	Error           string            `json:"error,omitempty"`
+	Retry           string            `json:"retry,omitempty"`
+	Cause           *Cause            `json:"cause,omitempty"`
+	Steps           []*Step           `json:"steps"`
 	// DurationMS is set by readers only; it is never in a stored file.
 	DurationMS int64 `json:"duration_ms,omitempty"`
 
@@ -99,15 +104,17 @@ type Run struct {
 
 // Step is one entry of a run.
 type Step struct {
-	ID        string    `json:"id"`
-	Kind      string    `json:"kind"`
-	Text      string    `json:"text"`
-	State     string    `json:"state"`
-	Reason    string    `json:"reason,omitempty"`
-	StartedAt time.Time `json:"started_at,omitzero"`
-	EndedAt   time.Time `json:"ended_at,omitzero"`
-	Log       string    `json:"log,omitempty"` // relative to runs/, e.g. 17/seed.log
-	ExitCode  *int      `json:"exit_code,omitempty"`
+	DefinitionHash string    `json:"definition_hash,omitempty"`
+	ExecutedHash   string    `json:"executed_hash,omitempty"`
+	ID             string    `json:"id"`
+	Kind           string    `json:"kind"`
+	Text           string    `json:"text"`
+	State          string    `json:"state"`
+	Reason         string    `json:"reason,omitempty"`
+	StartedAt      time.Time `json:"started_at,omitzero"`
+	EndedAt        time.Time `json:"ended_at,omitzero"`
+	Log            string    `json:"log,omitempty"` // relative to runs/, e.g. 17/seed.log
+	ExitCode       *int      `json:"exit_code,omitempty"`
 	// DurationMS is set by readers only; it is never in a stored file.
 	DurationMS int64 `json:"duration_ms,omitempty"`
 
@@ -127,8 +134,9 @@ func newRun(dir string, m Meta, id int) (*Run, error) {
 	if err := os.MkdirAll(runsDir(dir), 0o700); err != nil {
 		return nil, err
 	}
-	r := &Run{Schema: schema, ID: id, Command: m.Command, Trigger: m.Trigger, Mode: m.Mode,
-		Project: m.Project, Branch: m.Branch, PID: os.Getpid(), StartedAt: now(),
+	r := &Run{Schema: schema, ID: id, Command: m.Command, Trigger: m.Trigger, Mode: m.Mode, RecipeHash: m.RecipeHash,
+		ExecutionProofs: m.executionProofs,
+		Project:         m.Project, Branch: m.Branch, PID: os.Getpid(), StartedAt: now(),
 		Outcome: Running, Cause: m.Cause, Steps: []*Step{}, dir: dir, meta: m}
 	if err := r.save(); err != nil {
 		return nil, err
@@ -161,6 +169,20 @@ func (r *Run) SetRetry(cmd string) {
 // SetMode replaces the mode a run began with; a reset learns it only after sync.
 func (r *Run) SetMode(mode string) {
 	r.update(Event{Run: r.ID, State: r.Outcome}, func() { r.Mode = mode })
+}
+
+func (r *Run) SetRecipeHash(hash string) {
+	r.update(Event{Run: r.ID, State: r.Outcome}, func() { r.RecipeHash = hash })
+}
+
+func (r *Run) SetSnapshotHash(hash string) {
+	r.update(Event{Run: r.ID, State: r.Outcome}, func() { r.SnapshotHash = hash })
+}
+
+func (r *Run) ExecutedDefinition(id string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ExecutionProofs[r.Mode+":"+id]
 }
 
 // Step declares a step as pending, or returns the one already declared.
@@ -241,6 +263,7 @@ func (s *Step) Start() io.Writer {
 	}
 	s.w = newStepWriter(r.meta.Out, logf, secrets)
 	r.update(Event{Run: r.ID, Step: s.ID, State: StepRunning}, func() {
+		s.ExecutedHash = ""
 		s.State, s.StartedAt = StepRunning, now()
 		if logf != nil {
 			s.Log = itoa(r.ID) + "/" + s.logName()
@@ -265,9 +288,24 @@ func (s *Step) End(err error, exitCode int) {
 	}
 	s.run.update(Event{Run: s.run.ID, Step: s.ID, State: st}, func() {
 		s.State, s.EndedAt = st, now()
+		if err == nil {
+			s.ExecutedHash = s.DefinitionHash
+			if s.DefinitionHash != "" {
+				if s.run.ExecutionProofs == nil {
+					s.run.ExecutionProofs = map[string]string{}
+				}
+				s.run.ExecutionProofs[s.run.Mode+":"+s.ID] = s.DefinitionHash
+			}
+		}
 		if err != nil && exitCode > 0 {
 			s.ExitCode = &exitCode
 		}
+	})
+}
+
+func (s *Step) SetDefinition(hash, executed string) {
+	s.run.update(Event{Run: s.run.ID, Step: s.ID, State: s.State}, func() {
+		s.DefinitionHash, s.ExecutedHash = hash, executed
 	})
 }
 

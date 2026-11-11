@@ -60,6 +60,12 @@ func (v recipeVerify) prepareStep(t *testing.T) (idx int, args string) {
 	return -1, ""
 }
 
+func (v recipeVerify) verifyExecuted(t *testing.T) (string, string, int) {
+	t.Helper()
+	recordVerifyRun(t, v.root, v.flags)
+	return v.verify(t)
+}
+
 // prepareForVerify prepares the checkout's compose.yaml, so `learn verify`
 // finds the instance whose recipe it records.
 func prepareForVerify(t *testing.T, root string) {
@@ -68,6 +74,7 @@ func prepareForVerify(t *testing.T, root string) {
 	if out, e, code := runCLI(t, "--root", root, "prepare", "-f", "compose.yaml"); code != 0 {
 		t.Fatalf("prepare: %s %s", out, e)
 	}
+	recordVerifyRun(t, root, nil)
 }
 
 var fullPrepare = []string{"-f", "compose.yaml", "-f", ".stackfork/dev.compose.yaml", "--env-file", ".stackfork/runtime.env"}
@@ -77,7 +84,7 @@ func TestLearnVerifyCompletesAShortPrepareStep(t *testing.T) {
 		{ID: "prep", Kind: knowledge.KindPrepare, Args: []string{"-f", ".stackfork/dev.compose.yaml"}},
 		{ID: "up", Kind: knowledge.KindComposeUp},
 	})
-	out, e, code := v.verify(t)
+	out, e, code := v.verifyExecuted(t)
 	if code != 0 {
 		t.Fatalf("%d %s %s", code, out, e)
 	}
@@ -98,7 +105,7 @@ func TestLearnVerifyInsertsPrepareBeforeComposeUp(t *testing.T) {
 		{ID: "net", Kind: knowledge.KindNote, Text: "x"},
 		{ID: "up", Kind: knowledge.KindComposeUp},
 	})
-	if out, e, code := v.verify(t); code != 0 {
+	if out, e, code := v.verifyExecuted(t); code != 0 {
 		t.Fatalf("%d %s %s", code, out, e)
 	}
 	k, _ := knowledge.Load(v.path)
@@ -116,7 +123,7 @@ func TestLearnVerifyKeepsTheOtherPrepareFlags(t *testing.T) {
 		{ID: "prep", Kind: knowledge.KindPrepare, Args: []string{"-f", "old.yaml", "--hostname", "acme.localhost", "--reassign-ports"}},
 		{ID: "up", Kind: knowledge.KindComposeUp},
 	})
-	if out, e, code := v.verify(t); code != 0 {
+	if out, e, code := v.verifyExecuted(t); code != 0 {
 		t.Fatalf("%d %s %s", code, out, e)
 	}
 	want := "-f compose.yaml -f .stackfork/dev.compose.yaml --env-file .stackfork/runtime.env --hostname acme.localhost --reassign-ports"
@@ -132,7 +139,7 @@ func TestLearnVerifyLeavesAStepWhoseFileIsOutsideTheCheckout(t *testing.T) {
 		{ID: "prep", Kind: knowledge.KindPrepare, Args: []string{"-f", "compose.yaml"}},
 		{ID: "up", Kind: knowledge.KindComposeUp},
 	})
-	out, e, code := v.verify(t)
+	out, e, code := v.verifyExecuted(t)
 	if code != 0 {
 		t.Fatalf("%d %s %s", code, out, e)
 	}
@@ -179,7 +186,7 @@ func TestLearnVerifyTrustNoteWhenThePrepareStepChanged(t *testing.T) {
 	if !planJSON() {
 		t.Fatal("the plan must be trusted before verify")
 	}
-	out, e, code := v.verify(t)
+	out, e, code := v.verifyExecuted(t)
 	if code != 0 {
 		t.Fatalf("%d %s %s", code, out, e)
 	}
@@ -198,7 +205,7 @@ func TestLearnVerifyTrustNoteWhenThePrepareStepChanged(t *testing.T) {
 		{ID: "prep", Kind: knowledge.KindPrepare, Args: []string{"-f", ".stackfork/dev.compose.yaml"}},
 		{ID: "up", Kind: knowledge.KindComposeUp},
 	})
-	if out, _, _ := w.verify(t); strings.Contains(out, "trust") {
+	if out, _, _ := w.verifyExecuted(t); strings.Contains(out, "trust") {
 		t.Fatalf("unexpected trust note:\n%s", out)
 	}
 }

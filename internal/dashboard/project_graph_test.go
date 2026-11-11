@@ -30,7 +30,7 @@ func hybridGraphProject(t *testing.T) map[string]any {
 	}}
 	root := t.TempDir()
 	k := &knowledge.Knowledge{Status: knowledge.StatusVerified, Plan: plan}
-	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	o := lifecycle.GraphOpts{Root: root, Main: root, K: k, StateBase: t.TempDir(), HasSecrets: true, EntryTarget: "nginx:80/", EntryURL: "http://x.localhost"}

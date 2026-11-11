@@ -127,7 +127,7 @@ func adaptedRepo(t *testing.T, root string) string {
 func readyRepo(t *testing.T, root string) string {
 	t.Helper()
 	repo := adaptedRepo(t, root)
-	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	return repo
@@ -237,7 +237,7 @@ func planRepo(t *testing.T, root string, steps []knowledge.Step) string {
 	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(planCompose), 0o644)
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified,
 		Plan: knowledge.Plan{Status: knowledge.PlanRecorded, Steps: steps}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	return repo
@@ -503,6 +503,9 @@ func TestStartEnvRunsSchema1MigrateInPrimaryService(t *testing.T) {
 	writeKnowledgeJSON(t, repo, `{"schema":1,"status":"verified","recipe":{"migrate":"npm run db:migrate","seed_once":"none"}}`)
 	log := installFakeDocker(t)
 	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
+	if _, stderr, code := runCLI(t, append(base, "--root", repo, "prepare", "-f", ".agent-dev/app.compose.yaml")...); code != 0 {
+		t.Fatal(stderr)
+	}
 	for i := 1; i <= 2; i++ {
 		out, e, code := runCLI(t, append(base, "start-env", repo)...)
 		if code != 0 {
@@ -576,7 +579,7 @@ func TestHybridStartLeavesContainerSeedPending(t *testing.T) {
 			{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Modes: []string{"container"}, Cmd: "s-cmd"},
 			{ID: "app", Kind: knowledge.KindHost, Modes: []string{"hybrid"}, Name: "app", Cmd: "npm run dev"},
 		}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	log := installFakeDocker(t)
@@ -626,7 +629,7 @@ func seedModeRepo(t *testing.T, root string) string {
 			{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Modes: []string{"container"}, Cmd: "s-cmd"},
 			{ID: "app", Kind: knowledge.KindHost, Modes: []string{"hybrid"}, Name: "app", Cmd: "npm run dev"},
 		}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	return repo

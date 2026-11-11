@@ -38,7 +38,7 @@ func gapRepo(t *testing.T) (repo, wt string, base []string) {
 	if out, e, code := runCLI(t, append(append([]string{}, base...), "--root", repo, "prepare", "-f", "compose.yaml", "-f", ".stackfork/dev.compose.yaml")...); code != 0 {
 		t.Fatalf("prepare main: %s %s", out, e)
 	}
-	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	if out, e, code := runCLI(t, append(append([]string{}, base...), "worktree", "add", repo, "feat-a", "--from", "main")...); code != 0 {

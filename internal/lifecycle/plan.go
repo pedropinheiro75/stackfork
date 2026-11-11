@@ -47,6 +47,7 @@ type PlanRunner struct {
 	// the first compose-up, where the instance lock is not held yet.
 	AllocHostPorts func()
 	FreshData      bool // a reset deleted the data: the seed runs whatever the volume check says
+	Secrets        SecretValues
 	// Exact runs Plan's steps for the mode as they are: no check, no implicit
 	// prepare, no implicit compose-up. A live run sets it with a plan it cut
 	// from the full plan; its caller checked and trusted the full one.
@@ -73,12 +74,23 @@ func (r PlanRunner) Check() error {
 		return fmt.Errorf("mode %q is not supported by this plan; supported: %s", r.Mode, strings.Join(sup, ", "))
 	}
 	run, _ := modeSteps(r.InstanceDir, r.Plan, r.Mode)
-	excluded := excludedServices(run)
+	var excluded []string
+	started := false
 	for _, st := range run {
-		if st.Kind != knowledge.KindExec || st.IsHostExec() { // a host step has no service to exclude
+		if st.Kind == knowledge.KindExec && st.Once == knowledge.OnceData && st.On == knowledge.OnOneOff && !started {
+			return fmt.Errorf("step %s needs an earlier compose-up for its database; start dependencies before the one-off seed", st.ID)
+		}
+		if st.Kind == knowledge.KindComposeUp {
+			excluded, started = st.Exclude, true
+			continue
+		}
+		if st.Kind != knowledge.KindExec || st.IsHostExec() || st.On == knowledge.OnOneOff {
 			continue
 		}
 		svc := ResolveExecService(r.InstanceDir, st, r.Plan)
+		if !started && svc != "" {
+			return fmt.Errorf("step %s needs a running %s service before it; add an earlier compose-up or record --on one-off", st.ID, svc)
+		}
 		if svc != "" && contains(excluded, svc) {
 			return fmt.Errorf("step %s runs in %s, which this mode does not start; set --service on the step", st.ID, svc)
 		}
@@ -226,7 +238,10 @@ func withImplicitPrepare(steps []knowledge.Step) []knowledge.Step {
 		switch s.Kind {
 		case knowledge.KindPrepare:
 			return steps
-		case knowledge.KindComposeUp:
+		case knowledge.KindComposeUp, knowledge.KindExec:
+			if s.Kind == knowledge.KindExec && s.On != knowledge.OnOneOff {
+				continue
+			}
 			out := append([]knowledge.Step{}, steps[:i]...)
 			out = append(out, knowledge.Step{ID: id, Kind: knowledge.KindPrepare})
 			return append(out, steps[i:]...)
@@ -251,7 +266,22 @@ func (r PlanRunner) declare(steps []knowledge.Step) {
 		return
 	}
 	for _, s := range steps {
-		r.Run.Step(s.ID, s.Kind, StepText(s))
+		recorded := r.Run.Step(s.ID, s.Kind, StepText(s))
+		if r.Run.Command == "live" || (s.Once != knowledge.OnceDeps && s.Once != knowledge.OnceData) {
+			continue
+		}
+		definition := s
+		for _, original := range r.Plan.Steps {
+			if original.ID == s.ID {
+				definition = original
+				break
+			}
+		}
+		hash, executed := definition.ExecutionHash(), r.Run.ExecutedDefinition(s.ID)
+		if executed != hash {
+			executed = ""
+		}
+		recorded.SetDefinition(hash, executed)
 	}
 }
 
@@ -283,6 +313,7 @@ func (r PlanRunner) skip(s knowledge.Step, reason string) {
 func (r PlanRunner) upSeed(s knowledge.Step, deferred bool) UpSeed {
 	return UpSeed{
 		Run: r.Run, Root: r.Root, Main: r.Main, Branch: r.Branch, Project: r.Project, InstanceDir: r.InstanceDir,
+		Secrets: r.Secrets,
 		NewBase: r.NewBase, LegacyBase: r.LegacyBase, Mode: r.Mode, Plan: r.Plan,
 		UpID: s.ID, UpText: StepText(s), Seed: !r.skipsHostSeed(), Lock: true, RetryFailed: true, FreshData: r.FreshData, DeferSeed: deferred,
 		Compose: func(stdout, stderr io.Writer) (int, error) {
@@ -461,8 +492,12 @@ func (r PlanRunner) exec(w io.Writer, s knowledge.Step) (int, error) {
 			s.ID, which, strings.Join(have, ", "), s.Cmd, s.ID, s.Cmd)
 	}
 	fmt.Fprintf(w, "running %s: %s\n", s.ID, s.Cmd)
-	code, err := Execute(w, w, "exec", r.Root, r.Branch, r.Project, r.InstanceDir, r.NewBase, r.LegacyBase,
-		Options{Service: svc, Command: []string{"sh", "-c", s.Cmd}})
+	action := "exec"
+	if s.On == knowledge.OnOneOff {
+		action = "run"
+	}
+	code, err := Execute(w, w, action, r.Root, r.Branch, r.Project, r.InstanceDir, r.NewBase, r.LegacyBase,
+		Options{Service: svc, Command: []string{"sh", "-c", s.Cmd}, Secrets: r.Secrets})
 	if err != nil {
 		return 0, err
 	}
@@ -534,17 +569,6 @@ func modeSteps(instanceDir string, plan knowledge.Plan, mode string) (run, skipp
 		out[i].Exclude = ex
 	}
 	return out, skipped
-}
-
-// excludedServices are the services the steps' compose-up leave out.
-func excludedServices(run []knowledge.Step) []string {
-	var excluded []string
-	for _, st := range run {
-		if st.Kind == knowledge.KindComposeUp {
-			excluded = append(excluded, st.Exclude...)
-		}
-	}
-	return excluded
 }
 
 func contains(l []string, x string) bool {

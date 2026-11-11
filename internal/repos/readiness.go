@@ -33,6 +33,9 @@ func ReadinessOf(name string, checkouts []string, ref string, insts []inventory.
 		case knowledge.StatusStale:
 			return Ready, "knowledge in " + filepath.Base(c) + " is stale (" + strings.Join(ks.ChangedFiles, ", ") + "); run stackfork learn"
 		case knowledge.StatusDraft:
+			if k, err := knowledge.Load(filepath.Join(c, ".stackfork", "knowledge.json")); err == nil && k.Status == knowledge.StatusVerified && k.VerificationCurrent() {
+				return Ready, "recipe verified in " + k.Verification.Mode + "; verify the current mode after starting it"
+			}
 			if draft == "" {
 				draft = "knowledge in " + filepath.Base(c) + " is a draft, not verified yet; finish stackfork learn"
 			}

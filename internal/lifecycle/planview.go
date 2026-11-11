@@ -95,7 +95,8 @@ func PlanView(stateBase, main string, k *knowledge.Knowledge, mode string) PlanO
 	seed, hasSeed := SeedEntry(main, main, "", k.Plan, mode)
 	run = RunOrder(run, seed, hasSeed) // execution order, as a Start lists it
 	state := k.Plan.Status
-	if k.Status == knowledge.StatusVerified {
+	verified := k.Status == knowledge.StatusVerified && k.VerificationCurrent() && k.Verification.Mode == mode
+	if verified {
 		state = knowledge.StatusVerified
 	}
 	conv := func(in []knowledge.Step) []PlanStep {
@@ -120,7 +121,7 @@ func PlanView(stateBase, main string, k *knowledge.Knowledge, mode string) PlanO
 		}
 		return out
 	}
-	out := PlanOut{Mode: mode, Status: k.Plan.Status, Verified: k.Status == knowledge.StatusVerified,
+	out := PlanOut{Mode: mode, Status: k.Plan.Status, Verified: verified,
 		Trusted: trusted, TrustNeeded: NeedsTrust(k.Plan, mode), Steps: conv(run), Skipped: conv(skipped)}
 	if !rawTrusted {
 		out.Diff = ReadableDiff(stateBase, main, k.Plan)

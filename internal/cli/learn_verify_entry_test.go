@@ -82,7 +82,7 @@ func newVerifyEnv(t *testing.T, webPort, mailPort int, e *knowledge.Entry, links
 		Status: knowledge.PlanRecorded, Steps: []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp}},
 	}}
 	path := filepath.Join(root, ".stackfork", "knowledge.json")
-	if err := k.Save(path); err != nil {
+	if err := verifiedFixture(k).Save(path); err != nil {
 		t.Fatal(err)
 	}
 	rows := func(svc string, target, published int) string {
@@ -94,6 +94,7 @@ func newVerifyEnv(t *testing.T, webPort, mailPort int, e *knowledge.Entry, links
 
 func (v verifyEnv) verify(t *testing.T) (string, string, int) {
 	t.Helper()
+	recordVerifyRun(t, v.root, v.flags)
 	return runCLI(t, append(append([]string{}, v.flags...), "--root", v.root, "learn", "verify", "--check", "app loads", "--confirm", "yes")...)
 }
 

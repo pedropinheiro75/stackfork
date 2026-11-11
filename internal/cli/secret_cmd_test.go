@@ -23,7 +23,7 @@ func secretCmdFixture(t *testing.T) (repo string, base []string, opCalls string)
 	repo = adaptedRepo(t, root)
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified,
 		Secrets: []knowledge.SecretDecl{{Name: "NPM_TOKEN", Hint: "GitHub Packages read token"}, {Name: "SENTRY_DSN", Hint: "ask the lead"}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	fakeKeychain(t, map[string]string{"acme-npm-token": secretCanary})
@@ -295,7 +295,7 @@ func TestSecretLsUsesTheWorktreesOwnDeclarations(t *testing.T) {
 	}
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified,
 		Secrets: []knowledge.SecretDecl{{Name: "WT_ONLY_SECRET", Hint: "worktree hint"}}}
-	if err := k.Save(filepath.Join(wt, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(wt, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	out, e, code := runCLI(t, append(base, "secret", "ls", wt)...)

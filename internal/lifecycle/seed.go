@@ -129,7 +129,7 @@ func notFoundHint(instanceDir, service string, code int, id, cmd, once string) s
 // seed's output goes to the step's writer (and so to its log), not to
 // stdout/stderr; the final failure message still goes to stderr. It returns
 // nil when there was nothing to run.
-func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir, newBase, legacyBase, cmd, service string, plan knowledge.Plan, step *runs.Step) error {
+func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir, newBase, legacyBase, cmd, service, mode string, plan knowledge.Plan, step *runs.Step, values SecretValues) error {
 	if cmd == "" { // nothing to run in this mode: leave the marker alone
 		if step != nil && step.State == runs.Pending {
 			step.Skip("no seed for this mode")
@@ -188,8 +188,18 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 		return err
 	}
 	fmt.Fprintf(w, "seeding the new database in %s: %s\n", service, cmd)
-	code, err := Execute(w, ew, "exec", root, branch, project, instanceDir, newBase, legacyBase,
-		Options{Service: service, Command: []string{"sh", "-c", cmd}})
+	action := "exec"
+	active, _ := plan.ForMode(mode)
+	for _, candidate := range active {
+		if candidate.Kind == knowledge.KindExec && candidate.Once == knowledge.OnceData {
+			if candidate.On == knowledge.OnOneOff && ResolveExecService(instanceDir, candidate, plan) == service && (cmd == candidate.Cmd || strings.HasSuffix(cmd, " && "+candidate.Cmd)) {
+				action = "run"
+			}
+			break
+		}
+	}
+	code, err := Execute(w, ew, action, root, branch, project, instanceDir, newBase, legacyBase,
+		Options{Service: service, Command: []string{"sh", "-c", cmd}, Secrets: values})
 	if err == nil && code != 0 {
 		err = fmt.Errorf("exited with status %d", code)
 	}
@@ -323,7 +333,27 @@ func SeedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
 	cmd, service, host := seedRecipeIn(root, main, instanceDir, mode)
 	if cmd != "" && !host { // a host seed has no service to leave out // a service this mode leaves out cannot run it: do not burn the one-time seed
 		plan := LoadPlan(root, main)
-		if run, _ := modeSteps(instanceDir, plan, mode); contains(excludedServices(run), ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)) {
+		active, _ := modeSteps(instanceDir, plan, mode)
+		recordedSeed := false
+		for _, candidate := range active {
+			recordedSeed = recordedSeed || candidate.Once == knowledge.OnceData
+		}
+		var excluded []string
+		for _, candidate := range active {
+			if candidate.Kind == knowledge.KindComposeUp {
+				excluded = candidate.Exclude
+				if !recordedSeed {
+					break
+				}
+			}
+			if candidate.Kind == knowledge.KindExec && candidate.Once == knowledge.OnceData {
+				if candidate.On == knowledge.OnOneOff {
+					return cmd, service
+				}
+				break
+			}
+		}
+		if contains(excluded, ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)) {
 			return "", ""
 		}
 	}

@@ -23,7 +23,7 @@ func declareSecrets(t *testing.T, repo string, names ...string) {
 	for _, n := range names {
 		k.Secrets = append(k.Secrets, knowledge.SecretDecl{Name: n})
 	}
-	if err := k.Save(p); err != nil {
+	if err := verifiedFixture(k).Save(p); err != nil {
 		t.Fatal(err)
 	}
 }

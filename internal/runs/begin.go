@@ -48,12 +48,23 @@ func Begin(dir string, m Meta) (*Run, error) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	ids := listIDs(dir)
+	m.executionProofs = map[string]string{}
 	for _, id := range ids {
 		// We hold the lock, so no stored `running` run has an owner.
-		if r, err := load(dir, id); err == nil && r.Outcome == Running {
-			markInterrupted(r)
-			r.EndedAt = now()
-			r.save()
+		if r, err := load(dir, id); err == nil {
+			for key, hash := range r.ExecutionProofs {
+				m.executionProofs[key] = hash
+			}
+			for _, task := range r.Steps {
+				if task.ExecutedHash != "" {
+					m.executionProofs[r.Mode+":"+task.ID] = task.ExecutedHash
+				}
+			}
+			if r.Outcome == Running {
+				markInterrupted(r)
+				r.EndedAt = now()
+				r.save()
+			}
 		}
 	}
 	next := 1

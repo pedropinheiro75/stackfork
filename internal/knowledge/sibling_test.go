@@ -36,7 +36,7 @@ func record(t *testing.T, dir, status, date string) {
 	k := &Knowledge{Status: status, Plan: Plan{Status: PlanRecorded, Modes: []string{ModeContainer},
 		Steps: []Step{{ID: "up", Kind: KindComposeUp}}}}
 	if status == StatusVerified {
-		k.Verification = &Verification{Date: date, Confirmation: "works"}
+		k.Verification = &Verification{Date: date, Confirmation: "works", Mode: ModeContainer, RunID: 1, RecipeHash: k.Plan.ExecutionHash()}
 	}
 	if err := os.MkdirAll(filepath.Join(dir, ".stackfork"), 0o755); err != nil {
 		t.Fatal(err)

@@ -1,0 +1,221 @@
+package cli
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/pedropinheiro75/stackfork/internal/knowledge"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
+)
+
+func TestLearnVerifyRefusesPreparedButNeverExecutedRecipe(t *testing.T) {
+	v := newRecipeVerify(t, fullPrepare, []knowledge.Step{
+		{ID: "prepare", Kind: knowledge.KindPrepare, Args: fullPrepare},
+		{ID: "up", Kind: knowledge.KindComposeUp},
+	})
+	_, stderr, code := v.verify(t)
+	if code == 0 || !strings.Contains(stderr, "start-env") {
+		t.Fatalf("unexecuted recipe verified: code=%d stderr=%s", code, stderr)
+	}
+}
+
+func TestOneOffStartupAndVerification(t *testing.T) {
+	v := newRecipeVerify(t, fullPrepare, []knowledge.Step{
+		{ID: "prepare", Kind: knowledge.KindPrepare, Args: fullPrepare},
+		{ID: "dependencies", Kind: knowledge.KindComposeUp, Exclude: []string{"app"}},
+		{ID: "install", Kind: knowledge.KindExec, On: knowledge.OnOneOff, Service: "app", Cmd: "install-packages", Once: knowledge.OnceDeps},
+		{ID: "migrate", Kind: knowledge.KindExec, On: knowledge.OnOneOff, Service: "app", Cmd: "migrate-schema"},
+		{ID: "seed", Kind: knowledge.KindExec, On: knowledge.OnOneOff, Service: "app", Cmd: "seed-data", Once: knowledge.OnceData},
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "check", Kind: knowledge.KindExec, Service: "app", Cmd: "check-server"},
+	})
+	logPath := installFakeDocker(t)
+	if err := os.WriteFile(filepath.Join(v.root, "compose.yaml"), []byte(gapBase+"  db:\n    image: postgres:17\n    volumes:\n      - data:/data\nvolumes:\n  data: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, stderr, code := runCLI(t, append(append(append([]string{}, v.flags...), "--root", v.root, "prepare"), fullPrepare...)...); code != 0 {
+		t.Fatalf("prepare: %d %s %s", code, out, stderr)
+	}
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	start := func() {
+		t.Helper()
+		if out, stderr, code := runCLI(t, append(append([]string{}, v.flags...), "start-env", v.root)...); code != 0 {
+			t.Fatalf("start: %d %s %s", code, out, stderr)
+		}
+	}
+	start()
+	log, _ := os.ReadFile(logPath)
+	for _, cmd := range []string{"install-packages", "migrate-schema", "seed-data"} {
+		if !strings.Contains(string(log), "run --rm --no-deps -T app sh -c "+cmd) {
+			t.Fatalf("%s did not use a one-off container:\n%s", cmd, log)
+		}
+	}
+	if !strings.Contains(string(log), "exec -T app sh -c check-server") {
+		t.Fatal("ordinary exec changed to a temporary container")
+	}
+	if out, stderr, code := v.verify(t); code != 0 {
+		t.Fatalf("verify: %d %s %s", code, out, stderr)
+	}
+	k, err := knowledge.Load(v.path)
+	if err != nil || k.Status != knowledge.StatusVerified || !k.VerificationCurrent() {
+		t.Fatalf("verification not bound to the executed recipe: %+v %v", k, err)
+	}
+	_, _, dir, _, err := checkoutManifest(v.root, v.flags[1], v.flags[3])
+	if err != nil {
+		t.Fatal(err)
+	}
+	history, _ := runs.List(dir)
+	if len(history) == 0 || history[0].RecipeHash != k.Plan.ExecutionHash() {
+		t.Fatal("successful run has no recipe fingerprint")
+	}
+	start()
+	log, _ = os.ReadFile(logPath)
+	if strings.Count(string(log), "run --rm --no-deps -T app sh -c install-packages") != 1 || strings.Count(string(log), "run --rm --no-deps -T app sh -c seed-data") != 1 {
+		t.Fatalf("restart repeated installation or seed:\n%s", log)
+	}
+	for _, index := range []int{2, 4} {
+		original := k.Plan.Steps[index].Cmd
+		k.Plan.Steps[index].Cmd = original + "-changed"
+		if err := k.Save(v.path); err != nil {
+			t.Fatal(err)
+		}
+		start()
+		if _, stderr, code := v.verify(t); code == 0 || !strings.Contains(stderr, "execution evidence") {
+			t.Fatalf("changed once task verified without execution: %d %s", code, stderr)
+		}
+		log, _ := os.ReadFile(logPath)
+		if strings.Contains(string(log), "sh -c "+original+"-changed") {
+			t.Fatal("a changed once task was forced on existing data")
+		}
+		k.Plan.Steps[index].Cmd = original
+		if err := k.Save(v.path); err != nil {
+			t.Fatal(err)
+		}
+		start()
+	}
+	k.Plan.Steps[3].Cmd = "changed-migration"
+	if err := k.Save(v.path); err != nil {
+		t.Fatal(err)
+	}
+	k, _ = knowledge.Load(v.path)
+	if k.Status == knowledge.StatusVerified {
+		t.Fatal("edited recipe retained verification")
+	}
+	if _, stderr, code := v.verify(t); code == 0 || !strings.Contains(stderr, "start-env") {
+		t.Fatalf("old run verified a changed recipe: %d %s", code, stderr)
+	}
+}
+
+func TestVerificationRejectsNonmatchingOrIncompleteRuns(t *testing.T) {
+	for _, scenario := range []string{"wrong-mode", "wrong-recipe", "plain-up", "live", "failed", "running", "wrong-snapshot", "missing-snapshot", "latest-failed"} {
+		t.Run(scenario, func(t *testing.T) {
+			v := newRecipeVerify(t, fullPrepare, []knowledge.Step{
+				{ID: "prepare", Kind: knowledge.KindPrepare, Args: fullPrepare},
+				{ID: "up", Kind: knowledge.KindComposeUp},
+			})
+			k, _ := knowledge.Load(v.path)
+			_, project, dir, manifest, err := checkoutManifest(v.root, v.flags[1], v.flags[3])
+			if err != nil {
+				t.Fatal(err)
+			}
+			meta := runs.Meta{Command: "start-env", Mode: knowledge.ModeContainer, Project: project, RecipeHash: k.Plan.ExecutionHash()}
+			switch scenario {
+			case "wrong-mode":
+				meta.Mode = knowledge.ModeHybrid
+			case "wrong-recipe":
+				meta.RecipeHash = "different"
+			case "plain-up":
+				meta.Command = "up"
+			case "live":
+				meta.Command = "live"
+			}
+			if scenario == "latest-failed" {
+				recordVerifyRun(t, v.root, v.flags)
+			}
+			rec, err := runs.Begin(dir, meta)
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshot := manifest.ConfigSHA256
+			if scenario == "wrong-snapshot" {
+				snapshot = "different"
+			}
+			if scenario != "missing-snapshot" {
+				rec.SetSnapshotHash(snapshot)
+			}
+			switch scenario {
+			case "failed", "latest-failed":
+				rec.Finish(errors.New("setup failed"))
+			case "running":
+				defer rec.Finish(errors.New("test finished"))
+			default:
+				rec.Finish(nil)
+			}
+			if _, stderr, code := v.verify(t); code == 0 || !strings.Contains(stderr, "start-env") {
+				t.Fatalf("invalid evidence accepted: %d %s", code, stderr)
+			}
+		})
+	}
+}
+
+func TestOneOffTasksReusePreflightSecrets(t *testing.T) {
+	repo, base, _, _ := preflightFixture(t, knowledge.SecretDecl{Name: "NPM_TOKEN"})
+	const canary = "one-off-preflight-canary"
+	calls := fakeOp(t, canary)
+	mapSecret(t, repo, "NPM_TOKEN", "op://test/item/token")
+	compose := "services:\n  db:\n    image: postgres:17\n    volumes: [data:/data]\n    secrets: [NPM_TOKEN]\nvolumes:\n  data: {}\nsecrets:\n  NPM_TOKEN:\n    environment: NPM_TOKEN\n"
+	if err := os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(compose), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	k, _ := knowledge.Load(knowledgePath(repo))
+	k.Plan = knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+		{ID: "prepare", Kind: knowledge.KindPrepare, Args: []string{"-f", ".agent-dev/app.compose.yaml"}},
+		{ID: "dependencies", Kind: knowledge.KindComposeUp},
+		{ID: "install", Kind: knowledge.KindExec, On: knowledge.OnOneOff, Service: "db", Cmd: "install", Once: knowledge.OnceDeps},
+		{ID: "migrate", Kind: knowledge.KindExec, On: knowledge.OnOneOff, Service: "db", Cmd: "migrate"},
+		{ID: "seed", Kind: knowledge.KindExec, On: knowledge.OnOneOff, Service: "db", Cmd: "seed", Once: knowledge.OnceData},
+	}}
+	if err := verifiedFixture(k).Save(knowledgePath(repo)); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_FAKE_VOLUME_EXIT", "1")
+	t.Setenv("DOCKER_FAKE_EXEC_OUT", canary)
+	out, stderr, code := runCLI(t, append(base, "start-env", repo)...)
+	if code != 0 || strings.Contains(out+stderr, canary) {
+		t.Fatalf("one-off setup failed or exposed a secret: %d %s %s", code, out, stderr)
+	}
+	lookups, _ := os.ReadFile(calls)
+	if strings.Count(string(lookups), "read ") != 1 {
+		t.Fatalf("secrets resolved after preflight: %s", lookups)
+	}
+	_, _, dir, _, err := checkoutManifest(repo, base[1], base[3])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"seed", "up"} {
+		setSeeded(dir, boolPtr(false))
+		if command == "up" {
+			k.Plan.Steps = []knowledge.Step{
+				{ID: "up", Kind: knowledge.KindComposeUp},
+				{ID: "seed", Kind: knowledge.KindExec, On: knowledge.OnOneOff, Service: "db", Cmd: "seed", Once: knowledge.OnceData},
+			}
+			if err := k.Save(knowledgePath(repo)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(calls, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, stderr, code := runCLI(t, append(append([]string{}, base...), "--root", repo, command)...)
+		if code != 0 || strings.Contains(out+stderr, canary) {
+			t.Fatalf("%s failed or exposed a secret: %d %s %s", command, code, out, stderr)
+		}
+		lookups, _ := os.ReadFile(calls)
+		if strings.Count(string(lookups), "read ") != 1 {
+			t.Fatalf("%s resolved secrets after preflight: %s", command, lookups)
+		}
+	}
+}

@@ -129,7 +129,7 @@ func TestLearnScanReplacesProposedPlan(t *testing.T) {
 	path := filepath.Join(root, ".stackfork", "knowledge.json")
 	k, _ := knowledge.Load(path)
 	k.Plan.Steps = append(k.Plan.Steps, knowledge.Step{ID: "stale", Kind: knowledge.KindNote, Text: "x"})
-	if err := k.Save(path); err != nil {
+	if err := verifiedFixture(k).Save(path); err != nil {
 		t.Fatal(err)
 	}
 	runCLI(t, "--root", root, "learn")
@@ -413,7 +413,7 @@ func TestLearnScanEntryMerge(t *testing.T) {
 	// A proposed entry that no longer matches is replaced.
 	k, _ := knowledge.Load(path)
 	k.Entry = &knowledge.Entry{Service: "old", Port: 1, Proposed: true}
-	k.Save(path)
+	verifiedFixture(k).Save(path)
 	if k := scan(); k.Entry.Service != "web" {
 		t.Fatalf("%+v", k.Entry)
 	}
@@ -421,13 +421,13 @@ func TestLearnScanEntryMerge(t *testing.T) {
 	k, _ = knowledge.Load(path)
 	k.Entry = &knowledge.Entry{Service: "web", Port: 3000, Path: "/app"}
 	k.Links = []knowledge.Link{{Name: "Dashboard", Path: "/admin"}, {Name: "Email", Service: "db", Port: 5432}}
-	k.Save(path)
+	verifiedFixture(k).Save(path)
 	k2 := scan()
 	if k2.Entry == nil || *k2.Entry != *k.Entry || !reflect.DeepEqual(k2.Links, k.Links) {
 		t.Fatalf("%+v %+v", k2.Entry, k2.Links)
 	}
 	k.Entry = &knowledge.Entry{None: true}
-	k.Save(path)
+	verifiedFixture(k).Save(path)
 	if k3 := scan(); k3.Entry == nil || !k3.Entry.None {
 		t.Fatalf("%+v", k3.Entry)
 	}

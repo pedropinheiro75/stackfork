@@ -32,7 +32,7 @@ func projectFixture(t *testing.T) (e *browserEnv, repo, wt string) {
 		{ID: "migrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Service: "app", Cmd: "npm run db:migrate", Modes: c},
 		{ID: "web", Kind: knowledge.KindHost, Name: "web", Cmd: "npm run dev", Port: 5173, Modes: h},
 	}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	gitIn(t, repo, "branch", "backup/old")
@@ -227,7 +227,7 @@ func TestProjectBorrowedKnowledge(t *testing.T) {
 	repo := e.needsLearnRepo("lend")
 	wt := filepath.Join(repo, ".worktrees", "done")
 	gitIn(t, repo, "worktree", "add", "-q", "-b", "done", wt)
-	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified, Verification: &knowledge.Verification{Date: "2026-10-01"}}).Save(filepath.Join(wt, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(&knowledge.Knowledge{Status: knowledge.StatusVerified, Verification: &knowledge.Verification{Date: "2026-10-01"}}).Save(filepath.Join(wt, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	var p struct{ Knowledge struct{ State, From string } }

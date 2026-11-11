@@ -13,6 +13,9 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/learn"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/repos"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 )
 
 // learnOutput summarises a scan; never includes an env value, a script's
@@ -294,17 +297,14 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 		return errors.New("plan has no compose-up step; record one with `learn record step --id up --kind compose-up` before verifying")
 	}
 
-	top, project, _, manifest, err := checkoutManifest(root, newStateBase, legacyStateBase)
+	top, project, instanceDir, manifest, err := checkoutManifest(root, newStateBase, legacyStateBase)
 	if err != nil || manifest == nil {
 		if k.Entry != nil && k.Entry.None {
 			return errors.New("no prepared instance for this checkout; prepare it, then verify")
 		}
 		return errors.New("no prepared instance for this checkout; prepare and start it, then verify")
 	}
-	entry, linkChecks, warnings, err := probeEntryAndLinks(root, newStateBase, legacyStateBase, k)
-	if err != nil {
-		return err
-	}
+	var warnings []string
 	hash := knowledge.PlanHash(k.Plan.Steps)
 	for _, st := range k.Plan.HostRunSteps() {
 		warnings = append(warnings, knowledge.HostLiteralWarnings(st, hostnameOf(project, manifest))...)
@@ -315,9 +315,60 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 	if warn != "" {
 		warnings = append(warnings, warn)
 	}
+	main := repos.MainOrSelf(top)
+	mode := lifecycle.PlanMode(root, main)
+	if err := (lifecycle.PlanRunner{NewBase: newStateBase, Root: root, Main: main, InstanceDir: instanceDir, Mode: mode, Plan: k.Plan}).Check(); err != nil {
+		k.Status = knowledge.StatusDraft
+		if writeErr := learn.WriteKnowledge(root, k); writeErr != nil {
+			return writeErr
+		}
+		return fmt.Errorf("recipe cannot start: %w", err)
+	}
+	history, err := runs.List(instanceDir)
+	if err != nil {
+		return err
+	}
+	var executed *runs.Run
+	for _, candidate := range history {
+		if candidate.Command != "start-env" && candidate.Command != "reset" {
+			continue
+		}
+		if candidate.Mode == mode && candidate.RecipeHash == k.Plan.ExecutionHash() {
+			if candidate.Outcome == runs.Succeeded && candidate.SnapshotHash != "" && candidate.SnapshotHash == manifest.ConfigSHA256 {
+				executed = candidate
+			}
+			break
+		}
+	}
+	if executed == nil {
+		k.Status = knowledge.StatusDraft
+		if err := learn.WriteKnowledge(root, k); err != nil {
+			return err
+		}
+		return fmt.Errorf("recipe has no successful start-env run for mode %s; run `stackfork start-env`, then repeat `stackfork learn verify`", mode)
+	}
+	active, _ := k.Plan.ForMode(mode)
+	for _, task := range active {
+		if task.Once != knowledge.OnceDeps && task.Once != knowledge.OnceData {
+			continue
+		}
+		proved := false
+		for _, recorded := range executed.Steps {
+			proved = proved || (recorded.ID == task.ID && recorded.ExecutedHash == task.ExecutionHash())
+		}
+		if !proved {
+			return fmt.Errorf("step %s has no successful execution evidence for its current definition; existing data was kept. Validate this task in a new isolated instance before verifying", task.ID)
+		}
+	}
+	entry, linkChecks, probeWarnings, err := probeEntryAndLinks(root, newStateBase, legacyStateBase, k)
+	if err != nil {
+		return err
+	}
+	warnings = append(warnings, probeWarnings...)
 
 	k.Status = knowledge.StatusVerified
 	k.Verification = &knowledge.Verification{
+		RecipeHash: k.Plan.ExecutionHash(), Mode: mode, RunID: executed.ID,
 		Date: time.Now().UTC().Format("2006-01-02"), Checks: checks, Confirmation: *confirm,
 		Entry: entry, Links: linkChecks,
 	}
@@ -455,8 +506,10 @@ func cmdLearnRecordStep(stdout, stderr io.Writer, rest []string, root, newStateB
 			case "host":
 				st.On = knowledge.OnHost
 			case "container": // clears on: the step runs in a service
+			case knowledge.OnOneOff:
+				st.On = knowledge.OnOneOff
 			default:
-				return fmt.Errorf("--on takes host or container, not %q", *on)
+				return fmt.Errorf("--on takes host, container or one-off, not %q", *on)
 			}
 		}
 		prev := stepByID(k.Plan, st.ID)

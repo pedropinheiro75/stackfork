@@ -117,7 +117,7 @@ func (e *browserEnv) readyRepo(name string) string {
 	repo := scratchRepoAt(e.t, filepath.Join(e.root, name))
 	os.MkdirAll(filepath.Join(repo, ".agent-dev"), 0o755)
 	os.WriteFile(filepath.Join(repo, ".agent-dev", "app.compose.yaml"), []byte(fixtureCompose), 0o644)
-	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		e.t.Fatal(err)
 	}
 	return repo

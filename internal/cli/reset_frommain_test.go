@@ -43,7 +43,7 @@ func newFromMainEnv(t *testing.T) fromMainEnv {
 	os.MkdirAll(filepath.Join(repo, ".stackfork"), 0o755)
 	os.WriteFile(filepath.Join(repo, ".stackfork", "dev.compose.yaml"), []byte(gapOverride), 0o644)
 	os.WriteFile(filepath.Join(repo, ".stackfork", "runtime.env"), []byte("DEV_CHECKOUT="+repo+"\n"), 0o600)
-	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	base := []string{"--state-dir", st, "--legacy-state-dir", t.TempDir()}
@@ -332,7 +332,7 @@ func TestResetFromMainAppliesNoOtherRecipe(t *testing.T) {
 	os.MkdirAll(filepath.Join(repo, ".stackfork"), 0o755)
 	os.WriteFile(filepath.Join(repo, ".stackfork", "dev.yml"), []byte(gapOverride), 0o644)
 	run("--root", repo, "prepare", "--force", "-f", "compose.yaml", "-f", ".stackfork/dev.yml")
-	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	wt := filepath.Join(repo, ".worktrees", "feat-a")

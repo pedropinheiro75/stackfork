@@ -29,11 +29,28 @@ func graphEnv(t *testing.T, plan knowledge.Plan, status string) GraphOpts {
 	t.Helper()
 	root := t.TempDir()
 	k := &knowledge.Knowledge{Status: status, Plan: plan}
+	if status == knowledge.StatusVerified {
+		k.Verification = &knowledge.Verification{Mode: knowledge.ModeContainer, RecipeHash: plan.ExecutionHash(), RunID: 1}
+	}
 	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	return GraphOpts{Root: root, Main: root, K: k, StateBase: t.TempDir(), HasSecrets: true,
 		EntryTarget: "nginx:80/", EntryURL: "http://x.localhost"}
+}
+
+func TestPlanGraphDoesNotVerifyAnotherMode(t *testing.T) {
+	plan := knowledge.Plan{Steps: []knowledge.Step{
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "host", Kind: knowledge.KindHost, Name: "app", Cmd: "serve", Modes: []string{knowledge.ModeHybrid}},
+	}}
+	opts := graphEnv(t, plan, knowledge.StatusVerified)
+	if node := gnode(t, PlanGraph(plan, knowledge.ModeContainer, opts), "up"); node.PlanState != knowledge.StatusVerified {
+		t.Fatalf("verified mode lost its evidence: %+v", node)
+	}
+	if node := gnode(t, PlanGraph(plan, knowledge.ModeHybrid, opts), "up"); node.PlanState == knowledge.StatusVerified {
+		t.Fatalf("another mode inherited verification: %+v", node)
+	}
 }
 
 func gnode(t *testing.T, g Graph, id string) GraphNode {

@@ -115,7 +115,7 @@ func saveRepoKnowledge(t *testing.T, repo string, mut func(*knowledge.Knowledge)
 	k := &knowledge.Knowledge{Status: knowledge.StatusVerified, Plan: knowledge.Plan{Status: knowledge.PlanRecorded,
 		Steps: []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp}}}}
 	mut(k)
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 }

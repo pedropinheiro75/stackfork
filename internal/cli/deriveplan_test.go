@@ -46,7 +46,7 @@ func (f deriveFix) write(t *testing.T, root, rel, body string) {
 func (f deriveFix) know(t *testing.T, root string, k knowledge.Knowledge) {
 	t.Helper()
 	k.Schema = knowledge.CurrentSchema
-	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(&k).Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 }

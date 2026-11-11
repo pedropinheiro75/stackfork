@@ -222,6 +222,9 @@ func (s *Server) projectFor(repo repos.Repo, cfg *config.Config, history string)
 		}
 	}
 	out.DefaultMode, _ = cfg.ModeForPlan(repo.Path, plan)
+	if k != nil && out.Knowledge.State == knowledge.StatusVerified && k.Verification.Mode != out.DefaultMode {
+		out.Knowledge.State = knowledge.StatusDraft
+	}
 
 	var insts []inventory.Instance
 	if inv, err := s.collect(); err == nil {

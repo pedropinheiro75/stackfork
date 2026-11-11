@@ -31,6 +31,9 @@ func StepText(st knowledge.Step) string {
 		if st.IsHostExec() {
 			parts = append(parts, "on host")
 		}
+		if st.On == knowledge.OnOneOff {
+			parts = append(parts, "in a one-off container")
+		}
 	}
 	if st.Kind == knowledge.KindHost {
 		if st.Port > 0 {

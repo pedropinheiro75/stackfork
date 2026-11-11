@@ -108,6 +108,7 @@ func TestAddWorktreeCopiesOnlyAllowedAdapterFiles(t *testing.T) {
 	k := &knowledge.Knowledge{Status: knowledge.StatusVerified, AdapterFiles: []string{
 		".agent-dev", "tokened", "plain", "missing.yaml", // paths outside the repo are refused by Load now
 	}}
+	k.Verification = &knowledge.Verification{RecipeHash: k.Plan.ExecutionHash(), RunID: 1, Mode: knowledge.ModeContainer}
 	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}

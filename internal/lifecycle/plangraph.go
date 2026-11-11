@@ -19,6 +19,8 @@ type Graph struct {
 
 // GraphNode is a terminal (start, ready), a decision or a step.
 type GraphNode struct {
+	On              string    `json:"on,omitempty"`
+	CommandRaw      string    `json:"command_raw,omitempty"`
 	ID              string    `json:"id"`
 	Kind            string    `json:"kind"` // terminal, decision, step
 	StepKind        string    `json:"step_kind,omitempty"`
@@ -91,7 +93,7 @@ func PlanGraph(plan knowledge.Plan, mode string, o GraphOpts) Graph {
 	if !contains(modes, mode) {
 		mode = modes[0]
 	}
-	b := &graphBuilder{plan: plan, o: o, seen: map[string]int{}, inMode: map[string]map[string]bool{},
+	b := &graphBuilder{plan: plan, o: o, viewedMode: mode, seen: map[string]int{}, inMode: map[string]map[string]bool{},
 		edgeSet: map[GraphEdge]bool{}, decisionOf: map[string]string{}}
 	b.inPlan = map[string]bool{}
 	for _, st := range plan.Steps {
@@ -168,6 +170,7 @@ func groupItems(steps []knowledge.Step) []gItem {
 }
 
 type graphBuilder struct {
+	viewedMode string
 	g          Graph
 	plan       knowledge.Plan
 	o          GraphOpts
@@ -315,6 +318,9 @@ func (b *graphBuilder) addParallel(ids []string) {
 // whether a Start would skip it because the setup is only a draft.
 func (b *graphBuilder) stepNode(s knowledge.Step) GraphNode {
 	n := GraphNode{ID: s.ID, Kind: "step", StepKind: s.Kind, Title: s.ID, Once: s.Once, Command: StepText(s), Service: s.Service}
+	if s.On == knowledge.OnOneOff {
+		n.On, n.CommandRaw = s.On, s.Cmd
+	}
 	switch s.Kind {
 	case knowledge.KindPrepare:
 		n.Where, n.Subtitle = "stackfork", "prepare"
@@ -336,7 +342,7 @@ func (b *graphBuilder) stepNode(s knowledge.Step) GraphNode {
 	switch {
 	case b.o.Derived || k == nil:
 		n.PlanState = StateDerived
-	case k.Status == knowledge.StatusVerified:
+	case k.Status == knowledge.StatusVerified && k.VerificationCurrent() && k.Verification.Mode == b.viewedMode && (len(s.Modes) == 0 || contains(s.Modes, k.Verification.Mode)):
 		n.PlanState = knowledge.StatusVerified
 	default:
 		n.PlanState = knowledge.StatusDraft

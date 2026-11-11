@@ -189,7 +189,8 @@ func (s *Server) runAction(req actionRequest) actionResponse {
 				return actionResponse{Message: out.String() + perr.Error()}
 			}
 			res := lifecycle.UpAndSeed(&out, &out, lifecycle.UpSeed{
-				Run: rec, Root: root, Main: main, Branch: branch, Project: req.Project, InstanceDir: instanceDir,
+				Secrets: opts.Secrets,
+				Run:     rec, Root: root, Main: main, Branch: branch, Project: req.Project, InstanceDir: instanceDir,
 				NewBase: s.NewStateBase, LegacyBase: s.LegacyStateBase, Mode: mode,
 				Plan: lifecycle.LoadPlan(root, main), Seed: !resume, Compose: compose,
 			})

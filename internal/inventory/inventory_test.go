@@ -247,6 +247,7 @@ func TestCollectKnowledgeStale(t *testing.T) {
 		Inputs:       []knowledge.Input{{Path: "compose.yaml", SHA256: sha}},
 		Verification: &knowledge.Verification{Date: "2026-09-20"},
 	}
+	k.Verification.RecipeHash, k.Verification.RunID, k.Verification.Mode = k.Plan.ExecutionHash(), 1, knowledge.ModeContainer
 	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}

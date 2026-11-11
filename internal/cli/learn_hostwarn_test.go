@@ -38,8 +38,16 @@ func TestLearnVerifyWarnsOnceOnLiteralHostValues(t *testing.T) {
 	k.Plan.Steps = append(k.Plan.Steps,
 		knowledge.Step{ID: "app", Kind: knowledge.KindHost, Name: "app", Cmd: "vite --port 13003"},
 		knowledge.Step{ID: "ok", Kind: knowledge.KindHost, Name: "ok", Cmd: "vite --port {{port}}"})
+	top, _, _, manifest, err := checkoutManifest(v.root, v.flags[1], v.flags[3])
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordPrepareRecipe(&k.Plan, top, manifest)
 	if err := k.Save(v.path); err != nil {
 		t.Fatal(err)
+	}
+	if _, stderr, code := runCLI(t, append(append([]string{}, v.flags...), "--root", v.root, "plan", "--trust")...); code != 0 {
+		t.Fatal(stderr)
 	}
 	out, stderr, code := v.verify(t)
 	if code != 0 {

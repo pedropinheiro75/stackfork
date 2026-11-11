@@ -50,7 +50,7 @@ func TestLiveStartEnvRuns(t *testing.T) {
 		{ID: "wait", Kind: knowledge.KindExec, Service: "app", Cmd: "sleep 6"},
 		{ID: "helper", Kind: knowledge.KindHost, Modes: []string{"hybrid"}, Name: "helper", Cmd: "sleep 3600"},
 	}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	out, _ := sf("--root", repo, "where")

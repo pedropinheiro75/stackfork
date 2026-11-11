@@ -23,12 +23,12 @@ func seedRecipe(root, instanceDir string) (cmd, service string) {
 	return lifecycle.SeedRecipe(root, repos.MainOrSelf(root), instanceDir)
 }
 
-func runSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir, newBase, legacyBase, mode string, plan knowledge.Plan, step *runs.Step) error {
+func runSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir, newBase, legacyBase, mode string, plan knowledge.Plan, step *runs.Step, vals lifecycle.SecretValues) error {
 	if mode == "" {
 		mode = lifecycle.PlanMode(root, main)
 	}
 	cmd, service := lifecycle.SeedRecipeIn(root, main, instanceDir, mode)
-	return lifecycle.RunSeed(stdout, stderr, root, main, branch, project, instanceDir, newBase, legacyBase, cmd, service, plan, step)
+	return lifecycle.RunSeed(stdout, stderr, root, main, branch, project, instanceDir, newBase, legacyBase, cmd, service, mode, plan, step, vals)
 }
 
 // cmdSeed is `stackfork seed [--force]`: runs the recorded seed_once unless
@@ -93,7 +93,7 @@ func cmdSeed(stdout, stderr io.Writer, subArgs []string, root, branch, project, 
 		return 0, err
 	}
 	defer lock.Release()
-	serr := runSeed(stdout, stderr, root, main, branch, project, instanceDir, newBase, legacyBase, mode, plan, step)
+	serr := runSeed(stdout, stderr, root, main, branch, project, instanceDir, newBase, legacyBase, mode, plan, step, vals)
 	if serr != nil {
 		rec.SetRetry("stackfork --instance " + project + " seed")
 		rec.Finish(fmt.Errorf("step %s failed: %v; retry with stackfork seed", entry.ID, serr))

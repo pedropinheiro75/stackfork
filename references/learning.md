@@ -39,7 +39,7 @@ The recipe is a startup plan: an ordered list of steps in `.stackfork/knowledge.
 |---|---|
 | `prepare` | Runs `prepare` with the recorded arguments. |
 | `compose-up` | Starts the stack. `exclude` lists services to leave out. |
-| `exec` | Runs `cmd` in `service`. `once` is `data` (seed, new database only), `schema` (migrate) or `deps` (install dependencies, see below). With `on: host` it runs on the host instead (see below). |
+| `exec` | Runs `cmd` in an already-running `service`. Set `on: one-off` for a temporary container, or `on: host` for the host. `once` is `data` (seed, new database only), `schema` (migrate) or `deps` (install dependencies). |
 | `host` | Runs `cmd` on the host. `cmd` is an argument vector: no shell, so no pipes, redirects or `&&`. |
 | `note` | Shows `text` to the person. Runs nothing. |
 
@@ -186,9 +186,24 @@ stackfork learn record reload api rebuild
 - `learn verify` warns when the entry app's mode is unknown or still only proposed. It does not refuse.
 - `reload` is not part of the trust hash. `stackfork status` adds `reload` to a row when the mode is known.
 
+### Preparing an app before starting its server
+
+Use `--on one-off` when a setup command must finish before the app starts. Each task uses `docker compose run --rm --no-deps -T`. It uses the prepared instance's image, network, environment, secrets and volumes. It publishes no service ports and starts no dependencies. The temporary container is removed when the command ends; named volumes remain.
+
+Start database dependencies first, then install packages, migrate and seed, then start the app. Keep `--once deps` on installation and `--once data` on the seed. A failed task stops the recipe; it does not fall back to the host or a running container.
+
+```sh
+stackfork learn record step --id dependencies --kind compose-up --exclude app --before install
+stackfork learn record step --id install --kind exec --on one-off --service app --once deps --cmd "bun install --frozen-lockfile" --before migrate
+stackfork learn record step --id migrate --kind exec --on one-off --service app --cmd "bun run db:migrate" --before seed
+stackfork learn record step --id seed --kind exec --on one-off --service app --once data --cmd "bun run db:seed:dev" --before up
+```
+
+These examples update an existing recipe. Use the commands and service names from your project. Ordinary container `exec` steps still require an earlier `compose-up` that starts their service.
+
 ## Verifying
 
-Step 7 only, never on your own initiative — `learn verify` refuses if the recipe's `--prepare`/`--up` were never recorded (recording the steps is what step 3 means by "try it") or the app's entry was not recorded (see "Entry and quick links"; the instance has to run):
+Step 7 only, never on your own initiative. Run the recorded recipe with `stackfork start-env` before verification. A prepared instance or an accessible page alone is not enough. Verification requires the latest run of that exact recipe and mode to have succeeded. A plain `up`, a live rebuild, an interrupted run or a failed run does not qualify. The app's entry must also be recorded (see "Entry and quick links"):
 
 ```sh
 stackfork learn verify --check "database identity" --check "app readiness" --confirm "<the user's own words>"
@@ -203,7 +218,13 @@ stackfork learn verify --check "database identity" --check "app readiness" --con
 - when the instance uses a file outside the checkout, verify prints a warning and leaves the step as it was (a committed plan cannot name such a file);
 - the JSON output lists the recorded args as `prepare`.
 
-The `prepare` step is part of the trust hash. When verify changes it and the plan has host steps, the output has a `note` (`the prepare step changed; a person must trust the plan again: stackfork plan --trust`) and verify still succeeds. Knowledge verified before this change keeps its `prepare` step until the next `learn verify`.
+If verification completes or changes the `prepare` step, it saves the corrected recipe as a draft. Run `stackfork start-env` with that recipe, then repeat verification. A person must trust changed host plans again with `stackfork plan --trust`.
+
+Verification stores the successful run ID, mode and a hash of the complete plan. Changing the plan invalidates that evidence. Older verification records without execution evidence appear as drafts and need a new start and confirmation. Reading them does not rewrite files or start any work. Verification never resets a database or forces a seed. A successful restart does not prove a fresh database setup; check that separately when needed.
+
+A skipped `once` task needs evidence that the same task definition previously succeeded in this instance and mode. Changing its command does not force installation or seed on existing data. If that task is skipped without matching evidence, verification stays pending. Validate the changed task in a new isolated instance instead of deleting existing data.
+
+Compact execution hashes pass through every run, including Live, Up and Seed. This keeps task evidence when older runs expire, without retaining extra logs or secret values.
 
 `--confirm` must be the user's actual confirmation, quoted — never a paraphrase, never written by the agent itself. This is what moves `status` from `draft` to `verified`.
 

@@ -37,6 +37,8 @@ const (
 // OnHost is the value of Step.On that runs an exec step on the host.
 const OnHost = "host"
 
+const OnOneOff = "one-off"
+
 // Plan status values.
 const (
 	PlanProposed = "proposed"
@@ -305,9 +307,11 @@ func ValidatePlan(p Plan) error {
 			if s.Kind != KindExec {
 				return fmt.Errorf("step %q: on %q is not valid here (only exec steps take on)", s.ID, s.On)
 			}
-			if s.On != OnHost {
-				return fmt.Errorf("step %q: on %q is not valid (expected host, or leave it out to run in a service)", s.ID, s.On)
+			if s.On != OnHost && s.On != OnOneOff {
+				return fmt.Errorf("step %q: on %q is not valid (expected host or one-off, or leave it out to run in a service)", s.ID, s.On)
 			}
+		}
+		if s.IsHostExec() {
 			if s.Service != "" {
 				return fmt.Errorf("step %q: a host exec step runs on the host; remove --service", s.ID)
 			}
@@ -465,6 +469,9 @@ func (s Step) detail() string {
 			parts = append(parts, s.Service+":")
 		}
 		parts = append(parts, s.Cmd)
+		if s.On == OnOneOff {
+			parts = append(parts, "(one-off container)")
+		}
 		if s.Once != "" {
 			parts = append(parts, "(once "+s.Once+")")
 		}
