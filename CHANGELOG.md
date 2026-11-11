@@ -5,6 +5,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Fixed: a new instance's address cut a folder name at 24 characters even when the whole name fits in a hostname. The worktree `128-account-management-v2` of `cabo-nuxt` got `cabo-nuxt-128-account-management-v.localhost`. It now gets `cabo-nuxt-128-account-management-v2.localhost`. Names are cut to 24 characters only when the label would be longer than 63. Existing instances keep their saved address. To change it, run `stackfork prepare --hostname <name>.localhost`.
 - Fixed: a Redis service with no password got `REDIS_URL=redis://:<password>@HOST:PORT` from `stackfork env`, and host apps and host exec steps received it as is. Clients then sent `AUTH <password>` and failed with `ERR AUTH <password> called without any password configured`. A Redis known to have no password now gets `redis://HOST:PORT`: the official `redis` or `valkey/valkey` image; only service keys that cannot set a password or run anything at start (`ports`, `networks`, `labels` and the like, so no `build`, `entrypoint`, `env_file`, `configs`, `secrets` or `post_start`); no `environment` variable at all; a healthcheck only if it is `redis-cli ping`; no mount other than `/data`; and either no command or `redis-server`/`valkey-server` with only flags that cannot set a password or load one at start (`--save`, `--maxmemory` and the like; not `--appendonly`, which replays the AOF). Anything else keeps the placeholder, as before.
 ## [0.2.2] - 2026-11-07
 
