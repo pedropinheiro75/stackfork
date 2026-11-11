@@ -193,16 +193,24 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 	active, _ := plan.ForMode(mode)
 	for _, candidate := range active {
 		if candidate.Kind == knowledge.KindExec && candidate.Once == knowledge.OnceData {
-			if candidate.On == knowledge.OnOneOff && ResolveExecService(instanceDir, candidate, plan) == service && runsSeedOf(plan, instanceDir, candidate, cmd) {
+			// the target only: whether this counts as evidence is proveSeed's call
+			if candidate.On == knowledge.OnOneOff && ResolveExecService(instanceDir, candidate, plan) == service && (cmd == candidate.Cmd || strings.HasSuffix(cmd, " && "+candidate.Cmd)) {
 				action = "run"
 			}
 			break
 		}
 	}
-	code, err := Execute(w, ew, action, root, branch, project, instanceDir, newBase, legacyBase,
-		Options{Service: service, Command: []string{"sh", "-c", cmd}, Secrets: values})
-	if err == nil && code != 0 {
-		err = fmt.Errorf("exited with status %d", code)
+	var code int
+	var err error
+	for _, part := range seedParts(plan, mode, cmd) { // the first failure stops it, as && would
+		code, err = Execute(w, ew, action, root, branch, project, instanceDir, newBase, legacyBase,
+			Options{Service: service, Command: []string{"sh", "-c", part}, Secrets: values})
+		if err == nil && code != 0 {
+			err = fmt.Errorf("exited with status %d", code)
+		}
+		if err != nil {
+			break
+		}
 	}
 	if err != nil {
 		if h := notFoundHint(instanceDir, service, code, "seed", seedCmdOf(plan, cmd), knowledge.OnceData); h != "" {
@@ -225,7 +233,8 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 
 // proveSeed decides whether this seed's success can count as execution
 // evidence: the step keeps (or gets) the plan task's definition hash only when
-// what is about to run is exactly what the captured plan's data task runs. The
+// the captured plan's data command itself runs, as its own invocation (see
+// seedParts), on the captured target. The
 // command comes from the recipe on disk, which can change after the plan was
 // captured, so a hash declared earlier (a Start) is checked here too and
 // cleared on a mismatch: nothing is proven that did not run.
@@ -247,7 +256,7 @@ func proveSeed(step *runs.Step, instanceDir string, plan knowledge.Plan, mode, c
 			if c.IsHostExec() && hostSteps[len(hostSteps)-1].ID == c.ID {
 				hash = TaskDefinitionHash(instanceDir, c, plan)
 			}
-		} else if !c.IsHostExec() && ResolveExecService(instanceDir, c, plan) == service && runsSeedOf(plan, instanceDir, c, cmd) {
+		} else if parts := seedParts(plan, mode, cmd); !c.IsHostExec() && ResolveExecService(instanceDir, c, plan) == service && parts[len(parts)-1] == c.Cmd {
 			hash = TaskDefinitionHash(instanceDir, c, plan)
 		}
 		break
@@ -257,18 +266,22 @@ func proveSeed(step *runs.Step, instanceDir string, plan knowledge.Plan, mode, c
 	}
 }
 
-// runsSeedOf reports whether cmd is exactly what the captured plan's data task
-// c runs in a container: c's command, or the plan's own migrate prefix and
-// then c's command (withMigrate's form). Anything else, such as another
-// prefix that can exit before the seed, is not c.
-func runsSeedOf(plan knowledge.Plan, instanceDir string, c knowledge.Step, cmd string) bool {
-	if cmd == c.Cmd {
-		return true
+// seedParts splits a container seed into the commands that run one after the
+// other: a prefix (the migrate) and then the plan's data command, when cmd is
+// "<prefix> && <data command>". Each runs as its own sh -c, so the data
+// command's own success is what proveSeed counts, never a prefix that exits
+// before it. Otherwise cmd runs whole.
+func seedParts(plan knowledge.Plan, mode, cmd string) []string {
+	active, _ := plan.ForMode(mode)
+	for _, c := range active {
+		if c.Kind == knowledge.KindExec && c.Once == knowledge.OnceData {
+			if prefix, ok := strings.CutSuffix(cmd, " && "+c.Cmd); ok && c.Cmd != "" && strings.TrimSpace(prefix) != "" {
+				return []string{prefix, c.Cmd}
+			}
+			break
+		}
 	}
-	m := plan.MigrateStep()
-	return m != nil && !m.IsHostExec() && m.Cmd != "" &&
-		ResolveExecService(instanceDir, *m, plan) == ResolveExecService(instanceDir, c, plan) &&
-		cmd == m.Cmd+" && "+c.Cmd
+	return []string{cmd}
 }
 
 func failSeed(stderr io.Writer, step *runs.Step, err error) error {

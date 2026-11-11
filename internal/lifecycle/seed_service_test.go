@@ -110,3 +110,22 @@ func TestPrepareRefreshesTheResolvedServiceInTaskHashes(t *testing.T) {
 		t.Fatalf("hash not refreshed after prepare: %q", got)
 	}
 }
+
+// A migrate prefix runs as its own command, so one that exits 0 (recorded or
+// not) cannot stand in for the seed: the data command still runs, alone.
+func TestSeedPartsRunTheDataCommandOnItsOwn(t *testing.T) {
+	plan := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+		{ID: "migrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Cmd: "exit 0", Service: "app"},
+		{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Cmd: "seed-original", Service: "app"},
+	}}
+	for cmd, want := range map[string][]string{
+		"exit 0 && seed-original":  {"exit 0", "seed-original"},
+		"seed-original":            {"seed-original"},
+		"seed-original || true":    {"seed-original || true"},
+		"exit 0 && seed-original2": {"exit 0 && seed-original2"},
+	} {
+		if got := seedParts(plan, knowledge.ModeContainer, cmd); strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Errorf("seedParts(%q) = %q, want %q", cmd, got, want)
+		}
+	}
+}

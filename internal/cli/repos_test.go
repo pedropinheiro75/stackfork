@@ -378,7 +378,9 @@ func TestStartEnvSkipsSchemaStepWhenUpSeeded(t *testing.T) {
 	base := []string{"--state-dir", state, "--legacy-state-dir", t.TempDir()}
 	out, e, code := runCLI(t, append(base, "start-env", repo)...)
 	b := string(mustRead(t, log))
-	if code != 0 || countLines(b, " exec ") != 1 || !strings.Contains(b, "m && s") {
+	// the seed's migrate prefix and the seed run as two execs; the schema step adds none
+	m, sd := strings.Index(b, "sh -c m \n"), strings.Index(b, "sh -c s \n")
+	if code != 0 || countLines(b, " exec ") != 2 || m < 0 || sd < m {
 		t.Fatalf("%d %s %s\n%s", code, out, e, b)
 	}
 }
