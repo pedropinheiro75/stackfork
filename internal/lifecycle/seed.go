@@ -152,6 +152,7 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 	if hostSteps == nil {
 		service = ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)
 	}
+	proveSeed(step, instanceDir, plan, mode, cmd, service, hostSteps)
 	f := false
 	SetSeeded(instanceDir, &f) // it ran (or cannot): no longer pending, a failure is retried by hand
 	w, ew := stdout, stderr
@@ -190,13 +191,6 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 	fmt.Fprintf(w, "seeding the new database in %s: %s\n", service, cmd)
 	action := "exec"
 	active, _ := plan.ForMode(mode)
-	if step != nil && step.DefinitionHash == "" { // a standalone seed or plain up: the plan's task still earns its evidence
-		for _, candidate := range active {
-			if candidate.ID == step.ID && candidate.Kind == knowledge.KindExec && candidate.Once == knowledge.OnceData {
-				step.SetDefinition(TaskDefinitionHash(instanceDir, candidate, plan), "")
-			}
-		}
-	}
 	for _, candidate := range active {
 		if candidate.Kind == knowledge.KindExec && candidate.Once == knowledge.OnceData {
 			if candidate.On == knowledge.OnOneOff && ResolveExecService(instanceDir, candidate, plan) == service && (cmd == candidate.Cmd || strings.HasSuffix(cmd, " && "+candidate.Cmd)) {
@@ -227,6 +221,31 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 		step.End(nil, 0)
 	}
 	return nil
+}
+
+// proveSeed gives a standalone seed or plain up the plan task's definition
+// hash, so its success can count as execution evidence. The hash goes on the
+// step only when the command and service about to run are the ones that
+// captured task records.
+func proveSeed(step *runs.Step, instanceDir string, plan knowledge.Plan, mode, cmd, service string, hostSteps []knowledge.Step) {
+	if step == nil || step.DefinitionHash != "" {
+		return
+	}
+	active, _ := plan.ForMode(mode)
+	for _, c := range active {
+		if c.ID != step.ID || c.Kind != knowledge.KindExec || c.Once != knowledge.OnceData {
+			continue
+		}
+		if hostSteps != nil {
+			if !c.IsHostExec() || hostSteps[len(hostSteps)-1].ID != c.ID {
+				return
+			}
+		} else if c.IsHostExec() || ResolveExecService(instanceDir, c, plan) != service || (cmd != c.Cmd && !strings.HasSuffix(cmd, " && "+c.Cmd)) {
+			return
+		}
+		step.SetDefinition(TaskDefinitionHash(instanceDir, c, plan), "")
+		return
+	}
 }
 
 func failSeed(stderr io.Writer, step *runs.Step, err error) error {

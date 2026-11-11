@@ -146,6 +146,9 @@ func (r PlanRunner) Execute() error {
 			default:
 				prepared = true
 				err = r.step(s, func(w io.Writer) (int, error) { return 0, r.prepare(w, s.Args) })
+				if err == nil {
+					r.refreshDefinitions(steps)
+				}
 			}
 		case knowledge.KindComposeUp:
 			if r.AllocHostPorts != nil {
@@ -266,8 +269,20 @@ func (r PlanRunner) declare(steps []knowledge.Step) {
 		return
 	}
 	for _, s := range steps {
-		recorded := r.Run.Step(s.ID, s.Kind, StepText(s))
-		if r.Run.Command == "live" || (s.Once != knowledge.OnceDeps && s.Once != knowledge.OnceData) {
+		r.Run.Step(s.ID, s.Kind, StepText(s))
+	}
+	r.refreshDefinitions(steps)
+}
+
+// refreshDefinitions sets the definition hash of every once task. Prepare can
+// change what an omitted service resolves to, so Execute calls it again
+// after the prepare step, before a once task runs or is skipped.
+func (r PlanRunner) refreshDefinitions(steps []knowledge.Step) {
+	if r.Run == nil || r.Run.Command == "live" {
+		return
+	}
+	for _, s := range steps {
+		if s.Once != knowledge.OnceDeps && s.Once != knowledge.OnceData {
 			continue
 		}
 		definition := s
@@ -281,7 +296,7 @@ func (r PlanRunner) declare(steps []knowledge.Step) {
 		if executed != hash {
 			executed = ""
 		}
-		recorded.SetDefinition(hash, executed)
+		r.Run.Step(s.ID, s.Kind, StepText(s)).SetDefinition(hash, executed)
 	}
 }
 
