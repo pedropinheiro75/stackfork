@@ -201,16 +201,31 @@ func RenderHostname(tmpl, app, worktree, hash string) string {
 	if tmpl == "" {
 		tmpl = DefaultHostnameTemplate
 	}
-	a, w := slugName(app), slugName(worktree)
+	// Full folder names first; the 24-character slugs only when the label
+	// would pass 63 (they keep {app}-{worktree}-{hash} within the limit).
+	for _, slug := range []func(string) string{fullSlug, slugName} {
+		if label := renderLabel(tmpl, slug(app), slug(worktree), hash); hostnamePattern.MatchString(label + ".localhost") {
+			return label + ".localhost"
+		}
+	}
+	return slugName(worktree) + "-" + hash + ".localhost"
+}
+
+func renderLabel(tmpl, a, w, hash string) string {
 	if a == w && strings.Contains(tmpl, "{app}") {
 		w = ""
 	}
 	label := strings.NewReplacer("{app}", a, "{worktree}", w, "{hash}", hash).Replace(tmpl)
-	label = strings.Trim(multiDash.ReplaceAllString(label, "-"), "-")
-	if !hostnamePattern.MatchString(label + ".localhost") {
-		return slugName(worktree) + "-" + hash + ".localhost"
+	return strings.Trim(multiDash.ReplaceAllString(label, "-"), "-")
+}
+
+// fullSlug is slugName without the 24-character limit.
+func fullSlug(base string) string {
+	slug := strings.Trim(slugInvalid.ReplaceAllString(strings.ToLower(base), "-"), "-")
+	if slug == "" {
+		slug = "app"
 	}
-	return label + ".localhost"
+	return slug
 }
 
 // TemplateHostname renders the address for a new instance of root+branch, and
