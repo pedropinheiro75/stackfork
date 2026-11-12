@@ -34,7 +34,7 @@ func learnedInWorktree(t *testing.T, planArgs []string, envName string) (repo, w
 		t.Fatal(err)
 	}
 	k.Verification = &knowledge.Verification{Date: "2026-05-01", Confirmation: "works"}
-	if err := k.Save(filepath.Join(w, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(w, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	return repo, w, nw, base

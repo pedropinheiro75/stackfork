@@ -302,6 +302,9 @@ func hashInputs(root string, paths map[string]bool) ([]knowledge.Input, error) {
 // WriteKnowledge writes .stackfork/knowledge.json, .stackfork/knowledge.md
 // and .stackfork/.gitignore under root (task 13.2).
 func WriteKnowledge(root string, k *knowledge.Knowledge) error {
+	if k.Status == knowledge.StatusVerified && !k.VerificationCurrent() {
+		k.Status = knowledge.StatusDraft
+	}
 	dir := filepath.Join(root, ".stackfork")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err

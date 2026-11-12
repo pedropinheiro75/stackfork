@@ -777,6 +777,13 @@ func knowledgeStatus(root string) (*KnowledgeStatus, bool) {
 	}
 	status := k.Status
 	var changed []string
+	main := identity.MainRepoOf(root)
+	if main == "" {
+		main = root
+	}
+	if status == knowledge.StatusVerified && k.Verification.Mode != lifecycle.PlanMode(root, main) {
+		status = knowledge.StatusDraft
+	}
 	if status == knowledge.StatusVerified {
 		if changed = k.StaleInputs(root); len(changed) > 0 {
 			status = knowledge.StatusStale

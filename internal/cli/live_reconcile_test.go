@@ -100,7 +100,7 @@ func TestReconcileUntrustedHostStepRunsNothing(t *testing.T) {
 		}
 	}
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Plan: knowledge.Plan{Status: knowledge.PlanRecorded, Steps: steps}}
-	if err := k.Save(filepath.Join(tg.Root, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(tg.Root, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	off := fileSize(log)

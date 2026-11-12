@@ -67,7 +67,7 @@ func TestLiveMode(t *testing.T) {
 			{ID: "up", Kind: knowledge.KindComposeUp},
 			{ID: "migrate", Kind: knowledge.KindExec, Once: knowledge.OnceSchema, Service: "app", Cmd: "echo migrated >> /data/migrations.log"},
 		}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	gitc(repo, "add", "-A")

@@ -50,7 +50,7 @@ func siblingRepo(t *testing.T) (repo, sib string, base []string) {
 		t.Fatalf("prepare sibling: %s", e)
 	}
 	// learn was verified in that worktree (the usual place an agent learns)
-	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(sib, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(sib, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	return

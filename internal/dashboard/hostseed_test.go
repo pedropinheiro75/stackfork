@@ -37,7 +37,7 @@ func directStart(t *testing.T, trust bool) (calls []string) {
 			{ID: "up", Kind: knowledge.KindComposeUp},
 			{ID: "seed", Kind: knowledge.KindExec, On: knowledge.OnHost, Once: knowledge.OnceData, Cmd: "bun run db:seed"},
 		}}}
-	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	newBase, legacyBase := t.TempDir(), t.TempDir()

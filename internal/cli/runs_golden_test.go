@@ -37,6 +37,9 @@ func normalizedRun(t *testing.T, stateDir string, id int, paths ...string) strin
 		t.Fatal(err)
 	}
 	project := m["project"].(string)
+	delete(m, "recipe_hash")
+	delete(m, "snapshot_hash")
+	delete(m, "execution_proofs")
 	m["project"], m["branch"], m["pid"] = "PROJECT", "BRANCH", 0
 	for _, k := range []string{"started_at", "ended_at"} {
 		if _, ok := m[k]; ok {
@@ -45,6 +48,8 @@ func normalizedRun(t *testing.T, stateDir string, id int, paths ...string) strin
 	}
 	for _, st := range m["steps"].([]any) {
 		st := st.(map[string]any)
+		delete(st, "definition_hash")
+		delete(st, "executed_hash")
 		for _, k := range []string{"started_at", "ended_at"} {
 			if _, ok := st[k]; ok {
 				st[k] = "TIME"

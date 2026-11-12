@@ -349,7 +349,7 @@ func TestSeedNoneIsExplicit(t *testing.T) {
 	if cmd, _ := lifecycle.SeedRecipe(root, root, t.TempDir()); cmd != "" {
 		t.Fatalf("none must not seed, got %q", cmd)
 	}
-	if err := k.Save(path); err != nil {
+	if err := verifiedFixture(k).Save(path); err != nil {
 		t.Fatal(err)
 	}
 	if r, err := knowledge.Load(path); err != nil || !r.Plan.NoSeed {

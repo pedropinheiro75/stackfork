@@ -23,7 +23,7 @@ func hybridPlan(t *testing.T, repo, hostID string) knowledge.Plan {
 		{ID: hostID, Kind: knowledge.KindHost, Name: "web", Cmd: "npm run dev", PortEnv: []string{"PORT"}, Port: 3000, Modes: []string{"hybrid"}},
 	}}
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Plan: p}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	return p
@@ -278,7 +278,7 @@ func containerOnlyPlan(t *testing.T, repo string) {
 	t.Helper()
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified,
 		Plan: knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp}}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -314,7 +314,7 @@ func TestTrustCalloutTitles(t *testing.T) {
 	// reorder: same steps, different order -> hash differs, no content diff
 	p.Steps = append(p.Steps[:2:2], knowledge.Step{ID: "prep", Kind: knowledge.KindPrepare, Args: []string{"--reassign-ports"}}, p.Steps[2])
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Plan: p}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	frag := e.get("/fragments/repos").Body.String()
@@ -347,7 +347,7 @@ func TestOverLongPlanOffersNoApprovalDialog(t *testing.T) {
 			Kind: knowledge.KindHost, Name: "web", Cmd: "npm run dev", Modes: []string{"hybrid"}})
 	}
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Plan: p}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	setMode(t, repo, "hybrid")
@@ -412,7 +412,7 @@ func hostExecPlan(t *testing.T, repo string) knowledge.Plan {
 		{ID: "migrate", Kind: knowledge.KindExec, On: knowledge.OnHost, Once: knowledge.OnceSchema, Cmd: "bun run db:migrate", Dir: "apps/api"},
 	}}
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Plan: p}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	return p

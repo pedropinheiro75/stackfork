@@ -13,6 +13,9 @@ import (
 	"github.com/pedropinheiro75/stackfork/internal/compose"
 	"github.com/pedropinheiro75/stackfork/internal/knowledge"
 	"github.com/pedropinheiro75/stackfork/internal/learn"
+	"github.com/pedropinheiro75/stackfork/internal/lifecycle"
+	"github.com/pedropinheiro75/stackfork/internal/repos"
+	"github.com/pedropinheiro75/stackfork/internal/runs"
 )
 
 // learnOutput summarises a scan; never includes an env value, a script's
@@ -283,6 +286,7 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 	if err != nil {
 		return fmt.Errorf("no knowledge to verify; run `stackfork learn` first: %w", err)
 	}
+	loadedHash := k.Plan.ExecutionHash() // the plan on disk, before verify records a prepare step
 	if k.Plan.Status != knowledge.PlanRecorded {
 		return errors.New("plan is proposed, not recorded; record it with `learn record step` (or `learn record recipe`) before verifying")
 	}
@@ -294,17 +298,14 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 		return errors.New("plan has no compose-up step; record one with `learn record step --id up --kind compose-up` before verifying")
 	}
 
-	top, project, _, manifest, err := checkoutManifest(root, newStateBase, legacyStateBase)
+	top, project, instanceDir, manifest, err := checkoutManifest(root, newStateBase, legacyStateBase)
 	if err != nil || manifest == nil {
 		if k.Entry != nil && k.Entry.None {
 			return errors.New("no prepared instance for this checkout; prepare it, then verify")
 		}
 		return errors.New("no prepared instance for this checkout; prepare and start it, then verify")
 	}
-	entry, linkChecks, warnings, err := probeEntryAndLinks(root, newStateBase, legacyStateBase, k)
-	if err != nil {
-		return err
-	}
+	var warnings []string
 	hash := knowledge.PlanHash(k.Plan.Steps)
 	for _, st := range k.Plan.HostRunSteps() {
 		warnings = append(warnings, knowledge.HostLiteralWarnings(st, hostnameOf(project, manifest))...)
@@ -315,9 +316,53 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 	if warn != "" {
 		warnings = append(warnings, warn)
 	}
+	main := repos.MainOrSelf(top)
+	mode := lifecycle.PlanMode(root, main)
+	if err := (lifecycle.PlanRunner{NewBase: newStateBase, Root: root, Main: main, InstanceDir: instanceDir, Mode: mode, Plan: k.Plan}).Check(); err != nil {
+		k.Status = knowledge.StatusDraft
+		if writeErr := learn.WriteKnowledge(root, k); writeErr != nil {
+			return writeErr
+		}
+		return fmt.Errorf("recipe cannot start: %w", err)
+	}
+	executed, err := verifiedStartRun(k, instanceDir, mode, manifest.ConfigSHA256)
+	if err != nil {
+		var missing errNoStartRun
+		if errors.As(err, &missing) {
+			k.Status = knowledge.StatusDraft
+			if werr := learn.WriteKnowledge(root, k); werr != nil {
+				return werr
+			}
+		}
+		return err
+	}
+	entry, linkChecks, probeWarnings, err := probeEntryAndLinks(root, newStateBase, legacyStateBase, k)
+	if err != nil {
+		return err
+	}
+	warnings = append(warnings, probeWarnings...)
+
+	if afterVerifyProbe != nil {
+		afterVerifyProbe()
+	}
+	// The probe ran unlocked: take the run lock and prove nothing moved before writing.
+	lock, err := runs.Hold(instanceDir)
+	if err != nil {
+		return fmt.Errorf("cannot record the verification: %w", err)
+	}
+	defer lock.Release()
+	if _, _, _, current, merr := checkoutManifest(root, newStateBase, legacyStateBase); merr != nil || current == nil {
+		return errors.New("the prepared instance changed while verifying; repeat `stackfork learn verify`")
+	} else if again, rerr := verifiedStartRun(k, instanceDir, mode, current.ConfigSHA256); rerr != nil || again.ID != executed.ID {
+		return errors.New("a newer start-env run or a changed snapshot replaced the run being verified; repeat `stackfork learn verify`")
+	}
+	if latest, lerr := knowledge.Load(path); lerr != nil || latest.Plan.ExecutionHash() != loadedHash {
+		return errors.New("the recipe changed while verifying; repeat `stackfork learn verify`")
+	}
 
 	k.Status = knowledge.StatusVerified
 	k.Verification = &knowledge.Verification{
+		RecipeHash: k.Plan.ExecutionHash(), Mode: mode, RunID: executed.ID,
 		Date: time.Now().UTC().Format("2006-01-02"), Checks: checks, Confirmation: *confirm,
 		Entry: entry, Links: linkChecks,
 	}
@@ -335,6 +380,54 @@ func cmdLearnVerify(stdout io.Writer, subArgs []string, root, newStateBase, lega
 		}
 	}
 	return printJSON(stdout, out)
+}
+
+// afterVerifyProbe lets a test start a run between the probe and the write.
+var afterVerifyProbe func()
+
+type errNoStartRun struct{ mode string }
+
+func (e errNoStartRun) Error() string {
+	return fmt.Sprintf("recipe has no successful start-env run for mode %s; run `stackfork start-env`, then repeat `stackfork learn verify`", e.mode)
+}
+
+// verifiedStartRun returns the latest start-env run of this recipe and mode
+// when it succeeded on this snapshot and every once task of the mode has
+// execution evidence for its current definition.
+func verifiedStartRun(k *knowledge.Knowledge, instanceDir, mode, snapshot string) (*runs.Run, error) {
+	history, err := runs.List(instanceDir)
+	if err != nil {
+		return nil, err
+	}
+	var executed *runs.Run
+	for _, candidate := range history {
+		if candidate.Command != "start-env" && candidate.Command != "reset" {
+			continue
+		}
+		if candidate.Mode == mode && candidate.RecipeHash == k.Plan.ExecutionHash() {
+			if candidate.Outcome == runs.Succeeded && candidate.SnapshotHash != "" && candidate.SnapshotHash == snapshot {
+				executed = candidate
+			}
+			break
+		}
+	}
+	if executed == nil {
+		return nil, errNoStartRun{mode}
+	}
+	active, _ := k.Plan.ForMode(mode)
+	for _, task := range active {
+		if task.Once != knowledge.OnceDeps && task.Once != knowledge.OnceData {
+			continue
+		}
+		proved := false
+		for _, recorded := range executed.Steps {
+			proved = proved || (recorded.ID == task.ID && recorded.ExecutedHash == lifecycle.TaskDefinitionHash(instanceDir, task, k.Plan))
+		}
+		if !proved {
+			return nil, fmt.Errorf("step %s has no successful execution evidence for its current definition; existing data was kept. Validate this task in a new isolated instance before verifying", task.ID)
+		}
+	}
+	return executed, nil
 }
 
 func splitList(s string) []string {
@@ -455,8 +548,10 @@ func cmdLearnRecordStep(stdout, stderr io.Writer, rest []string, root, newStateB
 			case "host":
 				st.On = knowledge.OnHost
 			case "container": // clears on: the step runs in a service
+			case knowledge.OnOneOff:
+				st.On = knowledge.OnOneOff
 			default:
-				return fmt.Errorf("--on takes host or container, not %q", *on)
+				return fmt.Errorf("--on takes host, container or one-off, not %q", *on)
 			}
 		}
 		prev := stepByID(k.Plan, st.ID)

@@ -78,7 +78,7 @@ func TestLiveStartEnvFromSiblingRecipe(t *testing.T) {
 		t.Fatalf("prepare sibling: %s", out)
 	}
 	// learn was verified in the sibling worktree
-	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(sib, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(sib, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	out, code := sf("start-env", nw)

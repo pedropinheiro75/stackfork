@@ -46,7 +46,7 @@ func TestLiveReset(t *testing.T) {
 		{ID: "up", Kind: knowledge.KindComposeUp},
 		{ID: "seed", Kind: knowledge.KindExec, Once: knowledge.OnceData, Service: "app", Cmd: "echo seeded >> /data/seed.log"},
 	}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	out, _ := sf("--root", repo, "where")

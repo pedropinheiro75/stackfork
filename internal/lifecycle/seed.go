@@ -129,7 +129,7 @@ func notFoundHint(instanceDir, service string, code int, id, cmd, once string) s
 // seed's output goes to the step's writer (and so to its log), not to
 // stdout/stderr; the final failure message still goes to stderr. It returns
 // nil when there was nothing to run.
-func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir, newBase, legacyBase, cmd, service string, plan knowledge.Plan, step *runs.Step) error {
+func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir, newBase, legacyBase, cmd, service, mode string, plan knowledge.Plan, step *runs.Step, values SecretValues) error {
 	if cmd == "" { // nothing to run in this mode: leave the marker alone
 		if step != nil && step.State == runs.Pending {
 			step.Skip("no seed for this mode")
@@ -152,6 +152,7 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 	if hostSteps == nil {
 		service = ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)
 	}
+	proveSeed(step, instanceDir, plan, mode, cmd, service, hostSteps)
 	f := false
 	SetSeeded(instanceDir, &f) // it ran (or cannot): no longer pending, a failure is retried by hand
 	w, ew := stdout, stderr
@@ -188,8 +189,20 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 		return err
 	}
 	fmt.Fprintf(w, "seeding the new database in %s: %s\n", service, cmd)
-	code, err := Execute(w, ew, "exec", root, branch, project, instanceDir, newBase, legacyBase,
-		Options{Service: service, Command: []string{"sh", "-c", cmd}})
+	action := "exec"
+	active, _ := plan.ForMode(mode)
+	for _, candidate := range active {
+		if candidate.Kind == knowledge.KindExec && candidate.Once == knowledge.OnceData {
+			// the target only: whether this counts as evidence is proveSeed's call
+			if candidate.On == knowledge.OnOneOff && ResolveExecService(instanceDir, candidate, plan) == service && (cmd == candidate.Cmd || strings.HasSuffix(cmd, " && "+candidate.Cmd)) {
+				action = "run"
+			}
+			break
+		}
+	}
+	receipt := newTaskReceipt()
+	code, err := Execute(w, ew, action, root, branch, project, instanceDir, newBase, legacyBase,
+		Options{Service: service, Command: receipt.command(seedParts(plan, mode, cmd)...), Secrets: values, Receipt: receipt})
 	if err == nil && code != 0 {
 		err = fmt.Errorf("exited with status %d", code)
 	}
@@ -206,10 +219,82 @@ func RunSeed(stdout, stderr io.Writer, root, main, branch, project, instanceDir,
 	t := true
 	SetSeeded(instanceDir, &t)
 	fmt.Fprintf(w, "seeded new database with %s\n", cmd)
+	if !receipt.Seen() && step != nil && step.DefinitionHash != "" {
+		fmt.Fprintf(w, noReceiptNote, "the seed")
+		step.SetDefinition("", "")
+	}
 	if step != nil {
 		step.End(nil, 0)
 	}
 	return nil
+}
+
+// proveSeed decides whether this seed's success can count as execution
+// evidence: the step keeps (or gets) the plan task's definition hash only when
+// what is about to run is exactly what the captured plan's data task runs, on
+// its target; RunSeed then drops it unless the command's receipt shows it ran
+// to the end. The
+// command comes from the recipe on disk, which can change after the plan was
+// captured, so a hash declared earlier (a Start) is checked here too and
+// cleared on a mismatch: nothing is proven that did not run.
+func proveSeed(step *runs.Step, instanceDir string, plan knowledge.Plan, mode, cmd, service string, hostSteps []knowledge.Step) {
+	if step == nil {
+		return
+	}
+	hash := ""
+	active, _ := plan.ForMode(mode)
+	for _, c := range active {
+		if c.Kind != knowledge.KindExec || c.Once != knowledge.OnceData {
+			continue
+		}
+		if c.ID != step.ID {
+			break
+		}
+		if hostSteps != nil {
+			// runHostSeed runs hostSteps, taken from this plan, not cmd
+			if c.IsHostExec() && hostSteps[len(hostSteps)-1].ID == c.ID {
+				hash = TaskDefinitionHash(instanceDir, c, plan)
+			}
+		} else if !c.IsHostExec() && ResolveExecService(instanceDir, c, plan) == service && runsSeedOf(plan, instanceDir, c, cmd) {
+			hash = TaskDefinitionHash(instanceDir, c, plan)
+		}
+		break
+	}
+	if hash == "" || hash != step.DefinitionHash {
+		step.SetDefinition(hash, "")
+	}
+}
+
+// runsSeedOf reports whether cmd is exactly what the captured plan's data task
+// c runs in a container: c's command, or the plan's own migrate and then c's
+// command (withMigrate's form). Anything else is not c. A prefix that exits
+// before c leaves no receipt, so it proves nothing either.
+func runsSeedOf(plan knowledge.Plan, instanceDir string, c knowledge.Step, cmd string) bool {
+	if cmd == c.Cmd {
+		return true
+	}
+	m := plan.MigrateStep()
+	return m != nil && !m.IsHostExec() && m.Cmd != "" &&
+		ResolveExecService(instanceDir, *m, plan) == ResolveExecService(instanceDir, c, plan) &&
+		cmd == m.Cmd+" && "+c.Cmd
+}
+
+// seedParts are the commands a container seed evals one after the other in
+// one shell: a prefix (the migrate) and then the plan's data command, when cmd
+// is "<prefix> && <data command>"; otherwise cmd whole. Separate evals keep a
+// comment or an open heredoc at the end of the prefix from swallowing the
+// seed, which plain concatenation would let through.
+func seedParts(plan knowledge.Plan, mode, cmd string) []string {
+	active, _ := plan.ForMode(mode)
+	for _, c := range active {
+		if c.Kind == knowledge.KindExec && c.Once == knowledge.OnceData {
+			if prefix, ok := strings.CutSuffix(cmd, " && "+c.Cmd); ok && c.Cmd != "" && strings.TrimSpace(prefix) != "" {
+				return []string{prefix, c.Cmd}
+			}
+			break
+		}
+	}
+	return []string{cmd}
 }
 
 func failSeed(stderr io.Writer, step *runs.Step, err error) error {
@@ -323,7 +408,27 @@ func SeedRecipeIn(root, main, instanceDir, mode string) (cmd, service string) {
 	cmd, service, host := seedRecipeIn(root, main, instanceDir, mode)
 	if cmd != "" && !host { // a host seed has no service to leave out // a service this mode leaves out cannot run it: do not burn the one-time seed
 		plan := LoadPlan(root, main)
-		if run, _ := modeSteps(instanceDir, plan, mode); contains(excludedServices(run), ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)) {
+		active, _ := modeSteps(instanceDir, plan, mode)
+		recordedSeed := false
+		for _, candidate := range active {
+			recordedSeed = recordedSeed || candidate.Once == knowledge.OnceData
+		}
+		var excluded []string
+		for _, candidate := range active {
+			if candidate.Kind == knowledge.KindComposeUp {
+				excluded = candidate.Exclude
+				if !recordedSeed {
+					break
+				}
+			}
+			if candidate.Kind == knowledge.KindExec && candidate.Once == knowledge.OnceData {
+				if candidate.On == knowledge.OnOneOff {
+					return cmd, service
+				}
+				break
+			}
+		}
+		if contains(excluded, ResolveExecService(instanceDir, knowledge.Step{Service: service}, plan)) {
 			return "", ""
 		}
 	}

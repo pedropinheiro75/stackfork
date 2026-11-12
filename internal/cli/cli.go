@@ -1184,7 +1184,8 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 		// a failed up leaves seeded:false, so the next up seeds
 		res := lifecycle.UpAndSeed(stdout, stderr, lifecycle.UpSeed{
-			Run: rec, Root: root, Main: main, Branch: branch, Project: project, InstanceDir: instanceDir,
+			Secrets: opts.Secrets,
+			Run:     rec, Root: root, Main: main, Branch: branch, Project: project, InstanceDir: instanceDir,
 			NewBase: newStateBase, LegacyBase: legacyStateBase, Mode: planMode, Plan: upPlan, Seed: !inRun,
 			Compose: func(so, se io.Writer) (int, error) {
 				return lifecycle.Execute(so, se, action, root, branch, project, instanceDir, newStateBase, legacyStateBase, opts)

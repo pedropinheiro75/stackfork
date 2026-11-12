@@ -32,7 +32,7 @@ func adapterRepo(t *testing.T, planArgs []string) (repo, nw string, base []strin
 		{ID: "prepare", Kind: knowledge.KindPrepare, Args: planArgs},
 		{ID: "up", Kind: knowledge.KindComposeUp},
 	}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	nw = filepath.Join(repo, ".worktrees", "feat-b")

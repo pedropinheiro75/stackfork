@@ -42,7 +42,7 @@ func TestLoadConvertsSchema1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if k.Status != StatusVerified || len(k.Facts.Services) != 2 {
+	if k.Status != StatusDraft || len(k.Facts.Services) != 2 {
 		t.Fatalf("unexpected load: %+v", k.Status)
 	}
 	if m := k.Plan.MigrateStep(); m == nil || m.Cmd != "stackfork exec app bun run db:migrate" {

@@ -39,6 +39,9 @@ type Options struct {
 	NoStart     bool     // apply only: recreate the service without starting it
 	Targets     []string // restart/start/stop: several services at once (Service is the first)
 	Command     []string // run/exec
+	// Receipt, run/exec only, watches the command's raw stdout, before any
+	// redaction, for its completion receipt (see receiptScript).
+	Receipt *taskReceipt
 	// Locked says the caller holds the instance lock. A stop that cascades to
 	// host apps needs it to stop them, and takes it itself when this is false.
 	Locked bool
@@ -400,6 +403,9 @@ func Execute(stdout, stderr io.Writer, action string, root, branch, project, ins
 				cmd.Stderr = ew
 			}
 		}
+	}
+	if opts.Receipt != nil && (action == "run" || action == "exec") {
+		cmd.Stdout, cmd.Stderr = opts.Receipt.wrap(cmd.Stdout, cmd.Stderr)
 	}
 	if action == "run" || action == "exec" || action == "up" {
 		cmd.Stdin = os.Stdin

@@ -71,7 +71,7 @@ func TestReposDerivedPlanShowsARefusal(t *testing.T) {
 	e := newBrowserEnv(t)
 	// ready (verified knowledge) but no recipe anywhere
 	repo := scratchRepoAt(t, filepath.Join(e.root, "norecipe"))
-	if err := (&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(&knowledge.Knowledge{Status: knowledge.StatusVerified}).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	e.get("/api/repos")
@@ -175,7 +175,7 @@ func TestReposShowsKnowledgeVerifiedInAWorktree(t *testing.T) {
 	k := &knowledge.Knowledge{Status: knowledge.StatusVerified,
 		Verification: &knowledge.Verification{Date: "2026-05-01", Confirmation: "works"},
 		Plan:         knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{{ID: "up", Kind: knowledge.KindComposeUp}}}}
-	if err := k.Save(filepath.Join(wt, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(wt, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	e.get("/api/repos")

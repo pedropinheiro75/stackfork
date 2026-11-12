@@ -15,6 +15,9 @@ import (
 func writeKnowledge(t *testing.T, dir, status string, inputs ...knowledge.Input) {
 	t.Helper()
 	k := &knowledge.Knowledge{Status: status, Inputs: inputs}
+	if status == knowledge.StatusVerified {
+		k.Verification = &knowledge.Verification{RecipeHash: k.Plan.ExecutionHash(), RunID: 1, Mode: knowledge.ModeContainer}
+	}
 	if err := k.Save(filepath.Join(dir, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}

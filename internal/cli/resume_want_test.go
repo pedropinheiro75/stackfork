@@ -105,7 +105,7 @@ func TestStartEnvWithAnExcludeSetsWantRunning(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "compose.yaml"), []byte("services:\n  db:\n    image: postgres:17\n  app:\n    image: busybox\n"), 0o600)
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Plan: knowledge.Plan{Status: knowledge.PlanRecorded, NoSeed: true,
 		Steps: []knowledge.Step{{ID: "prep", Kind: knowledge.KindPrepare, Args: []string{"-f", "compose.yaml"}}, {ID: "up", Kind: knowledge.KindComposeUp, Exclude: []string{"app"}}}}}
-	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	stateDir := filepath.Join(t.TempDir(), "state")

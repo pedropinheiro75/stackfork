@@ -12,7 +12,7 @@ func recordEntry(t *testing.T, repo string, e *knowledge.Entry, facts []knowledg
 	t.Helper()
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Entry: e}
 	k.Facts.Services = facts
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -55,7 +55,7 @@ func TestReposEntryLine(t *testing.T) {
 				}
 				k.Entry = c.entry
 				k.Facts.Services = c.facts
-				if err := k.Save(file); err != nil {
+				if err := verifiedFixture(k).Save(file); err != nil {
 					t.Fatal(err)
 				}
 			} else {

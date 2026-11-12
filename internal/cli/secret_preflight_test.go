@@ -20,7 +20,7 @@ func preflightFixture(t *testing.T, declared ...knowledge.SecretDecl) (repo stri
 	root, state := reposEnv(t)
 	repo = adaptedRepo(t, root)
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Secrets: declared}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	dockerLog = installFakeDocker(t)

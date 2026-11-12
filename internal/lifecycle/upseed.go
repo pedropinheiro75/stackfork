@@ -13,6 +13,7 @@ import (
 // UpSeed is what UpAndSeed needs: one Compose up and, when it creates the
 // data, the one-time seed (design.md D9).
 type UpSeed struct {
+	Secrets                                                             SecretValues
 	Root, Main, Branch, Project, InstanceDir, NewBase, LegacyBase, Mode string
 	Plan                                                                knowledge.Plan
 	Run                                                                 *runs.Run // nil: nothing is recorded
@@ -261,7 +262,7 @@ func runDueSeed(out, errOut io.Writer, a UpSeed, seedS *runs.Step) (seedErr erro
 			skipped = true
 			return
 		}
-		seedErr = RunSeed(out, errOut, a.Root, a.Main, a.Branch, a.Project, a.InstanceDir, a.NewBase, a.LegacyBase, cmd, svc, a.Plan, seedS)
+		seedErr = RunSeed(out, errOut, a.Root, a.Main, a.Branch, a.Project, a.InstanceDir, a.NewBase, a.LegacyBase, cmd, svc, a.Mode, a.Plan, seedS, a.Secrets)
 	})
 	return seedErr, seedErr == nil && !skipped
 }

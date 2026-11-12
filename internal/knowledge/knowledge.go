@@ -220,6 +220,9 @@ type Gotcha struct {
 
 // Verification records that the user confirmed the app works (task 13.6).
 type Verification struct {
+	RecipeHash   string   `json:"recipe_hash,omitempty"`
+	Mode         string   `json:"mode,omitempty"`
+	RunID        int      `json:"run_id,omitempty"`
 	Date         string   `json:"date"`
 	Checks       []string `json:"checks"`
 	Confirmation string   `json:"confirmation"` // the user's own quoted words
@@ -292,6 +295,9 @@ func Load(path string) (*Knowledge, error) {
 	}
 	if err := ValidateAdapterFiles(k.AdapterFiles); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if k.Status == StatusVerified && !k.VerificationCurrent() {
+		k.Status = StatusDraft
 	}
 	return &k, nil
 }
@@ -542,7 +548,11 @@ func (k *Knowledge) Markdown() string {
 	}
 
 	if k.Verification != nil {
-		fmt.Fprintf(&b, "## Verified\n\n")
+		if k.Status == StatusVerified && k.VerificationCurrent() {
+			fmt.Fprintf(&b, "## Verified\n\n")
+		} else {
+			fmt.Fprintf(&b, "## Verification pending\n\n")
+		}
 		fmt.Fprintf(&b, "- Date: %s\n- Checks: %s\n- Confirmation: %q\n\n",
 			k.Verification.Date, strings.Join(k.Verification.Checks, ", "), k.Verification.Confirmation)
 	}

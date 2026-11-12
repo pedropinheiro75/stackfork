@@ -39,7 +39,20 @@ func installFakeDocker(t *testing.T) (logPath string) {
 	dir := t.TempDir()
 	logPath = filepath.Join(dir, "log.txt")
 	script := `#!/bin/sh
-{ for a in "$@"; do printf '%s ' "$a"; done; printf '\n'; } >> "` + logPath + `"
+# a task run with its receipt (lifecycle.receiptScript) logs as sh -c <cmd>,
+# its parts joined by &&, and gets the receipt (both halves) on success
+receipt= skip=0
+{ for a in "$@"; do
+  case "$skip:$a" in
+    0:__sf_a=*) skip=1 ;;
+    1:*) skip=2 ;;
+    2:*) receipt=$a; skip=3 ;;
+    3:*) receipt=$receipt$a; skip=4 ;;
+    4:*) printf '%s ' "$a"; skip=5 ;;
+    5:*) printf '&& %s ' "$a" ;;
+    *) printf '%s ' "$a" ;;
+  esac
+done; printf '\n'; } >> "` + logPath + `"
 if [ "$1" = "compose" ]; then
   { printf -- '--- %s\n' "$*"; env; } >> "` + logPath + `.env"
   for a in "$@"; do
@@ -48,7 +61,11 @@ if [ "$1" = "compose" ]; then
     fi
   done
   case " $* " in
-    *" exec "*|*" run "*) printf '%s' "$DOCKER_FAKE_EXEC_OUT"; exit "${DOCKER_FAKE_EXEC_EXIT:-0}" ;;
+    *" exec "*|*" run "*)
+      printf '%s' "$DOCKER_FAKE_EXEC_OUT"
+      code=${DOCKER_FAKE_EXEC_EXIT:-0}
+      if [ "$code" = 0 ] && [ -n "$receipt" ] && [ -z "$DOCKER_FAKE_NO_RECEIPT" ]; then printf '\n%s\n' "$receipt"; fi
+      exit "$code" ;;
     *" up "*)
       if [ -n "$DOCKER_FAKE_UP_MSG" ] && { [ -n "$DOCKER_FAKE_UP_ALWAYS" ] || [ ! -e "` + logPath + `.upfail" ]; }; then
         : > "` + logPath + `.upfail"

@@ -52,6 +52,95 @@ func TestCheckRefusesDataStepOnExcludedService(t *testing.T) {
 	}
 }
 
+func TestCheckTracksServiceAtEachStep(t *testing.T) {
+	for _, target := range []string{"", knowledge.OnOneOff} {
+		plan := knowledge.Plan{AppService: "app", Steps: []knowledge.Step{
+			{ID: "install", Kind: knowledge.KindExec, Service: "app", On: target, Cmd: "install"},
+			{ID: "dependencies", Kind: knowledge.KindComposeUp, Exclude: []string{"app"}},
+			{ID: "migrate", Kind: knowledge.KindExec, Service: "app", On: target, Cmd: "migrate"},
+			{ID: "up", Kind: knowledge.KindComposeUp},
+		}}
+		runner := PlanRunner{Mode: knowledge.ModeContainer, Plan: plan}
+		if err := runner.Check(); (err != nil) != (target == "") {
+			t.Fatalf("target %q: %v", target, err)
+		}
+	}
+	plan := knowledge.Plan{AppService: "app", Steps: []knowledge.Step{
+		{ID: "dependencies", Kind: knowledge.KindComposeUp, Exclude: []string{"app"}},
+		{ID: "up", Kind: knowledge.KindComposeUp},
+		{ID: "migrate", Kind: knowledge.KindExec, Service: "app", Cmd: "migrate"},
+	}}
+	if err := (PlanRunner{Mode: knowledge.ModeContainer, Plan: plan}).Check(); err != nil {
+		t.Fatal(err)
+	}
+	plan.Steps[1], plan.Steps[2] = plan.Steps[2], plan.Steps[1]
+	if err := (PlanRunner{Mode: knowledge.ModeContainer, Plan: plan}).Check(); err == nil {
+		t.Fatal("exec on a stopped service accepted")
+	}
+}
+
+func TestOneOffRequiresPreparationAndDatabaseBeforeSeed(t *testing.T) {
+	plan := knowledge.Plan{Steps: []knowledge.Step{
+		{ID: "install", Kind: knowledge.KindExec, On: knowledge.OnOneOff, Service: "app", Cmd: "install"},
+		{ID: "up", Kind: knowledge.KindComposeUp},
+	}}
+	runner := PlanRunner{Mode: knowledge.ModeContainer, Plan: plan}
+	steps := runner.Steps()
+	if len(steps) < 3 || steps[0].Kind != knowledge.KindPrepare || steps[1].ID != "install" {
+		t.Fatalf("one-off runs before prepare: %+v", steps)
+	}
+	runner.Plan.Steps[0].Once = knowledge.OnceData
+	if err := runner.Check(); err == nil || !strings.Contains(err.Error(), "start dependencies") {
+		t.Fatalf("seed before database preparation accepted: %v", err)
+	}
+}
+
+func TestOnceExecutionEvidenceSurvivesRunRetention(t *testing.T) {
+	dir := t.TempDir()
+	task := knowledge.Step{ID: "install", Kind: knowledge.KindExec, Service: "app", On: knowledge.OnOneOff, Cmd: "install", Once: knowledge.OnceDeps}
+	plan := knowledge.Plan{Steps: []knowledge.Step{task}}
+	for index := 0; index < 25; index++ {
+		rec, err := runs.Begin(dir, runs.Meta{Command: "start-env", Mode: knowledge.ModeContainer})
+		if err != nil {
+			t.Fatal(err)
+		}
+		runner := PlanRunner{Run: rec, InstanceDir: dir, Plan: plan, Mode: knowledge.ModeContainer}
+		runner.declare(plan.Steps)
+		step := rec.Step(task.ID, task.Kind, task.Cmd)
+		if index == 0 {
+			step.Start()
+			step.End(nil, 0)
+		} else {
+			step.Skip("lockfiles unchanged")
+		}
+		rec.Finish(nil)
+		if step.ExecutedHash != task.ExecutionHash() {
+			t.Fatalf("run %d lost previous execution evidence", index)
+		}
+		for _, command := range []string{"live", "up", "seed"} {
+			other, err := runs.Begin(dir, runs.Meta{Command: command, Mode: knowledge.ModeContainer})
+			if err != nil {
+				t.Fatal(err)
+			}
+			other.Finish(nil)
+		}
+	}
+	history, _ := runs.List(dir)
+	if len(history) != 20 {
+		t.Fatalf("proof retention changed log retention: %d runs", len(history))
+	}
+	plan.Steps[0].Cmd = "different-install"
+	rec, err := runs.Begin(dir, runs.Meta{Command: "start-env", Mode: knowledge.ModeContainer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rec.Finish(nil)
+	(PlanRunner{Run: rec, InstanceDir: dir, Plan: plan, Mode: knowledge.ModeContainer}).declare(plan.Steps)
+	if rec.Steps[0].ExecutedHash != "" {
+		t.Fatal("changed task inherited evidence for a different command")
+	}
+}
+
 func implicitPrepareRun(t *testing.T, prepare func(io.Writer, []string) error, prepared func() bool) (r *runs.Run, dir string, err error) {
 	t.Helper()
 	dir = t.TempDir()

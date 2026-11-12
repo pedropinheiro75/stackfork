@@ -93,6 +93,12 @@ assert.match(p, /data-retry="migrate-host"/);
 assert.equal(count(p, /<li><span class="mono">#/g), 3, "last 3 runs only");
 assert.ok(p.includes("stackfork learn record step --id migrate-host --kind exec --once schema --on host --cmd "));
 assert.ok(p.includes("this machine") || p.includes("This machine"));
+const oneOff = JSON.parse(JSON.stringify(fx));
+const task = oneOff.workflow.container.nodes.find((n) => n.id === "up");
+task.on = "one-off"; task.step_kind = "exec"; task.where = "docker"; task.service = "app";
+task.command_raw = "bun install"; task.command = "bun install in app in a one-off container";
+const temporary = stubEl(); wf.render(temporary, oneOff, { mode: "container", node: "up" });
+assert.ok(temporary.regions.panel.innerHTML.includes("--on one-off --service app --cmd &#39;bun install&#39;"));
 el.handlers.click({ target: target("[data-retry]", {}, { "data-retry": "migrate-host" }), detail: 1 });
 assert.ok(modes.includes("retry:migrate-host"), "Retry calls onRetry, no POST");
 

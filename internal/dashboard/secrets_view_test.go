@@ -29,7 +29,7 @@ func TestSecretsSectionRendersRowsWithoutValuesOrInputs(t *testing.T) {
 	e, repo, opCalls := secretsEnv(t)
 	k := &knowledge.Knowledge{Status: knowledge.StatusVerified, Secrets: []knowledge.SecretDecl{
 		{Name: "NPM_TOKEN", Hint: hostileHint}, {Name: "UNMAPPED_KEY", Hint: "ask the platform team"}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	stubDialog(t, true, "", nil)
@@ -125,7 +125,7 @@ func TestPlanListHasNoSecretsRowWithoutSecrets(t *testing.T) {
 func TestSecretsSectionShowsFolderSource(t *testing.T) {
 	e, repo, _ := secretsEnv(t)
 	k := &knowledge.Knowledge{Status: knowledge.StatusVerified, Secrets: []knowledge.SecretDecl{{Name: "FOLDER_TOK"}}}
-	if err := k.Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(repo, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	folder := filepath.Dir(repo)

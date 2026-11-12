@@ -205,9 +205,10 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 			retry += " --from-main"
 		}
 	}
-	meta := runs.Meta{Trigger: trigger, Mode: mode, Project: project, Branch: branch, Observer: o.Observer}
+	meta := runs.Meta{Trigger: trigger, Mode: mode, Project: project, Branch: branch, Observer: o.Observer, RecipeHash: plan.ExecutionHash()}
 	if o.Live != nil { // a failed live run is retried by turning live mode on again (design D10)
 		command, retry = "live", ""
+		meta.RecipeHash = ""
 		meta.NoWait, meta.Cause = true, &o.Live.Cause
 	}
 	if flags := flagSecrets(o.Global); !willPrepare && len(flags) > 0 {
@@ -267,6 +268,7 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 			return err
 		}
 		rec.SetMode(mode)
+		rec.SetRecipeHash(plan.ExecutionHash())
 	}
 
 	// secrets: resolve every effective reference before prepare, which already
@@ -387,9 +389,15 @@ func StartEnv(out, errOut io.Writer, o StartOptions) (retErr error) {
 		return lifecycle.HostStart(w, w, base, root, instanceDir, step)
 	}
 	runner.Run, runner.Prepared = rec, func() bool { return !o.Reset && !needsPrepare(instanceDir, root, branch, project) }
+	runner.Secrets = vals
 	runner.FreshData = o.Reset
 	if err := runner.Execute(); err != nil {
 		return err
+	}
+	if o.Live == nil {
+		if manifest, err := state.ReadManifest(filepath.Join(instanceDir, "manifest.json")); err == nil {
+			rec.SetSnapshotHash(manifest.ConfigSHA256)
+		}
 	}
 	verb := "started"
 	if o.Reset {

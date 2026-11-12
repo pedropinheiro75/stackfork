@@ -254,8 +254,9 @@
     var c = "stackfork learn record step --id " + n.id + " --kind " + (n.step_kind || "exec");
     if (n.once) c += " --once " + n.once;
     if (n.where === "host") c += " --on host";
+    if (n.on === "one-off") c += " --on one-off";
     if (n.where === "docker" && n.service) c += " --service " + n.service;
-    return c + " --cmd " + shq(n.command || "");
+    return c + " --cmd " + shq(n.command_raw || n.command || "");
   }
   function panel(n, rs, run, canRetry) {
     var p = PLAN[n.plan_state] || PLAN.derived, w = whereOf(n);

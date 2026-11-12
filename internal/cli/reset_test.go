@@ -229,7 +229,7 @@ func TestResetPreparesWithTheManifestRecipe(t *testing.T) {
 	root := t.TempDir()
 	k := &knowledge.Knowledge{Schema: knowledge.CurrentSchema, Status: knowledge.StatusVerified, Plan: knowledge.Plan{Status: knowledge.PlanRecorded,
 		Steps: []knowledge.Step{{ID: "prepare", Kind: knowledge.KindPrepare, Args: []string{"-f", "other.yaml"}}, {ID: "up", Kind: knowledge.KindComposeUp}}}}
-	if err := k.Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
+	if err := verifiedFixture(k).Save(filepath.Join(root, ".stackfork", "knowledge.json")); err != nil {
 		t.Fatal(err)
 	}
 	args, err := resetPrepareArgs(root, root, dir)
