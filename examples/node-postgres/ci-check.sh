@@ -28,8 +28,14 @@ composefile="examples/node-postgres/docker-compose.yml"
 port_of() { docker port "$1" 3000/tcp | head -1 | sed 's/.*://'; }
 visits() { curl -sf "http://127.0.0.1:$1/"; }
 
-cd "$repo1" && sf --root "$repo1" prepare -f "$composefile" --hostname node-postgres-ci-1.localhost && sf --root "$repo1" up --build --wait-timeout 120
-cd "$repo2" && sf --root "$repo2" prepare -f "$composefile" --hostname node-postgres-ci-2.localhost && sf --root "$repo2" up --build --wait-timeout 120
+# --force: the checkout has no recorded startup plan (learn), and a fresh
+# runner has nobody to record one.
+cd "$repo1"
+sf --root "$repo1" prepare --force -f "$composefile" --hostname node-postgres-ci-1.localhost
+sf --root "$repo1" up --build --wait-timeout 120
+cd "$repo2"
+sf --root "$repo2" prepare --force -f "$composefile" --hostname node-postgres-ci-2.localhost
+sf --root "$repo2" up --build --wait-timeout 120
 
 p1="$(sf --root "$repo1" where | python3 -c 'import json,sys;print(json.load(sys.stdin)["project"])')"
 p2="$(sf --root "$repo2" where | python3 -c 'import json,sys;print(json.load(sys.stdin)["project"])')"
@@ -52,6 +58,8 @@ fi
 
 echo "PASS: two worktrees of node-postgres ran side by side with independent ports and data"
 
-cd "$repo1" && sf --root "$repo1" down --volumes
-cd "$repo2" && sf --root "$repo2" down --volumes
+cd "$repo1"
+sf --root "$repo1" down --volumes
+cd "$repo2"
+sf --root "$repo2" down --volumes
 git -C "$repo1" worktree remove --force "$repo2"

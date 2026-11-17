@@ -5,6 +5,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Fixed: the `live` CI job failed because `prepare` refused a repository with no recorded startup plan. The example check scripts now pass `--force` to `prepare` and stop at the first failed command.
 - Fixed: a new instance's address cut a folder name at 24 characters even when the whole name fits in a hostname. The worktree `128-account-management-v2` of `cabo-nuxt` got `cabo-nuxt-128-account-management-v.localhost`. It now gets `cabo-nuxt-128-account-management-v2.localhost`. Names are cut to 24 characters only when the label would be longer than 63. Existing instances keep their saved address. To change it, run `stackfork prepare --hostname <name>.localhost`.
 - Startup recipes can run setup tasks in temporary containers with `learn record step --kind exec --on one-off`. They use the instance's volumes and network without starting the app server. Ordinary `exec` steps still need a running service.
 - Setup verification now requires a successful full startup with the same recipe, mode and prepared snapshot. Changed `once` tasks need matching execution evidence; they are not forced on existing data. A container task counts as evidence only when its command reports that it ran to the end, so a prefix that exits early or an entrypoint that ignores the command proves nothing. Older verification records appear as drafts. Prepare the instance, run `start-env`, then repeat `learn verify` after confirming the app works. No database reset is required.
