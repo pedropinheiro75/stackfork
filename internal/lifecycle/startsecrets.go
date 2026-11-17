@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -28,7 +29,8 @@ func StartSecrets(out io.Writer, root, instanceDir string, targets []string, das
 }
 
 // servicesListSecret reports whether one of the services lists a secret in the
-// prepared snapshot (build secrets do not count: a start builds nothing). An
+// prepared snapshot (build secrets do not count: a start builds nothing), or
+// has a ${...} placeholder that a mapped value could fill. An
 // unreadable snapshot counts as a yes: the step stays as strict as before.
 func servicesListSecret(instanceDir string, services []string) bool {
 	data, err := os.ReadFile(filepath.Join(instanceDir, "compose.json"))
@@ -44,6 +46,11 @@ func servicesListSecret(instanceDir string, services []string) bool {
 	for _, name := range services {
 		svc, _ := all[name].(map[string]interface{})
 		if list, _ := svc["secrets"].([]interface{}); len(list) > 0 {
+			return true
+		}
+		// A value mapped as `--secret VAR=env:VAR` reaches a service as ${VAR}
+		// in its environment: such a service needs the values too.
+		if b, merr := json.Marshal(svc); merr != nil || bytes.Contains(b, []byte("${")) {
 			return true
 		}
 	}

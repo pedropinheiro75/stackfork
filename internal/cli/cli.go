@@ -1309,8 +1309,8 @@ func secretSourceHints(unresolved []string, sources map[string]string) []string 
 			continue
 		}
 		sort.Strings(names)
-		out = append(out, fmt.Sprintf("stackfork: warning: %s is the source of secret %s, but a ${%s} in environment: is empty: a secret reaches only a service that lists it under secrets:. Fix: list %s on that service, or give prepare --secret %s=env:%s to pass the value at up",
-			v, strings.Join(names, ", "), v, names[0], v, v))
+		out = append(out, fmt.Sprintf("stackfork: warning: %s is the source of secret %s, but a ${%s} in environment: is empty: a secret reaches only a service that lists it under secrets:, as the file /run/secrets/%s. Fix: read that file in the service (list %s under secrets:), or give prepare --secret %s=env:%s to pass the value as ${%s} at up",
+			v, strings.Join(names, ", "), v, names[0], names[0], v, v, v))
 	}
 	return out
 }

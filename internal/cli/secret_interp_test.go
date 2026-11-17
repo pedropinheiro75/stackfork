@@ -37,7 +37,7 @@ func TestPrepareNamesTheFixForASecretSourceReadThroughInterpolation(t *testing.T
 	for _, want := range []string{
 		"defaulted to empty: SF_TEST_INTERP_VAR",
 		"SF_TEST_INTERP_VAR is the source of secret esec",
-		"list esec on that service",
+		"list esec under secrets:",
 		"--secret SF_TEST_INTERP_VAR=env:SF_TEST_INTERP_VAR",
 	} {
 		if !strings.Contains(e, want) {

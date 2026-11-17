@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -47,7 +48,12 @@ func TestRunServiceWithAResolvedSecretPassesItToCompose(t *testing.T) {
 	if code != 0 || strings.Contains(out+e, "run-step-canary") || strings.Contains(out+e, "resolves") {
 		t.Fatalf("%d %s %s", code, out, e)
 	}
-	if !strings.Contains(dockerEnvLog(dockerLog), "\nnpm_token=run-step-canary\n") {
+	// Windows names are case-insensitive: the child keeps the last alias.
+	name := "npm_token"
+	if runtime.GOOS == "windows" {
+		name = "NPM_TOKEN"
+	}
+	if !strings.Contains(dockerEnvLog(dockerLog), "\n"+name+"=run-step-canary\n") {
 		t.Fatal("the compose child lacks the value")
 	}
 }
