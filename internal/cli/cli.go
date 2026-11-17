@@ -774,6 +774,9 @@ func cmdPrepare(stdout, stderr io.Writer, subArgs []string, root, branch, projec
 	}
 	if len(unresolved) > 0 {
 		fmt.Fprintf(stderr, "stackfork: warning: unresolved variable(s) in the Compose source, defaulted to empty: %s\n", strings.Join(unresolved, ", "))
+		for _, line := range secretSourceHints(unresolved, compose.SourceSecrets(root, resolvedFiles, envFile)) {
+			fmt.Fprintln(stderr, line)
+		}
 	}
 	model, err := compose.Isolate(rendered, root, project, envFile)
 	if err != nil {
@@ -1182,6 +1185,9 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		if planMode == "" {
 			planMode = lifecycle.PlanMode(root, main)
 		}
+		if !inRun {
+			lifecycle.NoteSecretsKeepOldValue(stderr, instanceDir, project)
+		}
 		// a failed up leaves seeded:false, so the next up seeds
 		res := lifecycle.UpAndSeed(stdout, stderr, lifecycle.UpSeed{
 			Secrets: opts.Secrets,
@@ -1205,11 +1211,16 @@ func cmdUpDownRunExec(stdout, stderr io.Writer, action string, subArgs []string,
 		}
 		return res.Code, res.Err
 	}
-	if action == "start" && opts.Secrets == nil {
+	if (action == "start" || action == "run") && opts.Secrets == nil {
 		// The secrets step of up, without a run: one line per problem and its fix,
-		// and nothing resolves after it (review I1).
+		// and nothing resolves after it (review I1). A one-off `run` starts one
+		// service, so it follows the same rule as `start SERVICE`.
+		targets := opts.Targets
+		if action == "run" {
+			targets = []string{opts.Service}
+		}
 		var perr error
-		if opts.Secrets, perr = lifecycle.StartSecrets(stderr, root, instanceDir, opts.Targets, envTrigger() == "dashboard"); perr != nil {
+		if opts.Secrets, perr = lifecycle.StartSecrets(stderr, root, instanceDir, targets, envTrigger() == "dashboard"); perr != nil {
 			return 0, perr
 		}
 	}
@@ -1279,4 +1290,27 @@ func printJSON(w io.Writer, v interface{}) error {
 	}
 	_, err = fmt.Fprintln(w, string(b))
 	return err
+}
+
+// secretSourceHints is one line for each unresolved variable that is the
+// source (`environment: VAR`) of a Compose secret. A secret reaches only a
+// service that lists it, as a file; a `${VAR}` in `environment:` is not that,
+// and stays empty. sources maps a secret name to its source variable.
+func secretSourceHints(unresolved []string, sources map[string]string) []string {
+	var out []string
+	for _, v := range unresolved {
+		var names []string
+		for name, src := range sources {
+			if src == v {
+				names = append(names, name)
+			}
+		}
+		if len(names) == 0 {
+			continue
+		}
+		sort.Strings(names)
+		out = append(out, fmt.Sprintf("stackfork: warning: %s is the source of secret %s, but a ${%s} in environment: is empty: a secret reaches only a service that lists it under secrets:, as the file /run/secrets/%s. Fix: read that file in the service (list %s under secrets:), or give prepare --secret %s=env:%s to pass the value as ${%s} at up",
+			v, strings.Join(names, ", "), v, names[0], names[0], v, v, v))
+	}
+	return out
 }
