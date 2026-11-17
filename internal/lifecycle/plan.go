@@ -200,12 +200,15 @@ func (r PlanRunner) Execute() error {
 
 // deps runs an `exec once: deps` step when the lockfiles changed since its
 // last success (always on the first start) and stores the hash only when it
-// succeeds, so a failed install runs again.
+// succeeds, so a failed install runs again. A host step also runs again when
+// its install output (node_modules) is missing, even if the lockfiles did not
+// change. A container step keeps the hash rule only: its output is not on the host.
 func (r PlanRunner) deps(s knowledge.Step) error {
 	hash := knowledge.DepsHash(r.Root, s.Dir)
 	path := filepath.Join(r.InstanceDir, "manifest.json")
-	if m, _ := state.ReadManifest(path); m != nil && m.DepsHashes[s.ID] == hash {
-		fmt.Fprintf(r.Out, "%s: lockfiles unchanged, not run\n", s.ID)
+	if m, _ := state.ReadManifest(path); m != nil && m.DepsHashes[s.ID] == hash &&
+		!(s.IsHostExec() && knowledge.DepsOutputMissing(r.Root, s.Dir)) {
+		fmt.Fprintf(r.Out, "%s: lockfiles unchanged and install output present, not run\n", s.ID)
 		r.skip(s, "lockfiles unchanged")
 		return nil
 	}

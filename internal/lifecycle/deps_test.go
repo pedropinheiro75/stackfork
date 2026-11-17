@@ -31,6 +31,7 @@ func TestDepsStepRunsOnLockfileChange(t *testing.T) {
 		}
 	}
 	write("yarn.lock", "v1")
+	os.MkdirAll(filepath.Join(root, "apps", "api", "node_modules"), 0o755)
 	plan := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
 		{ID: "install", Kind: knowledge.KindExec, On: knowledge.OnHost, Dir: "apps/api", Once: knowledge.OnceDeps, Cmd: "yarn install --frozen-lockfile"},
 		{ID: "build", Kind: knowledge.KindNote, Text: "n"},
@@ -77,4 +78,49 @@ func TestDepsStepRunsOnLockfileChange(t *testing.T) {
 	expect(5, "the failure stored no hash")
 	depsRun(t, root, instanceDir, base, plan)
 	expect(5, "unchanged after success")
+}
+
+// With the lockfile unchanged, a host install step still runs when
+// node_modules is gone and is skipped when it is there.
+func TestDepsStepRunsWhenOutputMissing(t *testing.T) {
+	root, instanceDir, base := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := state.WritePrivate(filepath.Join(instanceDir, "manifest.json"), &state.Manifest{Project: "p"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "yarn.lock"), []byte("v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := knowledge.Plan{Status: knowledge.PlanRecorded, Steps: []knowledge.Step{
+		{ID: "install", Kind: knowledge.KindExec, On: knowledge.OnHost, Once: knowledge.OnceDeps, Cmd: "yarn install --frozen-lockfile"},
+	}}
+	if _, err := TrustHere(base, root, plan); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	old := HostExec
+	HostExec = func(io.Writer, string, string, string, string, string, knowledge.Step) (int, error) {
+		calls++
+		return 0, nil
+	}
+	defer func() { HostExec = old }()
+	run := func(want int, why string) {
+		t.Helper()
+		if err := depsRun(t, root, instanceDir, base, plan); err != nil {
+			t.Fatal(err)
+		}
+		if calls != want {
+			t.Fatalf("%s: %d runs, want %d", why, calls, want)
+		}
+	}
+	run(1, "first start")
+	run(2, "hash unchanged, node_modules missing")
+	if err := os.Mkdir(filepath.Join(root, "node_modules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(2, "hash unchanged, node_modules present")
+	os.Remove(filepath.Join(root, "node_modules"))
+	if err := os.WriteFile(filepath.Join(root, ".pnp.cjs"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(2, "Plug'n'Play has no node_modules")
 }
