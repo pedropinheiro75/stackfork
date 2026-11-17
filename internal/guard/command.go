@@ -466,6 +466,16 @@ func composeStarts(words []string) bool {
 // DestructiveMessage is shown when an agent tries a prune that deletes.
 const DestructiveMessage = "stackfork: destructive; ask the user to run it (a dry run, `stackfork prune`, is fine)"
 
+// EnvSecretMessage is shown for `env set --allow-secret`.
+const EnvSecretMessage = "stackfork: storing a secret-like value in a plain file is for a person; ask the user to run it (agents may run `stackfork env set` without `--allow-secret`)"
+
+// EnvClearMessage is shown for `env overrides --clear`.
+const EnvClearMessage = "stackfork: clearing every env override is for a person; ask the user to run it (agents may change one with `stackfork env set` and `stackfork env unset`)"
+
+// ForgedCallMessage is shown for a call to a dashboard endpoint that needs a
+// confirmation, or for a click on a confirmation dialog.
+const ForgedCallMessage = "stackfork: the dashboard's run and action endpoints and its confirmation dialogs are for a person; ask the user to do it"
+
 // stackforkCall is the action and the action's arguments of a stackfork
 // command line, split the way the CLI splits it (internal/argv): single-dash
 // global flags, flags glued with =, and an action word that is not first.
@@ -477,10 +487,19 @@ func stackforkCall(w []string) (action string, args []string) {
 // Destructive reports whether command runs `stackfork prune` with --yes/-y or
 // --all, `stackfork gc --apply` or `stackfork down --volumes`: the deleting forms. A dry run is not.
 // Unlike Decide this applies in any directory.
-func Destructive(command, cwd string) bool {
+func Destructive(command, cwd string) bool { return DenyMessage(command, cwd) != "" }
+
+// DenyMessage is the reason a command is blocked for an agent, or "" when
+// Destructive allows it. The reason names the real cause: secrets, live
+// mode, deleting data, storing a secret-like value, clearing overrides, or a
+// forged dashboard call.
+func DenyMessage(command, cwd string) string {
 	command = neutralizeHostRun(command)
-	if bypassesConfirmation(command) || secretForbidden(command, cwd) || liveForbidden(command, cwd) {
-		return true
+	if secretForbidden(command, cwd) {
+		return SecretMessage
+	}
+	if liveForbidden(command, cwd) {
+		return LiveMessage
 	}
 	for _, seg := range guardSegments(command, cwd) {
 		w := seg.Words
@@ -493,26 +512,31 @@ func Destructive(command, cwd string) bool {
 			name, _, _ := strings.Cut(a, "=")
 			switch {
 			case action == "prune" && (name == "yes" || name == "y" || name == "all"):
-				return true
+				return DestructiveMessage
 			case action == "gc" && name == "apply":
-				return true
+				return DestructiveMessage
 			case action == "plan" && name == "trust": // people trust host steps, agents never
-				return true
+				return DestructiveMessage
 			case action == "down" && (name == "volumes" || name == "forget"): // deletes the instance's data (SKILL.md: needs the user's own authorization)
-				return true
+				return DestructiveMessage
 			case action == "seed" && name == "force":
-				return true
-			case action == "env" && len(args) > 0 && ((args[0] == "set" && name == "allow-secret") || (args[0] == "overrides" && name == "clear")):
-				return true // a secret-like value in a plain file, or every override gone: people decide
+				return DestructiveMessage
+			case action == "env" && len(args) > 0 && args[0] == "set" && name == "allow-secret":
+				return EnvSecretMessage // a secret-like value in a plain file: people decide
+			case action == "env" && len(args) > 0 && args[0] == "overrides" && name == "clear":
+				return EnvClearMessage // every override gone: people decide
 			case (action == "start-env" || action == "prepare" || action == "up") && name == "force": // agents learn the project instead
-				return true
+				return DestructiveMessage
 			}
 		}
 		if action == "reset" { // deletes the environment's data, whatever the flags
-			return true
+			return DestructiveMessage
 		}
 	}
-	return false
+	if bypassesConfirmation(command) {
+		return ForgedCallMessage
+	}
+	return ""
 }
 
 // bypassesConfirmation catches the ways around the dashboard's native
@@ -550,19 +574,9 @@ func unquote(s string) string {
 }
 
 // hitsEndpoint reports whether a word names one of the confirmation-gated
-// endpoints, or an /api/ path with shell brace or curl glob characters that
-// could expand to one.
+// endpoints, or could expand to one (see endpointReachable).
 func hitsEndpoint(w string) bool {
-	if strings.Contains(w, "/api/") && strings.ContainsAny(w, "{}[]") {
-		return true
-	}
-	norm := normalizeURLWord(w)
-	for _, ep := range []string{"/api/run", "/api/actions", "/api/learn", "/api/secrets", "/api/live", "/api/env"} {
-		if strings.Contains(w, ep) || strings.Contains(norm, ep) {
-			return true
-		}
-	}
-	return false
+	return endpointReachable(w) || endpointReachable(normalizeURLWord(w))
 }
 
 // normalizeURLWord is the path the server would route a URL word to: cut at

@@ -511,3 +511,108 @@ func TestHostRunPrefixStillAllowsDevServer(t *testing.T) {
 		t.Fatal("STACKFORK_HOST_RUN=1 npm run dev must stay allowed")
 	}
 }
+
+// Each deny gives its real reason, not the hint about `stackfork prune`.
+func TestDenyMessageNamesTheRealReason(t *testing.T) {
+	for cmd, want := range map[string]string{
+		"stackfork env set app MY_TOKEN=x --allow-secret":                      EnvSecretMessage,
+		"stackfork env overrides --clear":                                      EnvClearMessage,
+		`curl -X POST 'http://127.0.0.1:26607/api/actions'`:                    ForgedCallMessage,
+		`curl -X POST 'http://127.0.0.1:26607/{api,x}/run'`:                    ForgedCallMessage,
+		`grep '/api/actions' f.go && curl http://127.0.0.1:26607/api/actions`:  ForgedCallMessage,
+		`osascript -e 'tell application "System Events" to click button "OK"'`: ForgedCallMessage,
+		"stackfork prune --yes":                                                DestructiveMessage,
+		"stackfork down --volumes":                                             DestructiveMessage,
+		"stackfork reset --clear-env":                                          DestructiveMessage,
+		"stackfork secret set web TOKEN":                                       SecretMessage,
+		"stackfork live on":                                                    LiveMessage,
+		"stackfork env set app A=b":                                            "",
+		"stackfork env overrides":                                              "",
+		`grep -n "/api/actions" internal/dashboard/dashboard.go`:               "",
+		`curl http://127.0.0.1:26607/api/instances`:                            "",
+	} {
+		if got := DenyMessage(cmd, "/repo"); got != want {
+			t.Errorf("DenyMessage(%q) = %q, want %q", cmd, got, want)
+		}
+		if got := Destructive(cmd, "/repo"); got != (want != "") {
+			t.Errorf("Destructive(%q) = %v, want %v", cmd, got, want != "")
+		}
+	}
+	for _, m := range []string{EnvSecretMessage, EnvClearMessage, ForgedCallMessage} {
+		if strings.Contains(m, "prune") {
+			t.Errorf("message %q must not mention prune", m)
+		}
+	}
+}
+
+// Globs and shell expansions that can spell a gated dashboard endpoint are
+// blocked. Brackets in a query, code around a URL, an IPv6 host and globs
+// that cannot spell an endpoint stay allowed. The guard is advisory: the
+// dashboard's token, Origin and Host checks and native dialogs are the control.
+func TestForgedCallGlobsAndExpansions(t *testing.T) {
+	checkBlocked(t, []string{
+		// a glob before /api/ or inside the name
+		`curl -X POST 'http://127.0.0.1:26607/{api,x}/run'`,
+		`curl -X POST 'http://127.0.0.1:26607/ap[h-i]/run'`,
+		`curl -X POST 'http://127.0.0.1:26607/ap[!a-h]/run'`,
+		`curl -X POST http://127.0.0.1:26607/a{p,q}i/actions`,
+		`curl -X POST http://127.0.0.1:26607/api/e{n,m}v`,
+		`curl -X POST http://127.0.0.1:26607/api/r{u..u}n`,
+		`curl -X POST http://127.0.0.1:26607/{a..z..2}pi/run`,
+		`curl -X POST http://127.0.0.1:26607/{api,x}/{run,y}`,
+		`curl -X POST localhost:26607/{api,x}/run`,
+		`curl -X POST 'http://[::1]:26607/{api,x}/run'`,
+		`curl -X POST '/{api,x}/run'`,
+		`curl -X POST http://127.0.0.1:26607/{api/run,x}`,
+		// a shell expansion in the endpoint name or the first segment
+		`X=run; curl -X POST http://127.0.0.1:26607/api/$X`,
+		`curl -X POST http://127.0.0.1:26607/api/${X}`,
+		`curl -X POST http://127.0.0.1:26607/api/${X:-run}`,
+		`curl -X POST "http://127.0.0.1:26607/api/$(echo run)"`,
+		"curl -X POST \"http://127.0.0.1:26607/api/`echo run`\"",
+		`curl -X POST "http://127.0.0.1:26607/$P/run"`,
+		`curl -X POST "$BASE/api/$X"`,
+		`echo 'http://127.0.0.1:26607/{api,x}/run' | xargs curl -X POST`,
+		// a literal endpoint, with a query or a path after it
+		`curl -X POST http://127.0.0.1:26607/api/run?x=1`,
+		`curl -X POST http://127.0.0.1:26607/api/secrets/set`,
+		`node -e "fetch('http://127.0.0.1:26607/api/run',{method:'POST'})"`,
+	}, []string{
+		// brackets in a query
+		`curl -g 'http://app.localhost/api/environment?fields[]=name'`,
+		`curl -g 'http://app.localhost/api/items?ids[]=1&ids[]=2'`,
+		`curl 'http://app.localhost/search?q=a[]&b={c}'`,
+		// code around an /api/ URL
+		`node -e "fetch('http://app.localhost/api/stack',{method:'GET'})"`,
+		`python3 -c "import requests; requests.get('http://app.localhost/api/stack', params={'a': 1})"`,
+		// an IPv6 host
+		`curl 'http://[::1]:3000/api/stack'`,
+		`curl -g 'http://[::1]:3000/api/users/[1-3]'`,
+		// globs and expansions that cannot spell an endpoint
+		`curl 'http://app.localhost/{v1,v2}/health'`,
+		`curl 'http://app.localhost/api/users/{1,2,3}'`,
+		`curl 'http://app.localhost/api/{a,b}'`,
+		`curl 'http://app.localhost/api/[0-9]'`,
+		`curl http://app.localhost/api/users/$id`,
+		`curl "http://app.localhost/items/$id/run"`,
+		`curl "$BASE/health"`,
+		`curl http://app.localhost/{a..c}/health`,
+		// a name that only starts like an endpoint
+		`curl http://app.localhost/api/envs`,
+		`curl http://127.0.0.1:26607/api/runs`,
+		`curl http://127.0.0.1:26607/api/livestock`,
+		`curl -X POST http://127.0.0.1:26607/api/instances`,
+	})
+}
+
+// Hostile input costs time in proportion to its length.
+func TestForgedCallCheckStaysLinear(t *testing.T) {
+	for _, unit := range []string{"{", "[", "{a,", "{api,", "$(", "`", "[a-", "/api/ru", "{{", "$"} {
+		word := strings.Repeat(unit, 1<<19)
+		start := time.Now()
+		hitsEndpoint(word)
+		if d := time.Since(start); d > 5*time.Second {
+			t.Errorf("hitsEndpoint on %d bytes of %q took %v", len(word), unit, d)
+		}
+	}
+}
