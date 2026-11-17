@@ -32,7 +32,9 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$repo_root"
-sf --root "$repo_root" prepare -f "$composefile" --hostname "$hostname"
+# --force: the checkout has no recorded startup plan (learn), and a fresh
+# runner has nobody to record one.
+sf --root "$repo_root" prepare --force -f "$composefile" --hostname "$hostname"
 sf --root "$repo_root" up --wait-timeout 90
 
 db_port="$(sf --root "$repo_root" urls | grep '^db:' | sed -E 's#.*127\.0\.0\.1:([0-9]+).*#\1#')"
