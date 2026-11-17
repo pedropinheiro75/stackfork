@@ -14,17 +14,6 @@ const SecretMessage = "stackfork: secrets are set, mapped and read by a person; 
 // 1Password command matched.
 var MappedRefs = func() ([]string, error) { return nil, nil }
 
-// DenyMessage is the message for a command Destructive blocked.
-func DenyMessage(command, cwd string) string {
-	if secretForbidden(command, cwd) {
-		return SecretMessage
-	}
-	if liveForbidden(command, cwd) {
-		return LiveMessage
-	}
-	return DestructiveMessage
-}
-
 // secretForbidden reports the people-only secret forms (design D12): `secret
 // set|map|unmap`, a read of a stackfork keychain item through the OS tools,
 // and 1Password reads of a mapped reference. A guardrail, not a sandbox.
